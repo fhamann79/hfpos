@@ -3,24 +3,49 @@
     <ng-template #title>POS Ecuador</ng-template>
     <ng-template #subtitle>Iniciar sesión para continuar</ng-template>
 
-    <p class="text-muted">Este acceso usa credenciales demo para validación técnica.</p>
+    <form class="login-form" [formGroup]="loginForm" (ngSubmit)="submitLogin()">
+      <div class="field">
+        <label for="username">Username</label>
+        <input
+          id="username"
+          pInputText
+          formControlName="username"
+          autocomplete="username"
+          placeholder="Ingresa tu usuario"
+          (input)="clearError()"
+        />
+        @if (loginForm.controls.username.touched && loginForm.controls.username.invalid) {
+          <small class="field-error">El username es obligatorio.</small>
+        }
+      </div>
 
-    <div class="actions">
-      <p-button label="Probar Login" icon="pi pi-sign-in" (onClick)="probarLogin()"></p-button>
+      <div class="field">
+        <label for="password">Password</label>
+        <p-password
+          inputId="password"
+          formControlName="password"
+          [feedback]="false"
+          [toggleMask]="true"
+          autocomplete="current-password"
+          placeholder="Ingresa tu contraseña"
+          (onInput)="clearError()"
+        ></p-password>
+        @if (loginForm.controls.password.touched && loginForm.controls.password.invalid) {
+          <small class="field-error">La contraseña es obligatoria.</small>
+        }
+      </div>
+
+      @if (errorMessage()) {
+        <p-message severity="error" [text]="errorMessage()"></p-message>
+      }
+
       <p-button
-        label="Probar /me"
-        icon="pi pi-user"
-        severity="secondary"
-        [outlined]="true"
-        (onClick)="probarMe()"
+        type="submit"
+        label="Iniciar sesión"
+        icon="pi pi-sign-in"
+        [loading]="loading()"
+        [disabled]="loading()"
       ></p-button>
-      <p-button
-        label="Logout"
-        icon="pi pi-sign-out"
-        severity="contrast"
-        [text]="true"
-        (onClick)="logout()"
-      ></p-button>
-    </div>
+    </form>
   </p-card>
 </section>
