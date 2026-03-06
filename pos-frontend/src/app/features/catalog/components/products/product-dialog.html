@@ -5,6 +5,7 @@
   [draggable]="false"
   [style]="{ width: '34rem', maxWidth: '95vw' }"
   [header]="isEditMode ? 'Editar producto' : 'Nuevo producto'"
+  styleClass="catalog-dialog"
   (onHide)="hide()"
 >
   <form class="dialog-form" [formGroup]="form" (ngSubmit)="save()">
