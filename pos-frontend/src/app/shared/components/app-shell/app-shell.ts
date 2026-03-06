@@ -30,7 +30,7 @@ export class AppShell {
 
   readonly menuItems = [
     { label: 'Dashboard', icon: 'pi pi-chart-line', route: '/dashboard', disabled: false },
-    { label: 'Catálogo', icon: 'pi pi-box', route: null, disabled: true },
+    { label: 'Catálogo', icon: 'pi pi-box', route: '/catalog', disabled: false },
     { label: 'Ventas', icon: 'pi pi-shopping-cart', route: null, disabled: true },
   ];
 

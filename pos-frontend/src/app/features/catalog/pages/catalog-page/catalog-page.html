@@ -1,0 +1,24 @@
+<div class="catalog-page">
+  <header class="catalog-page__header">
+    <h2>Catálogo</h2>
+    <p>Administra categorías y productos con integración al backend en tiempo real.</p>
+  </header>
+
+  <p-tabs value="0">
+    <p-tablist>
+      <p-tab value="0">Categorías</p-tab>
+      <p-tab value="1">Productos</p-tab>
+    </p-tablist>
+    <p-tabpanels>
+      <p-tabpanel value="0">
+        <app-categories-table></app-categories-table>
+      </p-tabpanel>
+      <p-tabpanel value="1">
+        <app-products-table></app-products-table>
+      </p-tabpanel>
+    </p-tabpanels>
+  </p-tabs>
+</div>
+
+<p-toast></p-toast>
+<p-confirmdialog></p-confirmdialog>

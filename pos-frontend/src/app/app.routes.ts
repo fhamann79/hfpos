@@ -13,6 +13,13 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./modules/dashboard/dashboard').then(m => m.Dashboard)
   },
+
+  {
+    path: 'catalog',
+    canActivate: [AuthGuard],
+    loadComponent: () =>
+      import('./features/catalog/pages/catalog-page/catalog-page').then(m => m.CatalogPage)
+  },
   {
     path: '',
     redirectTo: 'login',
