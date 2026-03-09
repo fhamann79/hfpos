@@ -67,6 +67,8 @@ public static class SeedData
             new { Code = AppPermissions.CatalogCategoriesWrite, Description = "Write categories" },
             new { Code = AppPermissions.CatalogProductsRead, Description = "Read products" },
             new { Code = AppPermissions.CatalogProductsWrite, Description = "Write products" },
+            new { Code = AppPermissions.OpStructureRead, Description = "Read operational structure" },
+            new { Code = AppPermissions.OpStructureWrite, Description = "Write operational structure" },
             new { Code = AppPermissions.PosSalesCreate, Description = "Crear ventas POS" },
             new { Code = AppPermissions.PosSalesVoid, Description = "Anular ventas POS" },
             new { Code = AppPermissions.ReportsSalesRead, Description = "Leer reportes de ventas" }
@@ -125,6 +127,8 @@ public static class SeedData
                     AppPermissions.CatalogCategoriesWrite,
                     AppPermissions.CatalogProductsRead,
                     AppPermissions.CatalogProductsWrite,
+                    AppPermissions.OpStructureRead,
+                    AppPermissions.OpStructureWrite,
                     AppPermissions.PosSalesCreate,
                     AppPermissions.PosSalesVoid,
                     AppPermissions.ReportsSalesRead
@@ -139,6 +143,8 @@ public static class SeedData
                     AppPermissions.CatalogCategoriesWrite,
                     AppPermissions.CatalogProductsRead,
                     AppPermissions.CatalogProductsWrite,
+                    AppPermissions.OpStructureRead,
+                    AppPermissions.OpStructureWrite,
                     AppPermissions.PosSalesCreate,
                     AppPermissions.PosSalesVoid,
                     AppPermissions.ReportsSalesRead
@@ -151,6 +157,7 @@ public static class SeedData
                     AppPermissions.AuthProbeCashier,
                     AppPermissions.CatalogCategoriesRead,
                     AppPermissions.CatalogProductsRead,
+                    AppPermissions.OpStructureRead,
                     AppPermissions.PosSalesCreate
                 }
             }

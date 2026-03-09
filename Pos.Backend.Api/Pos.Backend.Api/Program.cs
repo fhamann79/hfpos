@@ -57,6 +57,8 @@ builder.Services.AddAuthorization(options =>
         AppPermissions.CatalogCategoriesWrite,
         AppPermissions.CatalogProductsRead,
         AppPermissions.CatalogProductsWrite,
+        AppPermissions.OpStructureRead,
+        AppPermissions.OpStructureWrite,
         AppPermissions.PosSalesCreate,
         AppPermissions.PosSalesVoid,
         AppPermissions.ReportsSalesRead

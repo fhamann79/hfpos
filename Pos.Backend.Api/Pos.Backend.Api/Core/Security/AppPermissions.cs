@@ -9,6 +9,8 @@ public static class AppPermissions
     public const string CatalogCategoriesWrite = "CATALOG_CATEGORIES_WRITE";
     public const string CatalogProductsRead = "CATALOG_PRODUCTS_READ";
     public const string CatalogProductsWrite = "CATALOG_PRODUCTS_WRITE";
+    public const string OpStructureRead = "OP_STRUCTURE_READ";
+    public const string OpStructureWrite = "OP_STRUCTURE_WRITE";
     public const string PosSalesCreate = "POS_SALES_CREATE";
     public const string PosSalesVoid = "POS_SALES_VOID";
     public const string ReportsSalesRead = "REPORTS_SALES_READ";

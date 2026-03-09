@@ -41,6 +41,16 @@ public class PosDbContext : DbContext
                 .HasForeignKey(rp => rp.PermissionId);
         });
 
+
+        modelBuilder.Entity<Establishment>(entity =>
+        {
+            entity.HasIndex(e => new { e.CompanyId, e.Code }).IsUnique();
+        });
+
+        modelBuilder.Entity<EmissionPoint>(entity =>
+        {
+            entity.HasIndex(ep => new { ep.EstablishmentId, ep.Code }).IsUnique();
+        });
         modelBuilder.Entity<Category>(entity =>
         {
             entity.Property(c => c.Name)
