@@ -24,6 +24,11 @@ export const OPERATIONAL_STRUCTURE_ACCESS_REQUIREMENT: PermissionRequirement = {
   matchMode: 'all',
 };
 
+export const ADMINISTRATION_ACCESS_REQUIREMENT: PermissionRequirement = {
+  requiredPermissions: [PERMISSIONS.adminUsersRead, PERMISSIONS.adminRolesRead],
+  matchMode: 'any',
+};
+
 export const NAVIGATION_ITEMS: NavigationItemConfig[] = [
   {
     label: 'Dashboard',
@@ -41,6 +46,12 @@ export const NAVIGATION_ITEMS: NavigationItemConfig[] = [
     icon: 'pi pi-sitemap',
     route: '/operational-structure',
     ...OPERATIONAL_STRUCTURE_ACCESS_REQUIREMENT,
+  },
+  {
+    label: 'Administración',
+    icon: 'pi pi-shield',
+    route: '/administration',
+    ...ADMINISTRATION_ACCESS_REQUIREMENT,
   },
   {
     label: 'Ventas',

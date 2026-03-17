@@ -1,0 +1,36 @@
+<div class="administration-page">
+  <header class="administration-page__header">
+    <h2>Administración</h2>
+    <p>Gestiona usuarios, roles y permisos con control de acceso por permisos del backend.</p>
+  </header>
+
+  @if (canReadUsers() || canReadRoles()) {
+    <p-tabs [value]="initialTab()">
+      <p-tablist>
+        @if (canReadUsers()) {
+          <p-tab value="0">Usuarios</p-tab>
+        }
+        @if (canReadRoles()) {
+          <p-tab value="1">Roles y Permisos</p-tab>
+        }
+      </p-tablist>
+      <p-tabpanels>
+        @if (canReadUsers()) {
+          <p-tabpanel value="0">
+            <app-users-table [canWrite]="canWriteUsers()"></app-users-table>
+          </p-tabpanel>
+        }
+        @if (canReadRoles()) {
+          <p-tabpanel value="1">
+            <app-roles-table [canWrite]="canWriteRoles()"></app-roles-table>
+          </p-tabpanel>
+        }
+      </p-tabpanels>
+    </p-tabs>
+  } @else {
+    <p-message severity="warn" text="No tienes permisos para acceder a Administración."></p-message>
+  }
+</div>
+
+<p-toast></p-toast>
+<p-confirmdialog></p-confirmdialog>

@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { AuthGuard } from './core/guards/auth.guard';
+import { administrationAccessGuard } from './core/guards/administration-access.guard';
 import { catalogAccessGuard } from './core/guards/catalog-access.guard';
 import { operationalStructureAccessGuard } from './core/guards/operational-structure-access.guard';
 
@@ -25,6 +26,12 @@ export const routes: Routes = [
       import('./features/operational-structure/pages/operational-structure-page/operational-structure-page').then(
         (m) => m.OperationalStructurePage
       ),
+  },
+  {
+    path: 'administration',
+    canActivate: [AuthGuard, administrationAccessGuard],
+    loadComponent: () =>
+      import('./features/administration/pages/administration-page/administration-page').then((m) => m.AdministrationPage),
   },
   {
     path: '',

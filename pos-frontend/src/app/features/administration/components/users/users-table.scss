@@ -1,0 +1,20 @@
+ .table-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.empty-state {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.text-muted {
+  color: var(--text-color-secondary);
+}

@@ -1,0 +1,102 @@
+<p-dialog
+  [header]="isEditMode ? 'Editar usuario' : 'Nuevo usuario'"
+  [visible]="visible"
+  [modal]="true"
+  [style]="{ width: '42rem' }"
+  [draggable]="false"
+  [resizable]="false"
+  (visibleChange)="visibleChange.emit($event)"
+  (onHide)="hide()"
+>
+  <form class="user-form" [formGroup]="form" (ngSubmit)="save()">
+    <div class="field-grid">
+      <label for="username">Username</label>
+      <input id="username" type="text" pInputText formControlName="username" />
+      @if (form.controls.username.invalid && form.controls.username.touched) {
+        <small class="p-error">Username es obligatorio.</small>
+      }
+    </div>
+
+    <div class="field-grid">
+      <label for="email">Email</label>
+      <input id="email" type="email" pInputText formControlName="email" />
+      @if (form.controls.email.invalid && form.controls.email.touched) {
+        <small class="p-error">Ingresa un email válido.</small>
+      }
+    </div>
+
+    @if (!isEditMode) {
+      <div class="field-grid">
+        <label for="password">Password</label>
+        <input id="password" type="password" pInputText formControlName="password" />
+        @if (form.controls.password.invalid && form.controls.password.touched) {
+          <small class="p-error">Password es obligatoria (mínimo 6 caracteres).</small>
+        }
+      </div>
+    }
+
+    <div class="field-grid">
+      <label for="role">Rol</label>
+      <p-select
+        inputId="role"
+        [options]="roles()"
+        optionLabel="name"
+        optionValue="id"
+        formControlName="roleId"
+        placeholder="Selecciona un rol"
+      ></p-select>
+    </div>
+
+    <div class="field-grid">
+      <label for="company">Company</label>
+      <p-select
+        inputId="company"
+        [options]="companies()"
+        optionLabel="name"
+        optionValue="id"
+        formControlName="companyId"
+        placeholder="Selecciona company"
+        (onChange)="onCompanyChange($event.value)"
+      ></p-select>
+    </div>
+
+    <div class="field-grid">
+      <label for="establishment">Establishment</label>
+      <p-select
+        inputId="establishment"
+        [options]="establishments()"
+        optionLabel="name"
+        optionValue="id"
+        formControlName="establishmentId"
+        placeholder="Selecciona establishment"
+        [disabled]="!form.controls.companyId.value"
+        (onChange)="onEstablishmentChange($event.value)"
+      ></p-select>
+    </div>
+
+    <div class="field-grid">
+      <label for="emissionPoint">Emission Point</label>
+      <p-select
+        inputId="emissionPoint"
+        [options]="emissionPoints()"
+        optionLabel="name"
+        optionValue="id"
+        formControlName="emissionPointId"
+        placeholder="Selecciona emission point"
+        [disabled]="!form.controls.establishmentId.value"
+      ></p-select>
+    </div>
+
+    @if (isEditMode) {
+      <div class="field-checkbox">
+        <p-checkbox inputId="isActive" formControlName="isActive" [binary]="true"></p-checkbox>
+        <label for="isActive">Activo</label>
+      </div>
+    }
+
+    <div class="dialog-actions">
+      <p-button type="button" label="Cancelar" severity="secondary" [outlined]="true" (onClick)="hide()"></p-button>
+      <p-button type="submit" label="Guardar" icon="pi pi-check"></p-button>
+    </div>
+  </form>
+</p-dialog>
