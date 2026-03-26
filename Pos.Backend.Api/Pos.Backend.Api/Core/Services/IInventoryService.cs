@@ -10,4 +10,6 @@ public interface IInventoryService
     Task<InventoryMovementDto> RegisterEntryAsync(InventoryEntryDto dto);
     Task<InventoryMovementDto> RegisterExitAsync(InventoryExitDto dto);
     Task<InventoryMovementDto> RegisterAdjustmentAsync(InventoryAdjustDto dto);
+    Task<InventoryMovementDto> RegisterSaleAsync(InventoryExitDto dto);
+    Task<InventoryMovementDto> RegisterVoidAsync(InventoryEntryDto dto);
 }

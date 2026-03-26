@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Pos.Backend.Api.Core.Entities;
+using Pos.Backend.Api.Core.Enums;
 
 namespace Pos.Backend.Api.Infrastructure.Data;
 
@@ -21,6 +22,8 @@ public class PosDbContext : DbContext
     public DbSet<Product> Products { get; set; }
     public DbSet<ProductStock> ProductStocks { get; set; }
     public DbSet<InventoryMovement> InventoryMovements { get; set; }
+    public DbSet<Sale> Sales { get; set; }
+    public DbSet<SaleItem> SaleItems { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -138,6 +141,71 @@ public class PosDbContext : DbContext
 
             entity.HasIndex(p => p.CompanyId);
             entity.HasIndex(p => p.CategoryId);
+        });
+
+        modelBuilder.Entity<Sale>(entity =>
+        {
+            entity.Property(s => s.Status)
+                .HasConversion<int>()
+                .HasDefaultValue(SaleStatus.Completed);
+
+            entity.Property(s => s.Subtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.Total)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.Number)
+                .HasMaxLength(50);
+
+            entity.Property(s => s.Notes)
+                .HasMaxLength(500);
+
+            entity.HasIndex(s => s.CompanyId);
+            entity.HasIndex(s => s.EstablishmentId);
+            entity.HasIndex(s => s.EmissionPointId);
+            entity.HasIndex(s => s.CreatedAt);
+            entity.HasIndex(s => s.Status);
+            entity.HasIndex(s => new { s.CompanyId, s.EstablishmentId, s.EmissionPointId, s.CreatedAt });
+
+            entity.HasOne(s => s.User)
+                .WithMany()
+                .HasForeignKey(s => s.UserId);
+
+            entity.HasOne(s => s.Company)
+                .WithMany()
+                .HasForeignKey(s => s.CompanyId);
+
+            entity.HasOne(s => s.Establishment)
+                .WithMany()
+                .HasForeignKey(s => s.EstablishmentId);
+
+            entity.HasOne(s => s.EmissionPoint)
+                .WithMany()
+                .HasForeignKey(s => s.EmissionPointId);
+        });
+
+        modelBuilder.Entity<SaleItem>(entity =>
+        {
+            entity.Property(si => si.Quantity)
+                .HasPrecision(18, 4);
+
+            entity.Property(si => si.UnitPrice)
+                .HasPrecision(18, 2);
+
+            entity.Property(si => si.LineSubtotal)
+                .HasPrecision(18, 2);
+
+            entity.HasOne(si => si.Sale)
+                .WithMany(s => s.Items)
+                .HasForeignKey(si => si.SaleId);
+
+            entity.HasOne(si => si.Product)
+                .WithMany()
+                .HasForeignKey(si => si.ProductId);
+
+            entity.HasIndex(si => si.SaleId);
+            entity.HasIndex(si => si.ProductId);
         });
     }
 }

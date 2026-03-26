@@ -151,19 +151,45 @@ public class InventoryService : IInventoryService
         return RegisterMovementAsync(dto.ProductId, InventoryMovementType.Adjustment, dto.Quantity, dto.Reference, dto.Notes);
     }
 
+    public Task<InventoryMovementDto> RegisterSaleAsync(InventoryExitDto dto)
+    {
+        if (dto.Quantity <= 0m)
+        {
+            throw new InvalidOperationException("INVALID_QUANTITY");
+        }
+
+        return RegisterMovementAsync(dto.ProductId, InventoryMovementType.Sale, dto.Quantity, dto.Reference, dto.Notes);
+    }
+
+    public Task<InventoryMovementDto> RegisterVoidAsync(InventoryEntryDto dto)
+    {
+        if (dto.Quantity <= 0m)
+        {
+            throw new InvalidOperationException("INVALID_QUANTITY");
+        }
+
+        return RegisterMovementAsync(dto.ProductId, InventoryMovementType.Void, dto.Quantity, dto.Reference, dto.Notes);
+    }
+
     private async Task<InventoryMovementDto> RegisterMovementAsync(int productId, InventoryMovementType type, decimal quantity, string? reference, string? notes)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
         var product = await GetValidProductAsync(productId, operationalContext.CompanyId);
 
-        await using var transaction = await _context.Database.BeginTransactionAsync();
+        var hasAmbientTransaction = _context.Database.CurrentTransaction is not null;
+        await using var transaction = hasAmbientTransaction
+            ? null
+            : await _context.Database.BeginTransactionAsync();
 
         var productStock = await _context.ProductStocks
             .FirstOrDefaultAsync(ps => ps.ProductId == product.Id
                 && ps.CompanyId == operationalContext.CompanyId
                 && ps.EstablishmentId == operationalContext.EstablishmentId);
 
-        if (productStock is null && (type == InventoryMovementType.Entry || type == InventoryMovementType.Adjustment))
+        if (productStock is null
+            && (type == InventoryMovementType.Entry
+                || type == InventoryMovementType.Adjustment
+                || type == InventoryMovementType.Void))
         {
             productStock = new ProductStock
             {
@@ -192,6 +218,16 @@ public class InventoryService : IInventoryService
                     throw new InvalidOperationException("INSUFFICIENT_STOCK");
                 }
                 stockAfter = stockBefore - quantity;
+                break;
+            case InventoryMovementType.Sale:
+                if (stockBefore < quantity)
+                {
+                    throw new InvalidOperationException("INSUFFICIENT_STOCK");
+                }
+                stockAfter = stockBefore - quantity;
+                break;
+            case InventoryMovementType.Void:
+                stockAfter = stockBefore + quantity;
                 break;
             case InventoryMovementType.Adjustment:
                 stockAfter = quantity;
@@ -234,7 +270,10 @@ public class InventoryService : IInventoryService
         _context.InventoryMovements.Add(movement);
 
         await _context.SaveChangesAsync();
-        await transaction.CommitAsync();
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync();
+        }
 
         return new InventoryMovementDto
         {
