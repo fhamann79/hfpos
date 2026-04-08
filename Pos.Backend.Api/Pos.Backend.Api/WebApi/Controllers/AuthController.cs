@@ -27,11 +27,9 @@ public class AuthController : ControllerBase
     {
         await Task.CompletedTask;
 
-        return BadRequest(new ApiErrorResponse
-        {
-            Error = "PUBLIC_REGISTRATION_NOT_SUPPORTED",
-            Details = "Public registration is not supported. Users must be created via administrative module."
-        });
+        return BadRequest(Error(
+            "PUBLIC_REGISTRATION_NOT_SUPPORTED",
+            "Public registration is not supported. Users must be created via administrative module."));
     }
 
     [HttpPost("login")]
@@ -40,7 +38,9 @@ public class AuthController : ControllerBase
         var (user, error) = await _auth.ValidateLoginAsync(dto);
 
         if (user == null)
-            return Unauthorized(new { error });
+        {
+            return Unauthorized(Error(error ?? "INVALID_CREDENTIALS"));
+        }
 
         var token = _jwt.GenerateToken(user);
 
@@ -70,14 +70,14 @@ public class AuthController : ControllerBase
             || string.IsNullOrWhiteSpace(emissionPointIdValue)
             || string.IsNullOrWhiteSpace(roleCode))
         {
-            return Unauthorized(new { error = "INVALID_CLAIMS" });
+            return Unauthorized(Error("INVALID_CLAIMS"));
         }
 
         if (!int.TryParse(companyIdValue, out var companyId)
             || !int.TryParse(establishmentIdValue, out var establishmentId)
             || !int.TryParse(emissionPointIdValue, out var emissionPointId))
         {
-            return Unauthorized(new { error = "INVALID_CLAIMS" });
+            return Unauthorized(Error("INVALID_CLAIMS"));
         }
 
         return Ok(new
@@ -91,4 +91,11 @@ public class AuthController : ControllerBase
             permissions
         });
     }
+
+    private static ApiErrorResponse Error(string error, string? details = null)
+        => new()
+        {
+            Error = error,
+            Details = details
+        };
 }

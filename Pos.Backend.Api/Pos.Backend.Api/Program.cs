@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Microsoft.OpenApi.Models;
+using Pos.Backend.Api.WebApi.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -135,6 +136,8 @@ builder.Services.AddAuthentication(options =>
 });
 
 var app = builder.Build();
+
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 // Swagger solo en desarrollo
 if (app.Environment.IsDevelopment())
