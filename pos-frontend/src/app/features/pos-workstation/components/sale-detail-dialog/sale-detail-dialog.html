@@ -1,0 +1,34 @@
+<p-dialog
+  header="Detalle de venta"
+  [visible]="visible"
+  [modal]="true"
+  [style]="{ width: '44rem' }"
+  (visibleChange)="visibleChange.emit($event)"
+>
+  @if (!sale) {
+    <p>Cargando...</p>
+  } @else {
+    <div class="detail-head">
+      <span><strong>ID:</strong> #{{ sale.id }}</span>
+      <span><strong>Estado:</strong> <span class="status" [class.status--voided]="sale.isVoided">{{ sale.isVoided ? 'Anulada' : sale.status }}</span></span>
+      <span><strong>Fecha:</strong> {{ sale.createdAt | date: 'short' }}</span>
+      <span><strong>Usuario:</strong> {{ sale.createdBy || 'N/A' }}</span>
+      <span><strong>Notas:</strong> {{ sale.notes || 'Sin notas' }}</span>
+    </div>
+
+    <ul class="items">
+      @for (item of sale.items; track item.productId) {
+        <li>
+          <span>{{ item.productName }} x {{ item.quantity }}</span>
+          <span>{{ item.unitPrice | currency: 'USD' }}</span>
+          <strong>{{ item.subtotal | currency: 'USD' }}</strong>
+        </li>
+      }
+    </ul>
+
+    <footer>
+      <span>Subtotal: {{ sale.subtotal | currency: 'USD' }}</span>
+      <strong>Total: {{ sale.total | currency: 'USD' }}</strong>
+    </footer>
+  }
+</p-dialog>

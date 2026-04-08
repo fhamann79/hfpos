@@ -1,0 +1,21 @@
+<p-dialog
+  header="Anular venta"
+  [visible]="visible"
+  [modal]="true"
+  [style]="{ width: '32rem' }"
+  (visibleChange)="onVisibleChange($event)"
+>
+  <p>Esta acción no se puede deshacer. Ingresa un motivo.</p>
+  <textarea pTextarea rows="4" [(ngModel)]="reason" placeholder="Motivo de anulación"></textarea>
+
+  <div class="actions">
+    <p-button label="Cancelar" severity="secondary" [outlined]="true" (onClick)="visibleChange.emit(false)"></p-button>
+    <p-button
+      label="Confirmar anulación"
+      severity="danger"
+      [loading]="loading"
+      [disabled]="!reason.trim().length"
+      (onClick)="confirmVoid.emit(reason.trim())"
+    ></p-button>
+  </div>
+</p-dialog>

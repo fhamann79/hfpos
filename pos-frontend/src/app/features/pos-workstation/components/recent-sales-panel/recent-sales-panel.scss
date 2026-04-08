@@ -1,0 +1,11 @@
+.panel { background:#fff; border-radius:10px; padding:1rem; }
+header { display:flex; justify-content:space-between; align-items:center; }
+.sales-list { list-style:none; margin:.8rem 0 0; padding:0; display:grid; gap:.5rem; }
+.sales-list li { border:1px solid #e2e8f0; border-radius:8px; padding:.5rem; display:flex; justify-content:space-between; align-items:center; }
+.sales-list li div:first-child { display:grid; gap:.1rem; }
+.actions { display:flex; gap:.25rem; }
+.state { color:#64748b; margin-top:.7rem; }
+
+.status { font-weight: 600; }
+.status--voided { color: #b91c1c; }
+.sales-list li.sale-voided { border-color: #fecaca; background: #fff1f2; }

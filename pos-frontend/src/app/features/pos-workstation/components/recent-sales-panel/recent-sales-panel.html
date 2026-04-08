@@ -1,0 +1,38 @@
+<section class="panel">
+  <header>
+    <h2>Ventas recientes</h2>
+    <p-button label="Refrescar" icon="pi pi-refresh" severity="secondary" [outlined]="true" (onClick)="refresh.emit()"></p-button>
+  </header>
+
+  @if (errorMessage) {
+    <p-message severity="error" [text]="errorMessage"></p-message>
+  }
+
+  @if (loading) {
+    <div class="state">Cargando historial...</div>
+  } @else if (!sales.length) {
+    <div class="state">No hay ventas registradas.</div>
+  } @else {
+    <ul class="sales-list">
+      @for (sale of sales; track sale.id) {
+        <li [class.sale-voided]="sale.isVoided">
+          <div>
+            <strong>#{{ sale.id }}</strong>
+            <small>{{ sale.createdAt | date: 'short' }}</small>
+            <small>{{ sale.total | currency: 'USD' }}</small>
+            <small class="status" [class.status--voided]="sale.isVoided">{{ sale.isVoided ? 'Anulada' : sale.status }}</small>
+            @if (sale.createdBy) {
+              <small>{{ sale.createdBy }}</small>
+            }
+          </div>
+          <div class="actions">
+            <p-button label="Detalle" [text]="true" (onClick)="viewDetail.emit(sale.id)"></p-button>
+            @if (canVoid && !sale.isVoided) {
+              <p-button label="Anular" severity="danger" [text]="true" (onClick)="startVoid.emit(sale)"></p-button>
+            }
+          </div>
+        </li>
+      }
+    </ul>
+  }
+</section>

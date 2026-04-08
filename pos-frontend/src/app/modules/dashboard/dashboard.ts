@@ -29,10 +29,13 @@ export class Dashboard implements OnInit {
     }
 
     this.route.queryParamMap.subscribe((params) => {
+      const message = params.get('message');
       this.accessWarning.set(
-        params.get('message') === 'catalog-denied'
+        message === 'catalog-denied'
           ? 'No tienes permisos para acceder a Catálogo.'
-          : ''
+          : message === 'pos-denied'
+            ? 'No tienes permisos para acceder a POS.'
+            : ''
       );
     });
   }

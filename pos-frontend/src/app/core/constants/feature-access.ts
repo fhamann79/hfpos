@@ -29,6 +29,11 @@ export const ADMINISTRATION_ACCESS_REQUIREMENT: PermissionRequirement = {
   matchMode: 'any',
 };
 
+export const POS_ACCESS_REQUIREMENT: PermissionRequirement = {
+  requiredPermissions: [PERMISSIONS.posSalesCreate, PERMISSIONS.reportsSalesRead],
+  matchMode: 'any',
+};
+
 export const NAVIGATION_ITEMS: NavigationItemConfig[] = [
   {
     label: 'Dashboard',
@@ -54,9 +59,9 @@ export const NAVIGATION_ITEMS: NavigationItemConfig[] = [
     ...ADMINISTRATION_ACCESS_REQUIREMENT,
   },
   {
-    label: 'Ventas',
+    label: 'POS',
     icon: 'pi pi-shopping-cart',
-    route: null,
-    disabled: true,
+    route: '/pos',
+    ...POS_ACCESS_REQUIREMENT,
   },
 ];

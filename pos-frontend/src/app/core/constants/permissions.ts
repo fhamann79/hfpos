@@ -9,4 +9,7 @@ export const PERMISSIONS = {
   adminUsersWrite: 'ADMIN_USERS_WRITE',
   adminRolesRead: 'ADMIN_ROLES_READ',
   adminRolesWrite: 'ADMIN_ROLES_WRITE',
+  posSalesCreate: 'POS_SALES_CREATE',
+  posSalesVoid: 'POS_SALES_VOID',
+  reportsSalesRead: 'REPORTS_SALES_READ',
 } as const;

@@ -1,0 +1,9 @@
+.panel { background: #fff; padding: 1rem; border-radius: 10px; }
+.search-row { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; }
+.search-row input { flex: 1; }
+.product-list { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; gap: .5rem; }
+.product-item { display:flex; justify-content: space-between; align-items: center; border:1px solid #e5e7eb; border-radius: 8px; padding: .6rem; }
+.meta { display:flex; gap:1rem; color:#64748b; font-size:.9rem; }
+.product-item--out { opacity: .7; }
+.stock-empty { color: #b91c1c; font-weight: 600; }
+.state { padding: 1rem 0; color: #64748b; }

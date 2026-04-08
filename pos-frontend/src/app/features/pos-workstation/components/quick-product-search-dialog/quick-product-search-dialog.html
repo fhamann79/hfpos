@@ -1,0 +1,31 @@
+<p-dialog
+  header="Búsqueda rápida"
+  [modal]="true"
+  [visible]="visible"
+  [style]="{ width: '42rem' }"
+  (visibleChange)="onVisibleChange($event)"
+>
+  <input
+    #searchInput
+    pInputText
+    type="text"
+    [(ngModel)]="filter"
+    (keydown)="onKeydown($event)"
+    placeholder="Escribe para filtrar y presiona Enter"
+    class="quick-search-input"
+  />
+
+  <ul class="result-list">
+    @for (product of filteredProducts; track product.id; let i = $index) {
+      <li
+        class="result-item"
+        [class.result-item--active]="i === highlightedIndex"
+        [class.result-item--out]="product.stock <= 0"
+        (click)="pick(product)"
+      >
+        <span>{{ product.name }}</span>
+        <small>Stock: {{ product.stock }}</small>
+      </li>
+    }
+  </ul>
+</p-dialog>

@@ -1,0 +1,16 @@
+<p-dialog
+  header="Confirmar venta"
+  [visible]="visible"
+  [modal]="true"
+  [style]="{ width: '30rem' }"
+  (visibleChange)="visibleChange.emit($event)"
+>
+  <div class="confirm-content" (keydown)="onKeydown($event)" tabindex="0">
+    <p><strong>Items:</strong> {{ itemCount }}</p>
+    <p><strong>Total:</strong> {{ total | currency: 'USD' }}</p>
+    <p><strong>Notas:</strong> {{ notes || 'Sin notas' }}</p>
+    <p class="hint">Presiona Enter para confirmar o Escape para cancelar.</p>
+
+    <p-button label="Confirmar" icon="pi pi-check" [loading]="loading" (onClick)="confirm.emit()"></p-button>
+  </div>
+</p-dialog>
