@@ -166,7 +166,7 @@ public class SalesService : ISalesService
             UpdatedAt = DateTime.UtcNow
         };
 
-        foreach (var itemDto in dto.Items)
+        foreach (var itemDto in dto.Items.OrderBy(i => i.ProductId))
         {
             if (itemDto.Quantity <= 0m)
             {
@@ -197,7 +197,7 @@ public class SalesService : ISalesService
         _context.Sales.Add(sale);
         await _context.SaveChangesAsync();
 
-        foreach (var item in sale.Items)
+        foreach (var item in sale.Items.OrderBy(i => i.ProductId))
         {
             await _inventoryService.RegisterSaleAsync(new InventoryExitDto
             {
@@ -246,7 +246,7 @@ public class SalesService : ISalesService
             ? "Void sale"
             : dto.Reason.Trim();
 
-        foreach (var item in sale.Items)
+        foreach (var item in sale.Items.OrderBy(i => i.ProductId))
         {
             await _inventoryService.RegisterVoidAsync(new InventoryEntryDto
             {

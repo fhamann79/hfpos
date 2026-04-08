@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Enums;
@@ -176,119 +177,112 @@ public class InventoryService : IInventoryService
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
         var product = await GetValidProductAsync(productId, operationalContext.CompanyId);
 
-        var hasAmbientTransaction = _context.Database.CurrentTransaction is not null;
-        await using var transaction = hasAmbientTransaction
-            ? null
-            : await _context.Database.BeginTransactionAsync();
+        try
+        {
+            var hasAmbientTransaction = _context.Database.CurrentTransaction is not null;
+            await using var transaction = hasAmbientTransaction
+                ? null
+                : await _context.Database.BeginTransactionAsync();
 
-        var productStock = await _context.ProductStocks
-            .FirstOrDefaultAsync(ps => ps.ProductId == product.Id
-                && ps.CompanyId == operationalContext.CompanyId
-                && ps.EstablishmentId == operationalContext.EstablishmentId);
+            var productStock = await GetLockedProductStockAsync(
+                product.Id,
+                operationalContext.CompanyId,
+                operationalContext.EstablishmentId);
 
-        if (productStock is null
-            && (type == InventoryMovementType.Entry
+            var canCreateStock = type == InventoryMovementType.Entry
                 || type == InventoryMovementType.Adjustment
-                || type == InventoryMovementType.Void))
-        {
-            productStock = new ProductStock
+                || type == InventoryMovementType.Void;
+
+            if (productStock is null && canCreateStock)
+            {
+                productStock = await CreateAndLockProductStockAsync(
+                    product.Id,
+                    operationalContext.CompanyId,
+                    operationalContext.EstablishmentId);
+            }
+
+            var stockBefore = productStock?.Quantity ?? 0m;
+            decimal stockAfter;
+
+            switch (type)
+            {
+                case InventoryMovementType.Entry:
+                    stockAfter = stockBefore + quantity;
+                    break;
+                case InventoryMovementType.Exit:
+                    if (stockBefore < quantity)
+                    {
+                        throw new InvalidOperationException("INSUFFICIENT_STOCK");
+                    }
+                    stockAfter = stockBefore - quantity;
+                    break;
+                case InventoryMovementType.Sale:
+                    if (stockBefore < quantity)
+                    {
+                        throw new InvalidOperationException("INSUFFICIENT_STOCK");
+                    }
+                    stockAfter = stockBefore - quantity;
+                    break;
+                case InventoryMovementType.Void:
+                    stockAfter = stockBefore + quantity;
+                    break;
+                case InventoryMovementType.Adjustment:
+                    stockAfter = quantity;
+                    break;
+                default:
+                    throw new InvalidOperationException("INVALID_MOVEMENT_TYPE");
+            }
+
+            if (productStock is null)
+            {
+                throw new InvalidOperationException("INVENTORY_CONCURRENCY_CONFLICT");
+            }
+
+            productStock.Quantity = stockAfter;
+            productStock.UpdatedAt = DateTime.UtcNow;
+
+            var movement = new InventoryMovement
             {
                 ProductId = product.Id,
                 CompanyId = operationalContext.CompanyId,
                 EstablishmentId = operationalContext.EstablishmentId,
-                Quantity = 0m,
-                UpdatedAt = DateTime.UtcNow
+                Type = type,
+                Quantity = quantity,
+                StockBefore = stockBefore,
+                StockAfter = stockAfter,
+                Reference = reference?.Trim(),
+                Notes = notes?.Trim(),
+                UserId = operationalContext.UserId,
+                CreatedAt = DateTime.UtcNow
             };
 
-            _context.ProductStocks.Add(productStock);
+            _context.InventoryMovements.Add(movement);
+
             await _context.SaveChangesAsync();
-        }
-
-        var stockBefore = productStock?.Quantity ?? 0m;
-        decimal stockAfter;
-
-        switch (type)
-        {
-            case InventoryMovementType.Entry:
-                stockAfter = stockBefore + quantity;
-                break;
-            case InventoryMovementType.Exit:
-                if (stockBefore < quantity)
-                {
-                    throw new InvalidOperationException("INSUFFICIENT_STOCK");
-                }
-                stockAfter = stockBefore - quantity;
-                break;
-            case InventoryMovementType.Sale:
-                if (stockBefore < quantity)
-                {
-                    throw new InvalidOperationException("INSUFFICIENT_STOCK");
-                }
-                stockAfter = stockBefore - quantity;
-                break;
-            case InventoryMovementType.Void:
-                stockAfter = stockBefore + quantity;
-                break;
-            case InventoryMovementType.Adjustment:
-                stockAfter = quantity;
-                break;
-            default:
-                throw new InvalidOperationException("INVALID_MOVEMENT_TYPE");
-        }
-
-        if (productStock is null)
-        {
-            productStock = new ProductStock
+            if (transaction is not null)
             {
+                await transaction.CommitAsync();
+            }
+
+            return new InventoryMovementDto
+            {
+                Id = movement.Id,
                 ProductId = product.Id,
-                CompanyId = operationalContext.CompanyId,
-                EstablishmentId = operationalContext.EstablishmentId,
-                Quantity = 0m,
-                UpdatedAt = DateTime.UtcNow
+                ProductName = product.Name,
+                Type = movement.Type,
+                Quantity = movement.Quantity,
+                StockBefore = movement.StockBefore,
+                StockAfter = movement.StockAfter,
+                Reference = movement.Reference,
+                Notes = movement.Notes,
+                UserId = movement.UserId,
+                CreatedAt = movement.CreatedAt
             };
-            _context.ProductStocks.Add(productStock);
         }
-
-        productStock.Quantity = stockAfter;
-        productStock.UpdatedAt = DateTime.UtcNow;
-
-        var movement = new InventoryMovement
+        catch (Exception ex) when (IsConcurrencyFailure(ex))
         {
-            ProductId = product.Id,
-            CompanyId = operationalContext.CompanyId,
-            EstablishmentId = operationalContext.EstablishmentId,
-            Type = type,
-            Quantity = quantity,
-            StockBefore = stockBefore,
-            StockAfter = stockAfter,
-            Reference = reference?.Trim(),
-            Notes = notes?.Trim(),
-            UserId = operationalContext.UserId,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _context.InventoryMovements.Add(movement);
-
-        await _context.SaveChangesAsync();
-        if (transaction is not null)
-        {
-            await transaction.CommitAsync();
+            throw new InvalidOperationException("INVENTORY_CONCURRENCY_CONFLICT", ex);
         }
-
-        return new InventoryMovementDto
-        {
-            Id = movement.Id,
-            ProductId = product.Id,
-            ProductName = product.Name,
-            Type = movement.Type,
-            Quantity = movement.Quantity,
-            StockBefore = movement.StockBefore,
-            StockAfter = movement.StockAfter,
-            Reference = movement.Reference,
-            Notes = movement.Notes,
-            UserId = movement.UserId,
-            CreatedAt = movement.CreatedAt
-        };
     }
 
     private async Task<Product> GetValidProductAsync(int productId, int companyId)
@@ -308,5 +302,66 @@ public class InventoryService : IInventoryService
         }
 
         return product;
+    }
+
+    private Task<ProductStock?> GetLockedProductStockAsync(int productId, int companyId, int establishmentId)
+    {
+        return _context.ProductStocks
+            .FromSqlInterpolated($@"
+                SELECT *
+                FROM ""ProductStocks""
+                WHERE ""ProductId"" = {productId}
+                  AND ""CompanyId"" = {companyId}
+                  AND ""EstablishmentId"" = {establishmentId}
+                FOR UPDATE")
+            .SingleOrDefaultAsync();
+    }
+
+    private async Task<ProductStock> CreateAndLockProductStockAsync(int productId, int companyId, int establishmentId)
+    {
+        var productStock = new ProductStock
+        {
+            ProductId = productId,
+            CompanyId = companyId,
+            EstablishmentId = establishmentId,
+            Quantity = 0m,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _context.ProductStocks.Add(productStock);
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            _context.Entry(productStock).State = EntityState.Detached;
+        }
+
+        var lockedProductStock = await GetLockedProductStockAsync(productId, companyId, establishmentId);
+        return lockedProductStock ?? throw new InvalidOperationException("INVENTORY_CONCURRENCY_CONFLICT");
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException exception)
+    {
+        return exception.InnerException is PostgresException postgresException
+            && postgresException.SqlState == PostgresErrorCodes.UniqueViolation;
+    }
+
+    private static bool IsConcurrencyFailure(Exception exception)
+    {
+        return exception switch
+        {
+            DbUpdateException dbUpdateException when dbUpdateException.InnerException is PostgresException postgresException
+                && (postgresException.SqlState == PostgresErrorCodes.UniqueViolation
+                    || postgresException.SqlState == PostgresErrorCodes.DeadlockDetected
+                    || postgresException.SqlState == PostgresErrorCodes.SerializationFailure
+                    || postgresException.SqlState == PostgresErrorCodes.LockNotAvailable) => true,
+            PostgresException postgresException when postgresException.SqlState == PostgresErrorCodes.DeadlockDetected
+                || postgresException.SqlState == PostgresErrorCodes.SerializationFailure
+                || postgresException.SqlState == PostgresErrorCodes.LockNotAvailable => true,
+            _ => false
+        };
     }
 }

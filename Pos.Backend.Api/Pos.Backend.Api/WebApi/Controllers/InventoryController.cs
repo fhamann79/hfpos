@@ -126,6 +126,7 @@ public class InventoryController : ControllerBase
             "PRODUCT_INACTIVE" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_QUANTITY" => BadRequest(new ApiErrorResponse { Error = code }),
             "INSUFFICIENT_STOCK" => Conflict(new ApiErrorResponse { Error = code }),
+            "INVENTORY_CONCURRENCY_CONFLICT" => Conflict(new ApiErrorResponse { Error = code }),
             _ => BadRequest(new ApiErrorResponse { Error = "INVENTORY_OPERATION_FAILED" })
         };
     }

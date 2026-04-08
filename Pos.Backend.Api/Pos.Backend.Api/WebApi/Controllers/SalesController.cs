@@ -96,6 +96,7 @@ public class SalesController : ControllerBase
             "SALE_ALREADY_VOIDED" => Conflict(new ApiErrorResponse { Error = code }),
             "SALE_NOT_VOIDABLE" => Conflict(new ApiErrorResponse { Error = code }),
             "INSUFFICIENT_STOCK" => Conflict(new ApiErrorResponse { Error = code }),
+            "INVENTORY_CONCURRENCY_CONFLICT" => Conflict(new ApiErrorResponse { Error = code }),
             _ => BadRequest(new ApiErrorResponse { Error = "SALE_OPERATION_FAILED" })
         };
     }
