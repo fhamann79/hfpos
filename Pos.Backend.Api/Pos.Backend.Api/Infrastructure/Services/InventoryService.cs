@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
@@ -11,11 +12,16 @@ namespace Pos.Backend.Api.Infrastructure.Services;
 public class InventoryService : IInventoryService
 {
     private readonly PosDbContext _context;
+    private readonly ILogger<InventoryService> _logger;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
 
-    public InventoryService(PosDbContext context, IOperationalContextAccessor operationalContextAccessor)
+    public InventoryService(
+        PosDbContext context,
+        ILogger<InventoryService> logger,
+        IOperationalContextAccessor operationalContextAccessor)
     {
         _context = context;
+        _logger = logger;
         _operationalContextAccessor = operationalContextAccessor;
     }
 
@@ -212,6 +218,14 @@ public class InventoryService : IInventoryService
                 case InventoryMovementType.Exit:
                     if (stockBefore < quantity)
                     {
+                        _logger.LogWarning(
+                            "Insufficient stock for inventory exit. ProductId {ProductId} UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} StockBefore {StockBefore} RequestedQuantity {RequestedQuantity}",
+                            product.Id,
+                            operationalContext.UserId,
+                            operationalContext.CompanyId,
+                            operationalContext.EstablishmentId,
+                            stockBefore,
+                            quantity);
                         throw new InvalidOperationException("INSUFFICIENT_STOCK");
                     }
                     stockAfter = stockBefore - quantity;
@@ -219,6 +233,14 @@ public class InventoryService : IInventoryService
                 case InventoryMovementType.Sale:
                     if (stockBefore < quantity)
                     {
+                        _logger.LogWarning(
+                            "Insufficient stock for sale movement. ProductId {ProductId} UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} StockBefore {StockBefore} RequestedQuantity {RequestedQuantity}",
+                            product.Id,
+                            operationalContext.UserId,
+                            operationalContext.CompanyId,
+                            operationalContext.EstablishmentId,
+                            stockBefore,
+                            quantity);
                         throw new InvalidOperationException("INSUFFICIENT_STOCK");
                     }
                     stockAfter = stockBefore - quantity;
@@ -281,6 +303,12 @@ public class InventoryService : IInventoryService
         }
         catch (Exception ex) when (IsConcurrencyFailure(ex))
         {
+            _logger.LogWarning(
+                ex,
+                "Inventory concurrency conflict. ProductId {ProductId} MovementType {MovementType} Quantity {Quantity}",
+                productId,
+                type,
+                quantity);
             throw new InvalidOperationException("INVENTORY_CONCURRENCY_CONFLICT", ex);
         }
     }

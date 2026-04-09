@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Core.Services;
@@ -15,17 +16,22 @@ public class OperationalContextAccessor : IOperationalContextAccessor
 
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly PosDbContext _dbContext;
+    private readonly ILogger<OperationalContextAccessor> _logger;
 
-    public OperationalContextAccessor(IHttpContextAccessor httpContextAccessor, PosDbContext dbContext)
+    public OperationalContextAccessor(
+        IHttpContextAccessor httpContextAccessor,
+        PosDbContext dbContext,
+        ILogger<OperationalContextAccessor> logger)
     {
         _httpContextAccessor = httpContextAccessor;
         _dbContext = dbContext;
+        _logger = logger;
     }
 
     public async Task<OperationalContext> GetRequiredContextAsync()
     {
         var httpContext = _httpContextAccessor.HttpContext
-            ?? throw new OperationalContextException("INVALID_CLAIMS", StatusCodes.Status401Unauthorized);
+            ?? throw LogAndCreateException("INVALID_CLAIMS", StatusCodes.Status401Unauthorized);
 
         if (httpContext.Items.TryGetValue(ContextItemKey, out var cached)
             && cached is OperationalContext cachedContext)
@@ -52,7 +58,7 @@ public class OperationalContextAccessor : IOperationalContextAccessor
             || !int.TryParse(establishmentIdValue, out var establishmentId)
             || !int.TryParse(emissionPointIdValue, out var emissionPointId))
         {
-            throw new OperationalContextException("INVALID_CLAIMS", StatusCodes.Status401Unauthorized);
+            throw LogAndCreateException("INVALID_CLAIMS", StatusCodes.Status401Unauthorized);
         }
 
         var user = await _dbContext.Users
@@ -71,12 +77,12 @@ public class OperationalContextAccessor : IOperationalContextAccessor
 
         if (user is null || !user.IsActive)
         {
-            throw new OperationalContextException("CONTEXT_MISMATCH", StatusCodes.Status403Forbidden);
+            throw LogAndCreateException("CONTEXT_MISMATCH", StatusCodes.Status403Forbidden, userId, companyId, establishmentId, emissionPointId, username);
         }
 
         if (!string.Equals(user.Username, username, StringComparison.Ordinal))
         {
-            throw new OperationalContextException("CONTEXT_MISMATCH", StatusCodes.Status403Forbidden);
+            throw LogAndCreateException("CONTEXT_MISMATCH", StatusCodes.Status403Forbidden, userId, companyId, establishmentId, emissionPointId, username);
         }
 
         var company = await _dbContext.Companies
@@ -87,7 +93,7 @@ public class OperationalContextAccessor : IOperationalContextAccessor
 
         if (company is null || !company.IsActive)
         {
-            throw new OperationalContextException("COMPANY_INACTIVE_OR_NOT_FOUND", StatusCodes.Status401Unauthorized);
+            throw LogAndCreateException("COMPANY_INACTIVE_OR_NOT_FOUND", StatusCodes.Status401Unauthorized, userId, companyId, establishmentId, emissionPointId, username);
         }
 
         var establishment = await _dbContext.Establishments
@@ -98,12 +104,12 @@ public class OperationalContextAccessor : IOperationalContextAccessor
 
         if (establishment is null || !establishment.IsActive)
         {
-            throw new OperationalContextException("ESTABLISHMENT_INACTIVE_OR_NOT_FOUND", StatusCodes.Status401Unauthorized);
+            throw LogAndCreateException("ESTABLISHMENT_INACTIVE_OR_NOT_FOUND", StatusCodes.Status401Unauthorized, userId, companyId, establishmentId, emissionPointId, username);
         }
 
         if (establishment.CompanyId != companyId)
         {
-            throw new OperationalContextException("CONTEXT_MISMATCH", StatusCodes.Status403Forbidden);
+            throw LogAndCreateException("CONTEXT_MISMATCH", StatusCodes.Status403Forbidden, userId, companyId, establishmentId, emissionPointId, username);
         }
 
         var emissionPoint = await _dbContext.EmissionPoints
@@ -114,7 +120,7 @@ public class OperationalContextAccessor : IOperationalContextAccessor
 
         if (emissionPoint is null || !emissionPoint.IsActive)
         {
-            throw new OperationalContextException("EMISSION_POINT_INACTIVE_OR_NOT_FOUND", StatusCodes.Status401Unauthorized);
+            throw LogAndCreateException("EMISSION_POINT_INACTIVE_OR_NOT_FOUND", StatusCodes.Status401Unauthorized, userId, companyId, establishmentId, emissionPointId, username);
         }
 
         if (emissionPoint.EstablishmentId != establishmentId
@@ -122,7 +128,7 @@ public class OperationalContextAccessor : IOperationalContextAccessor
             || user.EstablishmentId != establishmentId
             || user.EmissionPointId != emissionPointId)
         {
-            throw new OperationalContextException("CONTEXT_MISMATCH", StatusCodes.Status403Forbidden);
+            throw LogAndCreateException("CONTEXT_MISMATCH", StatusCodes.Status403Forbidden, userId, companyId, establishmentId, emissionPointId, username);
         }
 
         var operationalContext = new OperationalContext
@@ -136,5 +142,26 @@ public class OperationalContextAccessor : IOperationalContextAccessor
 
         httpContext.Items[ContextItemKey] = operationalContext;
         return operationalContext;
+    }
+
+    private OperationalContextException LogAndCreateException(
+        string errorCode,
+        int statusCode,
+        int? userId = null,
+        int? companyId = null,
+        int? establishmentId = null,
+        int? emissionPointId = null,
+        string? username = null)
+    {
+        _logger.LogWarning(
+            "Operational context error {ErrorCode}. UserId {UserId} Username {Username} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
+            errorCode,
+            userId,
+            username,
+            companyId,
+            establishmentId,
+            emissionPointId);
+
+        return new OperationalContextException(errorCode, statusCode);
     }
 }

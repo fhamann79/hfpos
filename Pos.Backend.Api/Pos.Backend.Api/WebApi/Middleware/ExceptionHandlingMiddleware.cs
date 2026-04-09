@@ -8,10 +8,14 @@ namespace Pos.Backend.Api.WebApi.Middleware;
 public class ExceptionHandlingMiddleware
 {
     private readonly RequestDelegate _next;
+    private readonly ILogger<ExceptionHandlingMiddleware> _logger;
 
-    public ExceptionHandlingMiddleware(RequestDelegate next)
+    public ExceptionHandlingMiddleware(
+        RequestDelegate next,
+        ILogger<ExceptionHandlingMiddleware> logger)
     {
         _next = next;
+        _logger = logger;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -22,13 +26,19 @@ public class ExceptionHandlingMiddleware
         }
         catch (Exception exception)
         {
-            await HandleExceptionAsync(context, exception);
+            await HandleExceptionAsync(context, exception, _logger);
         }
     }
 
-    private static async Task HandleExceptionAsync(HttpContext context, Exception exception)
+    private static async Task HandleExceptionAsync(
+        HttpContext context,
+        Exception exception,
+        ILogger<ExceptionHandlingMiddleware> logger)
     {
         var (statusCode, response) = MapException(exception);
+        var errorCode = response.Error;
+
+        logger.LogError(exception, "Unhandled exception {ErrorCode}", errorCode);
 
         if (context.Response.HasStarted)
         {

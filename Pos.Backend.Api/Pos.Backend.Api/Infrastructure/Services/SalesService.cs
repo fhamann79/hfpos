@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Enums;
+using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.Infrastructure.Data;
 
@@ -10,15 +12,18 @@ namespace Pos.Backend.Api.Infrastructure.Services;
 public class SalesService : ISalesService
 {
     private readonly PosDbContext _context;
+    private readonly ILogger<SalesService> _logger;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly IInventoryService _inventoryService;
 
     public SalesService(
         PosDbContext context,
+        ILogger<SalesService> logger,
         IOperationalContextAccessor operationalContextAccessor,
         IInventoryService inventoryService)
     {
         _context = context;
+        _logger = logger;
         _operationalContextAccessor = operationalContextAccessor;
         _inventoryService = inventoryService;
     }
@@ -121,157 +126,235 @@ public class SalesService : ISalesService
 
     public async Task<SaleDto> CreateAsync(SaleCreateDto dto)
     {
-        if (dto.Items is null || dto.Items.Count == 0)
+        OperationalContext? operationalContext = null;
+
+        try
         {
-            throw new InvalidOperationException("SALE_ITEMS_REQUIRED");
-        }
-
-        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-
-        var itemProductIds = dto.Items
-            .Select(i => i.ProductId)
-            .Distinct()
-            .ToList();
-
-        var products = await _context.Products
-            .AsNoTracking()
-            .Where(p => itemProductIds.Contains(p.Id) && p.CompanyId == operationalContext.CompanyId)
-            .ToDictionaryAsync(p => p.Id);
-
-        foreach (var requestedProductId in itemProductIds)
-        {
-            if (!products.ContainsKey(requestedProductId))
+            if (dto.Items is null || dto.Items.Count == 0)
             {
-                throw new KeyNotFoundException("PRODUCT_NOT_FOUND");
-            }
-        }
-
-        foreach (var product in products.Values)
-        {
-            if (!product.IsActive)
-            {
-                throw new InvalidOperationException("PRODUCT_INACTIVE");
-            }
-        }
-
-        var sale = new Sale
-        {
-            CompanyId = operationalContext.CompanyId,
-            EstablishmentId = operationalContext.EstablishmentId,
-            EmissionPointId = operationalContext.EmissionPointId,
-            UserId = operationalContext.UserId,
-            Status = SaleStatus.Completed,
-            Notes = dto.Notes?.Trim(),
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-
-        foreach (var itemDto in dto.Items.OrderBy(i => i.ProductId))
-        {
-            if (itemDto.Quantity <= 0m)
-            {
-                throw new InvalidOperationException("INVALID_QUANTITY");
+                throw new InvalidOperationException("SALE_ITEMS_REQUIRED");
             }
 
-            if (itemDto.UnitPrice < 0m)
+            operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+
+            var itemProductIds = dto.Items
+                .Select(i => i.ProductId)
+                .Distinct()
+                .ToList();
+
+            var products = await _context.Products
+                .AsNoTracking()
+                .Where(p => itemProductIds.Contains(p.Id) && p.CompanyId == operationalContext.CompanyId)
+                .ToDictionaryAsync(p => p.Id);
+
+            foreach (var requestedProductId in itemProductIds)
             {
-                throw new InvalidOperationException("INVALID_UNIT_PRICE");
+                if (!products.ContainsKey(requestedProductId))
+                {
+                    throw new KeyNotFoundException("PRODUCT_NOT_FOUND");
+                }
             }
 
-            var lineSubtotal = itemDto.Quantity * itemDto.UnitPrice;
-
-            sale.Items.Add(new SaleItem
+            foreach (var product in products.Values)
             {
-                ProductId = itemDto.ProductId,
-                Quantity = itemDto.Quantity,
-                UnitPrice = itemDto.UnitPrice,
-                LineSubtotal = lineSubtotal
-            });
+                if (!product.IsActive)
+                {
+                    throw new InvalidOperationException("PRODUCT_INACTIVE");
+                }
+            }
+
+            var sale = new Sale
+            {
+                CompanyId = operationalContext.CompanyId,
+                EstablishmentId = operationalContext.EstablishmentId,
+                EmissionPointId = operationalContext.EmissionPointId,
+                UserId = operationalContext.UserId,
+                Status = SaleStatus.Completed,
+                Notes = dto.Notes?.Trim(),
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            foreach (var itemDto in dto.Items.OrderBy(i => i.ProductId))
+            {
+                if (itemDto.Quantity <= 0m)
+                {
+                    throw new InvalidOperationException("INVALID_QUANTITY");
+                }
+
+                if (itemDto.UnitPrice < 0m)
+                {
+                    throw new InvalidOperationException("INVALID_UNIT_PRICE");
+                }
+
+                var lineSubtotal = itemDto.Quantity * itemDto.UnitPrice;
+
+                sale.Items.Add(new SaleItem
+                {
+                    ProductId = itemDto.ProductId,
+                    Quantity = itemDto.Quantity,
+                    UnitPrice = itemDto.UnitPrice,
+                    LineSubtotal = lineSubtotal
+                });
+            }
+
+            sale.Subtotal = sale.Items.Sum(i => i.LineSubtotal);
+            sale.Total = sale.Subtotal;
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+
+            _context.Sales.Add(sale);
+            await _context.SaveChangesAsync();
+
+            foreach (var item in sale.Items.OrderBy(i => i.ProductId))
+            {
+                await _inventoryService.RegisterSaleAsync(new InventoryExitDto
+                {
+                    ProductId = item.ProductId,
+                    Quantity = item.Quantity,
+                    Reference = $"SALE-{sale.Id}",
+                    Notes = sale.Notes
+                });
+            }
+
+            await transaction.CommitAsync();
+
+            _logger.LogInformation(
+                "Sale created successfully. SaleId {SaleId} UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId} ItemsCount {ItemsCount} Total {Total}",
+                sale.Id,
+                operationalContext.UserId,
+                operationalContext.CompanyId,
+                operationalContext.EstablishmentId,
+                operationalContext.EmissionPointId,
+                sale.Items.Count,
+                sale.Total);
+
+            var created = await GetByIdAsync(sale.Id);
+            return created ?? throw new KeyNotFoundException("SALE_NOT_FOUND");
         }
-
-        sale.Subtotal = sale.Items.Sum(i => i.LineSubtotal);
-        sale.Total = sale.Subtotal;
-
-        await using var transaction = await _context.Database.BeginTransactionAsync();
-
-        _context.Sales.Add(sale);
-        await _context.SaveChangesAsync();
-
-        foreach (var item in sale.Items.OrderBy(i => i.ProductId))
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
         {
-            await _inventoryService.RegisterSaleAsync(new InventoryExitDto
-            {
-                ProductId = item.ProductId,
-                Quantity = item.Quantity,
-                Reference = $"SALE-{sale.Id}",
-                Notes = sale.Notes
-            });
+            _logger.LogWarning(
+                ex,
+                "Sale creation failed. ErrorCode {ErrorCode} UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId} ItemsCount {ItemsCount}",
+                ex.Message,
+                operationalContext?.UserId,
+                operationalContext?.CompanyId,
+                operationalContext?.EstablishmentId,
+                operationalContext?.EmissionPointId,
+                dto.Items?.Count ?? 0);
+            throw;
         }
-
-        await transaction.CommitAsync();
-
-        var created = await GetByIdAsync(sale.Id);
-        return created ?? throw new KeyNotFoundException("SALE_NOT_FOUND");
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Unexpected error creating sale. UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId} ItemsCount {ItemsCount}",
+                operationalContext?.UserId,
+                operationalContext?.CompanyId,
+                operationalContext?.EstablishmentId,
+                operationalContext?.EmissionPointId,
+                dto.Items?.Count ?? 0);
+            throw;
+        }
     }
 
     public async Task<SaleDto> VoidAsync(int id, VoidSaleDto dto)
     {
-        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        OperationalContext? operationalContext = null;
 
-        var sale = await _context.Sales
-            .Include(s => s.Items)
-            .FirstOrDefaultAsync(s => s.Id == id
-                && s.CompanyId == operationalContext.CompanyId
-                && s.EstablishmentId == operationalContext.EstablishmentId
-                && s.EmissionPointId == operationalContext.EmissionPointId);
-
-        if (sale is null)
+        try
         {
-            throw new KeyNotFoundException("SALE_NOT_FOUND");
-        }
+            operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
-        if (sale.Status == SaleStatus.Voided)
-        {
-            throw new InvalidOperationException("SALE_ALREADY_VOIDED");
-        }
+            var sale = await _context.Sales
+                .Include(s => s.Items)
+                .FirstOrDefaultAsync(s => s.Id == id
+                    && s.CompanyId == operationalContext.CompanyId
+                    && s.EstablishmentId == operationalContext.EstablishmentId
+                    && s.EmissionPointId == operationalContext.EmissionPointId);
 
-        if (sale.Status != SaleStatus.Completed)
-        {
-            throw new InvalidOperationException("SALE_NOT_VOIDABLE");
-        }
-
-        await using var transaction = await _context.Database.BeginTransactionAsync();
-
-        var voidNotes = string.IsNullOrWhiteSpace(dto.Reason)
-            ? "Void sale"
-            : dto.Reason.Trim();
-
-        foreach (var item in sale.Items.OrderBy(i => i.ProductId))
-        {
-            await _inventoryService.RegisterVoidAsync(new InventoryEntryDto
+            if (sale is null)
             {
-                ProductId = item.ProductId,
-                Quantity = item.Quantity,
-                Reference = $"VOID-SALE-{sale.Id}",
-                Notes = voidNotes
-            });
+                throw new KeyNotFoundException("SALE_NOT_FOUND");
+            }
+
+            if (sale.Status == SaleStatus.Voided)
+            {
+                throw new InvalidOperationException("SALE_ALREADY_VOIDED");
+            }
+
+            if (sale.Status != SaleStatus.Completed)
+            {
+                throw new InvalidOperationException("SALE_NOT_VOIDABLE");
+            }
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+
+            var voidNotes = string.IsNullOrWhiteSpace(dto.Reason)
+                ? "Void sale"
+                : dto.Reason.Trim();
+
+            foreach (var item in sale.Items.OrderBy(i => i.ProductId))
+            {
+                await _inventoryService.RegisterVoidAsync(new InventoryEntryDto
+                {
+                    ProductId = item.ProductId,
+                    Quantity = item.Quantity,
+                    Reference = $"VOID-SALE-{sale.Id}",
+                    Notes = voidNotes
+                });
+            }
+
+            sale.Status = SaleStatus.Voided;
+            sale.VoidedAt = DateTime.UtcNow;
+            sale.UpdatedAt = DateTime.UtcNow;
+
+            if (!string.IsNullOrWhiteSpace(dto.Reason))
+            {
+                sale.Notes = string.IsNullOrWhiteSpace(sale.Notes)
+                    ? $"VOID: {voidNotes}"
+                    : $"{sale.Notes} | VOID: {voidNotes}";
+            }
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            _logger.LogInformation(
+                "Sale voided successfully. SaleId {SaleId} UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
+                sale.Id,
+                operationalContext.UserId,
+                operationalContext.CompanyId,
+                operationalContext.EstablishmentId,
+                operationalContext.EmissionPointId);
+
+            var response = await GetByIdAsync(sale.Id);
+            return response ?? throw new KeyNotFoundException("SALE_NOT_FOUND");
         }
-
-        sale.Status = SaleStatus.Voided;
-        sale.VoidedAt = DateTime.UtcNow;
-        sale.UpdatedAt = DateTime.UtcNow;
-
-        if (!string.IsNullOrWhiteSpace(dto.Reason))
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
         {
-            sale.Notes = string.IsNullOrWhiteSpace(sale.Notes)
-                ? $"VOID: {voidNotes}"
-                : $"{sale.Notes} | VOID: {voidNotes}";
+            _logger.LogWarning(
+                ex,
+                "Sale void failed. SaleId {SaleId} ErrorCode {ErrorCode} UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
+                id,
+                ex.Message,
+                operationalContext?.UserId,
+                operationalContext?.CompanyId,
+                operationalContext?.EstablishmentId,
+                operationalContext?.EmissionPointId);
+            throw;
         }
-
-        await _context.SaveChangesAsync();
-        await transaction.CommitAsync();
-
-        var response = await GetByIdAsync(sale.Id);
-        return response ?? throw new KeyNotFoundException("SALE_NOT_FOUND");
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Unexpected error voiding sale. SaleId {SaleId} UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
+                id,
+                operationalContext?.UserId,
+                operationalContext?.CompanyId,
+                operationalContext?.EstablishmentId,
+                operationalContext?.EmissionPointId);
+            throw;
+        }
     }
 }

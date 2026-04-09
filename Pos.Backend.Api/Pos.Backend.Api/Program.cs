@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging.Console;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Configuration;
@@ -12,6 +13,18 @@ using Microsoft.OpenApi.Models;
 using Pos.Backend.Api.WebApi.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.ClearProviders();
+builder.Logging.AddJsonConsole(options =>
+{
+    options.IncludeScopes = true;
+    options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ ";
+    options.JsonWriterOptions = new System.Text.Json.JsonWriterOptions
+    {
+        Indented = false
+    };
+});
+
 var defaultConnection = builder.Configuration.GetConnectionString("DefaultConnection");
 
 if (string.IsNullOrWhiteSpace(defaultConnection))
@@ -162,6 +175,7 @@ builder.Services
 
 var app = builder.Build();
 
+app.UseMiddleware<RequestLoggingScopeMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 // Swagger solo en desarrollo
