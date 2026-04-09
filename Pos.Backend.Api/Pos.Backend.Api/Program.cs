@@ -1,6 +1,8 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging.Console;
+using Pos.Backend.Api.HealthChecks;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Configuration;
@@ -48,6 +50,9 @@ if (string.IsNullOrWhiteSpace(jwtOptions.Key))
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy(), tags: new[] { "live" })
+    .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: new[] { "ready" });
 
 // CORS para Angular
 builder.Services.AddCors(options =>
@@ -205,6 +210,18 @@ app.UseCors("AllowAngular");
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("live"),
+    ResponseWriter = HealthCheckResponseWriter.WriteJsonAsync
+});
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = HealthCheckResponseWriter.WriteJsonAsync
+});
 
 app.MapControllers();
 
