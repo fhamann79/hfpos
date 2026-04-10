@@ -19,6 +19,8 @@ export class ProductSearchPanel {
   @Input() errorMessage = '';
   @Input() canSell = false;
   @Input() searchTerm = '';
+  @Input() inventoryAvailable = false;
+  @Input() inventoryErrorMessage = '';
 
   @Output() searchTermChange = new EventEmitter<string>();
   @Output() addProduct = new EventEmitter<PosProduct>();
@@ -29,7 +31,7 @@ export class ProductSearchPanel {
   }
 
   add(product: PosProduct): void {
-    if (!this.canSell || product.stock <= 0) {
+    if (!this.canSell || !this.inventoryAvailable || product.stock <= 0) {
       return;
     }
 

@@ -26,6 +26,10 @@
     <p-message severity="error" [text]="errorMessage"></p-message>
   }
 
+  @if (inventoryErrorMessage) {
+    <p-message severity="warn" [text]="inventoryErrorMessage"></p-message>
+  }
+
   @if (loading) {
     <div class="state">Cargando productos...</div>
   } @else if (!products.length) {
@@ -41,7 +45,9 @@
               <span>Stock: {{ product.stock }}</span>
             </div>
           </div>
-          @if (product.stock <= 0) {
+          @if (!inventoryAvailable) {
+            <span class="stock-empty">Stock no disponible</span>
+          } @else if (product.stock <= 0) {
             <span class="stock-empty">Sin stock</span>
           } @else {
             <p-button label="Agregar" icon="pi pi-plus" [disabled]="!canSell" (onClick)="add(product)"></p-button>

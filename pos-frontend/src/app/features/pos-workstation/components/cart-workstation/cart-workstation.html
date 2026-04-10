@@ -14,6 +14,7 @@
             [ngModel]="item.quantity"
             (ngModelChange)="updateQuantity.emit({ productId: item.productId, quantity: $event ?? 0 })"
             [min]="1"
+            [max]="maxQuantity(item)"
             [showButtons]="true"
           ></p-inputnumber>
 
@@ -26,6 +27,9 @@
           ></p-inputnumber>
 
           <span>{{ lineSubtotal(item) | currency: 'USD' }}</span>
+          @if (inventoryAvailable) {
+            <small>Disponible: {{ item.stock }}</small>
+          }
           <p-button icon="pi pi-trash" severity="danger" [text]="true" (onClick)="removeItem.emit(item.productId)"></p-button>
         </div>
       }
@@ -46,7 +50,7 @@
     <p-button
       label="Finalizar venta (F12)"
       icon="pi pi-check"
-      [disabled]="!canCheckout || !hasItems"
+      [disabled]="!canCheckout || !hasItems || !inventoryAvailable"
       (onClick)="checkout.emit()"
     ></p-button>
   </footer>

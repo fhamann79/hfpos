@@ -13,6 +13,8 @@
           [products]="filteredProducts()"
           [loading]="productsLoading()"
           [errorMessage]="productsError()"
+          [inventoryAvailable]="inventoryAvailable()"
+          [inventoryErrorMessage]="inventoryError()"
           [searchTerm]="searchTerm()"
           [canSell]="canSell"
           (searchTermChange)="searchTerm.set($event)"
@@ -26,6 +28,7 @@
           [total]="total()"
           [notes]="notes()"
           [canCheckout]="canSell"
+          [inventoryAvailable]="inventoryAvailable()"
           (updateQuantity)="updateQuantity($event)"
           (updateUnitPrice)="updateUnitPrice($event)"
           (removeItem)="removeItem($event)"
@@ -53,8 +56,10 @@
   <app-quick-product-search-dialog
     [visible]="quickSearchVisible()"
     [products]="allProducts()"
+    [inventoryAvailable]="inventoryAvailable()"
     (visibleChange)="quickSearchVisible.set($event)"
     (selectProduct)="addProduct($event)"
+    (unavailableProduct)="handleUnavailableProductSelection($event)"
   ></app-quick-product-search-dialog>
 
   <app-checkout-confirm-dialog

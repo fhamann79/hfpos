@@ -20,7 +20,7 @@ import { PosProduct } from '../../models/pos-product.model';
 import { Sale } from '../../models/sale.model';
 import { SaleListItem } from '../../models/sale-list-item.model';
 import { PosKeyboardService } from '../../services/pos-keyboard.service';
-import { PosProductCatalogService } from '../../services/pos-product-catalog.service';
+import { PosCatalogSnapshot, PosProductCatalogService } from '../../services/pos-product-catalog.service';
 import { PosWorkstationService } from '../../services/pos-workstation.service';
 
 @Component({
@@ -57,6 +57,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly searchTerm = signal('');
   readonly productsLoading = signal(false);
   readonly productsError = signal('');
+  readonly inventoryAvailable = signal(false);
+  readonly inventoryError = signal('');
 
   readonly cart = signal<CartItem[]>([]);
   readonly notes = signal('');
@@ -125,14 +127,16 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   loadProducts(): void {
     this.productsLoading.set(true);
     this.productsError.set('');
+    this.inventoryError.set('');
 
     this.catalogService.getProductsWithStock().subscribe({
-      next: (products) => {
-        this.allProducts.set(products);
+      next: (snapshot) => {
+        this.applyCatalogSnapshot(snapshot);
         this.productsLoading.set(false);
       },
       error: () => {
         this.productsLoading.set(false);
+        this.inventoryAvailable.set(false);
         this.productsError.set('No se pudo cargar el catálogo de productos.');
       },
     });
@@ -155,7 +159,25 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   addProduct(product: PosProduct): void {
-    if (!this.canSell || product.stock <= 0) {
+    if (!this.canSell) {
+      return;
+    }
+
+    if (!this.inventoryAvailable()) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Inventario no disponible',
+        detail: 'No se puede agregar productos mientras el stock no esté disponible.',
+      });
+      return;
+    }
+
+    if (product.stock <= 0) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Producto no disponible',
+        detail: `"${product.name}" no tiene stock disponible.`,
+      });
       return;
     }
 
@@ -163,6 +185,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       const found = items.find((item) => item.productId === product.id);
 
       if (found) {
+        if (found.quantity >= found.stock) {
+          this.notifyStockLimit(found.productName, found.stock);
+          return items;
+        }
+
         return items.map((item) =>
           item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item
         );
@@ -183,13 +210,31 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   updateQuantity(event: { productId: number; quantity: number }): void {
+    let limitedItemName: string | null = null;
+    let limitedStock = 0;
+
     this.cart.update((items) =>
-      items.map((item) =>
-        item.productId === event.productId
-          ? { ...item, quantity: Math.max(1, Math.floor(event.quantity || 1)) }
-          : item
-      )
+      items.map((item) => {
+        if (item.productId !== event.productId) {
+          return item;
+        }
+
+        const requestedQuantity = Math.max(1, Math.floor(event.quantity || 1));
+        const maxQuantity = this.inventoryAvailable() ? Math.max(item.stock, 1) : requestedQuantity;
+        const nextQuantity = Math.min(requestedQuantity, maxQuantity);
+
+        if (this.inventoryAvailable() && nextQuantity !== requestedQuantity) {
+          limitedItemName = item.productName;
+          limitedStock = item.stock;
+        }
+
+        return { ...item, quantity: nextQuantity };
+      })
     );
+
+    if (limitedItemName !== null) {
+      this.notifyStockLimit(limitedItemName, limitedStock);
+    }
   }
 
   updateUnitPrice(event: { productId: number; unitPrice: number }): void {
@@ -211,11 +256,52 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       return;
     }
 
+    if (!this.inventoryAvailable()) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Error al consultar inventario',
+        detail: 'No se puede confirmar la venta sin stock actualizado.',
+      });
+      return;
+    }
+
+    const invalidItems = this.findCartItemsExceedingStock();
+    if (invalidItems.length > 0) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Carrito inconsistente',
+        detail: this.buildStockValidationMessage(invalidItems),
+      });
+      this.reconcileCartWithCatalog();
+      return;
+    }
+
     this.checkoutVisible.set(true);
   }
 
   confirmCheckout(): void {
     if (!this.canSell || !this.cart().length) {
+      return;
+    }
+
+    if (!this.inventoryAvailable()) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Error al consultar inventario',
+        detail: 'No se puede enviar la venta sin stock actualizado.',
+      });
+      return;
+    }
+
+    const invalidItems = this.findCartItemsExceedingStock();
+    if (invalidItems.length > 0) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Carrito inconsistente',
+        detail: this.buildStockValidationMessage(invalidItems),
+      });
+      this.checkoutVisible.set(false);
+      this.reconcileCartWithCatalog();
       return;
     }
 
@@ -237,20 +323,28 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         this.cart.set([]);
         this.notes.set('');
         this.messageService.add({ severity: 'success', summary: 'Venta registrada', detail: 'La venta fue creada correctamente.' });
-        if (this.canSell) {
-          this.loadProducts();
-        }
-        if (this.canReadReports) {
-          this.loadSales();
-        }
+        this.refreshOperationalData();
       },
       error: (error: HttpErrorResponse) => {
         this.checkoutLoading.set(false);
-        this.messageService.add({
-          severity: 'error',
-          summary: 'No se pudo completar la venta',
-          detail: this.workstationService.resolveBusinessError(error),
-        });
+        this.checkoutVisible.set(false);
+
+        if (this.workstationService.isBusinessError(error, 'INSUFFICIENT_STOCK')) {
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Stock actualizado',
+            detail:
+              'El stock cambió mientras preparabas la venta. Se refrescará el POS para reconciliar el carrito.',
+          });
+        } else {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'No se pudo completar la venta',
+            detail: this.workstationService.resolveBusinessError(error),
+          });
+        }
+
+        this.refreshOperationalData();
       },
     });
   }
@@ -286,10 +380,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         this.voidVisible.set(false);
         this.saleToVoid.set(null);
         this.messageService.add({ severity: 'success', summary: 'Venta anulada', detail: 'La venta fue anulada correctamente.' });
-        if (this.canSell) {
-          this.loadProducts();
-        }
-        this.loadSales();
+        this.refreshOperationalData();
         if (this.selectedSale()?.id === sale.id) {
           this.openSaleDetail(sale.id);
         }
@@ -302,6 +393,109 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
           detail: this.workstationService.resolveBusinessError(error),
         });
       },
+    });
+  }
+
+  handleUnavailableProductSelection(product: PosProduct): void {
+    if (!this.inventoryAvailable()) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Inventario no disponible',
+        detail: 'No se puede agregar productos mientras el stock no esté disponible.',
+      });
+      return;
+    }
+
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Producto no disponible',
+      detail: `"${product.name}" no tiene stock disponible.`,
+    });
+  }
+
+  private applyCatalogSnapshot(snapshot: PosCatalogSnapshot): void {
+    this.inventoryAvailable.set(snapshot.inventoryAvailable);
+    this.allProducts.set(snapshot.products);
+
+    if (snapshot.inventoryAvailable) {
+      this.inventoryError.set('');
+      this.reconcileCartWithCatalog();
+      return;
+    }
+
+    this.inventoryError.set('No se pudo cargar el stock. Intenta refrescar antes de vender.');
+  }
+
+  private refreshOperationalData(): void {
+    if (this.canSell) {
+      this.loadProducts();
+    }
+
+    if (this.canReadReports) {
+      this.loadSales();
+    }
+  }
+
+  private reconcileCartWithCatalog(): void {
+    const stockMap = new Map(this.allProducts().map((product) => [product.id, product]));
+
+    this.cart.update((items) =>
+      items
+        .map((item) => {
+          const product = stockMap.get(item.productId);
+
+          if (!product) {
+            return null;
+          }
+
+          const nextStock = this.inventoryAvailable() ? product.stock : item.stock;
+          const nextQuantity = this.inventoryAvailable()
+            ? Math.min(item.quantity, Math.max(product.stock, 0))
+            : item.quantity;
+
+          if (this.inventoryAvailable() && nextQuantity <= 0) {
+            return null;
+          }
+
+          return {
+            ...item,
+            productName: product.name,
+            unitPrice: item.unitPrice,
+            stock: nextStock,
+            quantity: nextQuantity,
+            product,
+          };
+        })
+        .filter((item): item is CartItem => !!item)
+    );
+  }
+
+  private findCartItemsExceedingStock(): CartItem[] {
+    if (!this.inventoryAvailable()) {
+      return [];
+    }
+
+    return this.cart().filter((item) => item.quantity > item.stock);
+  }
+
+  private buildStockValidationMessage(items: CartItem[]): string {
+    const [firstItem] = items;
+    if (!firstItem) {
+      return 'Hay productos con cantidades mayores al stock disponible.';
+    }
+
+    if (items.length === 1) {
+      return `"${firstItem.productName}" supera el stock disponible (${firstItem.stock}).`;
+    }
+
+    return 'Hay varios productos con cantidades mayores al stock disponible.';
+  }
+
+  private notifyStockLimit(productName: string, stock: number): void {
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Stock máximo alcanzado',
+      detail: `"${productName}" solo tiene ${stock} unidades disponibles.`,
     });
   }
 }

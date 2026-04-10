@@ -20,11 +20,17 @@
       <li
         class="result-item"
         [class.result-item--active]="i === highlightedIndex"
-        [class.result-item--out]="product.stock <= 0"
+        [class.result-item--out]="!inventoryAvailable || product.stock <= 0"
         (click)="pick(product)"
       >
         <span>{{ product.name }}</span>
-        <small>Stock: {{ product.stock }}</small>
+        <small>
+          @if (!inventoryAvailable) {
+            Stock no disponible
+          } @else {
+            Stock: {{ product.stock }}
+          }
+        </small>
       </li>
     }
   </ul>

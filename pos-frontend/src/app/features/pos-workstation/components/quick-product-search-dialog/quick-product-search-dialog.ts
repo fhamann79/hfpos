@@ -15,9 +15,11 @@ import { PosProduct } from '../../models/pos-product.model';
 export class QuickProductSearchDialog implements AfterViewInit {
   @Input({ required: true }) visible = false;
   @Input({ required: true }) products: PosProduct[] = [];
+  @Input() inventoryAvailable = false;
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() selectProduct = new EventEmitter<PosProduct>();
+  @Output() unavailableProduct = new EventEmitter<PosProduct>();
 
   @ViewChild('searchInput') searchInput?: ElementRef<HTMLInputElement>;
 
@@ -74,6 +76,11 @@ export class QuickProductSearchDialog implements AfterViewInit {
   }
 
   pick(product: PosProduct): void {
+    if (!this.inventoryAvailable || product.stock <= 0) {
+      this.unavailableProduct.emit(product);
+      return;
+    }
+
     this.selectProduct.emit(product);
     this.close();
   }

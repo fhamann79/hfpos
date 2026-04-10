@@ -19,6 +19,7 @@ export class CartWorkstation {
   @Input({ required: true }) total = 0;
   @Input() notes = '';
   @Input() canCheckout = false;
+  @Input() inventoryAvailable = false;
 
   @Output() updateQuantity = new EventEmitter<{ productId: number; quantity: number }>();
   @Output() updateUnitPrice = new EventEmitter<{ productId: number; unitPrice: number }>();
@@ -32,5 +33,13 @@ export class CartWorkstation {
 
   lineSubtotal(item: CartItem): number {
     return item.quantity * item.unitPrice;
+  }
+
+  maxQuantity(item: CartItem): number | null {
+    if (!this.inventoryAvailable) {
+      return null;
+    }
+
+    return Math.max(item.stock, 1);
   }
 }

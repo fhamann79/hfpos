@@ -29,6 +29,10 @@ export class PosWorkstationService {
     return this.http.post<unknown>(`${this.salesUrl}/${id}/void`, payload);
   }
 
+  isBusinessError(error: HttpErrorResponse, code: string): boolean {
+    return this.readErrorCode(error) === code;
+  }
+
   resolveBusinessError(error: HttpErrorResponse): string {
     const code = this.readErrorCode(error);
 
@@ -50,6 +54,10 @@ export class PosWorkstationService {
 
     if (error.status === 403) {
       return 'No tienes permisos para realizar esta acción.';
+    }
+
+    if (error.status === 0) {
+      return 'Error técnico al comunicarse con el backend.';
     }
 
     return 'No se pudo completar la acción. Intenta nuevamente.';
