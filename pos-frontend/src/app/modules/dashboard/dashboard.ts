@@ -24,10 +24,6 @@ export class Dashboard implements OnInit {
   readonly accessWarning = signal('');
 
   ngOnInit() {
-    if (this.store.isAuthenticated()) {
-      this.store.loadMe().subscribe();
-    }
-
     this.route.queryParamMap.subscribe((params) => {
       const message = params.get('message');
       this.accessWarning.set(
@@ -35,7 +31,13 @@ export class Dashboard implements OnInit {
           ? 'No tienes permisos para acceder a Catálogo.'
           : message === 'pos-denied'
             ? 'No tienes permisos para acceder a POS.'
-            : ''
+            : message === 'administration-denied'
+              ? 'No tienes permisos para acceder a Administración.'
+              : message === 'operational-structure-denied'
+                ? 'No tienes permisos para acceder a Estructura Operativa.'
+                : message === 'session-expired'
+                  ? 'Tu sesión expiró. Inicia sesión nuevamente.'
+                  : ''
       );
     });
   }

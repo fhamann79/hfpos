@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
 import { InputTextModule } from 'primeng/inputtext';
@@ -25,8 +25,9 @@ import { AuthStore } from '../../../core/stores/auth.store';
   templateUrl: './login.html',
   styleUrl: './login.scss',
 })
-export class Login {
+export class Login implements OnInit {
   private fb = inject(FormBuilder);
+  private route = inject(ActivatedRoute);
 
   readonly loading = signal(false);
   readonly errorMessage = signal('');
@@ -41,6 +42,14 @@ export class Login {
     private store: AuthStore,
     private router: Router,
   ) {}
+
+  ngOnInit(): void {
+    this.route.queryParamMap.subscribe((params) => {
+      if (params.get('message') === 'session-expired') {
+        this.errorMessage.set('Tu sesión expiró. Inicia sesión nuevamente.');
+      }
+    });
+  }
 
   submitLogin() {
     this.errorMessage.set('');
@@ -58,7 +67,7 @@ export class Login {
       .pipe(finalize(() => this.loading.set(false)))
       .subscribe({
       next: (res) => {
-        localStorage.setItem('token', res.token);
+        this.store.setToken(res.token);
         this.store.loadMe().subscribe({
           next: (me) => {
             if (!me) {

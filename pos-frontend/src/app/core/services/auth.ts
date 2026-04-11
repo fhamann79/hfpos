@@ -2,12 +2,13 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { MeResponse } from '../models/me';
 import { AuthContext } from '../models/auth-context';
+import { environment } from '../../../environments/environment';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private api = 'https://localhost:7096/api/auth';
+  private readonly api = `${environment.apiUrl}/api/auth`;
 
-  private authContextKey = 'auth_context';
+  private readonly authContextKey = 'auth_context';
 
   constructor(private http: HttpClient) {}
 
@@ -19,7 +20,6 @@ export class AuthService {
     return this.http.get<MeResponse>(`${this.api}/me`);
   }
 
-  // 👇 Logout aquí NO toca store. Solo limpia "cosas del servicio" si quieres.
   clearContext() {
     localStorage.removeItem(this.authContextKey);
   }

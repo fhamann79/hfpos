@@ -16,11 +16,11 @@ export const appConfig: ApplicationConfig = {
     provideAppInitializer(() => {
       const store = inject(AuthStore);
 
-      if (store.isAuthenticated()) {
-        return store.loadMe(); // ✅ Observable
+      if (store.hasSessionToken()) {
+        return store.loadMe();
       }
 
-      // ✅ retorna void (nada), NO null
+      store.markLoaded();
       return;
     }),
   ],
