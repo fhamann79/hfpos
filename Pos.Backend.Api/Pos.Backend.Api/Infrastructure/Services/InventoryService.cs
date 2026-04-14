@@ -78,7 +78,7 @@ public class InventoryService : IInventoryService
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
-        var product = await GetValidProductAsync(productId, operationalContext.CompanyId);
+        var product = await GetProductInCompanyAsync(productId, operationalContext.CompanyId);
 
         var quantity = await _context.ProductStocks
             .AsNoTracking()
@@ -102,21 +102,22 @@ public class InventoryService : IInventoryService
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
-        var product = await GetValidProductAsync(productId, operationalContext.CompanyId);
+        var product = await GetProductInCompanyAsync(productId, operationalContext.CompanyId);
 
-        return await _context.InventoryMovements
+        return await BuildMovementQuery(operationalContext.CompanyId, operationalContext.EstablishmentId)
             .AsNoTracking()
-            .Where(m => m.ProductId == product.Id
-                && m.CompanyId == operationalContext.CompanyId
-                && m.EstablishmentId == operationalContext.EstablishmentId)
+            .Where(m => m.ProductId == product.Id)
             .OrderByDescending(m => m.CreatedAt)
             .ThenByDescending(m => m.Id)
             .Select(m => new InventoryMovementDto
             {
                 Id = m.Id,
                 ProductId = m.ProductId,
-                ProductName = product.Name,
+                ProductName = m.Product.Name,
                 Type = m.Type,
+                SourceType = m.SourceType,
+                SourceId = m.SourceId,
+                SourceLineId = m.SourceLineId,
                 Quantity = m.Quantity,
                 StockBefore = m.StockBefore,
                 StockAfter = m.StockAfter,
@@ -128,6 +129,125 @@ public class InventoryService : IInventoryService
             .ToListAsync();
     }
 
+    public async Task<PagedResultDto<InventoryMovementDto>> GetMovementsAsync(InventoryMovementQueryDto query)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+
+        var page = Math.Max(query.Page, 1);
+        var pageSize = Math.Clamp(query.PageSize, 1, 200);
+
+        var movements = BuildMovementQuery(operationalContext.CompanyId, operationalContext.EstablishmentId)
+            .AsNoTracking();
+
+        if (query.ProductId.HasValue)
+        {
+            await GetProductInCompanyAsync(query.ProductId.Value, operationalContext.CompanyId);
+            movements = movements.Where(m => m.ProductId == query.ProductId.Value);
+        }
+
+        if (query.Type.HasValue)
+        {
+            movements = movements.Where(m => m.Type == query.Type.Value);
+        }
+
+        if (query.SourceType.HasValue)
+        {
+            movements = movements.Where(m => m.SourceType == query.SourceType.Value);
+        }
+
+        if (query.SourceId.HasValue)
+        {
+            movements = movements.Where(m => m.SourceId == query.SourceId.Value);
+        }
+
+        if (query.From.HasValue)
+        {
+            var fromUtc = DateTime.SpecifyKind(query.From.Value, DateTimeKind.Utc);
+            movements = movements.Where(m => m.CreatedAt >= fromUtc);
+        }
+
+        if (query.To.HasValue)
+        {
+            var toUtc = DateTime.SpecifyKind(query.To.Value, DateTimeKind.Utc);
+            movements = movements.Where(m => m.CreatedAt <= toUtc);
+        }
+
+        if (query.UserId.HasValue)
+        {
+            movements = movements.Where(m => m.UserId == query.UserId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.Trim().ToLower();
+            movements = movements.Where(m =>
+                m.Product.Name.ToLower().Contains(term)
+                || (m.Reference != null && m.Reference.ToLower().Contains(term))
+                || (m.Notes != null && m.Notes.ToLower().Contains(term)));
+        }
+
+        var totalItems = await movements.CountAsync();
+        var items = await movements
+            .OrderByDescending(m => m.CreatedAt)
+            .ThenByDescending(m => m.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(m => new InventoryMovementDto
+            {
+                Id = m.Id,
+                ProductId = m.ProductId,
+                ProductName = m.Product.Name,
+                Type = m.Type,
+                SourceType = m.SourceType,
+                SourceId = m.SourceId,
+                SourceLineId = m.SourceLineId,
+                Quantity = m.Quantity,
+                StockBefore = m.StockBefore,
+                StockAfter = m.StockAfter,
+                Reference = m.Reference,
+                Notes = m.Notes,
+                UserId = m.UserId,
+                CreatedAt = m.CreatedAt
+            })
+            .ToListAsync();
+
+        return new PagedResultDto<InventoryMovementDto>
+        {
+            Items = items,
+            Page = page,
+            PageSize = pageSize,
+            TotalItems = totalItems,
+            TotalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize)
+        };
+    }
+
+    public async Task<InventoryMovementDto?> GetMovementByIdAsync(int id)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+
+        return await BuildMovementQuery(operationalContext.CompanyId, operationalContext.EstablishmentId)
+            .AsNoTracking()
+            .Where(m => m.Id == id)
+            .Select(m => new InventoryMovementDto
+            {
+                Id = m.Id,
+                ProductId = m.ProductId,
+                ProductName = m.Product.Name,
+                Type = m.Type,
+                SourceType = m.SourceType,
+                SourceId = m.SourceId,
+                SourceLineId = m.SourceLineId,
+                Quantity = m.Quantity,
+                StockBefore = m.StockBefore,
+                StockAfter = m.StockAfter,
+                Reference = m.Reference,
+                Notes = m.Notes,
+                UserId = m.UserId,
+                CreatedAt = m.CreatedAt
+            })
+            .FirstOrDefaultAsync();
+    }
+
     public Task<InventoryMovementDto> RegisterEntryAsync(InventoryEntryDto dto)
     {
         if (dto.Quantity <= 0m)
@@ -135,7 +255,15 @@ public class InventoryService : IInventoryService
             throw new InvalidOperationException("INVALID_QUANTITY");
         }
 
-        return RegisterMovementAsync(dto.ProductId, InventoryMovementType.Entry, dto.Quantity, dto.Reference, dto.Notes);
+        return RegisterMovementAsync(
+            dto.ProductId,
+            InventoryMovementType.Entry,
+            InventoryMovementSourceType.ManualEntry,
+            dto.Quantity,
+            dto.Reference,
+            dto.Notes,
+            null,
+            null);
     }
 
     public Task<InventoryMovementDto> RegisterExitAsync(InventoryExitDto dto)
@@ -145,7 +273,15 @@ public class InventoryService : IInventoryService
             throw new InvalidOperationException("INVALID_QUANTITY");
         }
 
-        return RegisterMovementAsync(dto.ProductId, InventoryMovementType.Exit, dto.Quantity, dto.Reference, dto.Notes);
+        return RegisterMovementAsync(
+            dto.ProductId,
+            InventoryMovementType.Exit,
+            InventoryMovementSourceType.ManualExit,
+            dto.Quantity,
+            dto.Reference,
+            dto.Notes,
+            null,
+            null);
     }
 
     public Task<InventoryMovementDto> RegisterAdjustmentAsync(InventoryAdjustDto dto)
@@ -155,30 +291,62 @@ public class InventoryService : IInventoryService
             throw new InvalidOperationException("INVALID_QUANTITY");
         }
 
-        return RegisterMovementAsync(dto.ProductId, InventoryMovementType.Adjustment, dto.Quantity, dto.Reference, dto.Notes);
+        return RegisterMovementAsync(
+            dto.ProductId,
+            InventoryMovementType.Adjustment,
+            InventoryMovementSourceType.ManualAdjustment,
+            dto.Quantity,
+            dto.Reference,
+            dto.Notes,
+            null,
+            null);
     }
 
-    public Task<InventoryMovementDto> RegisterSaleAsync(InventoryExitDto dto)
+    public Task<InventoryMovementDto> RegisterSaleAsync(int productId, decimal quantity, int saleId, int saleItemId, string? notes)
     {
-        if (dto.Quantity <= 0m)
+        if (quantity <= 0m)
         {
             throw new InvalidOperationException("INVALID_QUANTITY");
         }
 
-        return RegisterMovementAsync(dto.ProductId, InventoryMovementType.Sale, dto.Quantity, dto.Reference, dto.Notes);
+        return RegisterMovementAsync(
+            productId,
+            InventoryMovementType.Sale,
+            InventoryMovementSourceType.Sale,
+            quantity,
+            $"SALE-{saleId}",
+            notes,
+            saleId,
+            saleItemId);
     }
 
-    public Task<InventoryMovementDto> RegisterVoidAsync(InventoryEntryDto dto)
+    public Task<InventoryMovementDto> RegisterVoidAsync(int productId, decimal quantity, int saleId, int saleItemId, string? notes)
     {
-        if (dto.Quantity <= 0m)
+        if (quantity <= 0m)
         {
             throw new InvalidOperationException("INVALID_QUANTITY");
         }
 
-        return RegisterMovementAsync(dto.ProductId, InventoryMovementType.Void, dto.Quantity, dto.Reference, dto.Notes);
+        return RegisterMovementAsync(
+            productId,
+            InventoryMovementType.Void,
+            InventoryMovementSourceType.SaleVoid,
+            quantity,
+            $"VOID-SALE-{saleId}",
+            notes,
+            saleId,
+            saleItemId);
     }
 
-    private async Task<InventoryMovementDto> RegisterMovementAsync(int productId, InventoryMovementType type, decimal quantity, string? reference, string? notes)
+    private async Task<InventoryMovementDto> RegisterMovementAsync(
+        int productId,
+        InventoryMovementType type,
+        InventoryMovementSourceType sourceType,
+        decimal quantity,
+        string? reference,
+        string? notes,
+        int? sourceId,
+        int? sourceLineId)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
         var product = await GetValidProductAsync(productId, operationalContext.CompanyId);
@@ -269,6 +437,9 @@ public class InventoryService : IInventoryService
                 CompanyId = operationalContext.CompanyId,
                 EstablishmentId = operationalContext.EstablishmentId,
                 Type = type,
+                SourceType = sourceType,
+                SourceId = sourceId,
+                SourceLineId = sourceLineId,
                 Quantity = quantity,
                 StockBefore = stockBefore,
                 StockAfter = stockAfter,
@@ -292,6 +463,9 @@ public class InventoryService : IInventoryService
                 ProductId = product.Id,
                 ProductName = product.Name,
                 Type = movement.Type,
+                SourceType = movement.SourceType,
+                SourceId = movement.SourceId,
+                SourceLineId = movement.SourceLineId,
                 Quantity = movement.Quantity,
                 StockBefore = movement.StockBefore,
                 StockAfter = movement.StockAfter,
@@ -315,6 +489,18 @@ public class InventoryService : IInventoryService
 
     private async Task<Product> GetValidProductAsync(int productId, int companyId)
     {
+        var product = await GetProductInCompanyAsync(productId, companyId);
+
+        if (!product.IsActive)
+        {
+            throw new InvalidOperationException("PRODUCT_INACTIVE");
+        }
+
+        return product;
+    }
+
+    private async Task<Product> GetProductInCompanyAsync(int productId, int companyId)
+    {
         var product = await _context.Products
             .AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == productId && p.CompanyId == companyId);
@@ -324,12 +510,14 @@ public class InventoryService : IInventoryService
             throw new KeyNotFoundException("PRODUCT_NOT_FOUND");
         }
 
-        if (!product.IsActive)
-        {
-            throw new InvalidOperationException("PRODUCT_INACTIVE");
-        }
-
         return product;
+    }
+
+    private IQueryable<InventoryMovement> BuildMovementQuery(int companyId, int establishmentId)
+    {
+        return _context.InventoryMovements
+            .Where(m => m.CompanyId == companyId
+                && m.EstablishmentId == establishmentId);
     }
 
     private Task<ProductStock?> GetLockedProductStockAsync(int productId, int companyId, int establishmentId)

@@ -94,6 +94,9 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<InventoryMovement>(entity =>
         {
+            entity.Property(im => im.SourceType)
+                .HasConversion<int>();
+
             entity.Property(im => im.Quantity)
                 .HasPrecision(18, 4);
 
@@ -104,6 +107,12 @@ public class PosDbContext : DbContext
                 .HasPrecision(18, 4);
 
             entity.HasIndex(im => new { im.ProductId, im.CompanyId, im.EstablishmentId, im.CreatedAt });
+            entity.HasIndex(im => new { im.CompanyId, im.EstablishmentId, im.CreatedAt });
+            entity.HasIndex(im => new { im.CompanyId, im.EstablishmentId, im.ProductId, im.CreatedAt });
+            entity.HasIndex(im => new { im.SourceType, im.SourceId });
+            entity.HasIndex(im => new { im.SourceType, im.SourceId, im.SourceLineId })
+                .IsUnique()
+                .HasFilter(@"""SourceId"" IS NOT NULL AND ""SourceLineId"" IS NOT NULL AND ""SourceType"" IN (4, 5)");
 
             entity.HasOne(im => im.Product)
                 .WithMany()

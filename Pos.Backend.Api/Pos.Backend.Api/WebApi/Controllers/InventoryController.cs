@@ -31,6 +31,38 @@ public class InventoryController : ControllerBase
         return Ok(stocks);
     }
 
+    [HttpGet("movements")]
+    [Authorize(Policy = AppPermissions.InventoryRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<PagedResultDto<InventoryMovementDto>>> GetMovements([FromQuery] InventoryMovementQueryDto query)
+    {
+        try
+        {
+            var movements = await _inventoryService.GetMovementsAsync(query);
+            return Ok(movements);
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpGet("movements/{id:int}")]
+    [Authorize(Policy = AppPermissions.InventoryRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<InventoryMovementDto>> GetMovementById(int id)
+    {
+        var movement = await _inventoryService.GetMovementByIdAsync(id);
+        if (movement is null)
+        {
+            return NotFound(new ApiErrorResponse { Error = "INVENTORY_MOVEMENT_NOT_FOUND" });
+        }
+
+        return Ok(movement);
+    }
+
     [HttpGet("products/{productId:int}/stock")]
     [Authorize(Policy = AppPermissions.InventoryRead)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

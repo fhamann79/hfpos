@@ -208,13 +208,12 @@ public class SalesService : ISalesService
 
             foreach (var item in sale.Items.OrderBy(i => i.ProductId))
             {
-                await _inventoryService.RegisterSaleAsync(new InventoryExitDto
-                {
-                    ProductId = item.ProductId,
-                    Quantity = item.Quantity,
-                    Reference = $"SALE-{sale.Id}",
-                    Notes = sale.Notes
-                });
+                await _inventoryService.RegisterSaleAsync(
+                    item.ProductId,
+                    item.Quantity,
+                    sale.Id,
+                    item.Id,
+                    sale.Notes);
             }
 
             await transaction.CommitAsync();
@@ -267,17 +266,27 @@ public class SalesService : ISalesService
         {
             operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+
             var sale = await _context.Sales
-                .Include(s => s.Items)
-                .FirstOrDefaultAsync(s => s.Id == id
-                    && s.CompanyId == operationalContext.CompanyId
-                    && s.EstablishmentId == operationalContext.EstablishmentId
-                    && s.EmissionPointId == operationalContext.EmissionPointId);
+                .FromSqlInterpolated($@"
+                    SELECT *
+                    FROM ""Sales""
+                    WHERE ""Id"" = {id}
+                      AND ""CompanyId"" = {operationalContext.CompanyId}
+                      AND ""EstablishmentId"" = {operationalContext.EstablishmentId}
+                      AND ""EmissionPointId"" = {operationalContext.EmissionPointId}
+                    FOR UPDATE")
+                .SingleOrDefaultAsync();
 
             if (sale is null)
             {
                 throw new KeyNotFoundException("SALE_NOT_FOUND");
             }
+
+            await _context.Entry(sale)
+                .Collection(s => s.Items)
+                .LoadAsync();
 
             if (sale.Status == SaleStatus.Voided)
             {
@@ -289,21 +298,18 @@ public class SalesService : ISalesService
                 throw new InvalidOperationException("SALE_NOT_VOIDABLE");
             }
 
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-
             var voidNotes = string.IsNullOrWhiteSpace(dto.Reason)
                 ? "Void sale"
                 : dto.Reason.Trim();
 
             foreach (var item in sale.Items.OrderBy(i => i.ProductId))
             {
-                await _inventoryService.RegisterVoidAsync(new InventoryEntryDto
-                {
-                    ProductId = item.ProductId,
-                    Quantity = item.Quantity,
-                    Reference = $"VOID-SALE-{sale.Id}",
-                    Notes = voidNotes
-                });
+                await _inventoryService.RegisterVoidAsync(
+                    item.ProductId,
+                    item.Quantity,
+                    sale.Id,
+                    item.Id,
+                    voidNotes);
             }
 
             sale.Status = SaleStatus.Voided;
