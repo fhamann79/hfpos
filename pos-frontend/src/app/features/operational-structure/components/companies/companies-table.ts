@@ -9,6 +9,7 @@ import { MessageModule } from 'primeng/message';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ToolbarModule } from 'primeng/toolbar';
+import { resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
 import { Company } from '../../models/company.model';
 import { CompanyService } from '../../services/company.service';
 import { CompanyDialog, CompanyDialogSubmit } from './company-dialog';
@@ -67,7 +68,7 @@ export class CompaniesTable implements OnInit {
       },
       error: (error: HttpErrorResponse) => {
         this.loading.set(false);
-        this.errorMessage.set(this.resolveErrorMessage(error, 'No se pudieron cargar las compañías.'));
+        this.errorMessage.set(resolveHttpErrorMessage(error, 'No se pudieron cargar las compañías.'));
       },
     });
   }
@@ -115,7 +116,7 @@ export class CompaniesTable implements OnInit {
           this.loadCompanies();
         },
         error: (error: HttpErrorResponse) => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
         },
       });
       return;
@@ -128,7 +129,7 @@ export class CompaniesTable implements OnInit {
         this.loadCompanies();
       },
       error: (error: HttpErrorResponse) => {
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
       },
     });
   }
@@ -156,7 +157,7 @@ export class CompaniesTable implements OnInit {
             this.loadCompanies();
           },
           error: (error: HttpErrorResponse) => {
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
           },
         });
       },
@@ -167,11 +168,4 @@ export class CompaniesTable implements OnInit {
     return this.selectedCompany?.id === company.id;
   }
 
-  private resolveErrorMessage(error: HttpErrorResponse, fallback = 'No se pudo completar la acción.'): string {
-    if (error.status === 403) {
-      return 'No tienes permisos para esta acción.';
-    }
-
-    return fallback;
-  }
 }

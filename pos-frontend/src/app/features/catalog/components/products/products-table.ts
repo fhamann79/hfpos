@@ -10,6 +10,7 @@ import { MessageModule } from 'primeng/message';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ToolbarModule } from 'primeng/toolbar';
+import { resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
 import { Category } from '../../models/category.model';
 import { Product } from '../../models/product.model';
 import { CategoryService } from '../../services/category.service';
@@ -72,7 +73,7 @@ export class ProductsTable implements OnInit {
       },
       error: (error: HttpErrorResponse) => {
         this.loading.set(false);
-        this.errorMessage.set(this.resolveErrorMessage(error, 'No se pudieron cargar los productos.'));
+        this.errorMessage.set(resolveHttpErrorMessage(error, 'No se pudieron cargar los productos.'));
       },
     });
   }
@@ -126,7 +127,7 @@ export class ProductsTable implements OnInit {
           this.loadCatalogData();
         },
         error: (error: HttpErrorResponse) => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
         },
       });
       return;
@@ -139,7 +140,7 @@ export class ProductsTable implements OnInit {
         this.loadCatalogData();
       },
       error: (error: HttpErrorResponse) => {
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
       },
     });
   }
@@ -165,32 +166,11 @@ export class ProductsTable implements OnInit {
             this.loadCatalogData();
           },
           error: (error: HttpErrorResponse) => {
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
           },
         });
       },
     });
   }
 
-  private resolveErrorMessage(error: HttpErrorResponse, fallback = 'No se pudo completar la acción.'): string {
-    const backendError = typeof error.error === 'string' ? error.error : error.error?.code;
-
-    if (error.status === 403) {
-      return 'No tienes permisos para esta acción';
-    }
-
-    if (backendError === 'NAME_REQUIRED') {
-      return 'El nombre es obligatorio';
-    }
-
-    if (backendError === 'CATEGORY_NOT_FOUND') {
-      return 'La categoría no existe';
-    }
-
-    if (backendError === 'PRODUCT_NOT_FOUND') {
-      return 'El producto no existe';
-    }
-
-    return fallback;
-  }
 }

@@ -9,6 +9,7 @@ import { MessageModule } from 'primeng/message';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ToolbarModule } from 'primeng/toolbar';
+import { resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
 import { Company } from '../../models/company.model';
 import { Establishment } from '../../models/establishment.model';
 import { EstablishmentService } from '../../services/establishment.service';
@@ -79,7 +80,7 @@ export class EstablishmentsTable implements OnChanges {
       },
       error: (error: HttpErrorResponse) => {
         this.loading.set(false);
-        this.errorMessage.set(this.resolveErrorMessage(error, 'No se pudieron cargar los establecimientos.'));
+        this.errorMessage.set(resolveHttpErrorMessage(error, 'No se pudieron cargar los establecimientos.'));
       },
     });
   }
@@ -127,7 +128,7 @@ export class EstablishmentsTable implements OnChanges {
           this.loadEstablishments();
         },
         error: (error: HttpErrorResponse) => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
         },
       });
       return;
@@ -140,7 +141,7 @@ export class EstablishmentsTable implements OnChanges {
         this.loadEstablishments();
       },
       error: (error: HttpErrorResponse) => {
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
       },
     });
   }
@@ -168,7 +169,7 @@ export class EstablishmentsTable implements OnChanges {
             this.loadEstablishments();
           },
           error: (error: HttpErrorResponse) => {
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
           },
         });
       },
@@ -179,11 +180,4 @@ export class EstablishmentsTable implements OnChanges {
     return this.selectedEstablishment?.id === establishment.id;
   }
 
-  private resolveErrorMessage(error: HttpErrorResponse, fallback = 'No se pudo completar la acción.'): string {
-    if (error.status === 403) {
-      return 'No tienes permisos para esta acción.';
-    }
-
-    return fallback;
-  }
 }

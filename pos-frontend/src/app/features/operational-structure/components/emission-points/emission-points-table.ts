@@ -7,6 +7,7 @@ import { MessageModule } from 'primeng/message';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ToolbarModule } from 'primeng/toolbar';
+import { resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
 import { Establishment } from '../../models/establishment.model';
 import { EmissionPoint } from '../../models/emission-point.model';
 import { EmissionPointService } from '../../services/emission-point.service';
@@ -57,7 +58,7 @@ export class EmissionPointsTable implements OnChanges {
       },
       error: (error: HttpErrorResponse) => {
         this.loading.set(false);
-        this.errorMessage.set(this.resolveErrorMessage(error, 'No se pudieron cargar los puntos de emisión.'));
+        this.errorMessage.set(resolveHttpErrorMessage(error, 'No se pudieron cargar los puntos de emisión.'));
       },
     });
   }
@@ -100,7 +101,7 @@ export class EmissionPointsTable implements OnChanges {
           this.loadEmissionPoints();
         },
         error: (error: HttpErrorResponse) => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
         },
       });
       return;
@@ -113,7 +114,7 @@ export class EmissionPointsTable implements OnChanges {
         this.loadEmissionPoints();
       },
       error: (error: HttpErrorResponse) => {
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
       },
     });
   }
@@ -137,18 +138,11 @@ export class EmissionPointsTable implements OnChanges {
             this.loadEmissionPoints();
           },
           error: (error: HttpErrorResponse) => {
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
           },
         });
       },
     });
   }
 
-  private resolveErrorMessage(error: HttpErrorResponse, fallback = 'No se pudo completar la acción.'): string {
-    if (error.status === 403) {
-      return 'No tienes permisos para esta acción.';
-    }
-
-    return fallback;
-  }
 }

@@ -2,6 +2,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import { hasHttpBusinessError, resolveHttpErrorMessage } from '../../../core/utils/http-error-normalizer';
 import { CheckoutRequest } from '../models/checkout-request.model';
 import { Sale } from '../models/sale.model';
 import { SaleItem } from '../models/sale-item.model';
@@ -30,37 +31,11 @@ export class PosWorkstationService {
   }
 
   isBusinessError(error: HttpErrorResponse, code: string): boolean {
-    return this.readErrorCode(error) === code;
+    return hasHttpBusinessError(error, code);
   }
 
   resolveBusinessError(error: HttpErrorResponse): string {
-    const code = this.readErrorCode(error);
-
-    if (code === 'INSUFFICIENT_STOCK') {
-      return 'Stock insuficiente para completar la venta.';
-    }
-
-    if (code === 'SALE_ALREADY_VOIDED') {
-      return 'La venta ya fue anulada.';
-    }
-
-    if (code === 'PRODUCT_NOT_FOUND') {
-      return 'Uno de los productos ya no existe.';
-    }
-
-    if (code === 'INVALID_QUANTITY') {
-      return 'Hay cantidades inválidas en el carrito.';
-    }
-
-    if (error.status === 403) {
-      return 'No tienes permisos para realizar esta acción.';
-    }
-
-    if (error.status === 0) {
-      return 'Error técnico al comunicarse con el backend.';
-    }
-
-    return 'No se pudo completar la acción. Intenta nuevamente.';
+    return resolveHttpErrorMessage(error, 'No se pudo completar la acción. Intenta nuevamente.');
   }
 
   private toSaleListItem(source: unknown): SaleListItem {
@@ -108,97 +83,6 @@ export class PosWorkstationService {
       unitPrice: this.readNumber(row, ['unitPrice', 'price'], 0),
       subtotal: this.readNumber(row, ['subtotal', 'lineSubtotal'], 0),
     };
-  }
-
-  private readErrorCode(error: HttpErrorResponse): string {
-    if (typeof error.error === 'string') {
-      return this.detectKnownBusinessCode(error.error);
-    }
-
-    const payload = this.asRecord(error.error);
-    const directCode = payload?.['code'];
-
-    if (typeof directCode === 'string') {
-      return this.detectKnownBusinessCode(directCode);
-    }
-
-    const errorCode = payload?.['errorCode'];
-    if (typeof errorCode === 'string') {
-      return this.detectKnownBusinessCode(errorCode);
-    }
-
-    const domainCode = payload?.['domainCode'];
-    if (typeof domainCode === 'string') {
-      return this.detectKnownBusinessCode(domainCode);
-    }
-
-    const errors = payload?.['errors'];
-    if (Array.isArray(errors) && errors.length > 0) {
-      const firstError = this.asRecord(errors[0]);
-      const nestedCode = firstError?.['code'];
-
-      if (typeof nestedCode === 'string') {
-        return this.detectKnownBusinessCode(nestedCode);
-      }
-    }
-
-    const validationErrors = this.asRecord(errors);
-    if (validationErrors) {
-      const combinedValues = Object.values(validationErrors)
-        .filter((value): value is string[] => Array.isArray(value))
-        .flat()
-        .join(' ');
-      const matched = this.detectKnownBusinessCode(combinedValues);
-      if (matched) {
-        return matched;
-      }
-    }
-
-    const message = payload?.['message'];
-    if (typeof message === 'string') {
-      const matched = this.detectKnownBusinessCode(message);
-      if (matched) {
-        return matched;
-      }
-    }
-
-    const title = payload?.['title'];
-    if (typeof title === 'string') {
-      const matched = this.detectKnownBusinessCode(title);
-      if (matched) {
-        return matched;
-      }
-    }
-
-    const detail = payload?.['detail'];
-    if (typeof detail === 'string') {
-      const matched = this.detectKnownBusinessCode(detail);
-      if (matched) {
-        return matched;
-      }
-    }
-
-    return '';
-  }
-
-  private detectKnownBusinessCode(value: string): string {
-    const normalized = this.normalizeCode(value);
-    if (normalized.includes('INSUFFICIENT_STOCK') || normalized.includes('INSUFFICIENT STOCK')) {
-      return 'INSUFFICIENT_STOCK';
-    }
-    if (
-      normalized.includes('SALE_ALREADY_VOIDED') ||
-      normalized.includes('ALREADY VOIDED') ||
-      normalized.includes('YA FUE ANULADA')
-    ) {
-      return 'SALE_ALREADY_VOIDED';
-    }
-
-    return normalized;
-  }
-
-  private normalizeCode(code: string): string {
-    return code.trim().toUpperCase();
   }
 
   private asRecord(value: unknown): Record<string, unknown> | null {

@@ -6,6 +6,7 @@ import { ButtonModule } from 'primeng/button';
 import { CheckboxModule } from 'primeng/checkbox';
 import { DialogModule } from 'primeng/dialog';
 import { MessageModule } from 'primeng/message';
+import { resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
 import { RolePermission } from '../../models/role-permission.model';
 import { Role } from '../../models/role.model';
 import { RoleService } from '../../services/role.service';
@@ -93,7 +94,7 @@ export class RolePermissionsDialog implements OnChanges {
       },
       error: (error: HttpErrorResponse) => {
         this.loading.set(false);
-        this.errorMessage.set(this.resolveErrorMessage(error, 'No se pudieron cargar los permisos.'));
+        this.errorMessage.set(resolveHttpErrorMessage(error, 'No se pudieron cargar los permisos.'));
       },
     });
   }
@@ -117,11 +118,4 @@ export class RolePermissionsDialog implements OnChanges {
     }
   }
 
-  private resolveErrorMessage(error: HttpErrorResponse, fallback: string): string {
-    if (error.status === 403) {
-      return 'No tienes permisos para esta acción.';
-    }
-
-    return fallback;
-  }
 }

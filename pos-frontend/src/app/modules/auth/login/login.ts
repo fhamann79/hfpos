@@ -8,6 +8,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { PasswordModule } from 'primeng/password';
 import { finalize } from 'rxjs';
+import { resolveHttpErrorMessage } from '../../../core/utils/http-error-normalizer';
 import { AuthService } from '../../../core/services/auth';
 import { AuthStore } from '../../../core/stores/auth.store';
 
@@ -80,17 +81,7 @@ export class Login implements OnInit {
         });
       },
       error: (error: HttpErrorResponse) => {
-        if (error.status === 401) {
-          this.errorMessage.set('Credenciales inválidas');
-          return;
-        }
-
-        if (error.status === 0) {
-          this.errorMessage.set('No se puede conectar con el servidor');
-          return;
-        }
-
-        this.errorMessage.set('Error inesperado');
+        this.errorMessage.set(resolveHttpErrorMessage(error, 'Error inesperado'));
       },
     });
   }

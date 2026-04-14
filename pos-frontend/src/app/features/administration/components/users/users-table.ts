@@ -9,6 +9,7 @@ import { MessageModule } from 'primeng/message';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ToolbarModule } from 'primeng/toolbar';
+import { resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
 import { Role } from '../../models/role.model';
 import { User } from '../../models/user.model';
 import { RoleService } from '../../services/role.service';
@@ -68,7 +69,7 @@ export class UsersTable implements OnInit {
       },
       error: (error: HttpErrorResponse) => {
         this.loading.set(false);
-        this.errorMessage.set(this.resolveErrorMessage(error, 'No se pudieron cargar los usuarios.'));
+        this.errorMessage.set(resolveHttpErrorMessage(error, 'No se pudieron cargar los usuarios.'));
       },
     });
   }
@@ -134,7 +135,7 @@ export class UsersTable implements OnInit {
           this.loadUsers();
         },
         error: (error: HttpErrorResponse) => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
         },
       });
       return;
@@ -147,7 +148,7 @@ export class UsersTable implements OnInit {
         this.loadUsers();
       },
       error: (error: HttpErrorResponse) => {
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
       },
     });
   }
@@ -163,7 +164,7 @@ export class UsersTable implements OnInit {
         this.passwordDialogVisible = false;
       },
       error: (error: HttpErrorResponse) => {
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
       },
     });
   }
@@ -187,7 +188,7 @@ export class UsersTable implements OnInit {
             this.loadUsers();
           },
           error: (error: HttpErrorResponse) => {
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: this.resolveErrorMessage(error) });
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
           },
         });
       },
@@ -202,11 +203,4 @@ export class UsersTable implements OnInit {
     return this.roles().find((role) => role.id === user.roleId)?.name ?? 'Sin rol';
   }
 
-  private resolveErrorMessage(error: HttpErrorResponse, fallback = 'No se pudo completar la acción.'): string {
-    if (error.status === 403) {
-      return 'No tienes permisos para esta acción.';
-    }
-
-    return fallback;
-  }
 }
