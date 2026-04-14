@@ -4,6 +4,7 @@ import { administrationAccessGuard } from './core/guards/administration-access.g
 import { catalogAccessGuard } from './core/guards/catalog-access.guard';
 import { operationalStructureAccessGuard } from './core/guards/operational-structure-access.guard';
 import { posAccessGuard } from './core/guards/pos-access.guard';
+import { inventoryAccessGuard } from './core/guards/inventory-access.guard';
 
 export const routes: Routes = [
   {
@@ -38,6 +39,11 @@ export const routes: Routes = [
     path: 'pos',
     canActivate: [AuthGuard, posAccessGuard],
     loadComponent: () => import('./features/pos-workstation/pages/pos-workstation-page/pos-workstation-page').then((m) => m.PosWorkstationPage),
+  },
+  {
+    path: 'inventory',
+    canActivate: [AuthGuard, inventoryAccessGuard],
+    loadComponent: () => import('./features/inventory/pages/inventory-page/inventory-page').then((m) => m.InventoryPage),
   },
   {
     path: '',
