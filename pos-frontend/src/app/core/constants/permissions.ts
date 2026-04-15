@@ -12,6 +12,4 @@ export const PERMISSIONS = {
   posSalesCreate: 'POS_SALES_CREATE',
   posSalesVoid: 'POS_SALES_VOID',
   reportsSalesRead: 'REPORTS_SALES_READ',
-  inventoryStocksRead: 'INVENTORY_STOCKS_READ',
-  inventoryMovementsRead: 'INVENTORY_MOVEMENTS_READ',
 } as const;
