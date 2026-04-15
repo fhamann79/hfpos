@@ -34,6 +34,11 @@ export const POS_ACCESS_REQUIREMENT: PermissionRequirement = {
   matchMode: 'any',
 };
 
+export const INVENTORY_ACCESS_REQUIREMENT: PermissionRequirement = {
+  requiredPermissions: [PERMISSIONS.inventoryRead],
+  matchMode: 'all',
+};
+
 export const NAVIGATION_ITEMS: NavigationItemConfig[] = [
   {
     label: 'Dashboard',
@@ -63,5 +68,11 @@ export const NAVIGATION_ITEMS: NavigationItemConfig[] = [
     icon: 'pi pi-shopping-cart',
     route: '/pos',
     ...POS_ACCESS_REQUIREMENT,
+  },
+  {
+    label: 'Inventario',
+    icon: 'pi pi-warehouse',
+    route: '/inventory',
+    ...INVENTORY_ACCESS_REQUIREMENT,
   },
 ];
