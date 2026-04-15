@@ -3,12 +3,14 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
+import { CardModule } from 'primeng/card';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { SelectModule } from 'primeng/select';
 import { TableLazyLoadEvent, TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
+import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { ToolbarModule } from 'primeng/toolbar';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
@@ -41,11 +43,13 @@ interface ContextItem {
     DatePipe,
     TableModule,
     ButtonModule,
+    CardModule,
     DialogModule,
     InputTextModule,
     SelectModule,
     MessageModule,
     TagModule,
+    ToggleSwitchModule,
     ToolbarModule,
   ],
   templateUrl: './inventory-page.html',
@@ -66,6 +70,11 @@ export class InventoryPage implements OnInit {
   readonly stocks = signal<InventoryStock[]>([]);
   readonly stockLoading = signal(false);
   readonly stockError = signal('');
+  readonly totalProducts = computed(() => this.stocks().length);
+  readonly outOfStockProducts = computed(() => this.stocks().filter((stock) => stock.quantity <= 0).length);
+  readonly totalInventoryUnits = computed(() =>
+    this.stocks().reduce((total, stock) => total + stock.quantity, 0)
+  );
 
   readonly movements = signal<InventoryMovement[]>([]);
   readonly movementsLoading = signal(false);
@@ -248,20 +257,48 @@ export class InventoryPage implements OnInit {
     return isActive ? 'success' : 'danger';
   }
 
+  stockStatusLabel(quantity: number): string {
+    return quantity > 0 ? 'Disponible' : 'Sin stock';
+  }
+
+  stockStatusSeverity(quantity: number): 'success' | 'danger' {
+    return quantity > 0 ? 'success' : 'danger';
+  }
+
   movementSeverity(type: InventoryMovementType): 'success' | 'secondary' | 'info' | 'warn' | 'danger' | 'contrast' | undefined {
-    if (type === InventoryMovementType.Entry || type === InventoryMovementType.Void) {
+    if (type === InventoryMovementType.Entry) {
       return 'success';
     }
 
-    if (type === InventoryMovementType.Exit || type === InventoryMovementType.Sale) {
+    if (type === InventoryMovementType.Sale) {
+      return 'info';
+    }
+
+    if (type === InventoryMovementType.Exit || type === InventoryMovementType.Void) {
       return 'danger';
     }
 
     if (type === InventoryMovementType.Adjustment) {
-      return 'warn';
+      return 'contrast';
     }
 
     return 'secondary';
+  }
+
+  sourceBadgeClass(sourceType: InventoryMovementSourceType): string {
+    if (sourceType === InventoryMovementSourceType.Sale) {
+      return 'source-badge source-badge--sale';
+    }
+
+    if (sourceType === InventoryMovementSourceType.SaleVoid) {
+      return 'source-badge source-badge--sale-void';
+    }
+
+    if (sourceType === InventoryMovementSourceType.ManualAdjustment) {
+      return 'source-badge source-badge--adjustment';
+    }
+
+    return 'source-badge';
   }
 
   private buildMovementFilters(page: number, pageSize: number): InventoryMovementFilters {

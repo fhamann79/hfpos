@@ -1,37 +1,65 @@
 <div class="inventory-page">
-  <header class="inventory-header">
-    <div>
+  <header class="inventory-hero">
+    <div class="hero-copy">
+      <span class="eyebrow">Módulo administrativo</span>
       <h2>Inventario</h2>
       <p>Stock actual y kardex del contexto operativo vigente.</p>
     </div>
 
-    <p-button
-      label="Refrescar"
-      icon="pi pi-refresh"
-      severity="secondary"
-      [outlined]="true"
-      [disabled]="!canReadInventory()"
-      (onClick)="refreshAll()"
-    ></p-button>
+    <div class="hero-actions">
+      <div class="context-chips" aria-label="Contexto operativo actual">
+        @for (item of contextItems(); track item.label) {
+          <span class="context-chip">
+            <small>{{ item.label }}</small>
+            <strong>{{ item.value ?? 'N/D' }}</strong>
+          </span>
+        }
+      </div>
+
+      <p-button
+        label="Refrescar"
+        icon="pi pi-refresh"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="!canReadInventory()"
+        (onClick)="refreshAll()"
+      ></p-button>
+    </div>
   </header>
 
   @if (!canReadInventory()) {
     <p-message severity="warn" text="No tienes permisos para consultar inventario."></p-message>
   } @else {
-    <section class="context-panel">
-      <div>
-        <h3>Contexto operativo</h3>
-        <p>El backend aplica compañía, establecimiento y punto operativo desde el JWT y la sesión actual.</p>
-      </div>
-
-      <div class="context-list">
-        @for (item of contextItems(); track item.label) {
-          <div class="context-item">
-            <span>{{ item.label }}</span>
-            <strong>{{ item.value ?? 'No disponible' }}</strong>
+    <section class="kpi-grid" aria-label="Resumen de inventario">
+      <p-card styleClass="kpi-card">
+        <div class="kpi-content">
+          <span class="kpi-icon kpi-icon--products"><i class="pi pi-box"></i></span>
+          <div>
+            <small>Total productos</small>
+            <strong>{{ totalProducts() }}</strong>
           </div>
-        }
-      </div>
+        </div>
+      </p-card>
+
+      <p-card styleClass="kpi-card">
+        <div class="kpi-content">
+          <span class="kpi-icon kpi-icon--empty"><i class="pi pi-exclamation-triangle"></i></span>
+          <div>
+            <small>Productos sin stock</small>
+            <strong>{{ outOfStockProducts() }}</strong>
+          </div>
+        </div>
+      </p-card>
+
+      <p-card styleClass="kpi-card">
+        <div class="kpi-content">
+          <span class="kpi-icon kpi-icon--units"><i class="pi pi-database"></i></span>
+          <div>
+            <small>Total unidades</small>
+            <strong>{{ totalInventoryUnits() }}</strong>
+          </div>
+        </div>
+      </p-card>
     </section>
 
     <section class="inventory-section">
@@ -54,26 +82,29 @@
         </ng-template>
       </p-toolbar>
 
-      <div class="filters filters--stock">
-        <label>
-          <span>search</span>
-          <input pInputText type="text" [(ngModel)]="stockSearch" placeholder="Producto o categoría" />
+      <div class="filter-bar filter-bar--stock">
+        <label class="filter-field filter-field--search">
+          <span>Buscar</span>
+          <span class="input-shell">
+            <i class="pi pi-search"></i>
+            <input pInputText type="text" [(ngModel)]="stockSearch" placeholder="Producto o categoría" />
+          </span>
         </label>
 
-        <label>
-          <span>productId</span>
+        <label class="filter-field">
+          <span>Producto</span>
           <input
             pInputText
             type="number"
             [ngModel]="stockProductId"
             (ngModelChange)="stockProductId = parseNullableNumber($event)"
-            placeholder="Todos"
+            placeholder="productId"
           />
         </label>
 
-        <label class="check-field">
-          <input type="checkbox" [(ngModel)]="stockOnlyPositive" />
-          <span>onlyPositive</span>
+        <label class="toggle-field">
+          <span>Solo positivos</span>
+          <p-toggleswitch [(ngModel)]="stockOnlyPositive" inputId="stock-only-positive"></p-toggleswitch>
         </label>
 
         <div class="filter-actions">
@@ -89,10 +120,11 @@
       </div>
 
       @if (stockError()) {
-        <p-message severity="error" [text]="stockError()"></p-message>
+        <p-message severity="error" text="No se pudo cargar el stock actual"></p-message>
       }
 
       <p-table
+        styleClass="professional-table stock-table"
         [value]="stocks()"
         [loading]="stockLoading()"
         [paginator]="true"
@@ -106,7 +138,8 @@
           <tr>
             <th pSortableColumn="productName">Producto <p-sortIcon field="productName"></p-sortIcon></th>
             <th pSortableColumn="categoryName">Categoría <p-sortIcon field="categoryName"></p-sortIcon></th>
-            <th pSortableColumn="quantity">Cantidad <p-sortIcon field="quantity"></p-sortIcon></th>
+            <th pSortableColumn="quantity" class="numeric-column">Cantidad <p-sortIcon field="quantity"></p-sortIcon></th>
+            <th>Stock</th>
             <th pSortableColumn="isActive">Estado <p-sortIcon field="isActive"></p-sortIcon></th>
           </tr>
         </ng-template>
@@ -114,15 +147,21 @@
         <ng-template pTemplate="body" let-stock>
           <tr>
             <td>
-              <strong>{{ stock.productName }}</strong>
+              <strong class="product-name">{{ stock.productName }}</strong>
               <small class="row-hint">productId {{ stock.productId }}</small>
             </td>
             <td>
-              {{ stock.categoryName }}
+              <span class="muted-cell">{{ stock.categoryName }}</span>
               <small class="row-hint">categoryId {{ stock.categoryId }}</small>
             </td>
-            <td>
+            <td class="numeric-column">
               <strong [class.quantity-empty]="stock.quantity <= 0">{{ stock.quantity }}</strong>
+            </td>
+            <td>
+              <p-tag
+                [severity]="stockStatusSeverity(stock.quantity)"
+                [value]="stockStatusLabel(stock.quantity)"
+              ></p-tag>
             </td>
             <td>
               <p-tag
@@ -135,8 +174,12 @@
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="4">
-              <div class="empty-state">No hay stock para los filtros aplicados.</div>
+            <td colspan="5">
+              <div class="empty-state">
+                <i class="pi pi-inbox"></i>
+                <strong>No se encontraron productos</strong>
+                <span>Ajusta los filtros o refresca el stock actual.</span>
+              </div>
             </td>
           </tr>
         </ng-template>
@@ -163,14 +206,17 @@
         </ng-template>
       </p-toolbar>
 
-      <div class="filters filters--movements">
-        <label>
-          <span>search</span>
-          <input pInputText type="text" [(ngModel)]="movementSearch" placeholder="Producto, reference o notes" />
+      <div class="filter-bar filter-bar--movements">
+        <label class="filter-field filter-field--search">
+          <span>Buscar</span>
+          <span class="input-shell">
+            <i class="pi pi-search"></i>
+            <input pInputText type="text" [(ngModel)]="movementSearch" placeholder="Producto, reference o notes" />
+          </span>
         </label>
 
-        <label>
-          <span>productId</span>
+        <label class="filter-field">
+          <span>Producto</span>
           <p-select
             [options]="productOptions()"
             [(ngModel)]="movementProductId"
@@ -181,7 +227,7 @@
           ></p-select>
         </label>
 
-        <label>
+        <label class="filter-field">
           <span>type</span>
           <p-select
             [options]="movementTypeOptions"
@@ -193,7 +239,7 @@
           ></p-select>
         </label>
 
-        <label>
+        <label class="filter-field">
           <span>sourceType</span>
           <p-select
             [options]="sourceTypeOptions"
@@ -205,7 +251,7 @@
           ></p-select>
         </label>
 
-        <label>
+        <label class="filter-field filter-field--small">
           <span>sourceId</span>
           <input
             pInputText
@@ -216,7 +262,7 @@
           />
         </label>
 
-        <label>
+        <label class="filter-field filter-field--small">
           <span>userId</span>
           <input
             pInputText
@@ -227,12 +273,12 @@
           />
         </label>
 
-        <label>
+        <label class="filter-field filter-field--date">
           <span>from</span>
           <input pInputText type="date" [(ngModel)]="movementFrom" />
         </label>
 
-        <label>
+        <label class="filter-field filter-field--date">
           <span>to</span>
           <input pInputText type="date" [(ngModel)]="movementTo" />
         </label>
@@ -250,10 +296,11 @@
       </div>
 
       @if (movementsError()) {
-        <p-message severity="error" [text]="movementsError()"></p-message>
+        <p-message severity="error" text="No se pudo cargar el kardex"></p-message>
       }
 
       <p-table
+        styleClass="professional-table kardex-table"
         [value]="movements()"
         [loading]="movementsLoading()"
         [paginator]="true"
@@ -277,9 +324,8 @@
             <th>sourceType</th>
             <th>sourceId</th>
             <th>sourceLineId</th>
-            <th>Cantidad</th>
-            <th>stockBefore</th>
-            <th>stockAfter</th>
+            <th class="numeric-column">Cantidad</th>
+            <th>Stock</th>
             <th>userId</th>
             <th>reference</th>
             <th>Detalle</th>
@@ -290,7 +336,7 @@
           <tr>
             <td>{{ movement.createdAt | date: 'short' }}</td>
             <td>
-              {{ movement.productName }}
+              <strong class="product-name">{{ movement.productName }}</strong>
               <small class="row-hint">productId {{ movement.productId }}</small>
             </td>
             <td>
@@ -299,20 +345,30 @@
                 [value]="movementTypeName(movement.type)"
               ></p-tag>
             </td>
-            <td>{{ sourceTypeName(movement.sourceType) }}</td>
+            <td>
+              <span [class]="sourceBadgeClass(movement.sourceType)">
+                {{ sourceTypeName(movement.sourceType) }}
+              </span>
+            </td>
             <td>{{ movement.sourceId ?? '-' }}</td>
             <td>{{ movement.sourceLineId ?? '-' }}</td>
-            <td><strong>{{ movement.quantity }}</strong></td>
-            <td>{{ movement.stockBefore }}</td>
-            <td>{{ movement.stockAfter }}</td>
+            <td class="numeric-column"><strong>{{ movement.quantity }}</strong></td>
+            <td>
+              <span class="stock-flow">
+                <span>{{ movement.stockBefore }}</span>
+                <i class="pi pi-arrow-right"></i>
+                <strong>{{ movement.stockAfter }}</strong>
+              </span>
+            </td>
             <td>{{ movement.userId }}</td>
             <td>{{ movement.reference ?? '-' }}</td>
             <td>
               <p-button
-                label="Ver"
                 icon="pi pi-search"
                 severity="secondary"
                 [text]="true"
+                [rounded]="true"
+                ariaLabel="Ver movimiento"
                 (onClick)="openMovementDetail(movement)"
               ></p-button>
             </td>
@@ -321,8 +377,12 @@
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="12">
-              <div class="empty-state">No hay movimientos para los filtros aplicados.</div>
+            <td colspan="11">
+              <div class="empty-state">
+                <i class="pi pi-list"></i>
+                <strong>No hay movimientos para mostrar</strong>
+                <span>Prueba con otro rango de fechas o limpia los filtros.</span>
+              </div>
             </td>
           </tr>
         </ng-template>
@@ -332,72 +392,61 @@
 </div>
 
 <p-dialog
-  header="Movimiento de inventario"
+  header="Detalle del movimiento"
   [modal]="true"
   [visible]="movementDetailVisible"
-  [style]="{ width: '48rem' }"
+  [style]="{ width: '52rem' }"
   (visibleChange)="onMovementDetailVisibleChange($event)"
 >
   @if (movementDetailLoading()) {
     <div class="empty-state">Cargando movimiento...</div>
   } @else if (movementDetailError()) {
-    <p-message severity="error" [text]="movementDetailError()"></p-message>
+    <p-message severity="error" text="No se pudo cargar el movimiento"></p-message>
   } @else if (selectedMovement(); as detail) {
+    <div class="movement-summary">
+      <div>
+        <small>Producto</small>
+        <strong>{{ detail.productName }}</strong>
+        <span>productId {{ detail.productId }}</span>
+      </div>
+      <p-tag [severity]="movementSeverity(detail.type)" [value]="movementTypeName(detail.type)"></p-tag>
+    </div>
+
     <dl class="detail-grid">
       <div>
-        <dt>id</dt>
-        <dd>{{ detail.id }}</dd>
-      </div>
-      <div>
-        <dt>productId</dt>
-        <dd>{{ detail.productId }}</dd>
-      </div>
-      <div>
-        <dt>productName</dt>
-        <dd>{{ detail.productName }}</dd>
-      </div>
-      <div>
-        <dt>type</dt>
-        <dd>{{ movementTypeName(detail.type) }}</dd>
-      </div>
-      <div>
-        <dt>sourceType</dt>
+        <dt>Source</dt>
         <dd>{{ sourceTypeName(detail.sourceType) }}</dd>
       </div>
       <div>
-        <dt>sourceId</dt>
+        <dt>SourceId</dt>
         <dd>{{ detail.sourceId ?? '-' }}</dd>
       </div>
       <div>
-        <dt>sourceLineId</dt>
+        <dt>SourceLineId</dt>
         <dd>{{ detail.sourceLineId ?? '-' }}</dd>
       </div>
       <div>
-        <dt>quantity</dt>
+        <dt>Quantity</dt>
         <dd>{{ detail.quantity }}</dd>
       </div>
       <div>
-        <dt>stockBefore</dt>
-        <dd>{{ detail.stockBefore }}</dd>
+        <dt>Before / After</dt>
+        <dd>{{ detail.stockBefore }} → {{ detail.stockAfter }}</dd>
       </div>
       <div>
-        <dt>stockAfter</dt>
-        <dd>{{ detail.stockAfter }}</dd>
-      </div>
-      <div>
-        <dt>reference</dt>
-        <dd>{{ detail.reference ?? '-' }}</dd>
-      </div>
-      <div>
-        <dt>userId</dt>
+        <dt>User</dt>
         <dd>{{ detail.userId }}</dd>
       </div>
       <div>
-        <dt>createdAt</dt>
+        <dt>Reference</dt>
+        <dd>{{ detail.reference ?? '-' }}</dd>
+      </div>
+      <div>
+        <dt>CreatedAt</dt>
         <dd>{{ detail.createdAt | date: 'medium' }}</dd>
       </div>
       <div class="detail-grid__wide">
-        <dt>notes</dt>
+        <dt>Notes</dt>
         <dd>{{ detail.notes ?? '-' }}</dd>
       </div>
     </dl>
