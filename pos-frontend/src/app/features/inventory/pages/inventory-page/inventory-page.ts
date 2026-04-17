@@ -1,6 +1,6 @@
 import { CommonModule, DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
@@ -56,9 +56,12 @@ interface ContextItem {
   styleUrl: './inventory-page.scss',
 })
 export class InventoryPage implements OnInit {
+  @ViewChild('kardexSection') private kardexSection?: ElementRef<HTMLElement>;
+
   private readonly inventoryService = inject(InventoryService);
   private readonly permissionService = inject(PermissionService);
   private readonly authStore = inject(AuthStore);
+  readonly lowStockThreshold = 5;
 
   readonly canReadInventory = computed(() => this.permissionService.hasPermission(PERMISSIONS.inventoryRead));
   readonly contextItems = computed<ContextItem[]>(() => [
@@ -72,6 +75,10 @@ export class InventoryPage implements OnInit {
   readonly stockError = signal('');
   readonly totalProducts = computed(() => this.stocks().length);
   readonly outOfStockProducts = computed(() => this.stocks().filter((stock) => stock.quantity <= 0).length);
+  readonly lowStockProducts = computed(() =>
+    this.stocks().filter((stock) => stock.quantity > 0 && stock.quantity <= this.lowStockThreshold).length
+  );
+  readonly inactiveProducts = computed(() => this.stocks().filter((stock) => !stock.isActive).length);
   readonly totalInventoryUnits = computed(() =>
     this.stocks().reduce((total, stock) => total + stock.quantity, 0)
   );
@@ -81,6 +88,11 @@ export class InventoryPage implements OnInit {
   readonly movementsError = signal('');
   readonly totalMovementItems = signal(0);
   readonly totalMovementPages = signal(0);
+  readonly lastMovement = computed(() => this.movements()[0] ?? null);
+  readonly focusedProduct = computed(() => {
+    const productId = this.movementProductId;
+    return productId === null ? null : (this.stocks().find((stock) => stock.productId === productId) ?? null);
+  });
 
   readonly selectedMovement = signal<InventoryMovement | null>(null);
   readonly movementDetailLoading = signal(false);
@@ -94,20 +106,20 @@ export class InventoryPage implements OnInit {
   );
 
   readonly movementTypeOptions: SelectOption<InventoryMovementType>[] = [
-    { label: 'Initial', value: InventoryMovementType.Initial },
-    { label: 'Entry', value: InventoryMovementType.Entry },
-    { label: 'Exit', value: InventoryMovementType.Exit },
-    { label: 'Adjustment', value: InventoryMovementType.Adjustment },
-    { label: 'Sale', value: InventoryMovementType.Sale },
-    { label: 'Void', value: InventoryMovementType.Void },
+    { label: 'Inicial', value: InventoryMovementType.Initial },
+    { label: 'Entrada', value: InventoryMovementType.Entry },
+    { label: 'Salida', value: InventoryMovementType.Exit },
+    { label: 'Ajuste', value: InventoryMovementType.Adjustment },
+    { label: 'Venta', value: InventoryMovementType.Sale },
+    { label: 'Anulación', value: InventoryMovementType.Void },
   ];
 
   readonly sourceTypeOptions: SelectOption<InventoryMovementSourceType>[] = [
-    { label: 'ManualEntry', value: InventoryMovementSourceType.ManualEntry },
-    { label: 'ManualExit', value: InventoryMovementSourceType.ManualExit },
-    { label: 'ManualAdjustment', value: InventoryMovementSourceType.ManualAdjustment },
-    { label: 'Sale', value: InventoryMovementSourceType.Sale },
-    { label: 'SaleVoid', value: InventoryMovementSourceType.SaleVoid },
+    { label: 'Entrada manual', value: InventoryMovementSourceType.ManualEntry },
+    { label: 'Salida manual', value: InventoryMovementSourceType.ManualExit },
+    { label: 'Ajuste manual', value: InventoryMovementSourceType.ManualAdjustment },
+    { label: 'Venta', value: InventoryMovementSourceType.Sale },
+    { label: 'Anulación de venta', value: InventoryMovementSourceType.SaleVoid },
   ];
 
   stockSearch = '';
@@ -210,6 +222,19 @@ export class InventoryPage implements OnInit {
     this.applyMovementFilters();
   }
 
+  focusProductMovements(stock: InventoryStock): void {
+    this.movementProductId = stock.productId;
+    this.movementSearch = '';
+    this.movementFirst = 0;
+    this.loadMovements(1, this.movementRows);
+    queueMicrotask(() => this.kardexSection?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
+
+  clearProductFocus(): void {
+    this.movementProductId = null;
+    this.applyMovementFilters();
+  }
+
   openMovementDetail(movement: InventoryMovement): void {
     this.movementDetailVisible = true;
     this.selectedMovement.set(null);
@@ -246,11 +271,11 @@ export class InventoryPage implements OnInit {
   }
 
   movementTypeName(type: InventoryMovementType): string {
-    return InventoryMovementType[type] ?? String(type);
+    return this.movementTypeOptions.find((option) => option.value === type)?.label ?? String(type);
   }
 
   sourceTypeName(sourceType: InventoryMovementSourceType): string {
-    return InventoryMovementSourceType[sourceType] ?? String(sourceType);
+    return this.sourceTypeOptions.find((option) => option.value === sourceType)?.label ?? String(sourceType);
   }
 
   statusSeverity(isActive: boolean): 'success' | 'danger' {
@@ -263,6 +288,50 @@ export class InventoryPage implements OnInit {
 
   stockStatusSeverity(quantity: number): 'success' | 'danger' {
     return quantity > 0 ? 'success' : 'danger';
+  }
+
+  stockRiskLabel(stock: InventoryStock): string {
+    if (stock.quantity <= 0) {
+      return 'Crítico';
+    }
+
+    if (stock.quantity <= this.lowStockThreshold) {
+      return 'Bajo';
+    }
+
+    return 'Normal';
+  }
+
+  stockRiskClass(stock: InventoryStock): string {
+    const classes = ['stock-risk'];
+
+    if (stock.quantity <= 0) {
+      classes.push('stock-risk--critical');
+    } else if (stock.quantity <= this.lowStockThreshold) {
+      classes.push('stock-risk--warning');
+    }
+
+    if (!stock.isActive) {
+      classes.push('stock-risk--inactive');
+    }
+
+    return classes.join(' ');
+  }
+
+  stockRowClass(stock: InventoryStock): string {
+    const classes: string[] = [];
+
+    if (stock.quantity <= 0) {
+      classes.push('row-critical');
+    } else if (stock.quantity <= this.lowStockThreshold) {
+      classes.push('row-warning');
+    }
+
+    if (!stock.isActive) {
+      classes.push('row-inactive');
+    }
+
+    return classes.join(' ');
   }
 
   movementSeverity(type: InventoryMovementType): 'success' | 'secondary' | 'info' | 'warn' | 'danger' | 'contrast' | undefined {
@@ -299,6 +368,10 @@ export class InventoryPage implements OnInit {
     }
 
     return 'source-badge';
+  }
+
+  isReversalMovement(movement: InventoryMovement): boolean {
+    return movement.type === InventoryMovementType.Void || movement.sourceType === InventoryMovementSourceType.SaleVoid;
   }
 
   private buildMovementFilters(page: number, pageSize: number): InventoryMovementFilters {
