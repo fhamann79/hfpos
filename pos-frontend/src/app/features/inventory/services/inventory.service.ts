@@ -6,6 +6,7 @@ import { resolveHttpErrorMessage } from '../../../core/utils/http-error-normaliz
 import { InventoryMovement } from '../models/inventory-movement.model';
 import { InventoryMovementFilters, InventoryStockFilters } from '../models/inventory-filters.model';
 import { InventoryStock } from '../models/inventory-stock.model';
+import { InventoryOperationRequest } from '../models/inventory-operation.model';
 import { PagedResult } from '../models/paged-result.model';
 
 @Injectable({ providedIn: 'root' })
@@ -27,6 +28,18 @@ export class InventoryService {
 
   getMovementById(id: number): Observable<InventoryMovement> {
     return this.http.get<InventoryMovement>(`${this.baseUrl}/movements/${id}`);
+  }
+
+  registerEntry(payload: InventoryOperationRequest): Observable<InventoryMovement> {
+    return this.http.post<InventoryMovement>(`${this.baseUrl}/entry`, payload);
+  }
+
+  registerExit(payload: InventoryOperationRequest): Observable<InventoryMovement> {
+    return this.http.post<InventoryMovement>(`${this.baseUrl}/exit`, payload);
+  }
+
+  registerAdjustment(payload: InventoryOperationRequest): Observable<InventoryMovement> {
+    return this.http.post<InventoryMovement>(`${this.baseUrl}/adjust`, payload);
   }
 
   resolveError(error: HttpErrorResponse, fallback: string): string {

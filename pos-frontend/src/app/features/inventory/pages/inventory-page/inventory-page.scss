@@ -1,142 +1,15 @@
-.inventory-page { display: flex; flex-direction: column; gap: 1.25rem; }
+.inventory-page,.inventory-section{display:flex;flex-direction:column;gap:1.25rem}.inventory-hero,.inventory-section{background:var(--app-surface);border:1px solid var(--app-border);border-radius:.8rem;box-shadow:var(--app-shadow-sm)}.inventory-hero{display:flex;justify-content:space-between;align-items:flex-start;gap:1.25rem;padding:1.5rem}.hero-copy p,.operations-header p,.operation-form-header p{margin:.35rem 0 0;color:var(--app-text-muted)}.eyebrow{color:#2563eb;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em}.hero-actions,.context-chips,.filter-bar,.filter-actions,.health-card__content,.stock-flow,.movement-summary,.stock-delta,.operation-context,.operations-header,.operation-form-header,.operation-actions{display:flex;align-items:center}.hero-actions{justify-content:flex-end;gap:1rem;flex-wrap:wrap}.context-chips,.operation-context{gap:.5rem;flex-wrap:wrap;justify-content:flex-end}.context-chip,.source-badge{display:inline-flex;align-items:center;border-radius:.5rem;font-weight:700}.context-chip{gap:.35rem;padding:.45rem .65rem;border:1px solid #dbe3ef;background:#f8fafc}.context-chip small,.row-hint,.muted-cell,.filter-field,.toggle-field,.movement-summary small,.movement-summary span,.detail-grid dt,.operation-preview small,.operation-preview span,.operation-option small{color:var(--app-text-muted)}.context-chip small{font-size:.74rem}
 
-.inventory-hero,
-.inventory-section {
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-  border-radius: 0.8rem;
-  box-shadow: var(--app-shadow-sm);
-}
+.health-strip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.85rem}:host ::ng-deep .health-card{border:1px solid var(--app-border);border-radius:.8rem;box-shadow:var(--app-shadow-sm)}:host ::ng-deep .health-card .p-card-body,:host ::ng-deep .health-card .p-card-content{padding:0}:host ::ng-deep .health-card--critical{border-color:#fecaca}:host ::ng-deep .health-card--warning{border-color:#fde68a}.health-card__content{align-items:flex-start;gap:.8rem;padding:1rem;min-height:6.25rem}.health-card__content small,.health-card__content span{display:block;color:var(--app-text-muted)}.health-card__content strong{display:block;font-size:1.45rem;line-height:1.1;margin:.1rem 0}.health-icon{width:2.5rem;height:2.5rem;display:inline-flex;align-items:center;justify-content:center;border-radius:.65rem;background:#e0f2fe;color:#0369a1;flex:0 0 auto}:host ::ng-deep .health-card--critical .health-icon{background:#fee2e2;color:#b91c1c}:host ::ng-deep .health-card--warning .health-icon{background:#fef3c7;color:#b45309}:host ::ng-deep .health-card--muted .health-icon{background:#f1f5f9;color:#475569}:host ::ng-deep .health-card--movement .health-icon{background:#ede9fe;color:#6d28d9}
 
-.inventory-hero {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 1.25rem;
-  padding: 1.5rem;
-}
+.inventory-section{padding:1rem}:host ::ng-deep .inventory-toolbar{border:0;border-bottom:1px solid var(--app-border);border-radius:0;background:transparent;padding:0 0 .9rem}.filter-panel{display:flex;flex-direction:column;gap:.75rem;padding:.85rem;background:#f8fafc;border:1px solid #e5eaf2;border-radius:.65rem}.filter-panel__title{display:flex;gap:.65rem;align-items:flex-start}.filter-panel__title i{color:#2563eb;margin-top:.15rem}.filter-panel__title strong,.filter-panel__title span{display:block}.filter-panel__title span{color:var(--app-text-muted);font-size:.84rem}.filter-bar{align-items:end;gap:.75rem;flex-wrap:wrap}.filter-field,.toggle-field{flex-direction:column;gap:.35rem;font-size:.82rem}.filter-field{min-width:11rem}.filter-field input,.filter-field p-select{width:100%}.filter-field--search{min-width:18rem;flex:1 1 18rem}.filter-field--small{min-width:8rem}.filter-field--date{min-width:9rem}.toggle-field{min-height:2.65rem;justify-content:flex-end}.filter-actions{gap:.5rem}.input-shell{position:relative;display:block}.input-shell i{position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:var(--app-text-muted);z-index:1}.input-shell input{width:100%;padding-left:2.15rem}
 
-.hero-copy p { margin: 0.35rem 0 0; color: var(--app-text-muted); }
-.eyebrow { color: #2563eb; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
-.hero-actions, .context-chips, .filter-bar, .filter-actions, .health-card__content, .stock-flow, .movement-summary, .stock-delta {
-  display: flex;
-  align-items: center;
-}
-.hero-actions { justify-content: flex-end; gap: 1rem; flex-wrap: wrap; }
-.context-chips { gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
+:host ::ng-deep .professional-table .p-datatable-thead>tr>th{background:#f8fafc;color:#475569;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;border-color:var(--app-border)}:host ::ng-deep .professional-table .p-datatable-tbody>tr{transition:background .16s ease}:host ::ng-deep .professional-table .p-datatable-tbody>tr:hover{background:#f8fafc}:host ::ng-deep .professional-table .p-datatable-tbody>tr>td{border-color:#edf2f7;vertical-align:middle}.product-name,.product-stack strong{font-weight:700}.product-stack small{color:var(--app-text-muted)}.row-hint{display:block;margin-top:.2rem;font-size:.76rem}.numeric-column{text-align:right}.quantity-value{font-size:1.05rem}.quantity-empty{color:#b91c1c}.stock-flow{gap:.45rem;font-variant-numeric:tabular-nums}.stock-flow i{color:var(--app-text-muted);font-size:.75rem}:host ::ng-deep .professional-table .p-datatable-tbody>tr.row-critical{background:#fff7f7}:host ::ng-deep .professional-table .p-datatable-tbody>tr.row-warning{background:#fffbeb}:host ::ng-deep .professional-table .p-datatable-tbody>tr.row-inactive{opacity:.72}:host ::ng-deep .professional-table .p-datatable-tbody>tr.row-reversal{background:#fff7ed}
 
-.context-chip, .source-badge {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 0.5rem;
-  font-weight: 700;
-}
-.context-chip { gap: 0.35rem; padding: 0.45rem 0.65rem; border: 1px solid #dbe3ef; background: #f8fafc; }
-.context-chip small, .row-hint, .muted-cell, .filter-field, .toggle-field, .movement-summary small, .movement-summary span, .detail-grid dt {
-  color: var(--app-text-muted);
-}
-.context-chip small { font-size: 0.74rem; }
+.stock-risk{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .5rem;border-radius:.45rem;background:#dcfce7;color:#15803d;font-weight:700;font-size:.8rem}.stock-risk--critical{background:#fee2e2;color:#b91c1c}.stock-risk--warning{background:#fef3c7;color:#b45309}.stock-risk--inactive{box-shadow:inset 0 0 0 1px #cbd5e1}.source-badge{padding:.25rem .5rem;background:#f1f5f9;color:#475569;font-size:.8rem}.source-badge--sale{background:#dbeafe;color:#1d4ed8}.source-badge--sale-void{background:#ffedd5;color:#c2410c}.source-badge--adjustment{background:#f3e8ff;color:#7e22ce}
 
-.health-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.85rem; }
-:host ::ng-deep .health-card { border: 1px solid var(--app-border); border-radius: 0.8rem; box-shadow: var(--app-shadow-sm); }
-:host ::ng-deep .health-card .p-card-body, :host ::ng-deep .health-card .p-card-content { padding: 0; }
-:host ::ng-deep .health-card--critical { border-color: #fecaca; }
-:host ::ng-deep .health-card--warning { border-color: #fde68a; }
-.health-card__content { align-items: flex-start; gap: 0.8rem; padding: 1rem; min-height: 6.25rem; }
-.health-card__content small, .health-card__content span { display: block; color: var(--app-text-muted); }
-.health-card__content strong { display: block; font-size: 1.45rem; line-height: 1.1; margin: 0.1rem 0; }
-.health-icon { width: 2.5rem; height: 2.5rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 0.65rem; background: #e0f2fe; color: #0369a1; flex: 0 0 auto; }
-:host ::ng-deep .health-card--critical .health-icon { background: #fee2e2; color: #b91c1c; }
-:host ::ng-deep .health-card--warning .health-icon { background: #fef3c7; color: #b45309; }
-:host ::ng-deep .health-card--muted .health-icon { background: #f1f5f9; color: #475569; }
-:host ::ng-deep .health-card--movement .health-icon { background: #ede9fe; color: #6d28d9; }
+.drilldown-banner{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.85rem 1rem;border-radius:.65rem;border:1px solid #bfdbfe;background:#eff6ff}.drilldown-banner div,.date-stack,.reference-cell{display:flex;flex-direction:column;gap:.15rem}.drilldown-banner i{color:#1d4ed8}.drilldown-banner span,.date-stack small,.reference-cell small{color:var(--app-text-muted)}.empty-state{min-height:8rem;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.35rem;color:var(--app-text-muted);text-align:center}.empty-state i{font-size:1.6rem;color:#94a3b8}.empty-state strong{color:var(--app-text)}
 
-.inventory-section { flex-direction: column; gap: 1rem; padding: 1rem; display: flex; }
-:host ::ng-deep .inventory-toolbar { border: 0; border-bottom: 1px solid var(--app-border); border-radius: 0; background: transparent; padding: 0 0 0.9rem; }
+.movement-summary{justify-content:space-between;align-items:flex-start;gap:1rem;margin-bottom:1rem;padding:1rem;border:1px solid var(--app-border);border-radius:.65rem;background:#f8fafc}.movement-summary small,.movement-summary span{display:block}.movement-summary strong{display:block;margin:.15rem 0;font-size:1.05rem}.movement-summary__badges{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;justify-content:flex-end}.stock-delta{justify-content:center;gap:1rem;margin-bottom:1rem;padding:1rem;border-radius:.65rem;background:#f8fafc;border:1px solid var(--app-border)}.stock-delta div{min-width:8rem;text-align:center}.stock-delta small{display:block;color:var(--app-text-muted);margin-bottom:.2rem}.stock-delta strong{font-size:1.35rem}.stock-delta i{color:#2563eb}.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;margin:0}.detail-grid div{border:1px solid var(--app-border);border-radius:.55rem;background:var(--app-surface);padding:.85rem}.detail-grid dt{font-size:.78rem;margin-bottom:.25rem}.detail-grid dd{margin:0;font-weight:650;overflow-wrap:anywhere}.detail-grid__wide{grid-column:1/-1}
 
-.filter-panel { display: flex; flex-direction: column; gap: 0.75rem; padding: 0.85rem; background: #f8fafc; border: 1px solid #e5eaf2; border-radius: 0.65rem; }
-.filter-panel__title { display: flex; gap: 0.65rem; align-items: flex-start; }
-.filter-panel__title i { color: #2563eb; margin-top: 0.15rem; }
-.filter-panel__title strong, .filter-panel__title span { display: block; }
-.filter-panel__title span { color: var(--app-text-muted); font-size: 0.84rem; }
-.filter-bar { align-items: end; gap: 0.75rem; flex-wrap: wrap; }
-.filter-field, .toggle-field { flex-direction: column; gap: 0.35rem; font-size: 0.82rem; }
-.filter-field { min-width: 11rem; }
-.filter-field input, .filter-field p-select { width: 100%; }
-.filter-field--search { min-width: 18rem; flex: 1 1 18rem; }
-.filter-field--small { min-width: 8rem; }
-.filter-field--date { min-width: 9rem; }
-.toggle-field { min-height: 2.65rem; justify-content: flex-end; }
-.filter-actions { gap: 0.5rem; }
-.input-shell { position: relative; display: block; }
-.input-shell i { position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--app-text-muted); z-index: 1; }
-.input-shell input { width: 100%; padding-left: 2.15rem; }
-
-:host ::ng-deep .professional-table .p-datatable-thead > tr > th {
-  background: #f8fafc; color: #475569; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; border-color: var(--app-border);
-}
-:host ::ng-deep .professional-table .p-datatable-tbody > tr { transition: background 0.16s ease; }
-:host ::ng-deep .professional-table .p-datatable-tbody > tr:hover { background: #f8fafc; }
-:host ::ng-deep .professional-table .p-datatable-tbody > tr > td { border-color: #edf2f7; vertical-align: middle; }
-
-.product-name, .product-stack strong { font-weight: 700; }
-.product-stack small { color: var(--app-text-muted); }
-.row-hint { display: block; margin-top: 0.2rem; font-size: 0.76rem; }
-.numeric-column { text-align: right; }
-.quantity-value { font-size: 1.05rem; }
-.quantity-empty { color: #b91c1c; }
-.stock-flow { gap: 0.45rem; font-variant-numeric: tabular-nums; }
-.stock-flow i { color: var(--app-text-muted); font-size: 0.75rem; }
-
-:host ::ng-deep .professional-table .p-datatable-tbody > tr.row-critical { background: #fff7f7; }
-:host ::ng-deep .professional-table .p-datatable-tbody > tr.row-warning { background: #fffbeb; }
-:host ::ng-deep .professional-table .p-datatable-tbody > tr.row-inactive { opacity: 0.72; }
-:host ::ng-deep .professional-table .p-datatable-tbody > tr.row-reversal { background: #fff7ed; }
-
-.stock-risk { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.5rem; border-radius: 0.45rem; background: #dcfce7; color: #15803d; font-weight: 700; font-size: 0.8rem; }
-.stock-risk--critical { background: #fee2e2; color: #b91c1c; }
-.stock-risk--warning { background: #fef3c7; color: #b45309; }
-.stock-risk--inactive { box-shadow: inset 0 0 0 1px #cbd5e1; }
-
-.source-badge { padding: 0.25rem 0.5rem; background: #f1f5f9; color: #475569; font-size: 0.8rem; }
-.source-badge--sale { background: #dbeafe; color: #1d4ed8; }
-.source-badge--sale-void { background: #ffedd5; color: #c2410c; }
-.source-badge--adjustment { background: #f3e8ff; color: #7e22ce; }
-
-.drilldown-banner { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.85rem 1rem; border-radius: 0.65rem; border: 1px solid #bfdbfe; background: #eff6ff; }
-.drilldown-banner div { display: flex; flex-direction: column; gap: 0.15rem; }
-.drilldown-banner i { color: #1d4ed8; }
-.drilldown-banner span, .date-stack small, .reference-cell small { color: var(--app-text-muted); }
-.date-stack, .reference-cell { display: flex; flex-direction: column; gap: 0.15rem; }
-
-.empty-state { min-height: 8rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem; color: var(--app-text-muted); text-align: center; }
-.empty-state i { font-size: 1.6rem; color: #94a3b8; }
-.empty-state strong { color: var(--app-text); }
-
-.movement-summary { justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1rem; padding: 1rem; border: 1px solid var(--app-border); border-radius: 0.65rem; background: #f8fafc; }
-.movement-summary small, .movement-summary span { display: block; }
-.movement-summary strong { display: block; margin: 0.15rem 0; font-size: 1.05rem; }
-.movement-summary__badges { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-.stock-delta { justify-content: center; gap: 1rem; margin-bottom: 1rem; padding: 1rem; border-radius: 0.65rem; background: #f8fafc; border: 1px solid var(--app-border); }
-.stock-delta div { min-width: 8rem; text-align: center; }
-.stock-delta small { display: block; color: var(--app-text-muted); margin-bottom: 0.2rem; }
-.stock-delta strong { font-size: 1.35rem; }
-.stock-delta i { color: #2563eb; }
-
-.detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 0; }
-.detail-grid div { border: 1px solid var(--app-border); border-radius: 0.55rem; background: var(--app-surface); padding: 0.85rem; }
-.detail-grid dt { font-size: 0.78rem; margin-bottom: 0.25rem; }
-.detail-grid dd { margin: 0; font-weight: 650; overflow-wrap: anywhere; }
-.detail-grid__wide { grid-column: 1 / -1; }
-
-@media (max-width: 1100px) {
-  .inventory-hero, .hero-actions, .filter-actions { flex-direction: column; align-items: stretch; }
-  .context-chips { justify-content: flex-start; }
-  .health-strip { grid-template-columns: 1fr; }
-  .filter-field, .filter-field--search, .filter-field--small, .filter-field--date { min-width: 100%; }
-}
-
-@media (max-width: 700px) {
-  .inventory-hero, .inventory-section { padding: 1rem; }
-  .detail-grid { grid-template-columns: 1fr; }
-}
+@media (max-width:1100px){.inventory-hero,.hero-actions,.filter-actions{flex-direction:column;align-items:stretch}.context-chips{justify-content:flex-start}.health-strip{grid-template-columns:1fr}.filter-field,.filter-field--search,.filter-field--small,.filter-field--date{min-width:100%}}@media (max-width:700px){.inventory-hero,.inventory-section{padding:1rem}.detail-grid{grid-template-columns:1fr}}
