@@ -1,0 +1,20 @@
+.operational-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.operational-page__header {
+  h2 {
+    margin: 0;
+  }
+
+  p {
+    margin: 0.4rem 0 0;
+    color: var(--text-color-secondary);
+  }
+}
+
+.operational-page__grid {
+  display: grid;
+  gap: 1rem;
+}

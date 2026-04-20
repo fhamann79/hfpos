@@ -1,0 +1,47 @@
+<p-dialog
+  [header]="role ? 'Permisos de ' + role.name : 'Permisos de rol'"
+  [visible]="visible"
+  [modal]="true"
+  [style]="{ width: '52rem' }"
+  [draggable]="false"
+  [resizable]="false"
+  (visibleChange)="visibleChange.emit($event)"
+  (onHide)="hide()"
+>
+  @if (errorMessage()) {
+    <p-message severity="error" [text]="errorMessage()"></p-message>
+  }
+
+  <div class="permissions-content" [class.permissions-content--loading]="loading()">
+    @for (group of groupedPermissions(); track group.name) {
+      <section class="permission-group">
+        <h4>{{ group.name }}</h4>
+        <div class="permission-list">
+          @for (permission of group.items; track permission.permissionId) {
+            <label class="permission-item" [for]="'perm-' + permission.permissionId">
+              <p-checkbox
+                [inputId]="'perm-' + permission.permissionId"
+                [binary]="true"
+                [ngModel]="permission.assigned"
+                (ngModelChange)="togglePermission(permission.permissionId, $event)"
+              ></p-checkbox>
+              <div>
+                <strong>{{ permission.code }}</strong>
+                <small>{{ permission.description }}</small>
+              </div>
+            </label>
+          }
+        </div>
+      </section>
+    }
+
+    @if (!loading() && groupedPermissions().length === 0) {
+      <p-message severity="info" text="No hay permisos para este rol."></p-message>
+    }
+  </div>
+
+  <div class="dialog-actions">
+    <p-button type="button" label="Cancelar" severity="secondary" [outlined]="true" (onClick)="hide()"></p-button>
+    <p-button type="button" label="Guardar" icon="pi pi-check" [loading]="loading()" (onClick)="save()"></p-button>
+  </div>
+</p-dialog>

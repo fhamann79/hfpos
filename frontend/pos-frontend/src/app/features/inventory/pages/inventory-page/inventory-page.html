@@ -1,0 +1,730 @@
+<div class="inventory-page">
+  <header class="inventory-hero">
+    <div class="hero-copy">
+      <span class="eyebrow">Operación de inventario</span>
+      <h2>Inventario</h2>
+      <p>Supervisa disponibilidad, alertas operativas y trazabilidad de movimientos.</p>
+    </div>
+
+    <div class="hero-actions">
+      <div class="context-chips" aria-label="Contexto operativo actual">
+        @for (item of contextItems(); track item.label) {
+          <span class="context-chip">
+            <small>{{ item.label }}</small>
+            <strong>{{ item.value ?? 'N/D' }}</strong>
+          </span>
+        }
+      </div>
+
+      <p-button
+        label="Refrescar"
+        icon="pi pi-refresh"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="!canReadInventory()"
+        (onClick)="refreshAll()"
+      ></p-button>
+    </div>
+  </header>
+
+  @if (!canReadInventory()) {
+    <p-message severity="warn" text="No tienes permisos para consultar inventario."></p-message>
+  } @else {
+    <p-tabs value="visibility" styleClass="inventory-workspace">
+      <p-tablist>
+        <p-tab value="visibility">
+          <i class="pi pi-chart-line"></i>
+          <span>Visibilidad</span>
+        </p-tab>
+        <p-tab value="operations">
+          <i class="pi pi-file-edit"></i>
+          <span>Operaciones</span>
+        </p-tab>
+      </p-tablist>
+
+      <p-tabpanels>
+        <p-tabpanel value="visibility">
+          <section class="health-strip" aria-label="Salud operativa del inventario">
+            <p-card styleClass="health-card health-card--info">
+              <div class="health-card__content">
+                <span class="health-icon"><i class="pi pi-box"></i></span>
+                <div>
+                  <small>Total productos</small>
+                  <strong>{{ totalProducts() }}</strong>
+                </div>
+              </div>
+            </p-card>
+
+            <p-card styleClass="health-card health-card--critical">
+              <div class="health-card__content">
+                <span class="health-icon"><i class="pi pi-times-circle"></i></span>
+                <div>
+                  <small>Sin stock</small>
+                  <strong>{{ outOfStockProducts() }}</strong>
+                </div>
+              </div>
+            </p-card>
+
+            <p-card styleClass="health-card health-card--warning">
+              <div class="health-card__content">
+                <span class="health-icon"><i class="pi pi-exclamation-triangle"></i></span>
+                <div>
+                  <small>Stock bajo</small>
+                  <strong>{{ lowStockProducts() }}</strong>
+                  <span>Umbral visual: 1 a {{ lowStockThreshold }} unidades</span>
+                </div>
+              </div>
+            </p-card>
+
+            <p-card styleClass="health-card health-card--muted">
+              <div class="health-card__content">
+                <span class="health-icon"><i class="pi pi-ban"></i></span>
+                <div>
+                  <small>Inactivos</small>
+                  <strong>{{ inactiveProducts() }}</strong>
+                </div>
+              </div>
+            </p-card>
+
+            <p-card styleClass="health-card health-card--movement">
+              <div class="health-card__content">
+                <span class="health-icon"><i class="pi pi-history"></i></span>
+                <div>
+                  <small>Último movimiento</small>
+                  @if (lastMovement(); as movement) {
+                    <strong>{{ movementTypeName(movement.type) }}</strong>
+                    <span>{{ movement.productName }} · {{ movement.createdAt | date: 'short' }}</span>
+                  } @else {
+                    <strong>Sin movimientos</strong>
+                    <span>No hay actividad registrada en la vista actual.</span>
+                  }
+                </div>
+              </div>
+            </p-card>
+          </section>
+
+          <section class="inventory-section">
+            <p-toolbar styleClass="inventory-toolbar">
+              <ng-template #start>
+                <div>
+                  <h3>Stock actual</h3>
+                  <span class="text-muted">Explora disponibilidad por producto y categoría.</span>
+                </div>
+              </ng-template>
+              <ng-template #end>
+                <p-button
+                  label="Actualizar"
+                  icon="pi pi-refresh"
+                  severity="secondary"
+                  [outlined]="true"
+                  [loading]="stockLoading()"
+                  (onClick)="loadStocks()"
+                ></p-button>
+              </ng-template>
+            </p-toolbar>
+
+            <div class="filter-panel">
+              <div class="filter-panel__title">
+                <i class="pi pi-sliders-h"></i>
+                <div>
+                  <strong>Explorar stock</strong>
+                  <span>Filtra sin cambiar el contexto operativo aplicado por backend.</span>
+                </div>
+              </div>
+
+              <div class="filter-bar filter-bar--stock">
+                <label class="filter-field filter-field--search">
+                  <span>Buscar producto o categoría</span>
+                  <span class="input-shell">
+                    <i class="pi pi-search"></i>
+                    <input pInputText type="text" [(ngModel)]="stockSearch" placeholder="Nombre o categoría" />
+                  </span>
+                </label>
+
+                <label class="filter-field">
+                  <span>Producto</span>
+                  <input
+                    pInputText
+                    type="number"
+                    [ngModel]="stockProductId"
+                    (ngModelChange)="stockProductId = parseNullableNumber($event)"
+                    placeholder="productId"
+                  />
+                </label>
+
+                <label class="toggle-field">
+                  <span>Solo con stock</span>
+                  <p-toggleswitch [(ngModel)]="stockOnlyPositive" inputId="stock-only-positive"></p-toggleswitch>
+                </label>
+
+                <div class="filter-actions">
+                  <p-button label="Aplicar" icon="pi pi-filter" (onClick)="applyStockFilters()"></p-button>
+                  <p-button
+                    label="Limpiar"
+                    icon="pi pi-filter-slash"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="clearStockFilters()"
+                  ></p-button>
+                </div>
+              </div>
+            </div>
+
+            @if (stockError()) {
+              <p-message severity="error" text="No se pudo cargar el stock actual"></p-message>
+            }
+
+            <p-table
+              styleClass="professional-table stock-table"
+              [value]="stocks()"
+              [loading]="stockLoading()"
+              [paginator]="true"
+              [rows]="10"
+              [rowsPerPageOptions]="[10, 25, 50]"
+              [sortMode]="'multiple'"
+              responsiveLayout="scroll"
+              [tableStyle]="{ 'min-width': '72rem' }"
+            >
+              <ng-template pTemplate="header">
+                <tr>
+                  <th pSortableColumn="productName">Producto <p-sortIcon field="productName"></p-sortIcon></th>
+                  <th pSortableColumn="categoryName">Categoría <p-sortIcon field="categoryName"></p-sortIcon></th>
+                  <th pSortableColumn="quantity" class="numeric-column">Cantidad <p-sortIcon field="quantity"></p-sortIcon></th>
+                  <th>Riesgo</th>
+                  <th pSortableColumn="isActive">Estado <p-sortIcon field="isActive"></p-sortIcon></th>
+                  <th>Acción</th>
+                </tr>
+              </ng-template>
+
+              <ng-template pTemplate="body" let-stock>
+                <tr [ngClass]="stockRowClass(stock)">
+                  <td>
+                    <div class="product-stack">
+                      <strong class="product-name">{{ stock.productName }}</strong>
+                      <small>productId {{ stock.productId }}</small>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="muted-cell">{{ stock.categoryName }}</span>
+                    <small class="row-hint">categoryId {{ stock.categoryId }}</small>
+                  </td>
+                  <td class="numeric-column">
+                    <strong class="quantity-value" [class.quantity-empty]="stock.quantity <= 0">{{ stock.quantity }}</strong>
+                  </td>
+                  <td>
+                    <span [class]="stockRiskClass(stock)">
+                      @if (stock.quantity <= 0) {
+                        <i class="pi pi-times-circle"></i>
+                      } @else if (stock.quantity <= lowStockThreshold) {
+                        <i class="pi pi-exclamation-triangle"></i>
+                      } @else {
+                        <i class="pi pi-check-circle"></i>
+                      }
+                      {{ stockRiskLabel(stock) }}
+                    </span>
+                  </td>
+                  <td>
+                    <p-tag
+                      [severity]="statusSeverity(stock.isActive)"
+                      [value]="stock.isActive ? 'Activo' : 'Inactivo'"
+                    ></p-tag>
+                  </td>
+                  <td>
+                    <p-button
+                      label="Ver kardex"
+                      icon="pi pi-chart-line"
+                      severity="secondary"
+                      [outlined]="true"
+                      (onClick)="focusProductMovements(stock)"
+                    ></p-button>
+                  </td>
+                </tr>
+              </ng-template>
+
+              <ng-template pTemplate="emptymessage">
+                <tr>
+                  <td colspan="6">
+                    <div class="empty-state">
+                      <i class="pi pi-inbox"></i>
+                      <strong>No hay productos que coincidan con los filtros aplicados.</strong>
+                      <span>Prueba con otro término, limpia el productId o desactiva “Solo con stock”.</span>
+                    </div>
+                  </td>
+                </tr>
+              </ng-template>
+            </p-table>
+          </section>
+
+          <section class="inventory-section" #kardexSection>
+            <p-toolbar styleClass="inventory-toolbar">
+              <ng-template #start>
+                <div>
+                  <h3>Kardex global</h3>
+                  <span class="text-muted">{{ totalMovementItems() }} movimientos en {{ totalMovementPages() }} páginas</span>
+                </div>
+              </ng-template>
+              <ng-template #end>
+                <p-button
+                  label="Actualizar"
+                  icon="pi pi-refresh"
+                  severity="secondary"
+                  [outlined]="true"
+                  [loading]="movementsLoading()"
+                  (onClick)="applyMovementFilters()"
+                ></p-button>
+              </ng-template>
+            </p-toolbar>
+
+            @if (focusedProduct(); as product) {
+              <div class="drilldown-banner">
+                <div>
+                  <i class="pi pi-filter"></i>
+                  <strong>Inspeccionando kardex de {{ product.productName }}</strong>
+                  <span>productId {{ product.productId }} · {{ product.categoryName }}</span>
+                </div>
+                <p-button
+                  label="Limpiar enfoque"
+                  icon="pi pi-times"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="clearProductFocus()"
+                ></p-button>
+              </div>
+            }
+
+            <div class="filter-panel">
+              <div class="filter-panel__title">
+                <i class="pi pi-search"></i>
+                <div>
+                  <strong>Analizar movimientos</strong>
+                  <span>Combina producto, tipo, origen, usuario y fechas para investigar trazabilidad.</span>
+                </div>
+              </div>
+
+              <div class="filter-bar filter-bar--movements">
+                <label class="filter-field filter-field--search">
+                  <span>Referencia o texto</span>
+                  <span class="input-shell">
+                    <i class="pi pi-search"></i>
+                    <input pInputText type="text" [(ngModel)]="movementSearch" placeholder="Producto, referencia o notas" />
+                  </span>
+                </label>
+
+                <label class="filter-field">
+                  <span>Producto</span>
+                  <p-select
+                    [options]="productOptions()"
+                    [(ngModel)]="movementProductId"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Todos"
+                    [showClear]="true"
+                  ></p-select>
+                </label>
+
+                <label class="filter-field">
+                  <span>Tipo</span>
+                  <p-select
+                    [options]="movementTypeOptions"
+                    [(ngModel)]="movementType"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Todos"
+                    [showClear]="true"
+                  ></p-select>
+                </label>
+
+                <label class="filter-field">
+                  <span>Origen</span>
+                  <p-select
+                    [options]="sourceTypeOptions"
+                    [(ngModel)]="movementSourceType"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Todos"
+                    [showClear]="true"
+                  ></p-select>
+                </label>
+
+                <label class="filter-field filter-field--small">
+                  <span>Source ID</span>
+                  <input
+                    pInputText
+                    type="number"
+                    [ngModel]="movementSourceId"
+                    (ngModelChange)="movementSourceId = parseNullableNumber($event)"
+                    placeholder="Todos"
+                  />
+                </label>
+
+                <label class="filter-field filter-field--small">
+                  <span>Usuario</span>
+                  <input
+                    pInputText
+                    type="number"
+                    [ngModel]="movementUserId"
+                    (ngModelChange)="movementUserId = parseNullableNumber($event)"
+                    placeholder="userId"
+                  />
+                </label>
+
+                <label class="filter-field filter-field--date">
+                  <span>Desde</span>
+                  <input pInputText type="date" [(ngModel)]="movementFrom" />
+                </label>
+
+                <label class="filter-field filter-field--date">
+                  <span>Hasta</span>
+                  <input pInputText type="date" [(ngModel)]="movementTo" />
+                </label>
+
+                <div class="filter-actions">
+                  <p-button label="Aplicar" icon="pi pi-filter" (onClick)="applyMovementFilters()"></p-button>
+                  <p-button
+                    label="Limpiar"
+                    icon="pi pi-filter-slash"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="clearMovementFilters()"
+                  ></p-button>
+                </div>
+              </div>
+            </div>
+
+            @if (movementsError()) {
+              <p-message severity="error" text="No se pudo cargar el kardex"></p-message>
+            }
+
+            <p-table
+              styleClass="professional-table kardex-table"
+              [value]="movements()"
+              [loading]="movementsLoading()"
+              [paginator]="true"
+              [lazy]="true"
+              [lazyLoadOnInit]="false"
+              [first]="movementFirst"
+              [rows]="movementRows"
+              [totalRecords]="totalMovementItems()"
+              [rowsPerPageOptions]="[10, 25, 50, 100]"
+              [showCurrentPageReport]="true"
+              currentPageReportTemplate="{first} - {last} de {totalRecords}"
+              responsiveLayout="scroll"
+              [tableStyle]="{ 'min-width': '112rem' }"
+              (onLazyLoad)="onMovementsLazyLoad($event)"
+            >
+              <ng-template pTemplate="header">
+                <tr>
+                  <th>Fecha</th>
+                  <th>Producto</th>
+                  <th>Tipo</th>
+                  <th>Origen</th>
+                  <th>sourceId</th>
+                  <th>sourceLineId</th>
+                  <th class="numeric-column">Cantidad</th>
+                  <th>Stock</th>
+                  <th>Usuario</th>
+                  <th>Referencia / notas</th>
+                  <th>Detalle</th>
+                </tr>
+              </ng-template>
+
+              <ng-template pTemplate="body" let-movement>
+                <tr [class.row-reversal]="isReversalMovement(movement)">
+                  <td>
+                    <span class="date-stack">
+                      <strong>{{ movement.createdAt | date: 'dd/MM/yyyy' }}</strong>
+                      <small>{{ movement.createdAt | date: 'HH:mm' }}</small>
+                    </span>
+                  </td>
+                  <td>
+                    <strong class="product-name">{{ movement.productName }}</strong>
+                    <small class="row-hint">productId {{ movement.productId }}</small>
+                  </td>
+                  <td>
+                    <p-tag
+                      [severity]="movementSeverity(movement.type)"
+                      [value]="movementTypeName(movement.type)"
+                    ></p-tag>
+                  </td>
+                  <td>
+                    <span [class]="sourceBadgeClass(movement.sourceType)">
+                      {{ sourceTypeName(movement.sourceType) }}
+                    </span>
+                  </td>
+                  <td>{{ movement.sourceId ?? '-' }}</td>
+                  <td>{{ movement.sourceLineId ?? '-' }}</td>
+                  <td class="numeric-column"><strong>{{ movement.quantity }}</strong></td>
+                  <td>
+                    <span class="stock-flow">
+                      <span>{{ movement.stockBefore }}</span>
+                      <i class="pi pi-arrow-right"></i>
+                      <strong>{{ movement.stockAfter }}</strong>
+                    </span>
+                  </td>
+                  <td>userId {{ movement.userId }}</td>
+                  <td>
+                    <span class="reference-cell">
+                      <strong>{{ movement.reference ?? '-' }}</strong>
+                      @if (movement.notes) {
+                        <small>{{ movement.notes }}</small>
+                      }
+                    </span>
+                  </td>
+                  <td>
+                    <p-button
+                      icon="pi pi-search"
+                      severity="secondary"
+                      [text]="true"
+                      [rounded]="true"
+                      ariaLabel="Ver movimiento"
+                      (onClick)="openMovementDetail(movement)"
+                    ></p-button>
+                  </td>
+                </tr>
+              </ng-template>
+
+              <ng-template pTemplate="emptymessage">
+                <tr>
+                  <td colspan="11">
+                    <div class="empty-state">
+                      <i class="pi pi-list"></i>
+                      <strong>No hay movimientos registrados para este criterio.</strong>
+                      <span>Prueba con otro producto, rango de fechas u origen.</span>
+                    </div>
+                  </td>
+                </tr>
+              </ng-template>
+            </p-table>
+          </section>
+        </p-tabpanel>
+
+        <p-tabpanel value="operations">
+          <section class="inventory-section operations-section">
+            <div class="operations-header">
+              <div>
+                <span class="eyebrow">Operaciones de inventario</span>
+                <h3>Transacciones manuales</h3>
+                <p>Registra entradas, salidas y ajustes usando el contexto operativo actual.</p>
+              </div>
+              <div class="operation-context">
+                @for (item of contextItems(); track item.label) {
+                  <span class="context-chip">
+                    <small>{{ item.label }}</small>
+                    <strong>{{ item.value ?? 'N/D' }}</strong>
+                  </span>
+                }
+              </div>
+            </div>
+
+            @if (!canWriteInventory()) {
+              <div class="permission-state">
+                <i class="pi pi-lock"></i>
+                <strong>No tienes permiso para operar inventario.</strong>
+                <span>Puedes consultar stock y kardex, pero las transacciones manuales requieren INVENTORY_WRITE.</span>
+              </div>
+            } @else {
+              <div class="operation-workspace">
+                <aside class="operation-selector" aria-label="Tipo de operación">
+                  @for (option of operationOptions; track option.value) {
+                    <button
+                      type="button"
+                      class="operation-option"
+                      [class.operation-option--active]="activeOperation === option.value"
+                      (click)="activeOperation = option.value; operationError.set(''); operationResult.set(null)"
+                    >
+                      <i [class]="operationIcon(option.value)"></i>
+                      <span>{{ option.label }}</span>
+                      <small>{{ operationHelpText(option.value) }}</small>
+                    </button>
+                  }
+                </aside>
+
+                <div class="operation-form-panel">
+                  <div class="operation-form-header">
+                    <div>
+                      <h4>{{ operationLabel(activeOperation) }}</h4>
+                      <p>{{ operationHelpText(activeOperation) }}</p>
+                    </div>
+                    @if (activeOperation === 'adjust') {
+                      <p-message
+                        severity="warn"
+                        text="El ajuste establece el stock final del producto; no suma ni resta unidades."
+                      ></p-message>
+                    }
+                  </div>
+
+                  <div class="operation-grid">
+                    <label class="filter-field operation-product">
+                      <span>Producto</span>
+                      <p-select
+                        [options]="productOptions()"
+                        [ngModel]="currentOperationForm().productId"
+                        (ngModelChange)="setOperationProduct($event)"
+                        optionLabel="label"
+                        optionValue="value"
+                        placeholder="Selecciona producto"
+                        [showClear]="true"
+                      ></p-select>
+                    </label>
+
+                    <label class="filter-field">
+                      <span>{{ activeOperation === 'adjust' ? 'Stock final' : 'Cantidad' }}</span>
+                      <p-inputnumber
+                        [ngModel]="currentOperationForm().quantity"
+                        (ngModelChange)="setOperationQuantity($event)"
+                        [min]="activeOperation === 'adjust' ? 0 : 0.01"
+                        [minFractionDigits]="0"
+                        [maxFractionDigits]="2"
+                        placeholder="0"
+                      ></p-inputnumber>
+                    </label>
+
+                    <label class="filter-field">
+                      <span>Referencia</span>
+                      <input
+                        pInputText
+                        type="text"
+                        [ngModel]="currentOperationForm().reference"
+                        (ngModelChange)="setOperationReference($event)"
+                        placeholder="Documento, guía o motivo"
+                      />
+                    </label>
+
+                    <label class="filter-field operation-notes">
+                      <span>Notas</span>
+                      <textarea
+                        pTextarea
+                        rows="4"
+                        [ngModel]="currentOperationForm().notes"
+                        (ngModelChange)="setOperationNotes($event)"
+                        placeholder="Comentario operativo opcional"
+                      ></textarea>
+                    </label>
+                  </div>
+
+                  @if (selectedOperationStock(); as stock) {
+                    <div class="operation-preview">
+                      <div>
+                        <small>Stock actual</small>
+                        <strong>{{ stock.quantity }}</strong>
+                      </div>
+                      <i class="pi pi-arrow-right"></i>
+                      <div>
+                        <small>{{ activeOperation === 'adjust' ? 'Stock final' : 'Proyección' }}</small>
+                        <strong>{{ projectedStock() ?? '-' }}</strong>
+                      </div>
+                      <div class="operation-preview__product">
+                        <small>Producto</small>
+                        <strong>{{ stock.productName }}</strong>
+                        <span>{{ stock.categoryName }} · {{ stock.isActive ? 'Activo' : 'Inactivo' }}</span>
+                      </div>
+                    </div>
+                  }
+
+                  @if (operationError()) {
+                    <p-message severity="error" [text]="operationError()"></p-message>
+                  }
+
+                  @if (operationResult(); as movement) {
+                    <p-message
+                      severity="success"
+                      [text]="'Operación registrada. Movimiento #' + movement.id + ' reflejado en stock y kardex.'"
+                    ></p-message>
+                  }
+
+                  <footer class="operation-actions">
+                    <p-button
+                      [label]="'Registrar ' + operationLabel(activeOperation).toLowerCase()"
+                      icon="pi pi-check"
+                      [loading]="operationLoading()"
+                      [disabled]="!canSubmitOperation()"
+                      (onClick)="submitOperation()"
+                    ></p-button>
+                    <p-button
+                      label="Limpiar formulario"
+                      icon="pi pi-undo"
+                      severity="secondary"
+                      [outlined]="true"
+                      (onClick)="resetCurrentOperationForm(); operationError.set(''); operationResult.set(null)"
+                    ></p-button>
+                  </footer>
+                </div>
+              </div>
+            }
+          </section>
+        </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
+  }
+</div>
+
+<p-toast></p-toast>
+
+<p-dialog
+  header="Detalle del movimiento"
+  [modal]="true"
+  [visible]="movementDetailVisible"
+  [style]="{ width: '54rem' }"
+  (visibleChange)="onMovementDetailVisibleChange($event)"
+>
+  @if (movementDetailLoading()) {
+    <div class="empty-state">Cargando movimiento...</div>
+  } @else if (movementDetailError()) {
+    <p-message severity="error" text="No se pudo cargar el movimiento"></p-message>
+  } @else if (selectedMovement(); as detail) {
+    <div class="movement-summary">
+      <div>
+        <small>Producto</small>
+        <strong>{{ detail.productName }}</strong>
+        <span>productId {{ detail.productId }}</span>
+      </div>
+      <div class="movement-summary__badges">
+        <p-tag [severity]="movementSeverity(detail.type)" [value]="movementTypeName(detail.type)"></p-tag>
+        <span [class]="sourceBadgeClass(detail.sourceType)">{{ sourceTypeName(detail.sourceType) }}</span>
+      </div>
+    </div>
+
+    <div class="stock-delta">
+      <div>
+        <small>Stock anterior</small>
+        <strong>{{ detail.stockBefore }}</strong>
+      </div>
+      <i class="pi pi-arrow-right"></i>
+      <div>
+        <small>Stock posterior</small>
+        <strong>{{ detail.stockAfter }}</strong>
+      </div>
+    </div>
+
+    <dl class="detail-grid">
+      <div>
+        <dt>Cantidad</dt>
+        <dd>{{ detail.quantity }}</dd>
+      </div>
+      <div>
+        <dt>Usuario</dt>
+        <dd>userId {{ detail.userId }}</dd>
+      </div>
+      <div>
+        <dt>Source ID</dt>
+        <dd>{{ detail.sourceId ?? '-' }}</dd>
+      </div>
+      <div>
+        <dt>Source Line ID</dt>
+        <dd>{{ detail.sourceLineId ?? '-' }}</dd>
+      </div>
+      <div>
+        <dt>Fecha</dt>
+        <dd>{{ detail.createdAt | date: 'medium' }}</dd>
+      </div>
+      <div>
+        <dt>Referencia</dt>
+        <dd>{{ detail.reference ?? '-' }}</dd>
+      </div>
+      <div class="detail-grid__wide">
+        <dt>Notas</dt>
+        <dd>{{ detail.notes ?? 'Sin notas registradas.' }}</dd>
+      </div>
+    </dl>
+  }
+</p-dialog>

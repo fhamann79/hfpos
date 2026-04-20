@@ -1,0 +1,36 @@
+<div class="catalog-page">
+  <header class="catalog-page__header">
+    <h2>Catálogo</h2>
+    <p>Administra categorías y productos con integración al backend en tiempo real.</p>
+  </header>
+
+  @if (canReadCategories() || canReadProducts()) {
+    <p-tabs [value]="initialTab()">
+      <p-tablist>
+        @if (canReadCategories()) {
+          <p-tab value="0">Categorías</p-tab>
+        }
+        @if (canReadProducts()) {
+          <p-tab value="1">Productos</p-tab>
+        }
+      </p-tablist>
+      <p-tabpanels>
+        @if (canReadCategories()) {
+          <p-tabpanel value="0">
+            <app-categories-table [canWrite]="canWriteCategories()"></app-categories-table>
+          </p-tabpanel>
+        }
+        @if (canReadProducts()) {
+          <p-tabpanel value="1">
+            <app-products-table [canWrite]="canWriteProducts()"></app-products-table>
+          </p-tabpanel>
+        }
+      </p-tabpanels>
+    </p-tabs>
+  } @else {
+    <p-message severity="warn" text="No tienes permisos para acceder a Catálogo."></p-message>
+  }
+</div>
+
+<p-toast></p-toast>
+<p-confirmdialog></p-confirmdialog>

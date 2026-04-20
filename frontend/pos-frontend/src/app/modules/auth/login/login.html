@@ -1,0 +1,51 @@
+<section class="login-page">
+  <p-card class="login-card">
+    <ng-template #title>POS Ecuador</ng-template>
+    <ng-template #subtitle>Iniciar sesión para continuar</ng-template>
+
+    <form class="login-form" [formGroup]="loginForm" (ngSubmit)="submitLogin()">
+      <div class="field">
+        <label for="username">Username</label>
+        <input
+          id="username"
+          pInputText
+          formControlName="username"
+          autocomplete="username"
+          placeholder="Ingresa tu usuario"
+          (input)="clearError()"
+        />
+        @if (loginForm.controls.username.touched && loginForm.controls.username.invalid) {
+          <small class="field-error">El username es obligatorio.</small>
+        }
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <p-password
+          inputId="password"
+          formControlName="password"
+          [feedback]="false"
+          [toggleMask]="true"
+          autocomplete="current-password"
+          placeholder="Ingresa tu contraseña"
+          (onInput)="clearError()"
+        ></p-password>
+        @if (loginForm.controls.password.touched && loginForm.controls.password.invalid) {
+          <small class="field-error">La contraseña es obligatoria.</small>
+        }
+      </div>
+
+      @if (errorMessage()) {
+        <p-message severity="error" [text]="errorMessage()"></p-message>
+      }
+
+      <p-button
+        type="submit"
+        label="Iniciar sesión"
+        icon="pi pi-sign-in"
+        [loading]="loading()"
+        [disabled]="loading()"
+      ></p-button>
+    </form>
+  </p-card>
+</section>

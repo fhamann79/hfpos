@@ -1,0 +1,31 @@
+<p-dialog
+  [header]="isEditMode ? 'Editar compañía' : 'Nueva compañía'"
+  [modal]="true"
+  [draggable]="false"
+  [visible]="visible"
+  [style]="{ width: '32rem' }"
+  (visibleChange)="visibleChange.emit($event)"
+  (onHide)="hide()"
+>
+  <form [formGroup]="form" class="company-form">
+    <div class="field">
+      <label for="companyName">Nombre</label>
+      <input id="companyName" type="text" pInputText formControlName="name" placeholder="Ej: Corporación Demo" />
+      @if (form.controls.name.invalid && form.controls.name.touched) {
+        <small class="error">El nombre es obligatorio y debe tener al menos 2 caracteres.</small>
+      }
+    </div>
+
+    @if (isEditMode) {
+      <div class="field-checkbox">
+        <p-checkbox inputId="companyIsActive" formControlName="isActive" [binary]="true"></p-checkbox>
+        <label for="companyIsActive">Activo</label>
+      </div>
+    }
+  </form>
+
+  <ng-template #footer>
+    <p-button label="Cancelar" severity="secondary" [text]="true" (onClick)="hide()"></p-button>
+    <p-button label="Guardar" icon="pi pi-check" (onClick)="save()"></p-button>
+  </ng-template>
+</p-dialog>

@@ -1,0 +1,77 @@
+<div class="entity-card">
+  <p-toolbar styleClass="entity-card__toolbar">
+    <ng-template #start>
+      <div>
+        <h3>Compañías</h3>
+        <small>Selecciona una compañía para gestionar su estructura.</small>
+      </div>
+    </ng-template>
+    <ng-template #end>
+      @if (canWrite) {
+        <p-button label="Nueva Company" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
+      }
+    </ng-template>
+  </p-toolbar>
+
+  @if (errorMessage()) {
+    <p-message severity="error" [text]="errorMessage()"></p-message>
+  }
+
+  <p-table
+    [value]="companies()"
+    [loading]="loading()"
+    [paginator]="true"
+    [rows]="6"
+    [globalFilterFields]="['id', 'name']"
+    [tableStyle]="{ 'min-width': '38rem' }"
+  >
+    <ng-template #caption>
+      <div class="table-caption">
+        <span class="p-input-icon-left">
+          <i class="pi pi-search"></i>
+          <input pInputText type="text" [(ngModel)]="globalFilter" placeholder="Buscar" />
+        </span>
+      </div>
+    </ng-template>
+
+    <ng-template #header>
+      <tr>
+        <th>Id</th>
+        <th>Nombre</th>
+        <th>Estado</th>
+        <th style="width: 10rem">Acciones</th>
+      </tr>
+    </ng-template>
+
+    <ng-template #body let-company>
+      <tr [class.row-selected]="isSelected(company)" (click)="selectCompany(company)">
+        <td>{{ company.id }}</td>
+        <td>{{ company.name }}</td>
+        <td>
+          <p-tag [value]="company.isActive ? 'Activo' : 'Inactivo'" [severity]="company.isActive ? 'success' : 'secondary'"></p-tag>
+        </td>
+        <td>
+          @if (canWrite) {
+            <div class="actions">
+              <p-button icon="pi pi-pencil" [text]="true" (onClick)="openEditDialog(company)"></p-button>
+              <p-button icon="pi pi-trash" severity="danger" [text]="true" (onClick)="confirmDelete(company)"></p-button>
+            </div>
+          }
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template #emptymessage>
+      <tr>
+        <td colspan="4">No hay compañías registradas.</td>
+      </tr>
+    </ng-template>
+  </p-table>
+</div>
+
+<app-company-dialog
+  [visible]="dialogVisible"
+  [company]="editingCompany"
+  (visibleChange)="onDialogVisibleChange($event)"
+  (submitForm)="submitDialog($event)"
+></app-company-dialog>

@@ -1,0 +1,62 @@
+<p-dialog
+  [visible]="visible"
+  [modal]="true"
+  [closable]="true"
+  [draggable]="false"
+  [style]="{ width: '34rem', maxWidth: '95vw' }"
+  [header]="isEditMode ? 'Editar producto' : 'Nuevo producto'"
+  styleClass="catalog-dialog"
+  (onHide)="hide()"
+>
+  <form class="dialog-form" [formGroup]="form" (ngSubmit)="save()">
+    <div class="field">
+      <label for="product-name">Nombre</label>
+      <input id="product-name" type="text" pInputText formControlName="name" />
+      @if (form.controls.name.touched && form.controls.name.invalid) {
+        <small class="p-error">El nombre es obligatorio.</small>
+      }
+    </div>
+
+    <div class="field">
+      <label for="product-category">Categoría</label>
+      <p-select
+        inputId="product-category"
+        [options]="categories()"
+        optionLabel="name"
+        optionValue="id"
+        placeholder="Selecciona una categoría"
+        formControlName="categoryId"
+      ></p-select>
+      @if (form.controls.categoryId.touched && form.controls.categoryId.invalid) {
+        <small class="p-error">La categoría es obligatoria.</small>
+      }
+    </div>
+
+    <div class="field">
+      <label for="product-price">Precio</label>
+      <p-inputnumber
+        inputId="product-price"
+        formControlName="price"
+        mode="currency"
+        currency="USD"
+        locale="en-US"
+        [min]="0"
+      ></p-inputnumber>
+      @if (form.controls.price.touched && form.controls.price.invalid) {
+        <small class="p-error">El precio debe ser mayor o igual a 0.</small>
+      }
+    </div>
+
+    @if (isEditMode) {
+      <div class="field field-inline">
+        <p-checkbox inputId="product-active" binary="true" formControlName="isActive"></p-checkbox>
+        <label for="product-active">Producto activo</label>
+      </div>
+    }
+
+    <div class="dialog-actions">
+      <p-button label="Cancelar" severity="secondary" [outlined]="true" (onClick)="hide()"></p-button>
+      <p-button label="Guardar" icon="pi pi-check" type="submit"></p-button>
+    </div>
+  </form>
+</p-dialog>

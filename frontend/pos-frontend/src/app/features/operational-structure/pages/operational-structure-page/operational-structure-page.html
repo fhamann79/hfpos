@@ -1,0 +1,28 @@
+<div class="operational-page">
+  <header class="operational-page__header">
+    <h2>Estructura Operativa</h2>
+    <p>Administra la jerarquía Company → Establishment → EmissionPoint en un solo flujo.</p>
+  </header>
+
+  @if (canRead()) {
+    <div class="operational-page__grid">
+      <app-companies-table [canWrite]="canWrite()" (companySelected)="handleCompanySelected($event)"></app-companies-table>
+
+      <app-establishments-table
+        [canWrite]="canWrite()"
+        [selectedCompany]="selectedCompany()"
+        (establishmentSelected)="handleEstablishmentSelected($event)"
+      ></app-establishments-table>
+
+      <app-emission-points-table
+        [canWrite]="canWrite()"
+        [selectedEstablishment]="selectedEstablishment()"
+      ></app-emission-points-table>
+    </div>
+  } @else {
+    <p-message severity="warn" text="No tienes permisos para acceder a Estructura Operativa."></p-message>
+  }
+</div>
+
+<p-toast></p-toast>
+<p-confirmdialog></p-confirmdialog>

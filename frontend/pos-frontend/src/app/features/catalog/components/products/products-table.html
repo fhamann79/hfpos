@@ -1,0 +1,106 @@
+<div class="catalog-section">
+  <p-toolbar styleClass="catalog-toolbar">
+    <ng-template #start>
+      <div class="table-search">
+        <i class="pi pi-search"></i>
+        <input
+          pInputText
+          type="text"
+          [(ngModel)]="globalFilter"
+          (input)="dt.filterGlobal(globalFilter, 'contains')"
+          placeholder="Buscar productos"
+          aria-label="Buscar productos"
+        />
+      </div>
+    </ng-template>
+    @if (canWrite) {
+      <ng-template #end>
+        <p-button label="Nuevo Producto" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
+      </ng-template>
+    }
+  </p-toolbar>
+
+  @if (errorMessage()) {
+    <p-message severity="error" [text]="errorMessage()"></p-message>
+  }
+
+  <p-table
+    #dt
+    [value]="products()"
+    [loading]="loading()"
+    [paginator]="true"
+    [rows]="10"
+    [rowsPerPageOptions]="[10, 25, 50]"
+    [globalFilterFields]="['id', 'name', 'categoryId', 'price', 'isActive']"
+    [sortMode]="'multiple'"
+    responsiveLayout="scroll"
+    [tableStyle]="{ 'min-width': '60rem' }"
+  >
+    <ng-template pTemplate="caption">
+      <div class="caption-actions">
+        <p-button
+          label="Limpiar"
+          icon="pi pi-filter-slash"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="globalFilter = ''; dt.filterGlobal('', 'contains')"
+        ></p-button>
+      </div>
+    </ng-template>
+
+    <ng-template pTemplate="header">
+      <tr>
+        <th pSortableColumn="id">Id <p-sortIcon field="id"></p-sortIcon></th>
+        <th pSortableColumn="name">Nombre <p-sortIcon field="name"></p-sortIcon></th>
+        <th>Categoría</th>
+        <th pSortableColumn="price">Precio <p-sortIcon field="price"></p-sortIcon></th>
+        <th pSortableColumn="isActive">Estado <p-sortIcon field="isActive"></p-sortIcon></th>
+        @if (canWrite) {
+          <th>Acciones</th>
+        }
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="body" let-product>
+      <tr>
+        <td>{{ product.id }}</td>
+        <td>{{ product.name }}</td>
+        <td>{{ getCategoryName(product.categoryId) }}</td>
+        <td>{{ product.price | currency: 'USD' }}</td>
+        <td>
+          <p-tag [severity]="product.isActive ? 'success' : 'danger'" [value]="product.isActive ? 'Activo' : 'Inactivo'"></p-tag>
+        </td>
+        @if (canWrite) {
+          <td>
+            <div class="actions">
+              <p-button icon="pi pi-pencil" [rounded]="true" [text]="true" (onClick)="openEditDialog(product)"></p-button>
+              <p-button icon="pi pi-trash" severity="danger" [rounded]="true" [text]="true" (onClick)="confirmDelete(product)"></p-button>
+            </div>
+          </td>
+        }
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="emptymessage">
+      <tr>
+        <td [attr.colspan]="canWrite ? 6 : 5">
+          <div class="empty-state">
+            <span>No hay registros</span>
+            @if (canWrite) {
+              <p-button label="Crear" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
+            }
+          </div>
+        </td>
+      </tr>
+    </ng-template>
+  </p-table>
+</div>
+
+@if (canWrite) {
+  <app-product-dialog
+    [visible]="dialogVisible"
+    [product]="selectedProduct"
+    (visibleChange)="onDialogVisibleChange($event)"
+    (submitForm)="submitDialog($event)"
+  ></app-product-dialog>
+}

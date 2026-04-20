@@ -1,0 +1,149 @@
+:host {
+  display: block;
+  min-height: 100vh;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 17rem 1fr;
+  min-height: 100vh;
+  background: var(--app-bg);
+  transition: grid-template-columns 0.2s ease;
+}
+
+.app-shell--collapsed {
+  grid-template-columns: 5.25rem 1fr;
+}
+
+.sidebar {
+  background: #111827;
+  color: #e5e7eb;
+  padding: 1.25rem 0.9rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 0.5rem 1.25rem;
+
+  h1 {
+    margin: 0;
+    font-size: 1rem;
+    color: #fff;
+  }
+
+  small {
+    color: #9ca3af;
+  }
+}
+
+.sidebar__logo {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.65rem;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  color: #dbeafe;
+  background: rgba(59, 130, 246, 0.25);
+}
+
+.sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.nav-item {
+  width: 100%;
+  border: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  background: transparent;
+  color: inherit;
+  text-decoration: none;
+  padding: 0.72rem;
+  border-radius: 0.7rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+
+  i {
+    font-size: 1rem;
+  }
+
+  span {
+    flex: 1;
+    text-align: left;
+  }
+
+  small {
+    color: #9ca3af;
+  }
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+.nav-item--active {
+  background: rgba(59, 130, 246, 0.2);
+  color: #eff6ff;
+}
+
+.nav-item--disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.shell-content {
+  padding: 1rem;
+}
+
+:host ::ng-deep .shell-toolbar {
+  border-radius: 0.9rem;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface);
+  padding: 0.65rem 0.85rem;
+  box-shadow: var(--app-shadow-sm);
+}
+
+.toolbar-user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+
+  strong,
+  small {
+    display: block;
+  }
+
+  small {
+    color: var(--app-text-muted);
+  }
+}
+
+.page-content {
+  margin-top: 1rem;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 1rem;
+  min-height: calc(100vh - 6.25rem);
+  padding: 1.5rem;
+  box-shadow: var(--app-shadow-sm);
+}
+
+@media (max-width: 900px) {
+  .app-shell,
+  .app-shell--collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+}

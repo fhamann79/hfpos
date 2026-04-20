@@ -1,0 +1,59 @@
+<section class="panel">
+  <header class="panel__header">
+    <h2>Productos</h2>
+    <div class="search-row">
+      <i class="pi pi-search"></i>
+      <input
+        pInputText
+        type="text"
+        [ngModel]="searchTerm"
+        (ngModelChange)="onSearchChange($event)"
+        placeholder="Buscar por nombre"
+        aria-label="Buscar producto"
+      />
+      <p-button
+        label="Búsqueda rápida (F2)"
+        icon="pi pi-bolt"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="!canSell"
+        (onClick)="openQuickSearch()"
+      ></p-button>
+    </div>
+  </header>
+
+  @if (errorMessage) {
+    <p-message severity="error" [text]="errorMessage"></p-message>
+  }
+
+  @if (inventoryErrorMessage) {
+    <p-message severity="warn" [text]="inventoryErrorMessage"></p-message>
+  }
+
+  @if (loading) {
+    <div class="state">Cargando productos...</div>
+  } @else if (!products.length) {
+    <div class="state">No hay productos disponibles.</div>
+  } @else {
+    <ul class="product-list">
+      @for (product of products; track product.id) {
+        <li class="product-item" [class.product-item--out]="product.stock <= 0">
+          <div>
+            <strong>{{ product.name }}</strong>
+            <div class="meta">
+              <span>{{ product.price | currency: 'USD' }}</span>
+              <span>Stock: {{ product.stock }}</span>
+            </div>
+          </div>
+          @if (!inventoryAvailable) {
+            <span class="stock-empty">Stock no disponible</span>
+          } @else if (product.stock <= 0) {
+            <span class="stock-empty">Sin stock</span>
+          } @else {
+            <p-button label="Agregar" icon="pi pi-plus" [disabled]="!canSell" (onClick)="add(product)"></p-button>
+          }
+        </li>
+      }
+    </ul>
+  }
+</section>

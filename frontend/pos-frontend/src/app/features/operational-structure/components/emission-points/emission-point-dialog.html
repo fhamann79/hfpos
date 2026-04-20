@@ -1,0 +1,39 @@
+<p-dialog
+  [header]="isEditMode ? 'Editar punto de emisión' : 'Nuevo punto de emisión'"
+  [modal]="true"
+  [draggable]="false"
+  [visible]="visible"
+  [style]="{ width: '32rem' }"
+  (visibleChange)="visibleChange.emit($event)"
+  (onHide)="hide()"
+>
+  <form [formGroup]="form" class="emission-point-form">
+    <div class="field">
+      <label for="emissionCode">Código</label>
+      <input id="emissionCode" type="text" pInputText formControlName="code" />
+      @if (form.controls.code.invalid && form.controls.code.touched) {
+        <small class="error">El código es obligatorio.</small>
+      }
+    </div>
+
+    <div class="field">
+      <label for="emissionName">Nombre</label>
+      <input id="emissionName" type="text" pInputText formControlName="name" />
+      @if (form.controls.name.invalid && form.controls.name.touched) {
+        <small class="error">El nombre es obligatorio y debe tener al menos 2 caracteres.</small>
+      }
+    </div>
+
+    @if (isEditMode) {
+      <div class="field-checkbox">
+        <p-checkbox inputId="emissionIsActive" formControlName="isActive" [binary]="true"></p-checkbox>
+        <label for="emissionIsActive">Activo</label>
+      </div>
+    }
+  </form>
+
+  <ng-template #footer>
+    <p-button label="Cancelar" severity="secondary" [text]="true" (onClick)="hide()"></p-button>
+    <p-button label="Guardar" icon="pi pi-check" (onClick)="save()"></p-button>
+  </ng-template>
+</p-dialog>

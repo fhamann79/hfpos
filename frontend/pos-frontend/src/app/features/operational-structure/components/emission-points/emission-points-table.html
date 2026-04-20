@@ -1,0 +1,80 @@
+<div class="entity-card">
+  <p-toolbar styleClass="entity-card__toolbar">
+    <ng-template #start>
+      <div>
+        <h3>Puntos de emisión</h3>
+        <small>
+          @if (selectedEstablishment) {
+            Establishment: <strong>{{ selectedEstablishment.name }}</strong>
+          } @else {
+            Selecciona un establecimiento para cargar puntos de emisión.
+          }
+        </small>
+      </div>
+    </ng-template>
+    <ng-template #end>
+      @if (canWrite && selectedEstablishment) {
+        <p-button label="Nuevo EmissionPoint" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
+      }
+    </ng-template>
+  </p-toolbar>
+
+  @if (!selectedEstablishment) {
+    <p-message severity="info" text="Selecciona un establecimiento para comenzar."></p-message>
+  } @else {
+    @if (errorMessage()) {
+      <p-message severity="error" [text]="errorMessage()"></p-message>
+    }
+
+    <p-table [value]="emissionPoints()" [loading]="loading()" [paginator]="true" [rows]="6" [tableStyle]="{ 'min-width': '38rem' }">
+      <ng-template #header>
+        <tr>
+          <th>Id</th>
+          <th>Código</th>
+          <th>Nombre</th>
+          <th>Estado</th>
+          <th style="width: 10rem">Acciones</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-emissionPoint>
+        <tr>
+          <td>{{ emissionPoint.id }}</td>
+          <td>{{ emissionPoint.code }}</td>
+          <td>{{ emissionPoint.name }}</td>
+          <td>
+            <p-tag
+              [value]="emissionPoint.isActive ? 'Activo' : 'Inactivo'"
+              [severity]="emissionPoint.isActive ? 'success' : 'secondary'"
+            ></p-tag>
+          </td>
+          <td>
+            @if (canWrite) {
+              <div class="actions">
+                <p-button icon="pi pi-pencil" [text]="true" (onClick)="openEditDialog(emissionPoint)"></p-button>
+                <p-button
+                  icon="pi pi-trash"
+                  severity="danger"
+                  [text]="true"
+                  (onClick)="confirmDelete(emissionPoint)"
+                ></p-button>
+              </div>
+            }
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="5">No hay puntos de emisión para este establecimiento.</td>
+        </tr>
+      </ng-template>
+    </p-table>
+  }
+</div>
+
+<app-emission-point-dialog
+  [visible]="dialogVisible"
+  [emissionPoint]="editingEmissionPoint"
+  [establishmentId]="selectedEstablishment?.id ?? null"
+  (visibleChange)="onDialogVisibleChange($event)"
+  (submitForm)="submitDialog($event)"
+></app-emission-point-dialog>

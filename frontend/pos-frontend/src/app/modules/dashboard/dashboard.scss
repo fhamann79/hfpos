@@ -1,0 +1,18 @@
+.dashboard-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+ul {
+  margin: 0 0 1rem;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.35rem;
+}

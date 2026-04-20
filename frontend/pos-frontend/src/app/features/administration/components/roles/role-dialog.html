@@ -1,0 +1,40 @@
+<p-dialog
+  [header]="isEditMode ? 'Editar rol' : 'Nuevo rol'"
+  [visible]="visible"
+  [modal]="true"
+  [style]="{ width: '32rem' }"
+  [draggable]="false"
+  [resizable]="false"
+  (visibleChange)="visibleChange.emit($event)"
+  (onHide)="hide()"
+>
+  <form class="role-form" [formGroup]="form" (ngSubmit)="save()">
+    <div class="field-grid">
+      <label for="code">Code</label>
+      <input id="code" type="text" pInputText formControlName="code" />
+      @if (form.controls.code.invalid && form.controls.code.touched) {
+        <small class="p-error">Code es obligatorio.</small>
+      }
+    </div>
+
+    <div class="field-grid">
+      <label for="name">Name</label>
+      <input id="name" type="text" pInputText formControlName="name" />
+      @if (form.controls.name.invalid && form.controls.name.touched) {
+        <small class="p-error">Name es obligatorio.</small>
+      }
+    </div>
+
+    @if (isEditMode) {
+      <div class="field-checkbox">
+        <p-checkbox inputId="roleIsActive" formControlName="isActive" [binary]="true"></p-checkbox>
+        <label for="roleIsActive">Activo</label>
+      </div>
+    }
+
+    <div class="dialog-actions">
+      <p-button type="button" label="Cancelar" severity="secondary" [outlined]="true" (onClick)="hide()"></p-button>
+      <p-button type="submit" label="Guardar" icon="pi pi-check"></p-button>
+    </div>
+  </form>
+</p-dialog>

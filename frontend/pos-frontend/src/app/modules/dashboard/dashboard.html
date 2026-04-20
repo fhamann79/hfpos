@@ -1,0 +1,45 @@
+<section class="dashboard-page">
+  <header class="dashboard-header">
+    <div>
+      <h1>Dashboard</h1>
+      <p class="text-muted">Estado inicial del tenant para validación.</p>
+    </div>
+    <p-tag value="Foundation FE-400" severity="info"></p-tag>
+  </header>
+
+
+  @if (accessWarning()) {
+    <p-message severity="warn" [text]="accessWarning()"></p-message>
+  }
+
+  @if (!loaded()) {
+    <p-card>
+      <p>Cargando contexto del usuario...</p>
+    </p-card>
+  }
+
+  @if (loaded() && me()) {
+    <p-card>
+      <ng-template #title>Contexto autenticado</ng-template>
+      <ul>
+        <li><strong>Usuario:</strong> {{ me()!.username }}</li>
+        <li><strong>CompanyId:</strong> {{ me()!.companyId }}</li>
+        <li><strong>EstablishmentId:</strong> {{ me()!.establishmentId }}</li>
+        <li><strong>EmissionPointId:</strong> {{ me()!.emissionPointId }}</li>
+      </ul>
+      <p-button
+        label="Cerrar sesión"
+        icon="pi pi-sign-out"
+        severity="danger"
+        [outlined]="true"
+        (onClick)="logout()"
+      ></p-button>
+    </p-card>
+  }
+
+  @if (loaded() && !me()) {
+    <p-card>
+      <p>No autenticado (sin contexto).</p>
+    </p-card>
+  }
+</section>

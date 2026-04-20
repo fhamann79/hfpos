@@ -1,0 +1,72 @@
+<div class="app-shell" [class.app-shell--collapsed]="sidebarCollapsed()">
+  <aside class="sidebar">
+    <div class="sidebar__brand">
+      <span class="sidebar__logo">PE</span>
+      @if (!sidebarCollapsed()) {
+        <div>
+          <h1>POS Ecuador</h1>
+          <small>SaaS Foundation</small>
+        </div>
+      }
+    </div>
+
+    <nav class="sidebar__nav">
+      @for (item of menuItems(); track item.label) {
+        @if (item.disabled) {
+          <button type="button" class="nav-item nav-item--disabled" disabled>
+            <i [class]="item.icon"></i>
+            @if (!sidebarCollapsed()) {
+              <span>{{ item.label }}</span>
+              <small>Próximamente</small>
+            }
+          </button>
+        } @else {
+          <a
+            class="nav-item"
+            [routerLink]="item.route"
+            routerLinkActive="nav-item--active"
+            [routerLinkActiveOptions]="{ exact: true }"
+          >
+            <i [class]="item.icon"></i>
+            @if (!sidebarCollapsed()) {
+              <span>{{ item.label }}</span>
+            }
+          </a>
+        }
+      }
+    </nav>
+  </aside>
+
+  <div class="shell-content">
+    <p-toolbar styleClass="shell-toolbar">
+      <ng-template #start>
+        <p-button
+          icon="pi pi-bars"
+          [text]="true"
+          (onClick)="toggleSidebar()"
+          ariaLabel="Alternar sidebar"
+        ></p-button>
+      </ng-template>
+      <ng-template #end>
+        <div class="toolbar-user">
+          <p-avatar icon="pi pi-user" shape="circle"></p-avatar>
+          <div>
+            <strong>{{ username() }}</strong>
+            <small>{{ roleLabel() }}</small>
+          </div>
+          <p-button
+            label="Salir"
+            icon="pi pi-sign-out"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="logout()"
+          ></p-button>
+        </div>
+      </ng-template>
+    </p-toolbar>
+
+    <main class="page-content">
+      <ng-content></ng-content>
+    </main>
+  </div>
+</div>

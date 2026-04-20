@@ -1,0 +1,87 @@
+<section class="pos-page">
+  <header class="pos-page__header">
+    <h1>POS Workstation</h1>
+    <p>Flujo rápido para ventas con teclado y foco operativo.</p>
+  </header>
+
+  @if (!canSell && !canReadReports) {
+    <p-message severity="warn" text="No tienes permisos para usar la estación POS."></p-message>
+  } @else {
+    <div class="layout">
+      @if (canSell) {
+        <app-product-search-panel
+          [products]="filteredProducts()"
+          [loading]="productsLoading()"
+          [errorMessage]="productsError()"
+          [inventoryAvailable]="inventoryAvailable()"
+          [inventoryErrorMessage]="inventoryError()"
+          [searchTerm]="searchTerm()"
+          [canSell]="canSell"
+          (searchTermChange)="searchTerm.set($event)"
+          (addProduct)="addProduct($event)"
+          (quickSearch)="quickSearchVisible.set(true)"
+        ></app-product-search-panel>
+
+        <app-cart-workstation
+          [items]="cart()"
+          [subtotal]="subtotal()"
+          [total]="total()"
+          [notes]="notes()"
+          [canCheckout]="canSell"
+          [inventoryAvailable]="inventoryAvailable()"
+          (updateQuantity)="updateQuantity($event)"
+          (updateUnitPrice)="updateUnitPrice($event)"
+          (removeItem)="removeItem($event)"
+          (notesChange)="notes.set($event)"
+          (checkout)="openCheckoutDialog()"
+        ></app-cart-workstation>
+      }
+
+      @if (canReadReports) {
+        <app-recent-sales-panel
+          [sales]="sales()"
+          [loading]="salesLoading()"
+          [errorMessage]="salesError()"
+          [canVoid]="canVoid"
+          (refresh)="loadSales()"
+          (viewDetail)="openSaleDetail($event)"
+          (startVoid)="openVoidDialog($event)"
+        ></app-recent-sales-panel>
+      }
+    </div>
+  }
+
+  <p-toast></p-toast>
+
+  <app-quick-product-search-dialog
+    [visible]="quickSearchVisible()"
+    [products]="allProducts()"
+    [inventoryAvailable]="inventoryAvailable()"
+    (visibleChange)="quickSearchVisible.set($event)"
+    (selectProduct)="addProduct($event)"
+    (unavailableProduct)="handleUnavailableProductSelection($event)"
+  ></app-quick-product-search-dialog>
+
+  <app-checkout-confirm-dialog
+    [visible]="checkoutVisible()"
+    [loading]="checkoutLoading()"
+    [itemCount]="itemCount()"
+    [total]="total()"
+    [notes]="notes()"
+    (visibleChange)="checkoutVisible.set($event)"
+    (confirm)="confirmCheckout()"
+  ></app-checkout-confirm-dialog>
+
+  <app-sale-detail-dialog
+    [visible]="saleDetailVisible()"
+    [sale]="selectedSale()"
+    (visibleChange)="saleDetailVisible.set($event)"
+  ></app-sale-detail-dialog>
+
+  <app-void-sale-dialog
+    [visible]="voidVisible()"
+    [loading]="voidLoading()"
+    (visibleChange)="voidVisible.set($event)"
+    (confirmVoid)="confirmVoid($event)"
+  ></app-void-sale-dialog>
+</section>

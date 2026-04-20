@@ -1,0 +1,57 @@
+<section class="panel">
+  <h2>Carrito</h2>
+
+  @if (!hasItems) {
+    <div class="state">Aún no agregas productos.</div>
+  } @else {
+    <div class="cart-list">
+      @for (item of items; track item.productId) {
+        <div class="cart-row">
+          <strong>{{ item.productName }}</strong>
+
+          <p-inputnumber
+            inputId="qty-{{ item.productId }}"
+            [ngModel]="item.quantity"
+            (ngModelChange)="updateQuantity.emit({ productId: item.productId, quantity: $event ?? 0 })"
+            [min]="1"
+            [max]="maxQuantity(item)"
+            [showButtons]="true"
+          ></p-inputnumber>
+
+          <p-inputnumber
+            inputId="price-{{ item.productId }}"
+            mode="decimal"
+            [min]="0"
+            [ngModel]="item.unitPrice"
+            (ngModelChange)="updateUnitPrice.emit({ productId: item.productId, unitPrice: $event ?? 0 })"
+          ></p-inputnumber>
+
+          <span>{{ lineSubtotal(item) | currency: 'USD' }}</span>
+          @if (inventoryAvailable) {
+            <small>Disponible: {{ item.stock }}</small>
+          }
+          <p-button icon="pi pi-trash" severity="danger" [text]="true" (onClick)="removeItem.emit(item.productId)"></p-button>
+        </div>
+      }
+    </div>
+  }
+
+  <footer class="summary">
+    <div><span>Subtotal</span><strong>{{ subtotal | currency: 'USD' }}</strong></div>
+    <div><span>Total</span><strong>{{ total | currency: 'USD' }}</strong></div>
+    <textarea
+      pTextarea
+      rows="3"
+      [ngModel]="notes"
+      (ngModelChange)="notesChange.emit($event)"
+      placeholder="Notas de la venta (opcional)"
+    ></textarea>
+
+    <p-button
+      label="Finalizar venta (F12)"
+      icon="pi pi-check"
+      [disabled]="!canCheckout || !hasItems || !inventoryAvailable"
+      (onClick)="checkout.emit()"
+    ></p-button>
+  </footer>
+</section>

@@ -1,0 +1,21 @@
+.entity-card {
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  padding: 1rem;
+  background: var(--surface-card);
+}
+
+.table-caption {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.row-selected {
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+}
