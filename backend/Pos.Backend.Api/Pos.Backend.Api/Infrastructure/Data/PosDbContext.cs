@@ -137,6 +137,12 @@ public class PosDbContext : DbContext
                 .IsRequired()
                 .HasMaxLength(150);
 
+            entity.Property(p => p.Barcode)
+                .HasMaxLength(100);
+
+            entity.Property(p => p.InternalCode)
+                .HasMaxLength(100);
+
             entity.Property(p => p.Price)
                 .HasPrecision(18, 2);
 
@@ -150,6 +156,12 @@ public class PosDbContext : DbContext
 
             entity.HasIndex(p => p.CompanyId);
             entity.HasIndex(p => p.CategoryId);
+            entity.HasIndex(p => new { p.CompanyId, p.Barcode })
+                .IsUnique()
+                .HasFilter(@"""Barcode"" IS NOT NULL");
+            entity.HasIndex(p => new { p.CompanyId, p.InternalCode })
+                .IsUnique()
+                .HasFilter(@"""InternalCode"" IS NOT NULL");
         });
 
         modelBuilder.Entity<Sale>(entity =>

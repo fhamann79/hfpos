@@ -83,7 +83,7 @@ public class ExceptionHandlingMiddleware
                 && postgresException.SqlState == "23505" => (
                 StatusCodes.Status409Conflict,
                 CreateErrorResponse(
-                    "UNIQUE_VIOLATION",
+                    MapUniqueViolationError(postgresException.ConstraintName),
                     postgresException.Detail ?? postgresException.MessageText)),
 
             DbUpdateException dbUpdateException when TryGetPostgresException(dbUpdateException, out var postgresException)
@@ -122,4 +122,12 @@ public class ExceptionHandlingMiddleware
 
         return postgresException is not null;
     }
+
+    private static string MapUniqueViolationError(string? constraintName)
+        => constraintName switch
+        {
+            "IX_Products_CompanyId_Barcode" => "PRODUCT_BARCODE_ALREADY_EXISTS",
+            "IX_Products_CompanyId_InternalCode" => "PRODUCT_INTERNAL_CODE_ALREADY_EXISTS",
+            _ => "UNIQUE_VIOLATION"
+        };
 }

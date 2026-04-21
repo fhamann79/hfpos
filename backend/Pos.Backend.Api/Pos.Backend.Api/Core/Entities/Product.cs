@@ -16,6 +16,12 @@ public class Product
     [MaxLength(150)]
     public string Name { get; set; }
 
+    [MaxLength(100)]
+    public string? Barcode { get; set; }
+
+    [MaxLength(100)]
+    public string? InternalCode { get; set; }
+
     public decimal Price { get; set; }
 
     public bool IsActive { get; set; }
