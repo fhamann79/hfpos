@@ -28,6 +28,8 @@ const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
   CATEGORY_ALREADY_EXISTS: 'Ya existe una categoría con ese nombre.',
   CATEGORY_NOT_FOUND: 'La categoría no existe.',
   NAME_REQUIRED: 'El nombre es obligatorio.',
+  PRODUCT_BARCODE_ALREADY_EXISTS: 'Ya existe un producto con ese código de barras.',
+  PRODUCT_INTERNAL_CODE_ALREADY_EXISTS: 'Ya existe un producto con ese código interno.',
 };
 
 const STATUS_ERROR_MESSAGES: Record<number, string> = {

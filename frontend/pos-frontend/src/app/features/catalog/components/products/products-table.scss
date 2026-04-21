@@ -37,6 +37,56 @@
   gap: 0.25rem;
 }
 
+.product-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.product-name {
+  color: var(--app-text);
+  font-weight: 650;
+}
+
+.product-identifiers {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.identifier-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 16rem;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  line-height: 1.2;
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.barcode-pill {
+  color: #0f5f76;
+  background: color-mix(in srgb, #d8f1f7 68%, transparent);
+}
+
+.internal-pill {
+  color: #6b4a10;
+  background: color-mix(in srgb, #f7e7bd 66%, transparent);
+}
+
+.identifier-empty {
+  color: var(--app-text-muted);
+  font-size: 0.76rem;
+}
+
 .empty-state {
   min-height: 10rem;
   display: flex;

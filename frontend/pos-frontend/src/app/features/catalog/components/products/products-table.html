@@ -31,7 +31,7 @@
     [paginator]="true"
     [rows]="10"
     [rowsPerPageOptions]="[10, 25, 50]"
-    [globalFilterFields]="['id', 'name', 'categoryId', 'price', 'isActive']"
+    [globalFilterFields]="['id', 'name', 'barcode', 'internalCode', 'categoryId', 'price', 'isActive']"
     [sortMode]="'multiple'"
     responsiveLayout="scroll"
     [tableStyle]="{ 'min-width': '60rem' }"
@@ -64,7 +64,28 @@
     <ng-template pTemplate="body" let-product>
       <tr>
         <td>{{ product.id }}</td>
-        <td>{{ product.name }}</td>
+        <td>
+          <div class="product-cell">
+            <span class="product-name">{{ product.name }}</span>
+            <div class="product-identifiers">
+              @if (product.barcode) {
+                <span class="identifier-pill barcode-pill">
+                  <i class="pi pi-barcode"></i>
+                  <span>{{ product.barcode }}</span>
+                </span>
+              }
+              @if (product.internalCode) {
+                <span class="identifier-pill internal-pill">
+                  <i class="pi pi-id-card"></i>
+                  <span>{{ product.internalCode }}</span>
+                </span>
+              }
+              @if (!product.barcode && !product.internalCode) {
+                <span class="identifier-empty">Sin códigos registrados</span>
+              }
+            </div>
+          </div>
+        </td>
         <td>{{ getCategoryName(product.categoryId) }}</td>
         <td>{{ product.price | currency: 'USD' }}</td>
         <td>
