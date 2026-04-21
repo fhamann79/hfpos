@@ -41,6 +41,8 @@ public class ProductsController : ControllerBase
                 Id = p.Id,
                 CategoryId = p.CategoryId,
                 Name = p.Name,
+                Barcode = p.Barcode,
+                InternalCode = p.InternalCode,
                 Price = p.Price,
                 IsActive = p.IsActive
             })
@@ -70,11 +72,26 @@ public class ProductsController : ControllerBase
             return BadRequest(new ApiErrorResponse { Error = "CATEGORY_NOT_FOUND" });
         }
 
+        var barcode = NormalizeOptionalIdentifier(dto.Barcode);
+        var internalCode = NormalizeOptionalIdentifier(dto.InternalCode);
+
+        var duplicateIdentifierError = await ValidateUniqueIdentifiersAsync(
+            operationalContext.CompanyId,
+            barcode,
+            internalCode);
+
+        if (duplicateIdentifierError is not null)
+        {
+            return duplicateIdentifierError;
+        }
+
         var product = new Product
         {
             CompanyId = operationalContext.CompanyId,
             CategoryId = dto.CategoryId,
             Name = dto.Name.Trim(),
+            Barcode = barcode,
+            InternalCode = internalCode,
             Price = dto.Price,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
@@ -88,6 +105,8 @@ public class ProductsController : ControllerBase
             Id = product.Id,
             CategoryId = product.CategoryId,
             Name = product.Name,
+            Barcode = product.Barcode,
+            InternalCode = product.InternalCode,
             Price = product.Price,
             IsActive = product.IsActive
         };
@@ -110,6 +129,8 @@ public class ProductsController : ControllerBase
                 Id = p.Id,
                 CategoryId = p.CategoryId,
                 Name = p.Name,
+                Barcode = p.Barcode,
+                InternalCode = p.InternalCode,
                 Price = p.Price,
                 IsActive = p.IsActive
             })
@@ -152,8 +173,24 @@ public class ProductsController : ControllerBase
             return BadRequest(new ApiErrorResponse { Error = "CATEGORY_NOT_FOUND" });
         }
 
+        var barcode = NormalizeOptionalIdentifier(dto.Barcode);
+        var internalCode = NormalizeOptionalIdentifier(dto.InternalCode);
+
+        var duplicateIdentifierError = await ValidateUniqueIdentifiersAsync(
+            operationalContext.CompanyId,
+            barcode,
+            internalCode,
+            id);
+
+        if (duplicateIdentifierError is not null)
+        {
+            return duplicateIdentifierError;
+        }
+
         product.CategoryId = dto.CategoryId;
         product.Name = dto.Name.Trim();
+        product.Barcode = barcode;
+        product.InternalCode = internalCode;
         product.Price = dto.Price;
         product.IsActive = dto.IsActive;
 
@@ -161,6 +198,44 @@ public class ProductsController : ControllerBase
 
         return NoContent();
     }
+
+    private async Task<ObjectResult?> ValidateUniqueIdentifiersAsync(
+        int companyId,
+        string? barcode,
+        string? internalCode,
+        int? excludedProductId = null)
+    {
+        if (!string.IsNullOrEmpty(barcode))
+        {
+            var barcodeExists = await _context.Products.AnyAsync(p =>
+                p.CompanyId == companyId
+                && p.Barcode == barcode
+                && (!excludedProductId.HasValue || p.Id != excludedProductId.Value));
+
+            if (barcodeExists)
+            {
+                return Conflict(new ApiErrorResponse { Error = "PRODUCT_BARCODE_ALREADY_EXISTS" });
+            }
+        }
+
+        if (!string.IsNullOrEmpty(internalCode))
+        {
+            var internalCodeExists = await _context.Products.AnyAsync(p =>
+                p.CompanyId == companyId
+                && p.InternalCode == internalCode
+                && (!excludedProductId.HasValue || p.Id != excludedProductId.Value));
+
+            if (internalCodeExists)
+            {
+                return Conflict(new ApiErrorResponse { Error = "PRODUCT_INTERNAL_CODE_ALREADY_EXISTS" });
+            }
+        }
+
+        return null;
+    }
+
+    private static string? NormalizeOptionalIdentifier(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     [HttpDelete("{id:int}")]
     [Authorize(Policy = AppPermissions.CatalogProductsWrite)]
