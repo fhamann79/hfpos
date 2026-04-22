@@ -20,11 +20,13 @@ export class CartWorkstation {
   @Input() notes = '';
   @Input() canCheckout = false;
   @Input() inventoryAvailable = false;
+  @Input() activeProductId: number | null = null;
 
   @Output() updateQuantity = new EventEmitter<{ productId: number; quantity: number }>();
   @Output() updateUnitPrice = new EventEmitter<{ productId: number; unitPrice: number }>();
   @Output() removeItem = new EventEmitter<number>();
   @Output() notesChange = new EventEmitter<string>();
+  @Output() selectLine = new EventEmitter<number>();
   @Output() checkout = new EventEmitter<void>();
 
   get hasItems(): boolean {
@@ -33,6 +35,10 @@ export class CartWorkstation {
 
   lineSubtotal(item: CartItem): number {
     return item.quantity * item.unitPrice;
+  }
+
+  isActive(item: CartItem): boolean {
+    return item.productId === this.activeProductId;
   }
 
   maxQuantity(item: CartItem): number | null {

@@ -6,7 +6,7 @@ import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { MessageModule } from 'primeng/message';
 import { ToastModule } from 'primeng/toast';
-import { Subscription } from 'rxjs';
+import { Subscription, fromEvent } from 'rxjs';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { CartWorkstation } from '../../components/cart-workstation/cart-workstation';
@@ -67,6 +67,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly inventoryError = signal('');
 
   readonly cart = signal<CartItem[]>([]);
+  readonly activeCartProductId = signal<number | null>(null);
   readonly notes = signal('');
   readonly checkoutVisible = signal(false);
   readonly quickSearchVisible = signal(false);
@@ -141,6 +142,9 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       }),
       this.keyboard.watch(['Escape']).subscribe(() => {
         this.closeContextualDialog();
+      }),
+      fromEvent<KeyboardEvent>(window, 'keydown').subscribe((event) => {
+        this.handleCartKeyboardShortcut(event);
       })
     );
   }
@@ -274,10 +278,16 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       ];
     });
 
+    if (productAdded) {
+      this.activeCartProductId.set(product.id);
+    }
+
     return productAdded;
   }
 
   updateQuantity(event: { productId: number; quantity: number }): void {
+    this.activeCartProductId.set(event.productId);
+
     let limitedItemName: string | null = null;
     let limitedStock = 0;
 
@@ -306,6 +316,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   updateUnitPrice(event: { productId: number; unitPrice: number }): void {
+    this.activeCartProductId.set(event.productId);
+
     this.cart.update((items) =>
       items.map((item) =>
         item.productId === event.productId
@@ -316,7 +328,17 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   removeItem(productId: number): void {
+    const items = this.cart();
+    const removedIndex = items.findIndex((item) => item.productId === productId);
+
     this.cart.update((items) => items.filter((item) => item.productId !== productId));
+    this.moveActiveLineAfterRemoval(removedIndex);
+  }
+
+  selectCartLine(productId: number): void {
+    if (this.cart().some((item) => item.productId === productId)) {
+      this.activeCartProductId.set(productId);
+    }
   }
 
   openCheckoutDialog(): void {
@@ -389,6 +411,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         this.checkoutLoading.set(false);
         this.checkoutVisible.set(false);
         this.cart.set([]);
+        this.activeCartProductId.set(null);
         this.notes.set('');
         this.messageService.add({ severity: 'success', summary: 'Venta registrada', detail: 'La venta fue creada correctamente.' });
         this.refreshOperationalData();
@@ -560,6 +583,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         })
         .filter((item): item is CartItem => !!item)
     );
+
+    this.ensureActiveCartLine();
   }
 
   private findCartItemsExceedingStock(): CartItem[] {
@@ -589,6 +614,144 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       summary: 'Stock máximo alcanzado',
       detail: `"${productName}" solo tiene ${stock} unidades disponibles.`,
     });
+  }
+
+  private handleCartKeyboardShortcut(event: KeyboardEvent): void {
+    if (!this.shouldHandleCartKeyboardShortcut(event)) {
+      return;
+    }
+
+    const key = event.key;
+
+    if (key === 'ArrowDown') {
+      this.moveActiveLine(1);
+      event.preventDefault();
+      return;
+    }
+
+    if (key === 'ArrowUp') {
+      this.moveActiveLine(-1);
+      event.preventDefault();
+      return;
+    }
+
+    if (key === '+' || key === '=') {
+      this.adjustActiveLineQuantity(1);
+      event.preventDefault();
+      return;
+    }
+
+    if (key === '-' || key === '_') {
+      this.adjustActiveLineQuantity(-1);
+      event.preventDefault();
+      return;
+    }
+
+    if (key === 'Delete') {
+      this.removeActiveLine();
+      event.preventDefault();
+    }
+  }
+
+  private shouldHandleCartKeyboardShortcut(event: KeyboardEvent): boolean {
+    if (!this.canSell || !this.cart().length || event.altKey || event.ctrlKey || event.metaKey) {
+      return false;
+    }
+
+    if (
+      this.quickSearchVisible()
+      || this.checkoutVisible()
+      || this.recentSalesVisible()
+      || this.saleDetailVisible()
+      || this.voidVisible()
+    ) {
+      return false;
+    }
+
+    const target = event.target as HTMLElement | null;
+    if (!this.isEditableTarget(target)) {
+      return true;
+    }
+
+    return this.isMainSearchInput(target) && this.searchTerm().trim().length === 0;
+  }
+
+  private isEditableTarget(target: HTMLElement | null): boolean {
+    if (!target) {
+      return false;
+    }
+
+    const tagName = target.tagName.toLowerCase();
+    return tagName === 'input' || tagName === 'textarea' || target.isContentEditable;
+  }
+
+  private isMainSearchInput(target: HTMLElement | null): boolean {
+    return target?.getAttribute('aria-label') === 'Escanear o buscar producto';
+  }
+
+  private moveActiveLine(direction: 1 | -1): void {
+    const items = this.cart();
+    if (!items.length) {
+      this.activeCartProductId.set(null);
+      return;
+    }
+
+    const currentIndex = Math.max(
+      items.findIndex((item) => item.productId === this.activeCartProductId()),
+      0
+    );
+    const nextIndex = Math.min(Math.max(currentIndex + direction, 0), items.length - 1);
+    this.activeCartProductId.set(items[nextIndex].productId);
+  }
+
+  private adjustActiveLineQuantity(delta: 1 | -1): void {
+    const activeItem = this.getActiveCartItem();
+    if (!activeItem) {
+      return;
+    }
+
+    const nextQuantity = Math.max(1, activeItem.quantity + delta);
+    this.updateQuantity({ productId: activeItem.productId, quantity: nextQuantity });
+  }
+
+  private removeActiveLine(): void {
+    const activeItem = this.getActiveCartItem();
+    if (!activeItem) {
+      return;
+    }
+
+    this.removeItem(activeItem.productId);
+  }
+
+  private getActiveCartItem(): CartItem | null {
+    this.ensureActiveCartLine();
+    return this.cart().find((item) => item.productId === this.activeCartProductId()) ?? null;
+  }
+
+  private moveActiveLineAfterRemoval(removedIndex: number): void {
+    const items = this.cart();
+
+    if (!items.length) {
+      this.activeCartProductId.set(null);
+      return;
+    }
+
+    const nextIndex = Math.min(Math.max(removedIndex, 0), items.length - 1);
+    this.activeCartProductId.set(items[nextIndex].productId);
+  }
+
+  private ensureActiveCartLine(): void {
+    const items = this.cart();
+
+    if (!items.length) {
+      this.activeCartProductId.set(null);
+      return;
+    }
+
+    const activeProductId = this.activeCartProductId();
+    if (!activeProductId || !items.some((item) => item.productId === activeProductId)) {
+      this.activeCartProductId.set(items[items.length - 1].productId);
+    }
   }
 
   private findExactIdentifierMatch(value: string): PosProduct | null {
