@@ -1,11 +1,78 @@
-.panel { background:#fff; border-radius:10px; padding:1rem; }
-header { display:flex; justify-content:space-between; align-items:center; }
-.sales-list { list-style:none; margin:.8rem 0 0; padding:0; display:grid; gap:.5rem; }
-.sales-list li { border:1px solid #e2e8f0; border-radius:8px; padding:.5rem; display:flex; justify-content:space-between; align-items:center; }
-.sales-list li div:first-child { display:grid; gap:.1rem; }
-.actions { display:flex; gap:.25rem; }
-.state { color:#64748b; margin-top:.7rem; }
+.panel {
+  display: grid;
+  gap: 1rem;
+}
 
-.status { font-weight: 600; }
-.status--voided { color: #b91c1c; }
-.sales-list li.sale-voided { border-color: #fecaca; background: #fff1f2; }
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+
+  h2 {
+    margin: 0;
+    color: #0f172a;
+    letter-spacing: -0.03em;
+  }
+}
+
+.sales-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.sales-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  padding: 0.75rem;
+  background: #fff;
+}
+
+.sales-list li div:first-child {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.sales-list strong {
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.sales-list small {
+  color: #64748b;
+}
+
+.actions {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.state {
+  color: #64748b;
+  padding: 1rem 0;
+}
+
+.status {
+  color: #0e7490;
+  font-weight: 800;
+}
+
+.status--voided {
+  color: #b91c1c;
+}
+
+.sales-list li.sale-voided {
+  border-color: #fecaca;
+  background: #fff1f2;
+}

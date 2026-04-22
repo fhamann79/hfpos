@@ -1,58 +1,90 @@
 <section class="pos-page">
   <header class="pos-page__header">
-    <h1>POS Workstation</h1>
-    <p>Flujo rápido para ventas con teclado y foco operativo.</p>
+    <div>
+      <span class="eyebrow">Estación de venta</span>
+      <h1>POS Workstation</h1>
+      <p>Escaneo rápido, venta activa y cierre con teclado.</p>
+    </div>
+
+    <div class="header-actions">
+      @if (canReadReports) {
+        <p-button
+          label="Ventas recientes"
+          icon="pi pi-receipt"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="recentSalesVisible.set(true)"
+        ></p-button>
+      }
+      <span class="shortcut-hint">F2 buscar · F9 cobrar · F12 confirmar</span>
+    </div>
   </header>
 
   @if (!canSell && !canReadReports) {
     <p-message severity="warn" text="No tienes permisos para usar la estación POS."></p-message>
   } @else {
-    <div class="layout">
+    <div class="workstation-shell">
       @if (canSell) {
-        <app-product-search-panel
-          [products]="filteredProducts()"
-          [loading]="productsLoading()"
-          [errorMessage]="productsError()"
-          [inventoryAvailable]="inventoryAvailable()"
-          [inventoryErrorMessage]="inventoryError()"
-          [searchTerm]="searchTerm()"
-          [canSell]="canSell"
-          (searchTermChange)="onSearchTermChange($event)"
-          (submitSearch)="submitSearchTerm()"
-          (addProduct)="addProduct($event)"
-          (quickSearch)="quickSearchVisible.set(true)"
-        ></app-product-search-panel>
+        <main class="sale-flow">
+          <app-product-search-panel
+            [products]="filteredProducts()"
+            [loading]="productsLoading()"
+            [errorMessage]="productsError()"
+            [inventoryAvailable]="inventoryAvailable()"
+            [inventoryErrorMessage]="inventoryError()"
+            [searchTerm]="searchTerm()"
+            [canSell]="canSell"
+            (searchTermChange)="onSearchTermChange($event)"
+            (submitSearch)="submitSearchTerm()"
+            (addProduct)="addProduct($event)"
+            (quickSearch)="quickSearchVisible.set(true)"
+          ></app-product-search-panel>
+        </main>
 
-        <app-cart-workstation
-          [items]="cart()"
-          [subtotal]="subtotal()"
-          [total]="total()"
-          [notes]="notes()"
-          [canCheckout]="canSell"
-          [inventoryAvailable]="inventoryAvailable()"
-          (updateQuantity)="updateQuantity($event)"
-          (updateUnitPrice)="updateUnitPrice($event)"
-          (removeItem)="removeItem($event)"
-          (notesChange)="notes.set($event)"
-          (checkout)="openCheckoutDialog()"
-        ></app-cart-workstation>
+        <aside class="active-sale">
+          <app-cart-workstation
+            [items]="cart()"
+            [subtotal]="subtotal()"
+            [total]="total()"
+            [notes]="notes()"
+            [canCheckout]="canSell"
+            [inventoryAvailable]="inventoryAvailable()"
+            (updateQuantity)="updateQuantity($event)"
+            (updateUnitPrice)="updateUnitPrice($event)"
+            (removeItem)="removeItem($event)"
+            (notesChange)="notes.set($event)"
+            (checkout)="openCheckoutDialog()"
+          ></app-cart-workstation>
+        </aside>
       }
 
-      @if (canReadReports) {
-        <app-recent-sales-panel
-          [sales]="sales()"
-          [loading]="salesLoading()"
-          [errorMessage]="salesError()"
-          [canVoid]="canVoid"
-          (refresh)="loadSales()"
-          (viewDetail)="openSaleDetail($event)"
-          (startVoid)="openVoidDialog($event)"
-        ></app-recent-sales-panel>
+      @if (!canSell && canReadReports) {
+        <div class="reports-only">
+          <p-button label="Abrir ventas recientes" icon="pi pi-receipt" (onClick)="recentSalesVisible.set(true)"></p-button>
+        </div>
       }
     </div>
   }
 
   <p-toast></p-toast>
+
+  <p-dialog
+    header="Ventas recientes"
+    [modal]="true"
+    [visible]="recentSalesVisible()"
+    [style]="{ width: '52rem', maxWidth: '96vw' }"
+    (visibleChange)="recentSalesVisible.set($event)"
+  >
+    <app-recent-sales-panel
+      [sales]="sales()"
+      [loading]="salesLoading()"
+      [errorMessage]="salesError()"
+      [canVoid]="canVoid"
+      (refresh)="loadSales()"
+      (viewDetail)="openSaleDetailFromRecent($event)"
+      (startVoid)="openVoidDialogFromRecent($event)"
+    ></app-recent-sales-panel>
+  </p-dialog>
 
   <app-quick-product-search-dialog
     [visible]="quickSearchVisible()"
