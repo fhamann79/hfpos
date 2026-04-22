@@ -45,6 +45,8 @@ export class ProductDialog implements OnChanges {
   readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required]],
     categoryId: [0, [Validators.required, Validators.min(1)]],
+    barcode: [''],
+    internalCode: [''],
     price: [0, [Validators.required, Validators.min(0)]],
     isActive: [true],
   });
@@ -83,6 +85,8 @@ export class ProductDialog implements OnChanges {
         payload: {
           name: values.name.trim(),
           categoryId: values.categoryId,
+          barcode: this.normalizeOptionalIdentifier(values.barcode),
+          internalCode: this.normalizeOptionalIdentifier(values.internalCode),
           price: values.price,
           isActive: values.isActive,
         },
@@ -95,6 +99,8 @@ export class ProductDialog implements OnChanges {
       payload: {
         name: values.name.trim(),
         categoryId: values.categoryId,
+        barcode: this.normalizeOptionalIdentifier(values.barcode),
+        internalCode: this.normalizeOptionalIdentifier(values.internalCode),
         price: values.price,
       },
     });
@@ -116,6 +122,8 @@ export class ProductDialog implements OnChanges {
       this.form.setValue({
         name: this.product.name,
         categoryId: this.product.categoryId,
+        barcode: this.product.barcode ?? '',
+        internalCode: this.product.internalCode ?? '',
         price: this.product.price,
         isActive: this.product.isActive,
       });
@@ -125,8 +133,15 @@ export class ProductDialog implements OnChanges {
     this.form.reset({
       name: '',
       categoryId: 0,
+      barcode: '',
+      internalCode: '',
       price: 0,
       isActive: true,
     });
+  }
+
+  private normalizeOptionalIdentifier(value: string): string | null {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 }

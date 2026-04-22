@@ -4,10 +4,20 @@
   gap: 1rem;
 }
 
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
 .field {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+}
+
+.field-wide {
+  grid-column: 1 / -1;
 }
 
 .field-inline {
@@ -16,9 +26,63 @@
   gap: 0.5rem;
 }
 
+.field-help {
+  color: var(--app-text-muted);
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.identity-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--app-border) 82%, transparent);
+  border-radius: 0.9rem;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--app-surface) 92%, #f4f8fb) 0%, var(--app-surface) 100%);
+}
+
+.identity-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+
+  h3 {
+    margin: 0;
+    color: var(--app-text);
+    font-size: 0.95rem;
+    font-weight: 700;
+  }
+
+  p {
+    margin: 0.15rem 0 0;
+    color: var(--app-text-muted);
+    font-size: 0.8rem;
+  }
+}
+
+.identity-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 0.75rem;
+  color: #0f5f76;
+  background: color-mix(in srgb, #d8f1f7 70%, var(--app-surface));
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.75rem;
   margin-top: 0.5rem;
+}
+
+@media (max-width: 42rem) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
 }

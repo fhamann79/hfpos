@@ -9,42 +9,86 @@
   (onHide)="hide()"
 >
   <form class="dialog-form" [formGroup]="form" (ngSubmit)="save()">
-    <div class="field">
-      <label for="product-name">Nombre</label>
-      <input id="product-name" type="text" pInputText formControlName="name" />
-      @if (form.controls.name.touched && form.controls.name.invalid) {
-        <small class="p-error">El nombre es obligatorio.</small>
-      }
+    <div class="form-grid">
+      <div class="field field-wide">
+        <label for="product-name">Nombre</label>
+        <input id="product-name" type="text" pInputText formControlName="name" />
+        @if (form.controls.name.touched && form.controls.name.invalid) {
+          <small class="p-error">El nombre es obligatorio.</small>
+        }
+      </div>
+
+      <div class="field field-wide">
+        <label for="product-category">Categoría</label>
+        <p-select
+          inputId="product-category"
+          [options]="categories()"
+          optionLabel="name"
+          optionValue="id"
+          placeholder="Selecciona una categoría"
+          formControlName="categoryId"
+        ></p-select>
+        @if (form.controls.categoryId.touched && form.controls.categoryId.invalid) {
+          <small class="p-error">La categoría es obligatoria.</small>
+        }
+      </div>
     </div>
 
-    <div class="field">
-      <label for="product-category">Categoría</label>
-      <p-select
-        inputId="product-category"
-        [options]="categories()"
-        optionLabel="name"
-        optionValue="id"
-        placeholder="Selecciona una categoría"
-        formControlName="categoryId"
-      ></p-select>
-      @if (form.controls.categoryId.touched && form.controls.categoryId.invalid) {
-        <small class="p-error">La categoría es obligatoria.</small>
-      }
-    </div>
+    <section class="identity-card" aria-label="Identificación del producto">
+      <div class="identity-heading">
+        <span class="identity-icon">
+          <i class="pi pi-barcode"></i>
+        </span>
+        <div>
+          <h3>Identificación</h3>
+          <p>Códigos opcionales para venta, búsqueda e inventario.</p>
+        </div>
+      </div>
 
-    <div class="field">
-      <label for="product-price">Precio</label>
-      <p-inputnumber
-        inputId="product-price"
-        formControlName="price"
-        mode="currency"
-        currency="USD"
-        locale="en-US"
-        [min]="0"
-      ></p-inputnumber>
-      @if (form.controls.price.touched && form.controls.price.invalid) {
-        <small class="p-error">El precio debe ser mayor o igual a 0.</small>
-      }
+      <div class="form-grid">
+        <div class="field">
+          <label for="product-barcode">Código de barras</label>
+          <input
+            id="product-barcode"
+            type="text"
+            pInputText
+            formControlName="barcode"
+            placeholder="Código de barras del fabricante"
+            autocomplete="off"
+          />
+          <small class="field-help">Comercial o del fabricante. Conserva ceros iniciales.</small>
+        </div>
+
+        <div class="field">
+          <label for="product-internal-code">Código interno</label>
+          <input
+            id="product-internal-code"
+            type="text"
+            pInputText
+            formControlName="internalCode"
+            placeholder="Código propio de la empresa"
+            autocomplete="off"
+          />
+          <small class="field-help">Propio para catálogo, productos genéricos o preparados.</small>
+        </div>
+      </div>
+    </section>
+
+    <div class="form-grid">
+      <div class="field">
+        <label for="product-price">Precio</label>
+        <p-inputnumber
+          inputId="product-price"
+          formControlName="price"
+          mode="currency"
+          currency="USD"
+          locale="en-US"
+          [min]="0"
+        ></p-inputnumber>
+        @if (form.controls.price.touched && form.controls.price.invalid) {
+          <small class="p-error">El precio debe ser mayor o igual a 0.</small>
+        }
+      </div>
     </div>
 
     @if (isEditMode) {
