@@ -3,6 +3,8 @@
 .search-row input { flex: 1; }
 .product-list { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; gap: .5rem; }
 .product-item { display:flex; justify-content: space-between; align-items: center; border:1px solid #e5e7eb; border-radius: 8px; padding: .6rem; }
+.identifiers { display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.25rem; color:#475569; font-size:.78rem; }
+.identifiers span { display:inline-flex; align-items:center; gap:.25rem; border-radius:999px; background:#f1f5f9; padding:.1rem .45rem; }
 .meta { display:flex; gap:1rem; color:#64748b; font-size:.9rem; }
 .product-item--out { opacity: .7; }
 .stock-empty { color: #b91c1c; font-weight: 600; }

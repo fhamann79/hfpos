@@ -57,6 +57,8 @@ export class PosProductCatalogService {
 
     const id = this.readNumber(row, ['id', 'productId', 'productID']);
     const name = this.readString(row, ['name', 'productName']);
+    const barcode = this.readString(row, ['barcode', 'barCode']);
+    const internalCode = this.readString(row, ['internalCode', 'internal_code']);
     const price = this.readNumber(row, ['price', 'unitPrice'], 0) ?? 0;
     const isActive = this.readBoolean(row, ['isActive', 'active'], true);
 
@@ -67,6 +69,8 @@ export class PosProductCatalogService {
     return {
       id,
       name,
+      barcode,
+      internalCode,
       price,
       isActive,
       stock: stockMap.get(id) ?? 0,

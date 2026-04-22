@@ -4,12 +4,14 @@
     <div class="search-row">
       <i class="pi pi-search"></i>
       <input
+        #searchInput
         pInputText
         type="text"
         [ngModel]="searchTerm"
         (ngModelChange)="onSearchChange($event)"
-        placeholder="Buscar por nombre"
-        aria-label="Buscar producto"
+        (keydown)="onSearchKeydown($event)"
+        placeholder="Escanea o busca por nombre, código de barras o código interno"
+        aria-label="Escanear o buscar producto"
       />
       <p-button
         label="Búsqueda rápida (F2)"
@@ -40,6 +42,16 @@
         <li class="product-item" [class.product-item--out]="product.stock <= 0">
           <div>
             <strong>{{ product.name }}</strong>
+            @if (product.barcode || product.internalCode) {
+              <div class="identifiers">
+                @if (product.barcode) {
+                  <span><i class="pi pi-barcode"></i> {{ product.barcode }}</span>
+                }
+                @if (product.internalCode) {
+                  <span><i class="pi pi-id-card"></i> {{ product.internalCode }}</span>
+                }
+              </div>
+            }
             <div class="meta">
               <span>{{ product.price | currency: 'USD' }}</span>
               <span>Stock: {{ product.stock }}</span>
