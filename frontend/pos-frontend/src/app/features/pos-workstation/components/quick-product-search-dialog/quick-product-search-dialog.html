@@ -9,9 +9,10 @@
     #searchInput
     pInputText
     type="text"
-    [(ngModel)]="filter"
+    [ngModel]="filter"
+    (ngModelChange)="onFilterChange($event)"
     (keydown)="onKeydown($event)"
-    placeholder="Escribe para filtrar y presiona Enter"
+    placeholder="Nombre, código de barras o código interno"
     class="quick-search-input"
   />
 
@@ -23,7 +24,19 @@
         [class.result-item--out]="!inventoryAvailable || product.stock <= 0"
         (click)="pick(product)"
       >
-        <span>{{ product.name }}</span>
+        <span>
+          <strong>{{ product.name }}</strong>
+          @if (product.barcode || product.internalCode) {
+            <span class="result-identifiers">
+              @if (product.barcode) {
+                <span><i class="pi pi-barcode"></i> {{ product.barcode }}</span>
+              }
+              @if (product.internalCode) {
+                <span><i class="pi pi-id-card"></i> {{ product.internalCode }}</span>
+              }
+            </span>
+          }
+        </span>
         <small>
           @if (!inventoryAvailable) {
             Stock no disponible

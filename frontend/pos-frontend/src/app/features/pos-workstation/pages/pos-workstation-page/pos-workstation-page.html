@@ -17,7 +17,8 @@
           [inventoryErrorMessage]="inventoryError()"
           [searchTerm]="searchTerm()"
           [canSell]="canSell"
-          (searchTermChange)="searchTerm.set($event)"
+          (searchTermChange)="onSearchTermChange($event)"
+          (submitSearch)="submitSearchTerm()"
           (addProduct)="addProduct($event)"
           (quickSearch)="quickSearchVisible.set(true)"
         ></app-product-search-panel>
@@ -57,8 +58,8 @@
     [visible]="quickSearchVisible()"
     [products]="allProducts()"
     [inventoryAvailable]="inventoryAvailable()"
-    (visibleChange)="quickSearchVisible.set($event)"
-    (selectProduct)="addProduct($event)"
+    (visibleChange)="onQuickSearchVisibleChange($event)"
+    (selectProduct)="handleQuickProductSelection($event)"
     (unavailableProduct)="handleUnavailableProductSelection($event)"
   ></app-quick-product-search-dialog>
 

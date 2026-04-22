@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { MessageService } from 'primeng/api';
 import { MessageModule } from 'primeng/message';
 import { ToastModule } from 'primeng/toast';
@@ -49,6 +49,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   private readonly keyboard = inject(PosKeyboardService);
   private readonly messageService = inject(MessageService);
 
+  @ViewChild(ProductSearchPanel) private productSearchPanel?: ProductSearchPanel;
+
   readonly canSell = this.permissionService.hasPermission(PERMISSIONS.posSalesCreate);
   readonly canReadReports = this.permissionService.hasPermission(PERMISSIONS.reportsSalesRead);
   readonly canVoid = this.permissionService.hasPermission(PERMISSIONS.posSalesVoid);
@@ -84,7 +86,9 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       return products;
     }
 
-    return products.filter((product) => product.name.toLowerCase().includes(term));
+    return products
+      .filter((product) => this.productMatchesTerm(product, term))
+      .sort((a, b) => this.productMatchRank(a, term) - this.productMatchRank(b, term) || a.name.localeCompare(b.name));
   });
 
   readonly subtotal = computed(() =>
@@ -114,8 +118,19 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
           this.quickSearchVisible.set(true);
         }
       }),
-      this.keyboard.watch(['F12']).subscribe(() => {
+      this.keyboard.watch(['F9']).subscribe(() => {
         this.openCheckoutDialog();
+      }),
+      this.keyboard.watch(['F12']).subscribe(() => {
+        if (this.checkoutVisible()) {
+          this.confirmCheckout();
+          return;
+        }
+
+        this.openCheckoutDialog();
+      }),
+      this.keyboard.watch(['Escape']).subscribe(() => {
+        this.closeContextualDialog();
       })
     );
   }
@@ -158,9 +173,46 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     });
   }
 
-  addProduct(product: PosProduct): void {
-    if (!this.canSell) {
+  onSearchTermChange(value: string): void {
+    this.searchTerm.set(value);
+
+    const product = this.findExactIdentifierMatch(value);
+    if (!product) {
       return;
+    }
+
+    if (this.addProduct(product)) {
+      this.clearSearchAndFocus();
+    }
+  }
+
+  submitSearchTerm(): void {
+    const term = this.searchTerm().trim();
+    if (!term.length) {
+      this.focusMainSearch();
+      return;
+    }
+
+    const exactProduct = this.findExactIdentifierMatch(term);
+    if (exactProduct) {
+      if (this.addProduct(exactProduct)) {
+        this.clearSearchAndFocus();
+      }
+      return;
+    }
+
+    const matches = this.filteredProducts();
+    if (matches.length === 1 && this.addProduct(matches[0])) {
+      this.clearSearchAndFocus();
+      return;
+    }
+
+    this.focusMainSearch();
+  }
+
+  addProduct(product: PosProduct): boolean {
+    if (!this.canSell) {
+      return false;
     }
 
     if (!this.inventoryAvailable()) {
@@ -169,7 +221,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         summary: 'Inventario no disponible',
         detail: 'No se puede agregar productos mientras el stock no esté disponible.',
       });
-      return;
+      return false;
     }
 
     if (product.stock <= 0) {
@@ -178,8 +230,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         summary: 'Producto no disponible',
         detail: `"${product.name}" no tiene stock disponible.`,
       });
-      return;
+      return false;
     }
+
+    let productAdded = false;
 
     this.cart.update((items) => {
       const found = items.find((item) => item.productId === product.id);
@@ -190,11 +244,13 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
           return items;
         }
 
+        productAdded = true;
         return items.map((item) =>
           item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
 
+      productAdded = true;
       return [
         ...items,
         {
@@ -207,6 +263,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         },
       ];
     });
+
+    return productAdded;
   }
 
   updateQuantity(event: { productId: number; quantity: number }): void {
@@ -413,6 +471,20 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     });
   }
 
+  onQuickSearchVisibleChange(visible: boolean): void {
+    this.quickSearchVisible.set(visible);
+
+    if (!visible) {
+      this.focusMainSearch();
+    }
+  }
+
+  handleQuickProductSelection(product: PosProduct): void {
+    if (this.addProduct(product)) {
+      this.clearSearchAndFocus();
+    }
+  }
+
   private applyCatalogSnapshot(snapshot: PosCatalogSnapshot): void {
     this.inventoryAvailable.set(snapshot.inventoryAvailable);
     this.allProducts.set(snapshot.products);
@@ -497,5 +569,76 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       summary: 'Stock máximo alcanzado',
       detail: `"${productName}" solo tiene ${stock} unidades disponibles.`,
     });
+  }
+
+  private findExactIdentifierMatch(value: string): PosProduct | null {
+    const term = value.trim().toLowerCase();
+    if (!term.length) {
+      return null;
+    }
+
+    return this.allProducts().find((product) =>
+      this.sameIdentifier(product.barcode, term) || this.sameIdentifier(product.internalCode, term)
+    ) ?? null;
+  }
+
+  private productMatchesTerm(product: PosProduct, term: string): boolean {
+    return this.productSearchText(product).some((value) => value.includes(term));
+  }
+
+  private productMatchRank(product: PosProduct, term: string): number {
+    if (this.sameIdentifier(product.barcode, term) || this.sameIdentifier(product.internalCode, term)) {
+      return 0;
+    }
+
+    if (product.name.toLowerCase().startsWith(term)) {
+      return 1;
+    }
+
+    return 2;
+  }
+
+  private sameIdentifier(value: string | null | undefined, term: string): boolean {
+    return !!value && value.trim().toLowerCase() === term;
+  }
+
+  private productSearchText(product: PosProduct): string[] {
+    return [product.name, product.barcode ?? '', product.internalCode ?? '']
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => value.length > 0);
+  }
+
+  private clearSearchAndFocus(): void {
+    this.searchTerm.set('');
+    this.focusMainSearch();
+  }
+
+  private focusMainSearch(): void {
+    this.productSearchPanel?.focusSearchInput();
+  }
+
+  private closeContextualDialog(): void {
+    if (this.quickSearchVisible()) {
+      this.quickSearchVisible.set(false);
+      this.focusMainSearch();
+      return;
+    }
+
+    if (this.checkoutVisible()) {
+      this.checkoutVisible.set(false);
+      this.focusMainSearch();
+      return;
+    }
+
+    if (this.saleDetailVisible()) {
+      this.saleDetailVisible.set(false);
+      this.focusMainSearch();
+      return;
+    }
+
+    if (this.voidVisible()) {
+      this.voidVisible.set(false);
+      this.focusMainSearch();
+    }
   }
 }

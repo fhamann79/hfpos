@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { AfterViewInit, Component, ElementRef, EventEmitter, Input, Output, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, EventEmitter, Input, OnChanges, Output, SimpleChanges, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
@@ -12,7 +12,7 @@ import { PosProduct } from '../../models/pos-product.model';
   templateUrl: './quick-product-search-dialog.html',
   styleUrl: './quick-product-search-dialog.scss',
 })
-export class QuickProductSearchDialog implements AfterViewInit {
+export class QuickProductSearchDialog implements AfterViewInit, OnChanges {
   @Input({ required: true }) visible = false;
   @Input({ required: true }) products: PosProduct[] = [];
   @Input() inventoryAvailable = false;
@@ -30,20 +30,29 @@ export class QuickProductSearchDialog implements AfterViewInit {
     this.focusInput();
   }
 
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['visible'] && this.visible) {
+      this.resetLookup();
+    }
+  }
+
   onVisibleChange(value: boolean): void {
     this.visibleChange.emit(value);
     if (value) {
-      this.filter = '';
-      this.highlightedIndex = 0;
-      setTimeout(() => this.focusInput(), 0);
+      this.resetLookup();
     }
+  }
+
+  onFilterChange(value: string): void {
+    this.filter = value;
+    this.highlightedIndex = 0;
   }
 
   get filteredProducts(): PosProduct[] {
     const term = this.filter.trim().toLowerCase();
-    const filtered = this.products.filter((product) =>
-      product.name.toLowerCase().includes(term)
-    );
+    const filtered = this.products
+      .filter((product) => this.matchesTerm(product, term))
+      .sort((a, b) => this.matchRank(a, term) - this.matchRank(b, term) || a.name.localeCompare(b.name));
 
     return filtered.slice(0, 20);
   }
@@ -91,5 +100,45 @@ export class QuickProductSearchDialog implements AfterViewInit {
 
   private focusInput(): void {
     this.searchInput?.nativeElement.focus();
+  }
+
+  private resetLookup(): void {
+    this.filter = '';
+    this.highlightedIndex = 0;
+    setTimeout(() => this.focusInput(), 0);
+  }
+
+  private matchesTerm(product: PosProduct, term: string): boolean {
+    if (!term.length) {
+      return true;
+    }
+
+    return this.searchText(product).some((value) => value.includes(term));
+  }
+
+  private matchRank(product: PosProduct, term: string): number {
+    if (!term.length) {
+      return 3;
+    }
+
+    if (this.sameIdentifier(product.barcode, term) || this.sameIdentifier(product.internalCode, term)) {
+      return 0;
+    }
+
+    if (product.name.toLowerCase().startsWith(term)) {
+      return 1;
+    }
+
+    return 2;
+  }
+
+  private sameIdentifier(value: string | null | undefined, term: string): boolean {
+    return !!value && value.trim().toLowerCase() === term;
+  }
+
+  private searchText(product: PosProduct): string[] {
+    return [product.name, product.barcode ?? '', product.internalCode ?? '']
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => value.length > 0);
   }
 }
