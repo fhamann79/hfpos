@@ -1,44 +1,75 @@
 <section class="panel">
-  <h2>Carrito</h2>
+  <header class="cart-header">
+    <div>
+      <span class="cart-kicker">Venta activa</span>
+      <h2>Carrito</h2>
+    </div>
+    <span class="item-count">{{ items.length }} {{ items.length === 1 ? 'línea' : 'líneas' }}</span>
+  </header>
 
   @if (!hasItems) {
-    <div class="state">Aún no agregas productos.</div>
+    <div class="state">
+      <i class="pi pi-shopping-cart"></i>
+      <strong>Lista para vender</strong>
+      <span>Escanea o busca productos para construir la venta.</span>
+    </div>
   } @else {
     <div class="cart-list">
       @for (item of items; track item.productId) {
         <div class="cart-row">
-          <strong>{{ item.productName }}</strong>
+          <div class="line-main">
+            <strong>{{ item.productName }}</strong>
+            @if (inventoryAvailable) {
+              <small>Disponible: {{ item.stock }}</small>
+            }
+          </div>
 
-          <p-inputnumber
-            inputId="qty-{{ item.productId }}"
-            [ngModel]="item.quantity"
-            (ngModelChange)="updateQuantity.emit({ productId: item.productId, quantity: $event ?? 0 })"
-            [min]="1"
-            [max]="maxQuantity(item)"
-            [showButtons]="true"
-          ></p-inputnumber>
+          <div class="line-controls">
+            <label>
+              Cant.
+              <p-inputnumber
+                inputId="qty-{{ item.productId }}"
+                [ngModel]="item.quantity"
+                (ngModelChange)="updateQuantity.emit({ productId: item.productId, quantity: $event ?? 0 })"
+                [min]="1"
+                [max]="maxQuantity(item)"
+                [showButtons]="true"
+              ></p-inputnumber>
+            </label>
 
-          <p-inputnumber
-            inputId="price-{{ item.productId }}"
-            mode="decimal"
-            [min]="0"
-            [ngModel]="item.unitPrice"
-            (ngModelChange)="updateUnitPrice.emit({ productId: item.productId, unitPrice: $event ?? 0 })"
-          ></p-inputnumber>
+            <label>
+              Precio
+              <p-inputnumber
+                inputId="price-{{ item.productId }}"
+                mode="decimal"
+                [min]="0"
+                [ngModel]="item.unitPrice"
+                (ngModelChange)="updateUnitPrice.emit({ productId: item.productId, unitPrice: $event ?? 0 })"
+              ></p-inputnumber>
+            </label>
+          </div>
 
-          <span>{{ lineSubtotal(item) | currency: 'USD' }}</span>
-          @if (inventoryAvailable) {
-            <small>Disponible: {{ item.stock }}</small>
-          }
-          <p-button icon="pi pi-trash" severity="danger" [text]="true" (onClick)="removeItem.emit(item.productId)"></p-button>
+          <div class="line-total">
+            <span>{{ lineSubtotal(item) | currency: 'USD' }}</span>
+            <p-button
+              icon="pi pi-trash"
+              severity="danger"
+              [rounded]="true"
+              [text]="true"
+              (onClick)="removeItem.emit(item.productId)"
+            ></p-button>
+          </div>
         </div>
       }
     </div>
   }
 
   <footer class="summary">
-    <div><span>Subtotal</span><strong>{{ subtotal | currency: 'USD' }}</strong></div>
-    <div><span>Total</span><strong>{{ total | currency: 'USD' }}</strong></div>
+    <div class="summary-lines">
+      <div><span>Subtotal</span><strong>{{ subtotal | currency: 'USD' }}</strong></div>
+      <div class="grand-total"><span>Total</span><strong>{{ total | currency: 'USD' }}</strong></div>
+    </div>
+
     <textarea
       pTextarea
       rows="3"
@@ -47,11 +78,17 @@
       placeholder="Notas de la venta (opcional)"
     ></textarea>
 
-    <p-button
-      label="Finalizar venta (F12)"
-      icon="pi pi-check"
-      [disabled]="!canCheckout || !hasItems || !inventoryAvailable"
-      (onClick)="checkout.emit()"
-    ></p-button>
+    <div class="checkout-zone">
+      <div>
+        <span>Cobro rápido</span>
+        <strong>F9 abre · F12 confirma</strong>
+      </div>
+      <p-button
+        label="Finalizar venta"
+        icon="pi pi-check"
+        [disabled]="!canCheckout || !hasItems || !inventoryAvailable"
+        (onClick)="checkout.emit()"
+      ></p-button>
+    </div>
   </footer>
 </section>

@@ -29,6 +29,10 @@ export class ProductSearchPanel implements AfterViewInit {
 
   @ViewChild('searchInput') private searchInput?: ElementRef<HTMLInputElement>;
 
+  get hasSearchTerm(): boolean {
+    return this.searchTerm.trim().length > 0;
+  }
+
   ngAfterViewInit(): void {
     if (this.canSell) {
       this.focusSearchInput();

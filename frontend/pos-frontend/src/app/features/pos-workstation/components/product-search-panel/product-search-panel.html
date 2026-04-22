@@ -1,6 +1,9 @@
 <section class="panel">
   <header class="panel__header">
-    <h2>Productos</h2>
+    <div>
+      <span class="panel-kicker">Entrada rápida</span>
+      <h2>Escanear o buscar producto</h2>
+    </div>
     <div class="search-row">
       <i class="pi pi-search"></i>
       <input
@@ -34,8 +37,14 @@
 
   @if (loading) {
     <div class="state">Cargando productos...</div>
+  } @else if (!hasSearchTerm) {
+    <div class="scan-empty">
+      <div class="scan-empty__icon"><i class="pi pi-barcode"></i></div>
+      <strong>Escanea un producto o escribe para buscar</strong>
+      <span>Usa código de barras, código interno o nombre. F2 abre la búsqueda rápida.</span>
+    </div>
   } @else if (!products.length) {
-    <div class="state">No hay productos disponibles.</div>
+    <div class="state">No hay coincidencias para esta búsqueda.</div>
   } @else {
     <ul class="product-list">
       @for (product of products; track product.id) {

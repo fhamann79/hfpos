@@ -2,6 +2,8 @@ import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { MessageService } from 'primeng/api';
+import { ButtonModule } from 'primeng/button';
+import { DialogModule } from 'primeng/dialog';
 import { MessageModule } from 'primeng/message';
 import { ToastModule } from 'primeng/toast';
 import { Subscription } from 'rxjs';
@@ -28,6 +30,8 @@ import { PosWorkstationService } from '../../services/pos-workstation.service';
   standalone: true,
   imports: [
     CommonModule,
+    ButtonModule,
+    DialogModule,
     MessageModule,
     ToastModule,
     ProductSearchPanel,
@@ -66,6 +70,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly notes = signal('');
   readonly checkoutVisible = signal(false);
   readonly quickSearchVisible = signal(false);
+  readonly recentSalesVisible = signal(false);
   readonly checkoutLoading = signal(false);
 
   readonly sales = signal<SaleListItem[]>([]);
@@ -83,7 +88,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     const products = this.allProducts();
 
     if (!term.length) {
-      return products;
+      return [];
     }
 
     return products
@@ -120,6 +125,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       }),
       this.keyboard.watch(['F9']).subscribe(() => {
         this.openCheckoutDialog();
+      }),
+      this.keyboard.watch(['F8']).subscribe(() => {
+        if (this.canReadReports) {
+          this.recentSalesVisible.set(true);
+        }
       }),
       this.keyboard.watch(['F12']).subscribe(() => {
         if (this.checkoutVisible()) {
@@ -420,9 +430,19 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     });
   }
 
+  openSaleDetailFromRecent(saleId: number): void {
+    this.recentSalesVisible.set(false);
+    this.openSaleDetail(saleId);
+  }
+
   openVoidDialog(sale: SaleListItem): void {
     this.saleToVoid.set(sale);
     this.voidVisible.set(true);
+  }
+
+  openVoidDialogFromRecent(sale: SaleListItem): void {
+    this.recentSalesVisible.set(false);
+    this.openVoidDialog(sale);
   }
 
   confirmVoid(reason: string): void {
@@ -626,6 +646,12 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
     if (this.checkoutVisible()) {
       this.checkoutVisible.set(false);
+      this.focusMainSearch();
+      return;
+    }
+
+    if (this.recentSalesVisible()) {
+      this.recentSalesVisible.set(false);
       this.focusMainSearch();
       return;
     }
