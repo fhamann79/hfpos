@@ -50,6 +50,7 @@ h2 {
 }
 
 .cart-row {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0.8rem;
@@ -57,6 +58,22 @@ h2 {
   border: 1px solid rgba(226, 232, 240, 0.12);
   border-radius: 1rem;
   background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.cart-row--active {
+  border-color: rgba(103, 232, 249, 0.78);
+  background:
+    linear-gradient(135deg, rgba(8, 145, 178, 0.22), rgba(255, 255, 255, 0.08));
+  box-shadow:
+    inset 4px 0 0 #67e8f9,
+    0 18px 34px rgba(8, 145, 178, 0.14);
+  transform: translateX(-0.15rem);
 }
 
 .line-main {
@@ -72,6 +89,21 @@ h2 {
     color: #94a3b8;
     white-space: nowrap;
   }
+}
+
+.active-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.5rem;
+  padding: 0.12rem 0.42rem;
+  border-radius: 999px;
+  color: #083344;
+  background: #67e8f9;
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
 }
 
 .line-controls {

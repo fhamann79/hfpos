@@ -16,9 +16,18 @@
   } @else {
     <div class="cart-list">
       @for (item of items; track item.productId) {
-        <div class="cart-row">
+        <div
+          class="cart-row"
+          [class.cart-row--active]="isActive(item)"
+          (click)="selectLine.emit(item.productId)"
+        >
           <div class="line-main">
-            <strong>{{ item.productName }}</strong>
+            <div>
+              <strong>{{ item.productName }}</strong>
+              @if (isActive(item)) {
+                <span class="active-badge">Línea activa</span>
+              }
+            </div>
             @if (inventoryAvailable) {
               <small>Disponible: {{ item.stock }}</small>
             }
@@ -81,7 +90,7 @@
     <div class="checkout-zone">
       <div>
         <span>Cobro rápido</span>
-        <strong>F9 abre · F12 confirma</strong>
+        <strong>↑↓ línea · +/− cantidad · Supr elimina · F12 confirma</strong>
       </div>
       <p-button
         label="Finalizar venta"

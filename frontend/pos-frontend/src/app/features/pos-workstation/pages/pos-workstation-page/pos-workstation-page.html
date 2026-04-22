@@ -49,10 +49,12 @@
             [notes]="notes()"
             [canCheckout]="canSell"
             [inventoryAvailable]="inventoryAvailable()"
+            [activeProductId]="activeCartProductId()"
             (updateQuantity)="updateQuantity($event)"
             (updateUnitPrice)="updateUnitPrice($event)"
             (removeItem)="removeItem($event)"
             (notesChange)="notes.set($event)"
+            (selectLine)="selectCartLine($event)"
             (checkout)="openCheckoutDialog()"
           ></app-cart-workstation>
         </aside>
