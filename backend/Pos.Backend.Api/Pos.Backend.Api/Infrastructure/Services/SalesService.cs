@@ -100,6 +100,10 @@ public class SalesService : ISalesService
             {
                 Id = s.Id,
                 Status = s.Status,
+                CustomerId = s.CustomerId,
+                CustomerName = s.Customer != null ? s.Customer.Name : null,
+                PaymentMethod = s.PaymentMethod,
+                DocumentType = s.DocumentType,
                 Subtotal = s.Subtotal,
                 Total = s.Total,
                 Notes = s.Notes,
@@ -137,6 +141,36 @@ public class SalesService : ISalesService
 
             operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
+            var paymentMethod = dto.PaymentMethod ?? SalePaymentMethod.Cash;
+            var documentType = dto.DocumentType ?? SaleDocumentType.Ticket;
+
+            if (!Enum.IsDefined(paymentMethod))
+            {
+                throw new InvalidOperationException("INVALID_SALE_PAYMENT_METHOD");
+            }
+
+            if (!Enum.IsDefined(documentType))
+            {
+                throw new InvalidOperationException("INVALID_SALE_DOCUMENT_TYPE");
+            }
+
+            Customer? customer = null;
+
+            if (dto.CustomerId.HasValue)
+            {
+                customer = await _context.Customers
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(c =>
+                        c.Id == dto.CustomerId.Value
+                        && c.CompanyId == operationalContext.CompanyId
+                        && c.IsActive);
+
+                if (customer is null)
+                {
+                    throw new KeyNotFoundException("CUSTOMER_NOT_FOUND");
+                }
+            }
+
             var itemProductIds = dto.Items
                 .Select(i => i.ProductId)
                 .Distinct()
@@ -169,7 +203,10 @@ public class SalesService : ISalesService
                 EstablishmentId = operationalContext.EstablishmentId,
                 EmissionPointId = operationalContext.EmissionPointId,
                 UserId = operationalContext.UserId,
+                CustomerId = customer?.Id,
                 Status = SaleStatus.Completed,
+                PaymentMethod = paymentMethod,
+                DocumentType = documentType,
                 Notes = dto.Notes?.Trim(),
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow

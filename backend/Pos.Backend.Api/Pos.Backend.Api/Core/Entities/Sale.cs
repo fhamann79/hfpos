@@ -18,7 +18,14 @@ public class Sale
     public int UserId { get; set; }
     public User User { get; set; }
 
+    public int? CustomerId { get; set; }
+    public Customer? Customer { get; set; }
+
     public SaleStatus Status { get; set; }
+
+    public SalePaymentMethod PaymentMethod { get; set; }
+
+    public SaleDocumentType DocumentType { get; set; }
 
     public string? Number { get; set; }
 

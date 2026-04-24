@@ -89,10 +89,13 @@ public class SalesController : ControllerBase
         {
             "SALE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "PRODUCT_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
+            "CUSTOMER_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "SALE_ITEMS_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "PRODUCT_INACTIVE" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_QUANTITY" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_UNIT_PRICE" => BadRequest(new ApiErrorResponse { Error = code }),
+            "INVALID_SALE_PAYMENT_METHOD" => BadRequest(new ApiErrorResponse { Error = code }),
+            "INVALID_SALE_DOCUMENT_TYPE" => BadRequest(new ApiErrorResponse { Error = code }),
             "SALE_ALREADY_VOIDED" => Conflict(new ApiErrorResponse { Error = code }),
             "SALE_NOT_VOIDABLE" => Conflict(new ApiErrorResponse { Error = code }),
             "INSUFFICIENT_STOCK" => Conflict(new ApiErrorResponse { Error = code }),
