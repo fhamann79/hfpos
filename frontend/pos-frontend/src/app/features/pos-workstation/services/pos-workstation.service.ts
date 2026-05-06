@@ -64,6 +64,7 @@ export class PosWorkstationService {
       id: this.readNumber(row, ['id', 'saleId'], 0),
       createdAt: this.readString(row, ['createdAt', 'createdOn', 'date'], ''),
       status: isVoided ? 'Anulada' : status,
+      customerName: this.readString(row, ['customerName'], null),
       notes: this.readString(row, ['notes'], null),
       subtotal: this.readNumber(row, ['subtotal'], 0),
       total: this.readNumber(row, ['total', 'grandTotal'], 0),

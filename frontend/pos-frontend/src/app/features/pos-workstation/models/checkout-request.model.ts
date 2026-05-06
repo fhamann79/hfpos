@@ -5,6 +5,7 @@ export interface CheckoutItemRequest {
 }
 
 export interface CheckoutRequest {
+  customerId?: number | null;
   notes?: string;
   items: CheckoutItemRequest[];
 }

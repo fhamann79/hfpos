@@ -16,7 +16,7 @@
           (onClick)="recentSalesVisible.set(true)"
         ></p-button>
       }
-      <span class="shortcut-hint">F2 buscar · F9 cobrar · F12 confirmar</span>
+      <span class="shortcut-hint">F2 buscar · F4 cliente · F9 cobrar · F12 confirmar</span>
     </div>
   </header>
 
@@ -26,6 +26,39 @@
     <div class="workstation-shell">
       @if (canSell) {
         <main class="sale-flow">
+          <section class="customer-context">
+            <div class="customer-context__info">
+              <span>Cliente</span>
+              @if (selectedCustomer(); as customer) {
+                <strong>{{ customer.name }}</strong>
+                <small>{{ customer.identification || customer.phone || 'Sin identificación' }}</small>
+              } @else {
+                <strong>Sin cliente asignado</strong>
+                <small>Venta rápida anónima</small>
+              }
+            </div>
+
+            <div class="customer-context__actions">
+              <p-button
+                [label]="selectedCustomer() ? 'Cambiar' : 'Seleccionar cliente'"
+                icon="pi pi-user"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="openCustomerSelector()"
+              ></p-button>
+              @if (selectedCustomer()) {
+                <p-button
+                  icon="pi pi-times"
+                  severity="secondary"
+                  [rounded]="true"
+                  [text]="true"
+                  ariaLabel="Quitar cliente"
+                  (onClick)="clearCustomer()"
+                ></p-button>
+              }
+            </div>
+          </section>
+
           <app-product-search-panel
             [products]="filteredProducts()"
             [loading]="productsLoading()"
@@ -69,6 +102,13 @@
   }
 
   <p-toast></p-toast>
+
+  <app-customer-selector-dialog
+    [visible]="customerSelectorVisible()"
+    [selectedCustomer]="selectedCustomer()"
+    (visibleChange)="onCustomerSelectorVisibleChange($event)"
+    (selectCustomer)="selectCustomer($event)"
+  ></app-customer-selector-dialog>
 
   <p-dialog
     header="Ventas recientes"

@@ -11,6 +11,7 @@ import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { CartWorkstation } from '../../components/cart-workstation/cart-workstation';
 import { CheckoutConfirmDialog } from '../../components/checkout-confirm-dialog/checkout-confirm-dialog';
+import { CustomerSelectorDialog } from '../../components/customer-selector-dialog/customer-selector-dialog';
 import { ProductSearchPanel } from '../../components/product-search-panel/product-search-panel';
 import { QuickProductSearchDialog } from '../../components/quick-product-search-dialog/quick-product-search-dialog';
 import { RecentSalesPanel } from '../../components/recent-sales-panel/recent-sales-panel';
@@ -18,6 +19,7 @@ import { SaleDetailDialog } from '../../components/sale-detail-dialog/sale-detai
 import { VoidSaleDialog } from '../../components/void-sale-dialog/void-sale-dialog';
 import { CartItem } from '../../models/cart-item.model';
 import { CheckoutRequest } from '../../models/checkout-request.model';
+import { PosCustomer } from '../../models/pos-customer.model';
 import { PosProduct } from '../../models/pos-product.model';
 import { Sale } from '../../models/sale.model';
 import { SaleListItem } from '../../models/sale-list-item.model';
@@ -38,6 +40,7 @@ import { PosWorkstationService } from '../../services/pos-workstation.service';
     QuickProductSearchDialog,
     CartWorkstation,
     CheckoutConfirmDialog,
+    CustomerSelectorDialog,
     RecentSalesPanel,
     SaleDetailDialog,
     VoidSaleDialog,
@@ -68,8 +71,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
   readonly cart = signal<CartItem[]>([]);
   readonly activeCartProductId = signal<number | null>(null);
+  readonly selectedCustomer = signal<PosCustomer | null>(null);
   readonly notes = signal('');
   readonly checkoutVisible = signal(false);
+  readonly customerSelectorVisible = signal(false);
   readonly quickSearchVisible = signal(false);
   readonly recentSalesVisible = signal(false);
   readonly checkoutLoading = signal(false);
@@ -130,6 +135,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       this.keyboard.watch(['F8']).subscribe(() => {
         if (this.canReadReports) {
           this.recentSalesVisible.set(true);
+        }
+      }),
+      this.keyboard.watch(['F4']).subscribe(() => {
+        if (this.canSell) {
+          this.customerSelectorVisible.set(true);
         }
       }),
       this.keyboard.watch(['F12']).subscribe(() => {
@@ -341,6 +351,33 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
   }
 
+  openCustomerSelector(): void {
+    if (!this.canSell) {
+      return;
+    }
+
+    this.customerSelectorVisible.set(true);
+  }
+
+  onCustomerSelectorVisibleChange(visible: boolean): void {
+    this.customerSelectorVisible.set(visible);
+
+    if (!visible) {
+      this.focusMainSearch();
+    }
+  }
+
+  selectCustomer(customer: PosCustomer): void {
+    this.selectedCustomer.set(customer);
+    this.customerSelectorVisible.set(false);
+    this.focusMainSearch();
+  }
+
+  clearCustomer(): void {
+    this.selectedCustomer.set(null);
+    this.focusMainSearch();
+  }
+
   openCheckoutDialog(): void {
     if (!this.canSell || !this.cart().length) {
       return;
@@ -396,6 +433,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
 
     const payload: CheckoutRequest = {
+      customerId: this.selectedCustomer()?.id ?? null,
       notes: this.notes().trim() || undefined,
       items: this.cart().map((item) => ({
         productId: item.productId,
@@ -412,6 +450,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         this.checkoutVisible.set(false);
         this.cart.set([]);
         this.activeCartProductId.set(null);
+        this.selectedCustomer.set(null);
         this.notes.set('');
         this.messageService.add({ severity: 'success', summary: 'Venta registrada', detail: 'La venta fue creada correctamente.' });
         this.refreshOperationalData();
@@ -660,6 +699,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
     if (
       this.quickSearchVisible()
+      || this.customerSelectorVisible()
       || this.checkoutVisible()
       || this.recentSalesVisible()
       || this.saleDetailVisible()
@@ -803,6 +843,12 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   private closeContextualDialog(): void {
     if (this.quickSearchVisible()) {
       this.quickSearchVisible.set(false);
+      this.focusMainSearch();
+      return;
+    }
+
+    if (this.customerSelectorVisible()) {
+      this.customerSelectorVisible.set(false);
       this.focusMainSearch();
       return;
     }

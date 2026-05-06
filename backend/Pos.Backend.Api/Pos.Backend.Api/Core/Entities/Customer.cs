@@ -13,6 +13,12 @@ public class Customer
     [MaxLength(150)]
     public string Name { get; set; }
 
+    [MaxLength(50)]
+    public string? Identification { get; set; }
+
+    [MaxLength(30)]
+    public string? Phone { get; set; }
+
     public bool IsActive { get; set; }
 
     public DateTime CreatedAt { get; set; }
