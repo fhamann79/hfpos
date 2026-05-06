@@ -30,6 +30,8 @@ const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
   NAME_REQUIRED: 'El nombre es obligatorio.',
   PRODUCT_BARCODE_ALREADY_EXISTS: 'Ya existe un producto con ese código de barras.',
   PRODUCT_INTERNAL_CODE_ALREADY_EXISTS: 'Ya existe un producto con ese código interno.',
+  CUSTOMER_NAME_REQUIRED: 'El nombre del cliente es obligatorio.',
+  CUSTOMER_NOT_FOUND: 'El cliente no existe o no pertenece a esta compañía.',
 };
 
 const STATUS_ERROR_MESSAGES: Record<number, string> = {

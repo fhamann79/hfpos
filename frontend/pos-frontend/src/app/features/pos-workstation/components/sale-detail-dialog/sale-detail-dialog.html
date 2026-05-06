@@ -13,6 +13,7 @@
       <span><strong>Estado:</strong> <span class="status" [class.status--voided]="sale.isVoided">{{ sale.isVoided ? 'Anulada' : sale.status }}</span></span>
       <span><strong>Fecha:</strong> {{ sale.createdAt | date: 'short' }}</span>
       <span><strong>Usuario:</strong> {{ sale.createdBy || 'N/A' }}</span>
+      <span><strong>Cliente:</strong> {{ sale.customerName || 'Sin cliente' }}</span>
       <span><strong>Notas:</strong> {{ sale.notes || 'Sin notas' }}</span>
     </div>
 

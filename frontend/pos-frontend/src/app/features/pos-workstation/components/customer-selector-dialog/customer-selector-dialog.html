@@ -1,0 +1,98 @@
+<p-dialog
+  header="Cliente de la venta"
+  [modal]="true"
+  [visible]="visible"
+  [style]="{ width: '44rem', maxWidth: '96vw' }"
+  (visibleChange)="onVisibleChange($event)"
+>
+  <section class="customer-dialog">
+    @if (!createMode) {
+      <div class="lookup-bar">
+        <i class="pi pi-search"></i>
+        <input
+          #searchInput
+          pInputText
+          type="text"
+          [ngModel]="searchTerm"
+          (ngModelChange)="onSearchChange($event)"
+          (keydown)="onLookupKeydown($event)"
+          placeholder="Buscar por nombre o identificación"
+          aria-label="Buscar cliente"
+        />
+        <p-button label="Nuevo" icon="pi pi-plus" severity="secondary" [outlined]="true" (onClick)="enableCreateMode()"></p-button>
+      </div>
+
+      @if (errorMessage()) {
+        <p-message severity="error" [text]="errorMessage()"></p-message>
+      }
+
+      @if (loading()) {
+        <div class="state">Cargando clientes...</div>
+      } @else if (!customers().length) {
+        <div class="state state-empty">
+          <strong>No hay clientes para esta búsqueda.</strong>
+          <p-button label="Crear cliente" icon="pi pi-plus" (onClick)="enableCreateMode()"></p-button>
+        </div>
+      } @else {
+        <ul class="customer-list">
+          @for (customer of customers(); track customer.id; let i = $index) {
+            <li
+              [class.customer-item--active]="i === highlightedIndex"
+              [class.customer-item--selected]="selectedCustomer?.id === customer.id"
+              (click)="pick(customer)"
+            >
+              <div>
+                <strong>{{ customer.name }}</strong>
+                <span>
+                  {{ customer.identification || 'Sin identificación' }}
+                  @if (customer.phone) {
+                    · {{ customer.phone }}
+                  }
+                </span>
+              </div>
+              @if (selectedCustomer?.id === customer.id) {
+                <i class="pi pi-check"></i>
+              }
+            </li>
+          }
+        </ul>
+      }
+    } @else {
+      <form class="create-form" (ngSubmit)="createCustomer()" (keydown)="onCreateKeydown($event)">
+        <div class="form-header">
+          <div>
+            <strong>Crear cliente rápido</strong>
+            <span>Solo la información necesaria para asociar la venta.</span>
+          </div>
+          <p-button type="button" icon="pi pi-arrow-left" severity="secondary" [text]="true" (onClick)="createMode = false; focusLookup()"></p-button>
+        </div>
+
+        @if (createErrorMessage()) {
+          <p-message severity="error" [text]="createErrorMessage()"></p-message>
+        }
+
+        <label>
+          Nombre
+          <input #nameInput pInputText type="text" [(ngModel)]="name" name="name" autocomplete="off" />
+        </label>
+
+        <div class="form-grid">
+          <label>
+            Identificación
+            <input pInputText type="text" [(ngModel)]="identification" name="identification" autocomplete="off" />
+          </label>
+
+          <label>
+            Teléfono
+            <input pInputText type="text" [(ngModel)]="phone" name="phone" autocomplete="off" />
+          </label>
+        </div>
+
+        <div class="dialog-actions">
+          <p-button type="button" label="Cancelar" severity="secondary" [outlined]="true" (onClick)="createMode = false; focusLookup()"></p-button>
+          <p-button label="Crear y asignar" icon="pi pi-check" type="submit" [loading]="creating()"></p-button>
+        </div>
+      </form>
+    }
+  </section>
+</p-dialog>

@@ -76,6 +76,12 @@ public class PosDbContext : DbContext
                 .IsRequired()
                 .HasMaxLength(150);
 
+            entity.Property(c => c.Identification)
+                .HasMaxLength(50);
+
+            entity.Property(c => c.Phone)
+                .HasMaxLength(30);
+
             entity.HasOne(c => c.Company)
                 .WithMany()
                 .HasForeignKey(c => c.CompanyId);
