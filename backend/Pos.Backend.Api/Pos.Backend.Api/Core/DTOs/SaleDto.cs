@@ -8,6 +8,14 @@ public class SaleDto
 
     public SaleStatus Status { get; set; }
 
+    public int? CustomerId { get; set; }
+
+    public string? CustomerName { get; set; }
+
+    public SalePaymentMethod PaymentMethod { get; set; }
+
+    public SaleDocumentType DocumentType { get; set; }
+
     public decimal Subtotal { get; set; }
 
     public decimal Total { get; set; }

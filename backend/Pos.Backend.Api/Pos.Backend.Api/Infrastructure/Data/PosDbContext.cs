@@ -20,6 +20,7 @@ public class PosDbContext : DbContext
     public DbSet<EmissionPoint> EmissionPoints { get; set; }
     public DbSet<Category> Categories { get; set; }
     public DbSet<Product> Products { get; set; }
+    public DbSet<Customer> Customers { get; set; }
     public DbSet<ProductStock> ProductStocks { get; set; }
     public DbSet<InventoryMovement> InventoryMovements { get; set; }
     public DbSet<Sale> Sales { get; set; }
@@ -67,6 +68,20 @@ public class PosDbContext : DbContext
                 .HasForeignKey(c => c.CompanyId);
 
             entity.HasIndex(c => new { c.CompanyId, c.Name }).IsUnique();
+        });
+
+        modelBuilder.Entity<Customer>(entity =>
+        {
+            entity.Property(c => c.Name)
+                .IsRequired()
+                .HasMaxLength(150);
+
+            entity.HasOne(c => c.Company)
+                .WithMany()
+                .HasForeignKey(c => c.CompanyId);
+
+            entity.HasIndex(c => c.CompanyId);
+            entity.HasIndex(c => new { c.CompanyId, c.Name });
         });
 
 
@@ -170,6 +185,12 @@ public class PosDbContext : DbContext
                 .HasConversion<int>()
                 .HasDefaultValue(SaleStatus.Completed);
 
+            entity.Property(s => s.PaymentMethod)
+                .HasConversion<int>();
+
+            entity.Property(s => s.DocumentType)
+                .HasConversion<int>();
+
             entity.Property(s => s.Subtotal)
                 .HasPrecision(18, 2);
 
@@ -185,6 +206,7 @@ public class PosDbContext : DbContext
             entity.HasIndex(s => s.CompanyId);
             entity.HasIndex(s => s.EstablishmentId);
             entity.HasIndex(s => s.EmissionPointId);
+            entity.HasIndex(s => s.CustomerId);
             entity.HasIndex(s => s.CreatedAt);
             entity.HasIndex(s => s.Status);
             entity.HasIndex(s => new { s.CompanyId, s.EstablishmentId, s.EmissionPointId, s.CreatedAt });
@@ -192,6 +214,10 @@ public class PosDbContext : DbContext
             entity.HasOne(s => s.User)
                 .WithMany()
                 .HasForeignKey(s => s.UserId);
+
+            entity.HasOne(s => s.Customer)
+                .WithMany()
+                .HasForeignKey(s => s.CustomerId);
 
             entity.HasOne(s => s.Company)
                 .WithMany()
