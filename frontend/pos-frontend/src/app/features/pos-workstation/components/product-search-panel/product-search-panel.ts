@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
+import { getVatCategoryOption } from '../../../../core/utils/vat-category';
 import { PosProduct } from '../../models/pos-product.model';
 
 @Component({
@@ -58,6 +59,10 @@ export class ProductSearchPanel implements AfterViewInit {
     }
 
     this.addProduct.emit(product);
+  }
+
+  getVatLabel(product: PosProduct): string {
+    return getVatCategoryOption(product.vatCategory).shortLabel;
   }
 
   openQuickSearch(): void {

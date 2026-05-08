@@ -11,6 +11,7 @@ import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ToolbarModule } from 'primeng/toolbar';
 import { resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
+import { getVatCategoryOption } from '../../../../core/utils/vat-category';
 import { Category } from '../../models/category.model';
 import { Product } from '../../models/product.model';
 import { CategoryService } from '../../services/category.service';
@@ -87,6 +88,10 @@ export class ProductsTable implements OnInit {
 
   getCategoryName(categoryId: number): string {
     return this.categories().find((category) => category.id === categoryId)?.name ?? 'Sin categoría';
+  }
+
+  getVatLabel(product: Product): string {
+    return getVatCategoryOption(product.vatCategory).shortLabel;
   }
 
   openCreateDialog(): void {

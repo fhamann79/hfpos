@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { hasHttpBusinessError, resolveHttpErrorMessage } from '../../../core/utils/http-error-normalizer';
+import { normalizeVatCategory } from '../../../core/utils/vat-category';
 import { CheckoutRequest } from '../models/checkout-request.model';
 import { Sale } from '../models/sale.model';
 import { SaleItem } from '../models/sale-item.model';
@@ -67,6 +68,12 @@ export class PosWorkstationService {
       customerName: this.readString(row, ['customerName'], null),
       notes: this.readString(row, ['notes'], null),
       subtotal: this.readNumber(row, ['subtotal'], 0),
+      taxAmount: this.readNumber(row, ['taxAmount'], 0),
+      vat15Subtotal: this.readNumber(row, ['vat15Subtotal'], 0),
+      vat5Subtotal: this.readNumber(row, ['vat5Subtotal'], 0),
+      vat0Subtotal: this.readNumber(row, ['vat0Subtotal'], 0),
+      vatExemptSubtotal: this.readNumber(row, ['vatExemptSubtotal'], 0),
+      vatNotSubjectSubtotal: this.readNumber(row, ['vatNotSubjectSubtotal'], 0),
       total: this.readNumber(row, ['total', 'grandTotal'], 0),
       createdBy: this.readString(row, ['createdBy', 'username', 'userName'], null),
       isVoided,
@@ -83,6 +90,11 @@ export class PosWorkstationService {
       quantity: this.readNumber(row, ['quantity'], 0),
       unitPrice: this.readNumber(row, ['unitPrice', 'price'], 0),
       subtotal: this.readNumber(row, ['subtotal', 'lineSubtotal'], 0),
+      vatCategory: normalizeVatCategory(row?.['vatCategory']),
+      vatRate: this.readNumber(row, ['vatRate'], 0),
+      taxableSubtotal: this.readNumber(row, ['taxableSubtotal', 'subtotal', 'lineSubtotal'], 0),
+      taxAmount: this.readNumber(row, ['taxAmount'], 0),
+      lineTotal: this.readNumber(row, ['lineTotal', 'subtotal', 'lineSubtotal'], 0),
     };
   }
 

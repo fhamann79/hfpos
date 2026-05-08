@@ -31,7 +31,7 @@
     [paginator]="true"
     [rows]="10"
     [rowsPerPageOptions]="[10, 25, 50]"
-    [globalFilterFields]="['id', 'name', 'barcode', 'internalCode', 'categoryId', 'price', 'isActive']"
+    [globalFilterFields]="['id', 'name', 'barcode', 'internalCode', 'categoryId', 'price', 'vatCategory', 'isActive']"
     [sortMode]="'multiple'"
     responsiveLayout="scroll"
     [tableStyle]="{ 'min-width': '60rem' }"
@@ -87,7 +87,12 @@
           </div>
         </td>
         <td>{{ getCategoryName(product.categoryId) }}</td>
-        <td>{{ product.price | currency: 'USD' }}</td>
+        <td>
+          <div class="price-cell">
+            <strong>{{ product.price | currency: 'USD' }}</strong>
+            <span class="vat-pill">{{ getVatLabel(product) }}</span>
+          </div>
+        </td>
         <td>
           <p-tag [severity]="product.isActive ? 'success' : 'danger'" [value]="product.isActive ? 'Activo' : 'Inactivo'"></p-tag>
         </td>

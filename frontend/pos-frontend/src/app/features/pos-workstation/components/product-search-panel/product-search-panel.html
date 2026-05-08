@@ -63,6 +63,7 @@
             }
             <div class="meta">
               <span>{{ product.price | currency: 'USD' }}</span>
+              <span class="vat-meta">{{ getVatLabel(product) }}</span>
               <span>Stock: {{ product.stock }}</span>
             </div>
           </div>

@@ -29,7 +29,7 @@
               }
             </div>
             @if (inventoryAvailable) {
-              <small>Disponible: {{ item.stock }}</small>
+              <small>{{ vatLabel(item) }} · Disponible: {{ item.stock }}</small>
             }
           </div>
 
@@ -59,7 +59,10 @@
           </div>
 
           <div class="line-total">
-            <span>{{ lineSubtotal(item) | currency: 'USD' }}</span>
+            <div>
+              <small>Base {{ lineSubtotal(item) | currency: 'USD' }}</small>
+              <span>{{ lineTotal(item) | currency: 'USD' }}</span>
+            </div>
             <p-button
               icon="pi pi-trash"
               severity="danger"
@@ -76,6 +79,26 @@
   <footer class="summary">
     <div class="summary-lines">
       <div><span>Subtotal</span><strong>{{ subtotal | currency: 'USD' }}</strong></div>
+      <div><span>IVA estimado</span><strong>{{ taxAmount | currency: 'USD' }}</strong></div>
+      @if (taxSummary) {
+        <div class="tax-breakdown">
+          @if (taxSummary.vat15Subtotal > 0) {
+            <span>Base IVA 15%: {{ taxSummary.vat15Subtotal | currency: 'USD' }}</span>
+          }
+          @if (taxSummary.vat5Subtotal > 0) {
+            <span>Base IVA 5%: {{ taxSummary.vat5Subtotal | currency: 'USD' }}</span>
+          }
+          @if (taxSummary.vat0Subtotal > 0) {
+            <span>Base IVA 0%: {{ taxSummary.vat0Subtotal | currency: 'USD' }}</span>
+          }
+          @if (taxSummary.vatExemptSubtotal > 0) {
+            <span>Exento: {{ taxSummary.vatExemptSubtotal | currency: 'USD' }}</span>
+          }
+          @if (taxSummary.vatNotSubjectSubtotal > 0) {
+            <span>No objeto: {{ taxSummary.vatNotSubjectSubtotal | currency: 'USD' }}</span>
+          }
+        </div>
+      }
       <div class="grand-total"><span>Total</span><strong>{{ total | currency: 'USD' }}</strong></div>
     </div>
 

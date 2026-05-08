@@ -9,6 +9,7 @@ import { ToastModule } from 'primeng/toast';
 import { Subscription, fromEvent } from 'rxjs';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
+import { calculateTaxSummary } from '../../../../core/utils/vat-category';
 import { CartWorkstation } from '../../components/cart-workstation/cart-workstation';
 import { CheckoutConfirmDialog } from '../../components/checkout-confirm-dialog/checkout-confirm-dialog';
 import { CustomerSelectorDialog } from '../../components/customer-selector-dialog/customer-selector-dialog';
@@ -102,11 +103,13 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       .sort((a, b) => this.productMatchRank(a, term) - this.productMatchRank(b, term) || a.name.localeCompare(b.name));
   });
 
-  readonly subtotal = computed(() =>
-    this.cart().reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
-  );
+  readonly taxSummary = computed(() => calculateTaxSummary(this.cart()));
 
-  readonly total = computed(() => this.subtotal());
+  readonly subtotal = computed(() => this.taxSummary().subtotal);
+
+  readonly taxAmount = computed(() => this.taxSummary().taxAmount);
+
+  readonly total = computed(() => this.taxSummary().total);
 
   readonly itemCount = computed(() =>
     this.cart().reduce((count, item) => count + item.quantity, 0)

@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { TextareaModule } from 'primeng/textarea';
+import { TaxSummary, calculateLineTotal, getVatCategoryOption } from '../../../../core/utils/vat-category';
 import { CartItem } from '../../models/cart-item.model';
 
 @Component({
@@ -16,7 +17,9 @@ import { CartItem } from '../../models/cart-item.model';
 export class CartWorkstation {
   @Input({ required: true }) items: CartItem[] = [];
   @Input({ required: true }) subtotal = 0;
+  @Input({ required: true }) taxAmount = 0;
   @Input({ required: true }) total = 0;
+  @Input() taxSummary: TaxSummary | null = null;
   @Input() notes = '';
   @Input() canCheckout = false;
   @Input() inventoryAvailable = false;
@@ -35,6 +38,14 @@ export class CartWorkstation {
 
   lineSubtotal(item: CartItem): number {
     return item.quantity * item.unitPrice;
+  }
+
+  lineTotal(item: CartItem): number {
+    return calculateLineTotal(item.quantity, item.unitPrice, item.product.vatCategory);
+  }
+
+  vatLabel(item: CartItem): string {
+    return getVatCategoryOption(item.product.vatCategory).shortLabel;
   }
 
   isActive(item: CartItem): boolean {

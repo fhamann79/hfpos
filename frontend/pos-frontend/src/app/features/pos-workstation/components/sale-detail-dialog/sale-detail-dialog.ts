@@ -1,6 +1,8 @@
 import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { DialogModule } from 'primeng/dialog';
+import { getVatCategoryOption } from '../../../../core/utils/vat-category';
+import { SaleItem } from '../../models/sale-item.model';
 import { Sale } from '../../models/sale.model';
 
 @Component({
@@ -15,4 +17,8 @@ export class SaleDetailDialog {
   @Input() sale: Sale | null = null;
 
   @Output() visibleChange = new EventEmitter<boolean>();
+
+  getVatLabel(item: SaleItem): string {
+    return getVatCategoryOption(item.vatCategory).shortLabel;
+  }
 }

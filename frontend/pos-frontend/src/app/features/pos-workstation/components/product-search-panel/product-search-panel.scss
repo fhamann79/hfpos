@@ -135,10 +135,16 @@ h2 {
 
 .meta {
   display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
   margin-top: 0.25rem;
   color: #64748b;
   font-size: 0.9rem;
+}
+
+.vat-meta {
+  color: #155e75;
+  font-weight: 800;
 }
 
 .product-item--out {

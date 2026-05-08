@@ -20,16 +20,39 @@
     <ul class="items">
       @for (item of sale.items; track item.productId) {
         <li>
-          <span>{{ item.productName }} x {{ item.quantity }}</span>
+          <span class="item-main">
+            <strong>{{ item.productName }} x {{ item.quantity }}</strong>
+            <small>{{ getVatLabel(item) }} · IVA {{ item.taxAmount | currency: 'USD' }}</small>
+          </span>
           <span>{{ item.unitPrice | currency: 'USD' }}</span>
-          <strong>{{ item.subtotal | currency: 'USD' }}</strong>
+          <strong>{{ item.lineTotal | currency: 'USD' }}</strong>
         </li>
       }
     </ul>
 
+    <section class="tax-summary">
+      <div><span>Subtotal</span><strong>{{ sale.subtotal | currency: 'USD' }}</strong></div>
+      <div><span>IVA</span><strong>{{ sale.taxAmount | currency: 'USD' }}</strong></div>
+      @if (sale.vat15Subtotal > 0) {
+        <span>Base IVA 15%: {{ sale.vat15Subtotal | currency: 'USD' }}</span>
+      }
+      @if (sale.vat5Subtotal > 0) {
+        <span>Base IVA 5%: {{ sale.vat5Subtotal | currency: 'USD' }}</span>
+      }
+      @if (sale.vat0Subtotal > 0) {
+        <span>Base IVA 0%: {{ sale.vat0Subtotal | currency: 'USD' }}</span>
+      }
+      @if (sale.vatExemptSubtotal > 0) {
+        <span>Exento: {{ sale.vatExemptSubtotal | currency: 'USD' }}</span>
+      }
+      @if (sale.vatNotSubjectSubtotal > 0) {
+        <span>No objeto: {{ sale.vatNotSubjectSubtotal | currency: 'USD' }}</span>
+      }
+    </section>
+
     <footer>
-      <span>Subtotal: {{ sale.subtotal | currency: 'USD' }}</span>
-      <strong>Total: {{ sale.total | currency: 'USD' }}</strong>
+      <span>Total fiscal</span>
+      <strong>{{ sale.total | currency: 'USD' }}</strong>
     </footer>
   }
 </p-dialog>

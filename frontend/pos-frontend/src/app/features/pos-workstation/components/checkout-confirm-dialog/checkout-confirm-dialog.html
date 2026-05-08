@@ -7,7 +7,11 @@
 >
   <div class="confirm-content" (keydown)="onKeydown($event)" tabindex="0">
     <p><strong>Items:</strong> {{ itemCount }}</p>
-    <p><strong>Total:</strong> {{ total | currency: 'USD' }}</p>
+    <div class="money-lines">
+      <span><strong>Subtotal:</strong> {{ subtotal | currency: 'USD' }}</span>
+      <span><strong>IVA estimado:</strong> {{ taxAmount | currency: 'USD' }}</span>
+      <strong>Total: {{ total | currency: 'USD' }}</strong>
+    </div>
     <p><strong>Notas:</strong> {{ notes || 'Sin notas' }}</p>
     <p class="hint">Presiona Enter para confirmar o Escape para cancelar.</p>
 
