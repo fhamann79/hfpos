@@ -167,6 +167,10 @@ public class PosDbContext : DbContext
             entity.Property(p => p.Price)
                 .HasPrecision(18, 2);
 
+            entity.Property(p => p.VatCategory)
+                .HasConversion<int>()
+                .HasDefaultValue(ProductVatCategory.Vat15);
+
             entity.HasOne(p => p.Company)
                 .WithMany()
                 .HasForeignKey(p => p.CompanyId);
@@ -198,6 +202,24 @@ public class PosDbContext : DbContext
                 .HasConversion<int>();
 
             entity.Property(s => s.Subtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.TaxAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.Vat15Subtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.Vat5Subtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.Vat0Subtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.VatExemptSubtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.VatNotSubjectSubtotal)
                 .HasPrecision(18, 2);
 
             entity.Property(s => s.Total)
@@ -247,6 +269,22 @@ public class PosDbContext : DbContext
                 .HasPrecision(18, 2);
 
             entity.Property(si => si.LineSubtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(si => si.VatCategory)
+                .HasConversion<int>()
+                .HasDefaultValue(ProductVatCategory.Vat15);
+
+            entity.Property(si => si.VatRate)
+                .HasPrecision(9, 4);
+
+            entity.Property(si => si.TaxableSubtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(si => si.TaxAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(si => si.LineTotal)
                 .HasPrecision(18, 2);
 
             entity.HasOne(si => si.Sale)

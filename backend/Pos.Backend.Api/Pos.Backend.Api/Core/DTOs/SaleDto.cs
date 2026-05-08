@@ -18,6 +18,18 @@ public class SaleDto
 
     public decimal Subtotal { get; set; }
 
+    public decimal TaxAmount { get; set; }
+
+    public decimal Vat15Subtotal { get; set; }
+
+    public decimal Vat5Subtotal { get; set; }
+
+    public decimal Vat0Subtotal { get; set; }
+
+    public decimal VatExemptSubtotal { get; set; }
+
+    public decimal VatNotSubjectSubtotal { get; set; }
+
     public decimal Total { get; set; }
 
     public string? Notes { get; set; }

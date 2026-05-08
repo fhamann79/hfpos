@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Pos.Backend.Api.Core.Enums;
 
 namespace Pos.Backend.Api.Core.Entities;
 
@@ -23,6 +24,8 @@ public class Product
     public string? InternalCode { get; set; }
 
     public decimal Price { get; set; }
+
+    public ProductVatCategory VatCategory { get; set; }
 
     public bool IsActive { get; set; }
 
