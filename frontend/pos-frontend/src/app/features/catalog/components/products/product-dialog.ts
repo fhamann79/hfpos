@@ -7,6 +7,7 @@ import { CheckboxModule } from 'primeng/checkbox';
 import { DialogModule } from 'primeng/dialog';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
+import { DEFAULT_VAT_CATEGORY, VAT_CATEGORY_OPTIONS, normalizeVatCategory } from '../../../../core/utils/vat-category';
 import { Category } from '../../models/category.model';
 import { CreateProductRequest, Product, UpdateProductRequest } from '../../models/product.model';
 import { CategoryService } from '../../services/category.service';
@@ -41,6 +42,7 @@ export class ProductDialog implements OnChanges {
   @Output() submitForm = new EventEmitter<ProductDialogSubmit>();
 
   readonly categories = signal<Category[]>([]);
+  readonly vatCategoryOptions = VAT_CATEGORY_OPTIONS;
 
   readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required]],
@@ -48,6 +50,7 @@ export class ProductDialog implements OnChanges {
     barcode: [''],
     internalCode: [''],
     price: [0, [Validators.required, Validators.min(0)]],
+    vatCategory: [DEFAULT_VAT_CATEGORY, [Validators.required]],
     isActive: [true],
   });
 
@@ -88,6 +91,7 @@ export class ProductDialog implements OnChanges {
           barcode: this.normalizeOptionalIdentifier(values.barcode),
           internalCode: this.normalizeOptionalIdentifier(values.internalCode),
           price: values.price,
+          vatCategory: values.vatCategory,
           isActive: values.isActive,
         },
       });
@@ -102,6 +106,7 @@ export class ProductDialog implements OnChanges {
         barcode: this.normalizeOptionalIdentifier(values.barcode),
         internalCode: this.normalizeOptionalIdentifier(values.internalCode),
         price: values.price,
+        vatCategory: values.vatCategory,
       },
     });
   }
@@ -125,6 +130,7 @@ export class ProductDialog implements OnChanges {
         barcode: this.product.barcode ?? '',
         internalCode: this.product.internalCode ?? '',
         price: this.product.price,
+        vatCategory: normalizeVatCategory(this.product.vatCategory),
         isActive: this.product.isActive,
       });
       return;
@@ -136,6 +142,7 @@ export class ProductDialog implements OnChanges {
       barcode: '',
       internalCode: '',
       price: 0,
+      vatCategory: DEFAULT_VAT_CATEGORY,
       isActive: true,
     });
   }

@@ -1,3 +1,5 @@
+import { ProductVatCategory } from '../../../core/utils/vat-category';
+
 export interface Product {
   id: number;
   categoryId: number;
@@ -5,6 +7,7 @@ export interface Product {
   barcode?: string | null;
   internalCode?: string | null;
   price: number;
+  vatCategory: ProductVatCategory;
   isActive: boolean;
 }
 
@@ -14,6 +17,7 @@ export interface CreateProductRequest {
   barcode?: string | null;
   internalCode?: string | null;
   price: number;
+  vatCategory: ProductVatCategory;
 }
 
 export interface UpdateProductRequest {
@@ -22,5 +26,6 @@ export interface UpdateProductRequest {
   barcode?: string | null;
   internalCode?: string | null;
   price: number;
+  vatCategory: ProductVatCategory;
   isActive: boolean;
 }

@@ -78,7 +78,9 @@
           <app-cart-workstation
             [items]="cart()"
             [subtotal]="subtotal()"
+            [taxAmount]="taxAmount()"
             [total]="total()"
+            [taxSummary]="taxSummary()"
             [notes]="notes()"
             [canCheckout]="canSell"
             [inventoryAvailable]="inventoryAvailable()"
@@ -141,6 +143,8 @@
     [visible]="checkoutVisible()"
     [loading]="checkoutLoading()"
     [itemCount]="itemCount()"
+    [subtotal]="subtotal()"
+    [taxAmount]="taxAmount()"
     [total]="total()"
     [notes]="notes()"
     (visibleChange)="checkoutVisible.set($event)"

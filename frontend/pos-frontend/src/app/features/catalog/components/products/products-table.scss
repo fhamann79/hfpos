@@ -87,6 +87,23 @@
   font-size: 0.76rem;
 }
 
+.price-cell {
+  display: grid;
+  gap: 0.3rem;
+  justify-items: start;
+}
+
+.vat-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  color: #155e75;
+  background: color-mix(in srgb, #cffafe 72%, transparent);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
 .empty-state {
   min-height: 10rem;
   display: flex;

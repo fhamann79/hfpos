@@ -3,6 +3,7 @@ import { AfterViewInit, Component, ElementRef, EventEmitter, Input, OnChanges, O
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
+import { getVatCategoryOption } from '../../../../core/utils/vat-category';
 import { PosProduct } from '../../models/pos-product.model';
 
 @Component({
@@ -92,6 +93,10 @@ export class QuickProductSearchDialog implements AfterViewInit, OnChanges {
 
     this.selectProduct.emit(product);
     this.close();
+  }
+
+  getVatLabel(product: PosProduct): string {
+    return getVatCategoryOption(product.vatCategory).shortLabel;
   }
 
   close(): void {

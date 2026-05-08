@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, catchError, forkJoin, map, of } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import { normalizeVatCategory } from '../../../core/utils/vat-category';
 import { PosProduct } from '../models/pos-product.model';
 
 export interface PosCatalogSnapshot {
@@ -60,6 +61,7 @@ export class PosProductCatalogService {
     const barcode = this.readString(row, ['barcode', 'barCode']);
     const internalCode = this.readString(row, ['internalCode', 'internal_code']);
     const price = this.readNumber(row, ['price', 'unitPrice'], 0) ?? 0;
+    const vatCategory = normalizeVatCategory(row['vatCategory'] ?? row['VatCategory']);
     const isActive = this.readBoolean(row, ['isActive', 'active'], true);
 
     if (id === null || !name) {
@@ -72,6 +74,7 @@ export class PosProductCatalogService {
       barcode,
       internalCode,
       price,
+      vatCategory,
       isActive,
       stock: stockMap.get(id) ?? 0,
     };

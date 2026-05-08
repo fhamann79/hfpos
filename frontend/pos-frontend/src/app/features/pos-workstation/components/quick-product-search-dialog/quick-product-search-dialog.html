@@ -41,7 +41,7 @@
           @if (!inventoryAvailable) {
             Stock no disponible
           } @else {
-            Stock: {{ product.stock }}
+            {{ getVatLabel(product) }} · Stock: {{ product.stock }}
           }
         </small>
       </li>

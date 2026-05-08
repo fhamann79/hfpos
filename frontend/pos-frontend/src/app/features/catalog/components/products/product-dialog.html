@@ -89,6 +89,18 @@
           <small class="p-error">El precio debe ser mayor o igual a 0.</small>
         }
       </div>
+
+      <div class="field">
+        <label for="product-vat-category">Categoría IVA</label>
+        <p-select
+          inputId="product-vat-category"
+          [options]="vatCategoryOptions"
+          optionLabel="label"
+          optionValue="value"
+          formControlName="vatCategory"
+        ></p-select>
+        <small class="field-help">Clasificación fiscal usada al vender el producto.</small>
+      </div>
     </div>
 
     @if (isEditMode) {
