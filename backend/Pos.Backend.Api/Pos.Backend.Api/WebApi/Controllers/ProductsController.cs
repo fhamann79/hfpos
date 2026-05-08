@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
+using Pos.Backend.Api.Core.Enums;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Core.Services;
@@ -44,6 +45,7 @@ public class ProductsController : ControllerBase
                 Barcode = p.Barcode,
                 InternalCode = p.InternalCode,
                 Price = p.Price,
+                VatCategory = p.VatCategory,
                 IsActive = p.IsActive
             })
             .ToListAsync();
@@ -74,6 +76,12 @@ public class ProductsController : ControllerBase
 
         var barcode = NormalizeOptionalIdentifier(dto.Barcode);
         var internalCode = NormalizeOptionalIdentifier(dto.InternalCode);
+        var vatCategory = dto.VatCategory ?? ProductVatCategory.Vat15;
+
+        if (!Enum.IsDefined(vatCategory))
+        {
+            return BadRequest(new ApiErrorResponse { Error = "INVALID_PRODUCT_VAT_CATEGORY" });
+        }
 
         var duplicateIdentifierError = await ValidateUniqueIdentifiersAsync(
             operationalContext.CompanyId,
@@ -93,6 +101,7 @@ public class ProductsController : ControllerBase
             Barcode = barcode,
             InternalCode = internalCode,
             Price = dto.Price,
+            VatCategory = vatCategory,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -108,6 +117,7 @@ public class ProductsController : ControllerBase
             Barcode = product.Barcode,
             InternalCode = product.InternalCode,
             Price = product.Price,
+            VatCategory = product.VatCategory,
             IsActive = product.IsActive
         };
 
@@ -132,6 +142,7 @@ public class ProductsController : ControllerBase
                 Barcode = p.Barcode,
                 InternalCode = p.InternalCode,
                 Price = p.Price,
+                VatCategory = p.VatCategory,
                 IsActive = p.IsActive
             })
             .FirstOrDefaultAsync();
@@ -176,6 +187,11 @@ public class ProductsController : ControllerBase
         var barcode = NormalizeOptionalIdentifier(dto.Barcode);
         var internalCode = NormalizeOptionalIdentifier(dto.InternalCode);
 
+        if (dto.VatCategory.HasValue && !Enum.IsDefined(dto.VatCategory.Value))
+        {
+            return BadRequest(new ApiErrorResponse { Error = "INVALID_PRODUCT_VAT_CATEGORY" });
+        }
+
         var duplicateIdentifierError = await ValidateUniqueIdentifiersAsync(
             operationalContext.CompanyId,
             barcode,
@@ -192,6 +208,7 @@ public class ProductsController : ControllerBase
         product.Barcode = barcode;
         product.InternalCode = internalCode;
         product.Price = dto.Price;
+        product.VatCategory = dto.VatCategory ?? product.VatCategory;
         product.IsActive = dto.IsActive;
 
         await _context.SaveChangesAsync();

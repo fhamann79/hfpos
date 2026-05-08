@@ -105,6 +105,12 @@ public class SalesService : ISalesService
                 PaymentMethod = s.PaymentMethod,
                 DocumentType = s.DocumentType,
                 Subtotal = s.Subtotal,
+                TaxAmount = s.TaxAmount,
+                Vat15Subtotal = s.Vat15Subtotal,
+                Vat5Subtotal = s.Vat5Subtotal,
+                Vat0Subtotal = s.Vat0Subtotal,
+                VatExemptSubtotal = s.VatExemptSubtotal,
+                VatNotSubjectSubtotal = s.VatNotSubjectSubtotal,
                 Total = s.Total,
                 Notes = s.Notes,
                 CompanyId = s.CompanyId,
@@ -121,7 +127,12 @@ public class SalesService : ISalesService
                         ProductName = i.Product.Name,
                         Quantity = i.Quantity,
                         UnitPrice = i.UnitPrice,
-                        LineSubtotal = i.LineSubtotal
+                        LineSubtotal = i.LineSubtotal,
+                        VatCategory = i.VatCategory,
+                        VatRate = i.VatRate,
+                        TaxableSubtotal = i.TaxableSubtotal,
+                        TaxAmount = i.TaxAmount,
+                        LineTotal = i.LineTotal
                     })
                     .ToList()
             })
@@ -224,19 +235,24 @@ public class SalesService : ISalesService
                     throw new InvalidOperationException("INVALID_UNIT_PRICE");
                 }
 
-                var lineSubtotal = itemDto.Quantity * itemDto.UnitPrice;
+                var product = products[itemDto.ProductId];
+                var taxSnapshot = CalculateLineTax(itemDto.Quantity, itemDto.UnitPrice, product.VatCategory);
 
                 sale.Items.Add(new SaleItem
                 {
                     ProductId = itemDto.ProductId,
                     Quantity = itemDto.Quantity,
                     UnitPrice = itemDto.UnitPrice,
-                    LineSubtotal = lineSubtotal
+                    LineSubtotal = taxSnapshot.TaxableSubtotal,
+                    VatCategory = product.VatCategory,
+                    VatRate = taxSnapshot.VatRate,
+                    TaxableSubtotal = taxSnapshot.TaxableSubtotal,
+                    TaxAmount = taxSnapshot.TaxAmount,
+                    LineTotal = taxSnapshot.LineTotal
                 });
             }
 
-            sale.Subtotal = sale.Items.Sum(i => i.LineSubtotal);
-            sale.Total = sale.Subtotal;
+            ApplySaleTaxTotals(sale);
 
             await using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -400,4 +416,53 @@ public class SalesService : ISalesService
             throw;
         }
     }
+
+    private static void ApplySaleTaxTotals(Sale sale)
+    {
+        sale.Subtotal = sale.Items.Sum(i => i.TaxableSubtotal);
+        sale.TaxAmount = sale.Items.Sum(i => i.TaxAmount);
+        sale.Vat15Subtotal = sale.Items
+            .Where(i => i.VatCategory == ProductVatCategory.Vat15)
+            .Sum(i => i.TaxableSubtotal);
+        sale.Vat5Subtotal = sale.Items
+            .Where(i => i.VatCategory == ProductVatCategory.Vat5)
+            .Sum(i => i.TaxableSubtotal);
+        sale.Vat0Subtotal = sale.Items
+            .Where(i => i.VatCategory == ProductVatCategory.Vat0)
+            .Sum(i => i.TaxableSubtotal);
+        sale.VatExemptSubtotal = sale.Items
+            .Where(i => i.VatCategory == ProductVatCategory.VatExempt)
+            .Sum(i => i.TaxableSubtotal);
+        sale.VatNotSubjectSubtotal = sale.Items
+            .Where(i => i.VatCategory == ProductVatCategory.VatNotSubject)
+            .Sum(i => i.TaxableSubtotal);
+        sale.Total = sale.Items.Sum(i => i.LineTotal);
+    }
+
+    private static (decimal VatRate, decimal TaxableSubtotal, decimal TaxAmount, decimal LineTotal) CalculateLineTax(
+        decimal quantity,
+        decimal unitPrice,
+        ProductVatCategory vatCategory)
+    {
+        var taxableSubtotal = RoundMoney(quantity * unitPrice);
+        var vatRate = GetVatRate(vatCategory);
+        var taxAmount = RoundMoney(taxableSubtotal * vatRate);
+        var lineTotal = taxableSubtotal + taxAmount;
+
+        return (vatRate, taxableSubtotal, taxAmount, lineTotal);
+    }
+
+    private static decimal GetVatRate(ProductVatCategory vatCategory)
+        => vatCategory switch
+        {
+            ProductVatCategory.Vat15 => 0.15m,
+            ProductVatCategory.Vat5 => 0.05m,
+            ProductVatCategory.Vat0 => 0.00m,
+            ProductVatCategory.VatExempt => 0.00m,
+            ProductVatCategory.VatNotSubject => 0.00m,
+            _ => throw new InvalidOperationException("INVALID_PRODUCT_VAT_CATEGORY")
+        };
+
+    private static decimal RoundMoney(decimal value)
+        => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 }

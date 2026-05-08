@@ -1,3 +1,5 @@
+using Pos.Backend.Api.Core.Enums;
+
 namespace Pos.Backend.Api.Core.DTOs;
 
 public class ProductCreateDto
@@ -7,4 +9,5 @@ public class ProductCreateDto
     public string? Barcode { get; set; }
     public string? InternalCode { get; set; }
     public decimal Price { get; set; }
+    public ProductVatCategory? VatCategory { get; set; }
 }
