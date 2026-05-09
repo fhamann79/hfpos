@@ -104,6 +104,8 @@ public class SalesService : ISalesService
                 CustomerName = s.Customer != null ? s.Customer.Name : null,
                 PaymentMethod = s.PaymentMethod,
                 DocumentType = s.DocumentType,
+                GrossSubtotal = s.GrossSubtotal,
+                DiscountAmount = s.DiscountAmount,
                 Subtotal = s.Subtotal,
                 TaxAmount = s.TaxAmount,
                 Vat15Subtotal = s.Vat15Subtotal,
@@ -127,6 +129,9 @@ public class SalesService : ISalesService
                         ProductName = i.Product.Name,
                         Quantity = i.Quantity,
                         UnitPrice = i.UnitPrice,
+                        GrossSubtotal = i.GrossSubtotal,
+                        DiscountAmount = i.DiscountAmount,
+                        NetSubtotal = i.NetSubtotal,
                         LineSubtotal = i.LineSubtotal,
                         VatCategory = i.VatCategory,
                         VatRate = i.VatRate,
@@ -236,13 +241,24 @@ public class SalesService : ISalesService
                 }
 
                 var product = products[itemDto.ProductId];
-                var taxSnapshot = CalculateLineTax(itemDto.Quantity, itemDto.UnitPrice, product.VatCategory);
+                var grossSubtotal = RoundMoney(itemDto.Quantity * itemDto.UnitPrice);
+                var lineDiscount = RoundMoney(itemDto.DiscountAmount ?? 0m);
+
+                if (lineDiscount < 0m || lineDiscount > grossSubtotal)
+                {
+                    throw new InvalidOperationException("INVALID_LINE_DISCOUNT");
+                }
+
+                var taxSnapshot = CalculateLineTax(grossSubtotal, lineDiscount, product.VatCategory);
 
                 sale.Items.Add(new SaleItem
                 {
                     ProductId = itemDto.ProductId,
                     Quantity = itemDto.Quantity,
                     UnitPrice = itemDto.UnitPrice,
+                    GrossSubtotal = grossSubtotal,
+                    DiscountAmount = lineDiscount,
+                    NetSubtotal = taxSnapshot.TaxableSubtotal,
                     LineSubtotal = taxSnapshot.TaxableSubtotal,
                     VatCategory = product.VatCategory,
                     VatRate = taxSnapshot.VatRate,
@@ -252,7 +268,7 @@ public class SalesService : ISalesService
                 });
             }
 
-            ApplySaleTaxTotals(sale);
+            ApplySaleTaxTotals(sale, dto.DiscountAmount ?? 0m);
 
             await using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -417,8 +433,24 @@ public class SalesService : ISalesService
         }
     }
 
-    private static void ApplySaleTaxTotals(Sale sale)
+    private static void ApplySaleTaxTotals(Sale sale, decimal saleDiscountAmount)
     {
+        var lineNetSubtotal = sale.Items.Sum(i => i.NetSubtotal);
+        var globalDiscount = RoundMoney(saleDiscountAmount);
+
+        if (globalDiscount < 0m || globalDiscount > lineNetSubtotal)
+        {
+            throw new InvalidOperationException("INVALID_SALE_DISCOUNT");
+        }
+
+        sale.GrossSubtotal = sale.Items.Sum(i => i.GrossSubtotal);
+        sale.DiscountAmount = sale.Items.Sum(i => i.DiscountAmount) + globalDiscount;
+
+        if (globalDiscount > 0m)
+        {
+            ApplyGlobalDiscountToLines(sale.Items, lineNetSubtotal, globalDiscount);
+        }
+
         sale.Subtotal = sale.Items.Sum(i => i.TaxableSubtotal);
         sale.TaxAmount = sale.Items.Sum(i => i.TaxAmount);
         sale.Vat15Subtotal = sale.Items
@@ -439,12 +471,38 @@ public class SalesService : ISalesService
         sale.Total = sale.Items.Sum(i => i.LineTotal);
     }
 
+    private static void ApplyGlobalDiscountToLines(
+        ICollection<SaleItem> items,
+        decimal lineNetSubtotal,
+        decimal globalDiscount)
+    {
+        var orderedItems = items.OrderBy(i => i.ProductId).ToList();
+        var allocatedDiscount = 0m;
+
+        for (var index = 0; index < orderedItems.Count; index++)
+        {
+            var item = orderedItems[index];
+            var allocation = index == orderedItems.Count - 1
+                ? globalDiscount - allocatedDiscount
+                : RoundMoney(globalDiscount * item.NetSubtotal / lineNetSubtotal);
+
+            allocatedDiscount += allocation;
+
+            item.DiscountAmount = RoundMoney(item.DiscountAmount + allocation);
+            item.NetSubtotal = RoundMoney(item.NetSubtotal - allocation);
+            item.LineSubtotal = item.NetSubtotal;
+            item.TaxableSubtotal = item.NetSubtotal;
+            item.TaxAmount = RoundMoney(item.TaxableSubtotal * item.VatRate);
+            item.LineTotal = item.TaxableSubtotal + item.TaxAmount;
+        }
+    }
+
     private static (decimal VatRate, decimal TaxableSubtotal, decimal TaxAmount, decimal LineTotal) CalculateLineTax(
-        decimal quantity,
-        decimal unitPrice,
+        decimal grossSubtotal,
+        decimal discountAmount,
         ProductVatCategory vatCategory)
     {
-        var taxableSubtotal = RoundMoney(quantity * unitPrice);
+        var taxableSubtotal = RoundMoney(grossSubtotal - discountAmount);
         var vatRate = GetVatRate(vatCategory);
         var taxAmount = RoundMoney(taxableSubtotal * vatRate);
         var lineTotal = taxableSubtotal + taxAmount;

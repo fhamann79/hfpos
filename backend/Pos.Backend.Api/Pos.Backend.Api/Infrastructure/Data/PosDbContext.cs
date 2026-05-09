@@ -201,6 +201,12 @@ public class PosDbContext : DbContext
             entity.Property(s => s.DocumentType)
                 .HasConversion<int>();
 
+            entity.Property(s => s.GrossSubtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.DiscountAmount)
+                .HasPrecision(18, 2);
+
             entity.Property(s => s.Subtotal)
                 .HasPrecision(18, 2);
 
@@ -266,6 +272,15 @@ public class PosDbContext : DbContext
                 .HasPrecision(18, 4);
 
             entity.Property(si => si.UnitPrice)
+                .HasPrecision(18, 2);
+
+            entity.Property(si => si.GrossSubtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(si => si.DiscountAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(si => si.NetSubtotal)
                 .HasPrecision(18, 2);
 
             entity.Property(si => si.LineSubtotal)

@@ -14,6 +14,12 @@ public class SaleItemDto
 
     public decimal UnitPrice { get; set; }
 
+    public decimal GrossSubtotal { get; set; }
+
+    public decimal DiscountAmount { get; set; }
+
+    public decimal NetSubtotal { get; set; }
+
     public decimal LineSubtotal { get; set; }
 
     public ProductVatCategory VatCategory { get; set; }
