@@ -7,4 +7,6 @@ public class SaleItemCreateDto
     public decimal Quantity { get; set; }
 
     public decimal UnitPrice { get; set; }
+
+    public decimal? DiscountAmount { get; set; }
 }

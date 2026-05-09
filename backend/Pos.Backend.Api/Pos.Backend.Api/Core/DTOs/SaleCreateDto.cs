@@ -10,6 +10,8 @@ public class SaleCreateDto
 
     public SaleDocumentType? DocumentType { get; set; }
 
+    public decimal? DiscountAmount { get; set; }
+
     public string? Notes { get; set; }
 
     public List<SaleItemCreateDto> Items { get; set; } = new();

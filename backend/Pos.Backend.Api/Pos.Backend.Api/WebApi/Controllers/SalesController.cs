@@ -94,6 +94,8 @@ public class SalesController : ControllerBase
             "PRODUCT_INACTIVE" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_QUANTITY" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_UNIT_PRICE" => BadRequest(new ApiErrorResponse { Error = code }),
+            "INVALID_LINE_DISCOUNT" => BadRequest(new ApiErrorResponse { Error = code }),
+            "INVALID_SALE_DISCOUNT" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_PRODUCT_VAT_CATEGORY" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_SALE_PAYMENT_METHOD" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_SALE_DOCUMENT_TYPE" => BadRequest(new ApiErrorResponse { Error = code }),

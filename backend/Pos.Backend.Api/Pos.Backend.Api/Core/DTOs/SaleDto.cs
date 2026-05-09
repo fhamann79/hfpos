@@ -16,6 +16,10 @@ public class SaleDto
 
     public SaleDocumentType DocumentType { get; set; }
 
+    public decimal GrossSubtotal { get; set; }
+
+    public decimal DiscountAmount { get; set; }
+
     public decimal Subtotal { get; set; }
 
     public decimal TaxAmount { get; set; }
