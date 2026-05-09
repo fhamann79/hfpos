@@ -12,6 +12,8 @@ import { ButtonModule } from 'primeng/button';
 })
 export class CheckoutConfirmDialog {
   @Input({ required: true }) visible = false;
+  @Input({ required: true }) grossSubtotal = 0;
+  @Input({ required: true }) discountAmount = 0;
   @Input({ required: true }) subtotal = 0;
   @Input({ required: true }) taxAmount = 0;
   @Input({ required: true }) total = 0;

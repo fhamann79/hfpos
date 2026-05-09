@@ -108,7 +108,7 @@ h2 {
 
 .line-controls {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.65rem;
 
   label {
@@ -137,6 +137,10 @@ h2 {
     color: #94a3b8;
     font-size: 0.72rem;
     font-weight: 700;
+  }
+
+  .discount-line {
+    color: #fbbf24;
   }
 
   span {
@@ -194,6 +198,18 @@ h2 {
     font-size: 2rem;
     letter-spacing: -0.05em;
   }
+}
+
+.discount-editor {
+  align-items: center;
+}
+
+:host ::ng-deep .discount-editor .p-inputnumber {
+  max-width: 9rem;
+}
+
+.discount-total strong {
+  color: #fbbf24;
 }
 
 textarea {

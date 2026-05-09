@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { TextareaModule } from 'primeng/textarea';
-import { TaxSummary, calculateLineTotal, getVatCategoryOption } from '../../../../core/utils/vat-category';
+import { TaxSummary, calculateLineNetSubtotal, calculateLineTotal, getVatCategoryOption } from '../../../../core/utils/vat-category';
 import { CartItem } from '../../models/cart-item.model';
 
 @Component({
@@ -20,6 +20,7 @@ export class CartWorkstation {
   @Input({ required: true }) taxAmount = 0;
   @Input({ required: true }) total = 0;
   @Input() taxSummary: TaxSummary | null = null;
+  @Input() saleDiscountAmount = 0;
   @Input() notes = '';
   @Input() canCheckout = false;
   @Input() inventoryAvailable = false;
@@ -27,6 +28,8 @@ export class CartWorkstation {
 
   @Output() updateQuantity = new EventEmitter<{ productId: number; quantity: number }>();
   @Output() updateUnitPrice = new EventEmitter<{ productId: number; unitPrice: number }>();
+  @Output() updateLineDiscount = new EventEmitter<{ productId: number; discountAmount: number }>();
+  @Output() updateSaleDiscount = new EventEmitter<number>();
   @Output() removeItem = new EventEmitter<number>();
   @Output() notesChange = new EventEmitter<string>();
   @Output() selectLine = new EventEmitter<number>();
@@ -40,8 +43,12 @@ export class CartWorkstation {
     return item.quantity * item.unitPrice;
   }
 
+  lineNetSubtotal(item: CartItem): number {
+    return calculateLineNetSubtotal(item.quantity, item.unitPrice, item.discountAmount);
+  }
+
   lineTotal(item: CartItem): number {
-    return calculateLineTotal(item.quantity, item.unitPrice, item.product.vatCategory);
+    return calculateLineTotal(item.quantity, item.unitPrice, item.product.vatCategory, item.discountAmount);
   }
 
   vatLabel(item: CartItem): string {
@@ -58,5 +65,13 @@ export class CartWorkstation {
     }
 
     return Math.max(item.stock, 1);
+  }
+
+  maxLineDiscount(item: CartItem): number {
+    return this.lineSubtotal(item);
+  }
+
+  maxSaleDiscount(): number {
+    return this.items.reduce((sum, item) => sum + this.lineNetSubtotal(item), 0);
   }
 }

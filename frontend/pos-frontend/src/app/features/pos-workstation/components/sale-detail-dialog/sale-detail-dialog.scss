@@ -5,6 +5,7 @@
 .item-main small { color:#64748b; }
 .tax-summary { display:flex; flex-wrap:wrap; gap:.45rem .65rem; margin-top:.8rem; padding:.75rem; border-radius:.75rem; background:#f8fafc; }
 .tax-summary div { width:100%; display:flex; justify-content:space-between; }
+.tax-summary .discount-line strong { color:#b45309; }
 .tax-summary > span { color:#475569; font-size:.82rem; }
 footer { margin-top:.8rem; display:flex; justify-content:space-between; align-items:baseline; }
 footer strong { font-size:1.35rem; }

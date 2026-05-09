@@ -8,7 +8,9 @@
   <div class="confirm-content" (keydown)="onKeydown($event)" tabindex="0">
     <p><strong>Items:</strong> {{ itemCount }}</p>
     <div class="money-lines">
-      <span><strong>Subtotal:</strong> {{ subtotal | currency: 'USD' }}</span>
+      <span><strong>Subtotal bruto:</strong> {{ grossSubtotal | currency: 'USD' }}</span>
+      <span class="discount-line"><strong>Descuentos:</strong> -{{ discountAmount | currency: 'USD' }}</span>
+      <span><strong>Subtotal neto:</strong> {{ subtotal | currency: 'USD' }}</span>
       <span><strong>IVA estimado:</strong> {{ taxAmount | currency: 'USD' }}</span>
       <strong>Total: {{ total | currency: 'USD' }}</strong>
     </div>

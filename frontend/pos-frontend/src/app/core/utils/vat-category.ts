@@ -14,6 +14,8 @@ export interface VatCategoryOption {
 }
 
 export interface TaxSummary {
+  grossSubtotal: number;
+  discountAmount: number;
   subtotal: number;
   taxAmount: number;
   total: number;
@@ -27,6 +29,7 @@ export interface TaxSummary {
 export interface TaxableLine {
   quantity: number;
   unitPrice: number;
+  discountAmount?: number | null;
   vatCategory?: ProductVatCategory | number | string | null;
   product?: { vatCategory?: ProductVatCategory | number | string | null } | null;
 }
@@ -80,14 +83,42 @@ export function getVatRate(value: unknown): number {
   return VAT_RATE_BY_CATEGORY[normalizeVatCategory(value)];
 }
 
-export function calculateTaxSummary(lines: TaxableLine[]): TaxSummary {
+export function calculateTaxSummary(lines: TaxableLine[], saleDiscountAmount = 0): TaxSummary {
   const summary = emptyTaxSummary();
+  const normalizedLines = lines.map((line) => {
+    const grossSubtotal = roundMoney(line.quantity * line.unitPrice);
+    const lineDiscount = clampDiscount(line.discountAmount ?? 0, grossSubtotal);
 
-  for (const line of lines) {
-    const vatCategory = normalizeVatCategory(line.vatCategory ?? line.product?.vatCategory);
-    const taxableSubtotal = roundMoney(line.quantity * line.unitPrice);
+    return {
+      vatCategory: normalizeVatCategory(line.vatCategory ?? line.product?.vatCategory),
+      grossSubtotal,
+      lineDiscount,
+      netSubtotal: roundMoney(grossSubtotal - lineDiscount),
+    };
+  });
+
+  const lineNetSubtotal = normalizedLines.reduce((sum, line) => roundMoney(sum + line.netSubtotal), 0);
+  const globalDiscount = clampDiscount(saleDiscountAmount, lineNetSubtotal);
+  let allocatedGlobalDiscount = 0;
+
+  summary.grossSubtotal = normalizedLines.reduce((sum, line) => roundMoney(sum + line.grossSubtotal), 0);
+  summary.discountAmount = normalizedLines.reduce((sum, line) => roundMoney(sum + line.lineDiscount), 0);
+
+  for (let index = 0; index < normalizedLines.length; index++) {
+    const line = normalizedLines[index];
+    const allocatedDiscount =
+      globalDiscount > 0 && lineNetSubtotal > 0
+        ? index === normalizedLines.length - 1
+          ? roundMoney(globalDiscount - allocatedGlobalDiscount)
+          : roundMoney(globalDiscount * line.netSubtotal / lineNetSubtotal)
+        : 0;
+
+    allocatedGlobalDiscount = roundMoney(allocatedGlobalDiscount + allocatedDiscount);
+    const taxableSubtotal = roundMoney(line.netSubtotal - allocatedDiscount);
+    const vatCategory = line.vatCategory;
     const taxAmount = roundMoney(taxableSubtotal * getVatRate(vatCategory));
 
+    summary.discountAmount = roundMoney(summary.discountAmount + allocatedDiscount);
     summary.subtotal = roundMoney(summary.subtotal + taxableSubtotal);
     summary.taxAmount = roundMoney(summary.taxAmount + taxAmount);
 
@@ -108,9 +139,15 @@ export function calculateTaxSummary(lines: TaxableLine[]): TaxSummary {
   return summary;
 }
 
-export function calculateLineTotal(quantity: number, unitPrice: number, vatCategory: unknown): number {
-  const taxableSubtotal = roundMoney(quantity * unitPrice);
+export function calculateLineTotal(quantity: number, unitPrice: number, vatCategory: unknown, discountAmount = 0): number {
+  const grossSubtotal = roundMoney(quantity * unitPrice);
+  const taxableSubtotal = roundMoney(grossSubtotal - clampDiscount(discountAmount, grossSubtotal));
   return roundMoney(taxableSubtotal + roundMoney(taxableSubtotal * getVatRate(vatCategory)));
+}
+
+export function calculateLineNetSubtotal(quantity: number, unitPrice: number, discountAmount = 0): number {
+  const grossSubtotal = roundMoney(quantity * unitPrice);
+  return roundMoney(grossSubtotal - clampDiscount(discountAmount, grossSubtotal));
 }
 
 export function roundMoney(value: number): number {
@@ -119,6 +156,8 @@ export function roundMoney(value: number): number {
 
 function emptyTaxSummary(): TaxSummary {
   return {
+    grossSubtotal: 0,
+    discountAmount: 0,
     subtotal: 0,
     taxAmount: 0,
     total: 0,
@@ -128,6 +167,11 @@ function emptyTaxSummary(): TaxSummary {
     vatExemptSubtotal: 0,
     vatNotSubjectSubtotal: 0,
   };
+}
+
+function clampDiscount(value: number, maxValue: number): number {
+  const normalized = roundMoney(Math.max(0, Number(value) || 0));
+  return Math.min(normalized, roundMoney(Math.max(0, maxValue)));
 }
 
 function isVatCategory(value: number): value is ProductVatCategory {
