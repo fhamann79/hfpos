@@ -56,11 +56,29 @@
                 (ngModelChange)="updateUnitPrice.emit({ productId: item.productId, unitPrice: $event ?? 0 })"
               ></p-inputnumber>
             </label>
+
+            <label>
+              Desc.
+              <p-inputnumber
+                inputId="discount-{{ item.productId }}"
+                mode="currency"
+                currency="USD"
+                locale="en-US"
+                [min]="0"
+                [max]="maxLineDiscount(item)"
+                [ngModel]="item.discountAmount"
+                (ngModelChange)="updateLineDiscount.emit({ productId: item.productId, discountAmount: $event ?? 0 })"
+              ></p-inputnumber>
+            </label>
           </div>
 
           <div class="line-total">
             <div>
-              <small>Base {{ lineSubtotal(item) | currency: 'USD' }}</small>
+              <small>Bruto {{ lineSubtotal(item) | currency: 'USD' }}</small>
+              @if (item.discountAmount > 0) {
+                <small class="discount-line">-{{ item.discountAmount | currency: 'USD' }} desc.</small>
+                <small>Neto {{ lineNetSubtotal(item) | currency: 'USD' }}</small>
+              }
               <span>{{ lineTotal(item) | currency: 'USD' }}</span>
             </div>
             <p-button
@@ -78,7 +96,22 @@
 
   <footer class="summary">
     <div class="summary-lines">
-      <div><span>Subtotal</span><strong>{{ subtotal | currency: 'USD' }}</strong></div>
+      <div><span>Subtotal bruto</span><strong>{{ (taxSummary?.grossSubtotal ?? subtotal) | currency: 'USD' }}</strong></div>
+      <div class="discount-editor">
+        <span>Descuento global</span>
+        <p-inputnumber
+          inputId="sale-discount"
+          mode="currency"
+          currency="USD"
+          locale="en-US"
+          [min]="0"
+          [max]="maxSaleDiscount()"
+          [ngModel]="saleDiscountAmount"
+          (ngModelChange)="updateSaleDiscount.emit($event ?? 0)"
+        ></p-inputnumber>
+      </div>
+      <div class="discount-total"><span>Descuento total</span><strong>-{{ (taxSummary?.discountAmount ?? 0) | currency: 'USD' }}</strong></div>
+      <div><span>Subtotal neto</span><strong>{{ subtotal | currency: 'USD' }}</strong></div>
       <div><span>IVA estimado</span><strong>{{ taxAmount | currency: 'USD' }}</strong></div>
       @if (taxSummary) {
         <div class="tax-breakdown">

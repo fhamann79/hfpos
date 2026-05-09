@@ -6,6 +6,8 @@ export interface Sale {
   status: string;
   customerName: string | null;
   notes: string | null;
+  grossSubtotal: number;
+  discountAmount: number;
   subtotal: number;
   taxAmount: number;
   vat15Subtotal: number;

@@ -9,7 +9,7 @@ import { ToastModule } from 'primeng/toast';
 import { Subscription, fromEvent } from 'rxjs';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
-import { calculateTaxSummary } from '../../../../core/utils/vat-category';
+import { calculateTaxSummary, roundMoney } from '../../../../core/utils/vat-category';
 import { CartWorkstation } from '../../components/cart-workstation/cart-workstation';
 import { CheckoutConfirmDialog } from '../../components/checkout-confirm-dialog/checkout-confirm-dialog';
 import { CustomerSelectorDialog } from '../../components/customer-selector-dialog/customer-selector-dialog';
@@ -73,6 +73,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly cart = signal<CartItem[]>([]);
   readonly activeCartProductId = signal<number | null>(null);
   readonly selectedCustomer = signal<PosCustomer | null>(null);
+  readonly saleDiscountAmount = signal(0);
   readonly notes = signal('');
   readonly checkoutVisible = signal(false);
   readonly customerSelectorVisible = signal(false);
@@ -103,7 +104,15 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       .sort((a, b) => this.productMatchRank(a, term) - this.productMatchRank(b, term) || a.name.localeCompare(b.name));
   });
 
-  readonly taxSummary = computed(() => calculateTaxSummary(this.cart()));
+  readonly maxSaleDiscountAmount = computed(() =>
+    this.cart().reduce((sum, item) => sum + Math.max(item.quantity * item.unitPrice - item.discountAmount, 0), 0)
+  );
+
+  readonly effectiveSaleDiscountAmount = computed(() =>
+    roundMoney(Math.min(Math.max(this.saleDiscountAmount(), 0), this.maxSaleDiscountAmount()))
+  );
+
+  readonly taxSummary = computed(() => calculateTaxSummary(this.cart(), this.effectiveSaleDiscountAmount()));
 
   readonly subtotal = computed(() => this.taxSummary().subtotal);
 
@@ -285,6 +294,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
           productName: product.name,
           quantity: 1,
           unitPrice: product.price,
+          discountAmount: 0,
           stock: product.stock,
           product,
         },
@@ -319,13 +329,19 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
           limitedStock = item.stock;
         }
 
-        return { ...item, quantity: nextQuantity };
+        return {
+          ...item,
+          quantity: nextQuantity,
+          discountAmount: this.normalizeDiscount(item.discountAmount, nextQuantity * item.unitPrice),
+        };
       })
     );
 
     if (limitedItemName !== null) {
       this.notifyStockLimit(limitedItemName, limitedStock);
     }
+
+    this.saleDiscountAmount.set(this.normalizeDiscount(this.saleDiscountAmount(), this.maxSaleDiscountAmount()));
   }
 
   updateUnitPrice(event: { productId: number; unitPrice: number }): void {
@@ -334,10 +350,32 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.cart.update((items) =>
       items.map((item) =>
         item.productId === event.productId
-          ? { ...item, unitPrice: Math.max(0, Number(event.unitPrice || 0)) }
+          ? {
+              ...item,
+              unitPrice: Math.max(0, Number(event.unitPrice || 0)),
+              discountAmount: this.normalizeDiscount(item.discountAmount, item.quantity * Math.max(0, Number(event.unitPrice || 0))),
+            }
           : item
       )
     );
+    this.saleDiscountAmount.set(this.normalizeDiscount(this.saleDiscountAmount(), this.maxSaleDiscountAmount()));
+  }
+
+  updateLineDiscount(event: { productId: number; discountAmount: number }): void {
+    this.activeCartProductId.set(event.productId);
+
+    this.cart.update((items) =>
+      items.map((item) =>
+        item.productId === event.productId
+          ? { ...item, discountAmount: this.normalizeDiscount(event.discountAmount, item.quantity * item.unitPrice) }
+          : item
+      )
+    );
+    this.saleDiscountAmount.set(this.normalizeDiscount(this.saleDiscountAmount(), this.maxSaleDiscountAmount()));
+  }
+
+  updateSaleDiscount(discountAmount: number): void {
+    this.saleDiscountAmount.set(this.normalizeDiscount(discountAmount, this.maxSaleDiscountAmount()));
   }
 
   removeItem(productId: number): void {
@@ -346,6 +384,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
     this.cart.update((items) => items.filter((item) => item.productId !== productId));
     this.moveActiveLineAfterRemoval(removedIndex);
+    this.saleDiscountAmount.set(this.normalizeDiscount(this.saleDiscountAmount(), this.maxSaleDiscountAmount()));
   }
 
   selectCartLine(productId: number): void {
@@ -437,11 +476,13 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
     const payload: CheckoutRequest = {
       customerId: this.selectedCustomer()?.id ?? null,
+      discountAmount: this.effectiveSaleDiscountAmount(),
       notes: this.notes().trim() || undefined,
       items: this.cart().map((item) => ({
         productId: item.productId,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
+        discountAmount: item.discountAmount,
       })),
     };
 
@@ -454,6 +495,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         this.cart.set([]);
         this.activeCartProductId.set(null);
         this.selectedCustomer.set(null);
+        this.saleDiscountAmount.set(0);
         this.notes.set('');
         this.messageService.add({ severity: 'success', summary: 'Venta registrada', detail: 'La venta fue creada correctamente.' });
         this.refreshOperationalData();
@@ -618,6 +660,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
             ...item,
             productName: product.name,
             unitPrice: item.unitPrice,
+            discountAmount: this.normalizeDiscount(item.discountAmount, nextQuantity * item.unitPrice),
             stock: nextStock,
             quantity: nextQuantity,
             product,
@@ -656,6 +699,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       summary: 'Stock máximo alcanzado',
       detail: `"${productName}" solo tiene ${stock} unidades disponibles.`,
     });
+  }
+
+  private normalizeDiscount(value: number, maxValue: number): number {
+    return roundMoney(Math.min(Math.max(Number(value) || 0, 0), Math.max(maxValue, 0)));
   }
 
   private handleCartKeyboardShortcut(event: KeyboardEvent): void {

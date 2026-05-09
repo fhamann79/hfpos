@@ -14,6 +14,8 @@ const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
   PRODUCT_NOT_FOUND: 'El producto no existe.',
   INVALID_QUANTITY: 'La cantidad ingresada no es válida.',
   INVALID_UNIT_PRICE: 'El precio unitario ingresado no es válido.',
+  INVALID_LINE_DISCOUNT: 'El descuento de línea no es válido.',
+  INVALID_SALE_DISCOUNT: 'El descuento global no es válido.',
   INVENTORY_CONCURRENCY_CONFLICT: 'El inventario cambió mientras se procesaba la operación. Vuelve a intentarlo.',
   INVALID_CREDENTIALS: 'Credenciales inválidas.',
   CONTEXT_MISMATCH: 'El contexto seleccionado no coincide con la operación solicitada.',

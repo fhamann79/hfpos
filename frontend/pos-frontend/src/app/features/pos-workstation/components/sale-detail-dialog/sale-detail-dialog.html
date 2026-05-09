@@ -22,6 +22,13 @@
         <li>
           <span class="item-main">
             <strong>{{ item.productName }} x {{ item.quantity }}</strong>
+            <small>
+              Bruto {{ item.grossSubtotal | currency: 'USD' }}
+              @if (item.discountAmount > 0) {
+                · Desc. -{{ item.discountAmount | currency: 'USD' }}
+              }
+              · Neto {{ item.netSubtotal | currency: 'USD' }}
+            </small>
             <small>{{ getVatLabel(item) }} · IVA {{ item.taxAmount | currency: 'USD' }}</small>
           </span>
           <span>{{ item.unitPrice | currency: 'USD' }}</span>
@@ -31,7 +38,9 @@
     </ul>
 
     <section class="tax-summary">
-      <div><span>Subtotal</span><strong>{{ sale.subtotal | currency: 'USD' }}</strong></div>
+      <div><span>Subtotal bruto</span><strong>{{ sale.grossSubtotal | currency: 'USD' }}</strong></div>
+      <div class="discount-line"><span>Descuentos</span><strong>-{{ sale.discountAmount | currency: 'USD' }}</strong></div>
+      <div><span>Subtotal neto</span><strong>{{ sale.subtotal | currency: 'USD' }}</strong></div>
       <div><span>IVA</span><strong>{{ sale.taxAmount | currency: 'USD' }}</strong></div>
       @if (sale.vat15Subtotal > 0) {
         <span>Base IVA 15%: {{ sale.vat15Subtotal | currency: 'USD' }}</span>

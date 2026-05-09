@@ -5,6 +5,7 @@ export interface CartItem {
   productName: string;
   quantity: number;
   unitPrice: number;
+  discountAmount: number;
   stock: number;
   product: PosProduct;
 }
