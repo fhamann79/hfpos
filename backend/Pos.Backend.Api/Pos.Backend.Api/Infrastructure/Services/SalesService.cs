@@ -66,6 +66,8 @@ public class SalesService : ISalesService
             query = query.Where(s =>
                 (s.Notes != null && s.Notes.ToLower().Contains(term))
                 || (s.Number != null && s.Number.ToLower().Contains(term))
+                || (s.EstablishmentCodeSnapshot != null && s.EstablishmentCodeSnapshot.Contains(term))
+                || (s.EmissionPointCodeSnapshot != null && s.EmissionPointCodeSnapshot.Contains(term))
                 || s.Id.ToString().Contains(term));
         }
 
@@ -76,6 +78,9 @@ public class SalesService : ISalesService
             {
                 Id = s.Id,
                 Status = s.Status,
+                Number = s.Number,
+                DocumentType = s.DocumentType,
+                DocumentStatus = s.DocumentStatus,
                 Total = s.Total,
                 ItemsCount = s.Items.Count,
                 CreatedAt = s.CreatedAt,
@@ -104,6 +109,12 @@ public class SalesService : ISalesService
                 CustomerName = s.Customer != null ? s.Customer.Name : null,
                 PaymentMethod = s.PaymentMethod,
                 DocumentType = s.DocumentType,
+                DocumentStatus = s.DocumentStatus,
+                Number = s.Number,
+                EstablishmentCodeSnapshot = s.EstablishmentCodeSnapshot,
+                EmissionPointCodeSnapshot = s.EmissionPointCodeSnapshot,
+                Sequential = s.Sequential,
+                DocumentIssuedAt = s.DocumentIssuedAt,
                 GrossSubtotal = s.GrossSubtotal,
                 DiscountAmount = s.DiscountAmount,
                 Subtotal = s.Subtotal,
@@ -271,6 +282,8 @@ public class SalesService : ISalesService
             ApplySaleTaxTotals(sale, dto.DiscountAmount ?? 0m);
 
             await using var transaction = await _context.Database.BeginTransactionAsync();
+
+            await AssignDocumentNumberAsync(sale, operationalContext, documentType);
 
             _context.Sales.Add(sale);
             await _context.SaveChangesAsync();
@@ -469,6 +482,103 @@ public class SalesService : ISalesService
             .Where(i => i.VatCategory == ProductVatCategory.VatNotSubject)
             .Sum(i => i.TaxableSubtotal);
         sale.Total = sale.Items.Sum(i => i.LineTotal);
+    }
+
+    private async Task AssignDocumentNumberAsync(
+        Sale sale,
+        OperationalContext operationalContext,
+        SaleDocumentType documentType)
+    {
+        if (!Enum.IsDefined(documentType))
+        {
+            throw new InvalidOperationException("INVALID_DOCUMENT_TYPE");
+        }
+
+        var documentContext = await _context.Establishments
+            .AsNoTracking()
+            .Where(e =>
+                e.Id == operationalContext.EstablishmentId
+                && e.CompanyId == operationalContext.CompanyId
+                && e.IsActive)
+            .Select(e => new
+            {
+                EstablishmentCode = e.Code,
+                EmissionPointCode = e.EmissionPoints
+                    .Where(ep => ep.Id == operationalContext.EmissionPointId && ep.IsActive)
+                    .Select(ep => ep.Code)
+                    .FirstOrDefault()
+            })
+            .FirstOrDefaultAsync();
+
+        if (documentContext is null || documentContext.EmissionPointCode is null)
+        {
+            throw new InvalidOperationException("DOCUMENT_NUMBER_GENERATION_FAILED");
+        }
+
+        var establishmentCode = documentContext.EstablishmentCode.Trim();
+        var emissionPointCode = documentContext.EmissionPointCode.Trim();
+
+        if (establishmentCode.Length != 3 || emissionPointCode.Length != 3)
+        {
+            throw new InvalidOperationException("DOCUMENT_NUMBER_GENERATION_FAILED");
+        }
+
+        var now = DateTime.UtcNow;
+        var documentTypeValue = (int)documentType;
+
+        try
+        {
+            await _context.Database.ExecuteSqlInterpolatedAsync($@"
+                INSERT INTO ""DocumentSequences""
+                    (""CompanyId"", ""EstablishmentId"", ""EmissionPointId"", ""DocumentType"", ""CurrentNumber"", ""CreatedAt"", ""UpdatedAt"")
+                VALUES
+                    ({operationalContext.CompanyId}, {operationalContext.EstablishmentId}, {operationalContext.EmissionPointId}, {documentTypeValue}, 0, {now}, {now})
+                ON CONFLICT (""CompanyId"", ""EstablishmentId"", ""EmissionPointId"", ""DocumentType"") DO NOTHING");
+
+            var sequence = await _context.DocumentSequences
+                .FromSqlInterpolated($@"
+                    SELECT *
+                    FROM ""DocumentSequences""
+                    WHERE ""CompanyId"" = {operationalContext.CompanyId}
+                      AND ""EstablishmentId"" = {operationalContext.EstablishmentId}
+                      AND ""EmissionPointId"" = {operationalContext.EmissionPointId}
+                      AND ""DocumentType"" = {documentTypeValue}
+                    FOR UPDATE")
+                .SingleOrDefaultAsync();
+
+            if (sequence is null)
+            {
+                throw new InvalidOperationException("DOCUMENT_SEQUENCE_ERROR");
+            }
+
+            sequence.CurrentNumber += 1;
+            sequence.UpdatedAt = now;
+
+            sale.Number = $"{establishmentCode}-{emissionPointCode}-{sequence.CurrentNumber:000000000}";
+            sale.EstablishmentCodeSnapshot = establishmentCode;
+            sale.EmissionPointCodeSnapshot = emissionPointCode;
+            sale.Sequential = sequence.CurrentNumber;
+            sale.DocumentIssuedAt = now;
+            sale.DocumentStatus = documentType == SaleDocumentType.Invoice
+                ? SaleDocumentStatus.Draft
+                : SaleDocumentStatus.NotRequired;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Document number generation failed. CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId} DocumentType {DocumentType}",
+                operationalContext.CompanyId,
+                operationalContext.EstablishmentId,
+                operationalContext.EmissionPointId,
+                documentType);
+
+            throw new InvalidOperationException("DOCUMENT_NUMBER_GENERATION_FAILED", ex);
+        }
     }
 
     private static void ApplyGlobalDiscountToLines(

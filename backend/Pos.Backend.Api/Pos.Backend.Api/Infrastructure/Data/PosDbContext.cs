@@ -23,6 +23,7 @@ public class PosDbContext : DbContext
     public DbSet<Customer> Customers { get; set; }
     public DbSet<ProductStock> ProductStocks { get; set; }
     public DbSet<InventoryMovement> InventoryMovements { get; set; }
+    public DbSet<DocumentSequence> DocumentSequences { get; set; }
     public DbSet<Sale> Sales { get; set; }
     public DbSet<SaleItem> SaleItems { get; set; }
 
@@ -189,6 +190,27 @@ public class PosDbContext : DbContext
                 .HasFilter(@"""InternalCode"" IS NOT NULL");
         });
 
+        modelBuilder.Entity<DocumentSequence>(entity =>
+        {
+            entity.Property(ds => ds.DocumentType)
+                .HasConversion<int>();
+
+            entity.HasIndex(ds => new { ds.CompanyId, ds.EstablishmentId, ds.EmissionPointId, ds.DocumentType })
+                .IsUnique();
+
+            entity.HasOne(ds => ds.Company)
+                .WithMany()
+                .HasForeignKey(ds => ds.CompanyId);
+
+            entity.HasOne(ds => ds.Establishment)
+                .WithMany()
+                .HasForeignKey(ds => ds.EstablishmentId);
+
+            entity.HasOne(ds => ds.EmissionPoint)
+                .WithMany()
+                .HasForeignKey(ds => ds.EmissionPointId);
+        });
+
         modelBuilder.Entity<Sale>(entity =>
         {
             entity.Property(s => s.Status)
@@ -200,6 +222,10 @@ public class PosDbContext : DbContext
 
             entity.Property(s => s.DocumentType)
                 .HasConversion<int>();
+
+            entity.Property(s => s.DocumentStatus)
+                .HasConversion<int>()
+                .HasDefaultValue(SaleDocumentStatus.NotRequired);
 
             entity.Property(s => s.GrossSubtotal)
                 .HasPrecision(18, 2);
@@ -234,6 +260,18 @@ public class PosDbContext : DbContext
             entity.Property(s => s.Number)
                 .HasMaxLength(50);
 
+            entity.Property(s => s.EstablishmentCodeSnapshot)
+                .HasMaxLength(3);
+
+            entity.Property(s => s.EmissionPointCodeSnapshot)
+                .HasMaxLength(3);
+
+            entity.Property(s => s.AccessKey)
+                .HasMaxLength(49);
+
+            entity.Property(s => s.AuthorizationNumber)
+                .HasMaxLength(50);
+
             entity.Property(s => s.Notes)
                 .HasMaxLength(500);
 
@@ -243,6 +281,11 @@ public class PosDbContext : DbContext
             entity.HasIndex(s => s.CustomerId);
             entity.HasIndex(s => s.CreatedAt);
             entity.HasIndex(s => s.Status);
+            entity.HasIndex(s => s.Number);
+            entity.HasIndex(s => s.DocumentStatus);
+            entity.HasIndex(s => new { s.CompanyId, s.EstablishmentId, s.EmissionPointId, s.DocumentType, s.Sequential })
+                .IsUnique()
+                .HasFilter(@"""Sequential"" IS NOT NULL");
             entity.HasIndex(s => new { s.CompanyId, s.EstablishmentId, s.EmissionPointId, s.CreatedAt });
 
             entity.HasOne(s => s.User)

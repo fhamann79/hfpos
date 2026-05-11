@@ -27,7 +27,23 @@ public class Sale
 
     public SaleDocumentType DocumentType { get; set; }
 
+    public SaleDocumentStatus DocumentStatus { get; set; }
+
     public string? Number { get; set; }
+
+    public string? EstablishmentCodeSnapshot { get; set; }
+
+    public string? EmissionPointCodeSnapshot { get; set; }
+
+    public int? Sequential { get; set; }
+
+    public DateTime? DocumentIssuedAt { get; set; }
+
+    public string? AccessKey { get; set; }
+
+    public string? AuthorizationNumber { get; set; }
+
+    public DateTime? AuthorizedAt { get; set; }
 
     public string? Notes { get; set; }
 
