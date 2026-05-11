@@ -8,6 +8,12 @@ public class SaleListItemDto
 
     public SaleStatus Status { get; set; }
 
+    public string? Number { get; set; }
+
+    public SaleDocumentType DocumentType { get; set; }
+
+    public SaleDocumentStatus DocumentStatus { get; set; }
+
     public decimal Total { get; set; }
 
     public int ItemsCount { get; set; }

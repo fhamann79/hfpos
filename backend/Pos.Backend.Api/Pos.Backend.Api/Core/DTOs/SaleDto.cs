@@ -16,6 +16,18 @@ public class SaleDto
 
     public SaleDocumentType DocumentType { get; set; }
 
+    public SaleDocumentStatus DocumentStatus { get; set; }
+
+    public string? Number { get; set; }
+
+    public string? EstablishmentCodeSnapshot { get; set; }
+
+    public string? EmissionPointCodeSnapshot { get; set; }
+
+    public int? Sequential { get; set; }
+
+    public DateTime? DocumentIssuedAt { get; set; }
+
     public decimal GrossSubtotal { get; set; }
 
     public decimal DiscountAmount { get; set; }
