@@ -28,6 +28,22 @@ public class SaleDto
 
     public DateTime? DocumentIssuedAt { get; set; }
 
+    public string? AccessKey { get; set; }
+
+    public string? AuthorizationNumber { get; set; }
+
+    public DateTime? AuthorizedAt { get; set; }
+
+    public int? SriEnvironment { get; set; }
+
+    public int? SriEmissionType { get; set; }
+
+    public string? SriNumericCode { get; set; }
+
+    public DateTime? SriXmlGeneratedAt { get; set; }
+
+    public bool HasSriXmlDraft { get; set; }
+
     public decimal GrossSubtotal { get; set; }
 
     public decimal DiscountAmount { get; set; }

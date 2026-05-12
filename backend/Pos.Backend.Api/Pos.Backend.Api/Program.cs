@@ -39,6 +39,10 @@ builder.Services
     .AddOptions<JwtOptions>()
     .Bind(builder.Configuration.GetSection("Jwt"));
 
+builder.Services
+    .AddOptions<SriOptions>()
+    .Bind(builder.Configuration.GetSection("Sri"));
+
 var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
 
 if (string.IsNullOrWhiteSpace(jwtOptions.Key))
@@ -76,6 +80,8 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<IOperationalContextAccessor, OperationalContextAccessor>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<ISriAccessKeyService, SriAccessKeyService>();
+builder.Services.AddScoped<ISriXmlDraftService, SriXmlDraftService>();
 builder.Services.AddScoped<ISalesService, SalesService>();
 builder.Services.AddScoped<Pos.Backend.Api.WebApi.Filters.OperationalContextFilter>();
 

@@ -272,6 +272,12 @@ public class PosDbContext : DbContext
             entity.Property(s => s.AuthorizationNumber)
                 .HasMaxLength(50);
 
+            entity.Property(s => s.SriNumericCode)
+                .HasMaxLength(8);
+
+            entity.Property(s => s.SriXmlDraft)
+                .HasColumnType("text");
+
             entity.Property(s => s.Notes)
                 .HasMaxLength(500);
 

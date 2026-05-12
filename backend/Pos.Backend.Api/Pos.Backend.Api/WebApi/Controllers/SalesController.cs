@@ -47,6 +47,24 @@ public class SalesController : ControllerBase
         return Ok(sale);
     }
 
+    [HttpGet("{id:int}/sri/xml-draft")]
+    [Authorize(Policy = AppPermissions.ReportsSalesRead)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult> GetSriXmlDraft(int id)
+    {
+        var xmlDraft = await _salesService.GetSriXmlDraftAsync(id);
+
+        if (xmlDraft is null)
+        {
+            return NotFound(new ApiErrorResponse { Error = "SRI_XML_DRAFT_NOT_FOUND" });
+        }
+
+        return Content(xmlDraft, "application/xml");
+    }
+
     [HttpPost]
     [Authorize(Policy = AppPermissions.PosSalesCreate)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -100,6 +118,11 @@ public class SalesController : ControllerBase
             "INVALID_SALE_PAYMENT_METHOD" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_SALE_DOCUMENT_TYPE" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_DOCUMENT_TYPE" => BadRequest(new ApiErrorResponse { Error = code }),
+            "INVALID_ISSUER_RUC" => BadRequest(new ApiErrorResponse { Error = code }),
+            "INVALID_SRI_DOCUMENT_CONTEXT" => BadRequest(new ApiErrorResponse { Error = code }),
+            "INVALID_SRI_CUSTOMER_IDENTIFICATION" => BadRequest(new ApiErrorResponse { Error = code }),
+            "SRI_ACCESS_KEY_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_XML_DRAFT_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_ERROR" => Conflict(new ApiErrorResponse { Error = code }),
             "DOCUMENT_NUMBER_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
             "SALE_ALREADY_VOIDED" => Conflict(new ApiErrorResponse { Error = code }),
