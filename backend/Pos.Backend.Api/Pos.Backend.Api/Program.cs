@@ -82,6 +82,7 @@ builder.Services.AddScoped<IOperationalContextAccessor, OperationalContextAccess
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<ISriAccessKeyService, SriAccessKeyService>();
 builder.Services.AddScoped<ISriXmlDraftService, SriXmlDraftService>();
+builder.Services.AddScoped<IFiscalSettingsService, FiscalSettingsService>();
 builder.Services.AddScoped<ISalesService, SalesService>();
 builder.Services.AddScoped<Pos.Backend.Api.WebApi.Filters.OperationalContextFilter>();
 
@@ -112,6 +113,8 @@ builder.Services.AddAuthorization(options =>
         AppPermissions.InventoryWrite,
         AppPermissions.PosSalesVoid,
         AppPermissions.ReportsSalesRead,
+        AppPermissions.FiscalSettingsRead,
+        AppPermissions.FiscalSettingsWrite,
         AppPermissions.AdminUsersRead,
         AppPermissions.AdminUsersWrite,
         AppPermissions.AdminRolesRead,

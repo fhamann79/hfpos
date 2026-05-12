@@ -675,16 +675,17 @@ public class SalesService : ISalesService
 
         try
         {
+            var sriSettings = await ResolveSriSettingsAsync(operationalContext.CompanyId);
             var accessKey = _sriAccessKeyService.GenerateInvoiceAccessKey(new SriAccessKeyRequest
             {
                 EmissionDate = sale.DocumentIssuedAt.Value,
                 DocumentCode = "01",
                 IssuerRuc = issuerRuc!,
-                Environment = _sriOptions.Environment,
+                Environment = sriSettings.Environment,
                 EstablishmentCode = sale.EstablishmentCodeSnapshot,
                 EmissionPointCode = sale.EmissionPointCodeSnapshot,
                 Sequential = sale.Sequential.Value,
-                EmissionType = _sriOptions.EmissionType,
+                EmissionType = sriSettings.EmissionType,
                 NumericCodeSeed = string.Join(
                     "-",
                     operationalContext.CompanyId,
@@ -706,8 +707,8 @@ public class SalesService : ISalesService
                 Establishment = fiscalContext.Establishment,
                 Customer = customer,
                 ProductNames = products.ToDictionary(p => p.Key, p => p.Value.Name),
-                Environment = accessKey.Environment,
-                EmissionType = accessKey.EmissionType
+                Environment = sriSettings.Environment,
+                EmissionType = sriSettings.EmissionType
             });
             sale.SriXmlGeneratedAt = DateTime.UtcNow;
         }
@@ -753,6 +754,19 @@ public class SalesService : ISalesService
             item.TaxAmount = RoundMoney(item.TaxableSubtotal * item.VatRate);
             item.LineTotal = item.TaxableSubtotal + item.TaxAmount;
         }
+    }
+
+    private async Task<(int Environment, int EmissionType)> ResolveSriSettingsAsync(int companyId)
+    {
+        var settings = await _context.CompanySriSettings
+            .AsNoTracking()
+            .Where(s => s.CompanyId == companyId)
+            .Select(s => new { s.Environment, s.EmissionType })
+            .FirstOrDefaultAsync();
+
+        return settings is null
+            ? (_sriOptions.Environment, _sriOptions.EmissionType)
+            : (settings.Environment, settings.EmissionType);
     }
 
     private static (decimal VatRate, decimal TaxableSubtotal, decimal TaxAmount, decimal LineTotal) CalculateLineTax(
