@@ -45,6 +45,16 @@ public class Sale
 
     public DateTime? AuthorizedAt { get; set; }
 
+    public int? SriEnvironment { get; set; }
+
+    public int? SriEmissionType { get; set; }
+
+    public string? SriNumericCode { get; set; }
+
+    public string? SriXmlDraft { get; set; }
+
+    public DateTime? SriXmlGeneratedAt { get; set; }
+
     public string? Notes { get; set; }
 
     public decimal GrossSubtotal { get; set; }

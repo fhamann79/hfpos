@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Pos.Backend.Api.Configuration;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Enums;
@@ -15,17 +17,26 @@ public class SalesService : ISalesService
     private readonly ILogger<SalesService> _logger;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly IInventoryService _inventoryService;
+    private readonly ISriAccessKeyService _sriAccessKeyService;
+    private readonly ISriXmlDraftService _sriXmlDraftService;
+    private readonly SriOptions _sriOptions;
 
     public SalesService(
         PosDbContext context,
         ILogger<SalesService> logger,
         IOperationalContextAccessor operationalContextAccessor,
-        IInventoryService inventoryService)
+        IInventoryService inventoryService,
+        ISriAccessKeyService sriAccessKeyService,
+        ISriXmlDraftService sriXmlDraftService,
+        IOptions<SriOptions> sriOptions)
     {
         _context = context;
         _logger = logger;
         _operationalContextAccessor = operationalContextAccessor;
         _inventoryService = inventoryService;
+        _sriAccessKeyService = sriAccessKeyService;
+        _sriXmlDraftService = sriXmlDraftService;
+        _sriOptions = sriOptions.Value;
     }
 
     public async Task<IReadOnlyList<SaleListItemDto>> GetSalesAsync(DateTime? from, DateTime? to, SaleStatus? status, string? search, int? userId)
@@ -115,6 +126,14 @@ public class SalesService : ISalesService
                 EmissionPointCodeSnapshot = s.EmissionPointCodeSnapshot,
                 Sequential = s.Sequential,
                 DocumentIssuedAt = s.DocumentIssuedAt,
+                AccessKey = s.AccessKey,
+                AuthorizationNumber = s.AuthorizationNumber,
+                AuthorizedAt = s.AuthorizedAt,
+                SriEnvironment = s.SriEnvironment,
+                SriEmissionType = s.SriEmissionType,
+                SriNumericCode = s.SriNumericCode,
+                SriXmlGeneratedAt = s.SriXmlGeneratedAt,
+                HasSriXmlDraft = s.SriXmlDraft != null,
                 GrossSubtotal = s.GrossSubtotal,
                 DiscountAmount = s.DiscountAmount,
                 Subtotal = s.Subtotal,
@@ -152,6 +171,22 @@ public class SalesService : ISalesService
                     })
                     .ToList()
             })
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<string?> GetSriXmlDraftAsync(int id)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+
+        return await _context.Sales
+            .AsNoTracking()
+            .Where(s => s.Id == id
+                && s.CompanyId == operationalContext.CompanyId
+                && s.EstablishmentId == operationalContext.EstablishmentId
+                && s.EmissionPointId == operationalContext.EmissionPointId
+                && s.DocumentType == SaleDocumentType.Invoice
+                && s.SriXmlDraft != null)
+            .Select(s => s.SriXmlDraft)
             .FirstOrDefaultAsync();
     }
 
@@ -284,6 +319,11 @@ public class SalesService : ISalesService
             await using var transaction = await _context.Database.BeginTransactionAsync();
 
             await AssignDocumentNumberAsync(sale, operationalContext, documentType);
+
+            if (documentType == SaleDocumentType.Invoice)
+            {
+                await AssignSriInvoiceDraftAsync(sale, operationalContext, customer, products);
+            }
 
             _context.Sales.Add(sale);
             await _context.SaveChangesAsync();
@@ -581,6 +621,114 @@ public class SalesService : ISalesService
         }
     }
 
+    private async Task AssignSriInvoiceDraftAsync(
+        Sale sale,
+        OperationalContext operationalContext,
+        Customer? customer,
+        IReadOnlyDictionary<int, Product> products)
+    {
+        if (sale.DocumentType != SaleDocumentType.Invoice)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(sale.Number)
+            || string.IsNullOrWhiteSpace(sale.EstablishmentCodeSnapshot)
+            || string.IsNullOrWhiteSpace(sale.EmissionPointCodeSnapshot)
+            || sale.Sequential is null
+            || sale.DocumentIssuedAt is null
+            || !IsNumeric(sale.EstablishmentCodeSnapshot, 3)
+            || !IsNumeric(sale.EmissionPointCodeSnapshot, 3))
+        {
+            throw new InvalidOperationException("INVALID_SRI_DOCUMENT_CONTEXT");
+        }
+
+        if (customer is not null && string.IsNullOrWhiteSpace(customer.Identification))
+        {
+            throw new InvalidOperationException("INVALID_SRI_CUSTOMER_IDENTIFICATION");
+        }
+
+        var fiscalContext = await _context.Establishments
+            .AsNoTracking()
+            .Where(e =>
+                e.Id == operationalContext.EstablishmentId
+                && e.CompanyId == operationalContext.CompanyId
+                && e.IsActive)
+            .Select(e => new
+            {
+                Company = e.Company,
+                Establishment = e
+            })
+            .FirstOrDefaultAsync();
+
+        if (fiscalContext is null)
+        {
+            throw new InvalidOperationException("INVALID_SRI_DOCUMENT_CONTEXT");
+        }
+
+        var issuerRuc = fiscalContext.Company.Ruc?.Trim();
+
+        if (!IsNumeric(issuerRuc, 13))
+        {
+            throw new InvalidOperationException("INVALID_ISSUER_RUC");
+        }
+
+        try
+        {
+            var accessKey = _sriAccessKeyService.GenerateInvoiceAccessKey(new SriAccessKeyRequest
+            {
+                EmissionDate = sale.DocumentIssuedAt.Value,
+                DocumentCode = "01",
+                IssuerRuc = issuerRuc!,
+                Environment = _sriOptions.Environment,
+                EstablishmentCode = sale.EstablishmentCodeSnapshot,
+                EmissionPointCode = sale.EmissionPointCodeSnapshot,
+                Sequential = sale.Sequential.Value,
+                EmissionType = _sriOptions.EmissionType,
+                NumericCodeSeed = string.Join(
+                    "-",
+                    operationalContext.CompanyId,
+                    operationalContext.EstablishmentId,
+                    operationalContext.EmissionPointId,
+                    (int)sale.DocumentType,
+                    sale.Sequential.Value)
+            });
+
+            sale.AccessKey = accessKey.AccessKey;
+            sale.SriEnvironment = accessKey.Environment;
+            sale.SriEmissionType = accessKey.EmissionType;
+            sale.SriNumericCode = accessKey.NumericCode;
+
+            sale.SriXmlDraft = _sriXmlDraftService.GenerateInvoiceXmlDraft(new SriXmlDraftRequest
+            {
+                Sale = sale,
+                Company = fiscalContext.Company,
+                Establishment = fiscalContext.Establishment,
+                Customer = customer,
+                ProductNames = products.ToDictionary(p => p.Key, p => p.Value.Name),
+                Environment = accessKey.Environment,
+                EmissionType = accessKey.EmissionType
+            });
+            sale.SriXmlGeneratedAt = DateTime.UtcNow;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "SRI invoice draft generation failed. CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId} Sequential {Sequential}",
+                operationalContext.CompanyId,
+                operationalContext.EstablishmentId,
+                operationalContext.EmissionPointId,
+                sale.Sequential);
+
+            throw new InvalidOperationException("SRI_XML_DRAFT_GENERATION_FAILED", ex);
+        }
+    }
+
     private static void ApplyGlobalDiscountToLines(
         ICollection<SaleItem> items,
         decimal lineNetSubtotal,
@@ -633,4 +781,11 @@ public class SalesService : ISalesService
 
     private static decimal RoundMoney(decimal value)
         => Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    private static bool IsNumeric(string? value, int expectedLength)
+    {
+        return value is not null
+            && value.Length == expectedLength
+            && value.All(char.IsDigit);
+    }
 }
