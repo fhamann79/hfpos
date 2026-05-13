@@ -1,0 +1,510 @@
+<div class="fiscal-page">
+  <header class="fiscal-hero">
+    <div>
+      <p class="eyebrow">Configuración Fiscal y Empresarial</p>
+      <h2>Configuración Fiscal</h2>
+      <p>
+        Configura los datos fiscales de la empresa, ambiente SRI y secuenciales de documentos.
+      </p>
+    </div>
+    <div class="fiscal-hero__badge">
+      <i class="pi pi-shield"></i>
+      <span>Acceso administrativo</span>
+    </div>
+  </header>
+
+  @if (canRead()) {
+    <p-message
+      severity="info"
+      text="Esta sección prepara la operación fiscal. La firma electrónica, autorización SRI y RIDE se implementarán en una etapa posterior."
+    ></p-message>
+
+    <p-tabs value="company">
+      <p-tablist>
+        <p-tab value="company">Empresa</p-tab>
+        <p-tab value="sri">SRI</p-tab>
+        <p-tab value="sequences">Secuenciales</p-tab>
+      </p-tablist>
+
+      <p-tabpanels>
+        <p-tabpanel value="company">
+          <section class="settings-card">
+            <div class="section-heading">
+              <div>
+                <h3>Identidad fiscal de la empresa</h3>
+                <p>Estos datos serán usados más adelante en XML SRI, RIDE y documentos comerciales.</p>
+              </div>
+              @if (!canWrite()) {
+                <p-tag severity="secondary" value="Solo lectura"></p-tag>
+              }
+            </div>
+
+            @if (companyError()) {
+              <p-message severity="error" [text]="companyError()"></p-message>
+            }
+
+            <form class="fiscal-form" [formGroup]="companyForm" (ngSubmit)="saveCompanySettings()">
+              <div class="form-section">
+                <div class="form-section__title">
+                  <i class="pi pi-building"></i>
+                  <span>Identificación</span>
+                </div>
+
+                <div class="form-grid">
+                  <label class="field field-wide">
+                    <span>Razón social</span>
+                    <input pInputText type="text" formControlName="name" placeholder="Razón social de la empresa" />
+                    @if (companyForm.controls.name.touched && companyForm.controls.name.invalid) {
+                      <small class="p-error">La razón social es obligatoria.</small>
+                    }
+                  </label>
+
+                  <label class="field">
+                    <span>Nombre comercial</span>
+                    <input pInputText type="text" formControlName="tradeName" placeholder="Nombre comercial" />
+                  </label>
+
+                  <label class="field">
+                    <span>RUC</span>
+                    <input pInputText type="text" formControlName="ruc" placeholder="13 dígitos" maxlength="13" />
+                    @if (companyForm.controls.ruc.touched && companyForm.controls.ruc.invalid) {
+                      <small class="p-error">El RUC debe tener 13 dígitos numéricos.</small>
+                    }
+                  </label>
+
+                  <label class="field field-wide">
+                    <span>Dirección matriz</span>
+                    <input pInputText type="text" formControlName="matrixAddress" placeholder="Dirección matriz para documentos fiscales" />
+                  </label>
+                </div>
+              </div>
+
+              <div class="form-section">
+                <div class="form-section__title">
+                  <i class="pi pi-address-book"></i>
+                  <span>Contacto y régimen</span>
+                </div>
+
+                <div class="form-grid">
+                  <label class="field">
+                    <span>Correo</span>
+                    <input pInputText type="email" formControlName="email" placeholder="correo@empresa.com" />
+                    @if (companyForm.controls.email.touched && companyForm.controls.email.invalid) {
+                      <small class="p-error">Ingresa un correo válido.</small>
+                    }
+                  </label>
+
+                  <label class="field">
+                    <span>Teléfono</span>
+                    <input pInputText type="text" formControlName="phone" placeholder="Teléfono comercial" />
+                  </label>
+
+                  <label class="field">
+                    <span>Número contribuyente especial</span>
+                    <input pInputText type="text" formControlName="specialTaxpayerNumber" placeholder="Opcional" />
+                  </label>
+
+                  <label class="field">
+                    <span>Régimen tributario</span>
+                    <input pInputText type="text" formControlName="taxpayerRegime" placeholder="GENERAL, RIMPE, etc." />
+                  </label>
+
+                  <div class="switch-field field-wide">
+                    <div>
+                      <strong>Obligado a llevar contabilidad</strong>
+                      <span>Marca esta opción si aplica para la empresa emisora.</span>
+                    </div>
+                    <p-toggleswitch formControlName="isAccountingRequired"></p-toggleswitch>
+                  </div>
+                </div>
+              </div>
+
+              @if (canWrite()) {
+                <footer class="section-actions">
+                  <p-button
+                    type="button"
+                    label="Recargar"
+                    icon="pi pi-refresh"
+                    severity="secondary"
+                    [outlined]="true"
+                    [disabled]="companyLoading() || companySaving()"
+                    (onClick)="loadCompanySettings()"
+                  ></p-button>
+                  <p-button
+                    type="submit"
+                    label="Guardar datos fiscales"
+                    icon="pi pi-check"
+                    [loading]="companySaving()"
+                    [disabled]="companyLoading()"
+                  ></p-button>
+                </footer>
+              }
+            </form>
+          </section>
+        </p-tabpanel>
+
+        <p-tabpanel value="sri">
+          <section class="settings-card">
+            <div class="section-heading">
+              <div>
+                <h3>Ambiente y emisión SRI</h3>
+                <p>Define el ambiente fiscal por compañía sin activar todavía firma ni autorización electrónica.</p>
+              </div>
+              <p-tag
+                [severity]="sriForm.controls.environment.value === 2 ? 'warn' : 'info'"
+                [value]="environmentLabel(sriForm.controls.environment.value)"
+              ></p-tag>
+            </div>
+
+            @if (sriError()) {
+              <p-message severity="error" [text]="sriError()"></p-message>
+            }
+
+            @if (isProductionEnvironment()) {
+              <p-message
+                severity="warn"
+                text="Ambiente Producción seleccionado. Aún no se enviarán comprobantes al SRI hasta implementar firma y autorización."
+              ></p-message>
+            }
+
+            <form class="fiscal-form sri-layout" [formGroup]="sriForm" (ngSubmit)="saveSriSettings()">
+              <div class="form-grid">
+                <label class="field">
+                  <span>Ambiente SRI</span>
+                  <p-select
+                    [options]="environmentOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    formControlName="environment"
+                  ></p-select>
+                </label>
+
+                <label class="field">
+                  <span>Tipo de emisión</span>
+                  <p-select
+                    [options]="emissionTypeOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    formControlName="emissionType"
+                  ></p-select>
+                </label>
+
+                <div class="switch-field field-wide">
+                  <div>
+                    <strong>Habilitar SRI</strong>
+                    <span>Prepara la compañía para emisión electrónica futura. No realiza autorización real aún.</span>
+                  </div>
+                  <p-toggleswitch formControlName="isEnabled"></p-toggleswitch>
+                </div>
+              </div>
+
+              <div class="certificate-card">
+                <div>
+                  <span>Certificado digital</span>
+                  <strong>{{ sriSettings()?.certificateConfigured ? 'Configurado' : 'Pendiente' }}</strong>
+                  <small>La carga de certificado .p12 será implementada en una etapa posterior.</small>
+                </div>
+                <p-tag
+                  [severity]="sriSettings()?.certificateConfigured ? 'success' : 'secondary'"
+                  [value]="sriSettings()?.certificateConfigured ? 'Activo' : 'No configurado'"
+                ></p-tag>
+                <div>
+                  <span>Vencimiento certificado</span>
+                  <strong>{{ sriSettings()?.certificateExpiresAt ? (sriSettings()?.certificateExpiresAt | date: 'mediumDate') : '-' }}</strong>
+                </div>
+              </div>
+
+              @if (canWrite()) {
+                <footer class="section-actions">
+                  <p-button
+                    type="button"
+                    label="Recargar"
+                    icon="pi pi-refresh"
+                    severity="secondary"
+                    [outlined]="true"
+                    [disabled]="sriLoading() || sriSaving()"
+                    (onClick)="loadSriSettings()"
+                  ></p-button>
+                  <p-button
+                    type="submit"
+                    label="Guardar configuración SRI"
+                    icon="pi pi-check"
+                    [loading]="sriSaving()"
+                    [disabled]="sriLoading()"
+                  ></p-button>
+                </footer>
+              }
+            </form>
+          </section>
+        </p-tabpanel>
+
+        <p-tabpanel value="sequences">
+          <section class="settings-card">
+            <div class="section-heading">
+              <div>
+                <h3>Secuenciales de documentos</h3>
+                <p>Administra el próximo número a emitir por establecimiento, punto de emisión y tipo de documento.</p>
+              </div>
+              <div class="heading-actions">
+                <p-button
+                  label="Recargar"
+                  icon="pi pi-refresh"
+                  severity="secondary"
+                  [outlined]="true"
+                  [disabled]="sequencesLoading()"
+                  (onClick)="loadSequences()"
+                ></p-button>
+                @if (canWrite()) {
+                  <p-button label="Inicializar secuencia" icon="pi pi-plus" (onClick)="openCreateSequenceDialog()"></p-button>
+                }
+              </div>
+            </div>
+
+            <p-message
+              severity="warn"
+              text="Cambiar secuenciales es una acción sensible: el próximo número queda auditado y no puede bajarse por debajo de documentos ya emitidos."
+            ></p-message>
+
+            @if (sequencesError()) {
+              <p-message severity="error" [text]="sequencesError()"></p-message>
+            }
+
+            <p-table
+              [value]="sequences()"
+              [loading]="sequencesLoading()"
+              [paginator]="true"
+              [rows]="10"
+              [rowsPerPageOptions]="[10, 25, 50]"
+              responsiveLayout="scroll"
+              [tableStyle]="{ 'min-width': '82rem' }"
+            >
+              <ng-template pTemplate="header">
+                <tr>
+                  <th>Establecimiento</th>
+                  <th>Punto de emisión</th>
+                  <th>Tipo documento</th>
+                  <th>Número actual</th>
+                  <th>Próximo número</th>
+                  <th>Máximo usado</th>
+                  <th>Actualizado</th>
+                  <th>Acciones</th>
+                </tr>
+              </ng-template>
+
+              <ng-template pTemplate="body" let-sequence>
+                <tr>
+                  <td>
+                    <strong>{{ sequence.establishmentCode }}</strong>
+                    <span class="muted-line">{{ sequence.establishmentName }}</span>
+                  </td>
+                  <td>
+                    <strong>{{ sequence.emissionPointCode }}</strong>
+                    <span class="muted-line">{{ sequence.emissionPointName }}</span>
+                  </td>
+                  <td>
+                    <p-tag
+                      [severity]="sequence.documentType === 1 ? 'info' : 'secondary'"
+                      [value]="documentTypeLabel(sequence.documentType)"
+                    ></p-tag>
+                  </td>
+                  <td class="number-cell">{{ formatSequential(sequence.currentNumber) }}</td>
+                  <td class="number-cell next">{{ formatSequential(sequence.nextNumber) }}</td>
+                  <td class="number-cell">{{ formatSequential(sequence.maxUsedSequential) }}</td>
+                  <td>{{ sequence.updatedAt | date: 'medium' }}</td>
+                  <td>
+                    <div class="row-actions">
+                      @if (canWrite()) {
+                        <p-button
+                          label="Ajustar"
+                          icon="pi pi-pencil"
+                          [text]="true"
+                          (onClick)="openUpdateSequenceDialog(sequence)"
+                        ></p-button>
+                      }
+                      <p-button
+                        label="Auditoría"
+                        icon="pi pi-history"
+                        severity="secondary"
+                        [text]="true"
+                        (onClick)="openAuditDialog(sequence)"
+                      ></p-button>
+                    </div>
+                  </td>
+                </tr>
+              </ng-template>
+
+              <ng-template pTemplate="emptymessage">
+                <tr>
+                  <td colspan="8">
+                    <div class="empty-state">
+                      <i class="pi pi-receipt"></i>
+                      <strong>No hay secuenciales configurados todavía.</strong>
+                      <span>Las ventas pueden crear secuencias automáticamente, o puedes inicializar una si tienes permisos.</span>
+                      @if (canWrite()) {
+                        <p-button label="Inicializar secuencia" icon="pi pi-plus" (onClick)="openCreateSequenceDialog()"></p-button>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              </ng-template>
+            </p-table>
+          </section>
+        </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
+  } @else {
+    <p-message severity="warn" text="No tienes permisos para acceder a Configuración Fiscal."></p-message>
+  }
+</div>
+
+<p-dialog
+  [header]="sequenceDialogMode() === 'create' ? 'Inicializar secuencia' : 'Ajustar secuencial'"
+  [visible]="sequenceDialogVisible"
+  [modal]="true"
+  [draggable]="false"
+  [style]="{ width: '42rem', maxWidth: '95vw' }"
+  (visibleChange)="onSequenceDialogVisibleChange($event)"
+>
+  <form class="sequence-form" [formGroup]="sequenceForm" (ngSubmit)="confirmSaveSequence()">
+    <p-message
+      severity="info"
+      text="El número ingresado será el próximo documento a emitir. El sistema guardará internamente el número actual como próximo número menos uno."
+    ></p-message>
+
+    <p-message severity="secondary" text="Ejemplo: si ingresas 458, la próxima factura será 000000458."></p-message>
+
+    <div class="form-grid">
+      <label class="field">
+        <span>EstablishmentId</span>
+        <p-inputnumber formControlName="establishmentId" [min]="1" [useGrouping]="false"></p-inputnumber>
+        @if (sequenceForm.controls.establishmentId.touched && sequenceForm.controls.establishmentId.invalid) {
+          <small class="p-error">Ingresa un establecimiento válido.</small>
+        }
+      </label>
+
+      <label class="field">
+        <span>EmissionPointId</span>
+        <p-inputnumber formControlName="emissionPointId" [min]="1" [useGrouping]="false"></p-inputnumber>
+        @if (sequenceForm.controls.emissionPointId.touched && sequenceForm.controls.emissionPointId.invalid) {
+          <small class="p-error">Ingresa un punto de emisión válido.</small>
+        }
+      </label>
+
+      <label class="field">
+        <span>Tipo documento</span>
+        <p-select
+          [options]="documentTypeOptions"
+          optionLabel="label"
+          optionValue="value"
+          formControlName="documentType"
+        ></p-select>
+      </label>
+
+      <label class="field">
+        <span>Próximo número</span>
+        <p-inputnumber formControlName="nextNumber" [min]="1" [useGrouping]="false"></p-inputnumber>
+        @if (sequenceForm.controls.nextNumber.touched && sequenceForm.controls.nextNumber.invalid) {
+          <small class="p-error">El próximo número debe ser mayor o igual a 1.</small>
+        }
+      </label>
+
+      <label class="field field-wide">
+        <span>Motivo</span>
+        <textarea
+          pTextarea
+          rows="4"
+          formControlName="reason"
+          placeholder="Ej. Continuar secuencial existente previo al uso del sistema"
+        ></textarea>
+        @if (sequenceForm.controls.reason.touched && sequenceForm.controls.reason.invalid) {
+          <small class="p-error">El motivo es obligatorio y no puede superar 500 caracteres.</small>
+        }
+      </label>
+    </div>
+
+    <footer class="dialog-actions">
+      <p-button
+        type="button"
+        label="Cancelar"
+        severity="secondary"
+        [outlined]="true"
+        (onClick)="onSequenceDialogVisibleChange(false)"
+      ></p-button>
+      <p-button type="submit" label="Guardar secuencial" icon="pi pi-check" [loading]="sequenceSaving()"></p-button>
+    </footer>
+  </form>
+</p-dialog>
+
+<p-dialog
+  header="Auditoría de secuencia"
+  [visible]="auditDialogVisible"
+  [modal]="true"
+  [draggable]="false"
+  [style]="{ width: '64rem', maxWidth: '96vw' }"
+  (visibleChange)="onAuditDialogVisibleChange($event)"
+>
+  @if (auditSequence(); as sequence) {
+    <div class="audit-context">
+      <div>
+        <small>Documento</small>
+        <strong>{{ documentTypeLabel(sequence.documentType) }}</strong>
+      </div>
+      <div>
+        <small>Serie</small>
+        <strong>{{ sequence.establishmentCode }}-{{ sequence.emissionPointCode }}</strong>
+      </div>
+      <div>
+        <small>Próximo actual</small>
+        <strong>{{ formatSequential(sequence.nextNumber) }}</strong>
+      </div>
+    </div>
+  }
+
+  @if (auditsError()) {
+    <p-message severity="error" [text]="auditsError()"></p-message>
+  }
+
+  <p-table
+    [value]="audits()"
+    [loading]="auditsLoading()"
+    [paginator]="true"
+    [rows]="8"
+    responsiveLayout="scroll"
+    [tableStyle]="{ 'min-width': '58rem' }"
+  >
+    <ng-template pTemplate="header">
+      <tr>
+        <th>Fecha</th>
+        <th>Usuario</th>
+        <th>Número anterior</th>
+        <th>Nuevo número</th>
+        <th>Próximo anterior</th>
+        <th>Próximo nuevo</th>
+        <th>Motivo</th>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="body" let-audit>
+      <tr>
+        <td>{{ audit.createdAt | date: 'medium' }}</td>
+        <td>userId {{ audit.userId }}</td>
+        <td>{{ audit.previousCurrentNumber === null ? '-' : formatSequential(audit.previousCurrentNumber) }}</td>
+        <td>{{ formatSequential(audit.newCurrentNumber) }}</td>
+        <td>{{ audit.previousNextNumber === null ? '-' : formatSequential(audit.previousNextNumber) }}</td>
+        <td>{{ formatSequential(audit.newNextNumber) }}</td>
+        <td>{{ audit.reason }}</td>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="emptymessage">
+      <tr>
+        <td colspan="7">
+          <div class="empty-state compact">No hay auditoría registrada para esta secuencia.</div>
+        </td>
+      </tr>
+    </ng-template>
+  </p-table>
+</p-dialog>
+
+<p-toast></p-toast>
+<p-confirmdialog></p-confirmdialog>

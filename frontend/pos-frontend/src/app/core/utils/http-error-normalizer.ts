@@ -35,6 +35,16 @@ const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
   INVALID_PRODUCT_VAT_CATEGORY: 'La categoría de IVA del producto no es válida.',
   CUSTOMER_NAME_REQUIRED: 'El nombre del cliente es obligatorio.',
   CUSTOMER_NOT_FOUND: 'El cliente no existe o no pertenece a esta compañía.',
+  INVALID_COMPANY_RUC: 'El RUC debe tener 13 dígitos numéricos.',
+  INVALID_COMPANY_FISCAL_SETTINGS: 'Los datos fiscales de la empresa no son válidos.',
+  INVALID_SRI_ENVIRONMENT: 'El ambiente SRI seleccionado no es válido.',
+  INVALID_SRI_EMISSION_TYPE: 'El tipo de emisión SRI no es válido.',
+  INVALID_DOCUMENT_SEQUENCE: 'El secuencial ingresado no es válido.',
+  DOCUMENT_SEQUENCE_NOT_FOUND: 'La secuencia documental no existe.',
+  DOCUMENT_SEQUENCE_ALREADY_EXISTS: 'Ya existe una secuencia para ese establecimiento, punto de emisión y tipo de documento.',
+  DOCUMENT_SEQUENCE_BELOW_USED_NUMBER: 'No puedes bajar el secuencial por debajo de documentos ya emitidos o del valor actual.',
+  DOCUMENT_SEQUENCE_REASON_REQUIRED: 'Debes ingresar un motivo para cambiar el secuencial.',
+  FISCAL_SETTINGS_OPERATION_FAILED: 'No se pudo completar la operación de configuración fiscal.',
 };
 
 const STATUS_ERROR_MESSAGES: Record<number, string> = {

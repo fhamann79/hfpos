@@ -3,6 +3,7 @@ import { AuthGuard } from './core/guards/auth.guard';
 import { administrationAccessGuard } from './core/guards/administration-access.guard';
 import { catalogAccessGuard } from './core/guards/catalog-access.guard';
 import { inventoryAccessGuard } from './core/guards/inventory-access.guard';
+import { fiscalSettingsAccessGuard } from './core/guards/fiscal-settings-access.guard';
 import { operationalStructureAccessGuard } from './core/guards/operational-structure-access.guard';
 import { posAccessGuard } from './core/guards/pos-access.guard';
 
@@ -34,6 +35,12 @@ export const routes: Routes = [
     canActivate: [AuthGuard, administrationAccessGuard],
     loadComponent: () =>
       import('./features/administration/pages/administration-page/administration-page').then((m) => m.AdministrationPage),
+  },
+  {
+    path: 'fiscal-settings',
+    canActivate: [AuthGuard, fiscalSettingsAccessGuard],
+    loadComponent: () =>
+      import('./features/fiscal-settings/pages/fiscal-settings-page/fiscal-settings-page').then((m) => m.FiscalSettingsPage),
   },
   {
     path: 'pos',
