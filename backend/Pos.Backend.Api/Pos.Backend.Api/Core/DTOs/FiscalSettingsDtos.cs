@@ -41,6 +41,25 @@ public class CompanySriSettingsDto
     public DateTime? UpdatedAt { get; set; }
 }
 
+public class CompanySriCertificateDto
+{
+    public int CompanyId { get; set; }
+    public bool CertificateConfigured { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string Thumbprint { get; set; } = string.Empty;
+    public string Subject { get; set; } = string.Empty;
+    public string Issuer { get; set; } = string.Empty;
+    public string SerialNumber { get; set; } = string.Empty;
+    public DateTime NotBefore { get; set; }
+    public DateTime NotAfter { get; set; }
+    public bool HasPrivateKey { get; set; }
+    public DateTime UploadedAt { get; set; }
+    public int UploadedByUserId { get; set; }
+    public bool IsActive { get; set; }
+    public int DaysUntilExpiration { get; set; }
+    public bool IsExpired { get; set; }
+}
+
 public class UpdateCompanySriSettingsDto
 {
     public int Environment { get; set; }

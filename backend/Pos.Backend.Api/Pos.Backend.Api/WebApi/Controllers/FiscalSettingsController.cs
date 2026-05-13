@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Enums;
@@ -15,11 +16,17 @@ namespace Pos.Backend.Api.WebApi.Controllers;
 [RequireOperationalContext]
 public class FiscalSettingsController : ControllerBase
 {
-    private readonly IFiscalSettingsService _fiscalSettingsService;
+    private const int MaxCertificateUploadRequestBytes = 3 * 1024 * 1024;
 
-    public FiscalSettingsController(IFiscalSettingsService fiscalSettingsService)
+    private readonly IFiscalSettingsService _fiscalSettingsService;
+    private readonly ISriCertificateService _sriCertificateService;
+
+    public FiscalSettingsController(
+        IFiscalSettingsService fiscalSettingsService,
+        ISriCertificateService sriCertificateService)
     {
         _fiscalSettingsService = fiscalSettingsService;
+        _sriCertificateService = sriCertificateService;
     }
 
     [HttpGet("company")]
@@ -71,6 +78,53 @@ public class FiscalSettingsController : ControllerBase
         try
         {
             return Ok(await _fiscalSettingsService.UpdateCompanySriSettingsAsync(dto));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpGet("sri/certificate")]
+    [Authorize(Policy = AppPermissions.FiscalSettingsRead)]
+    public async Task<ActionResult<CompanySriCertificateDto>> GetSriCertificate()
+    {
+        try
+        {
+            return Ok(await _sriCertificateService.GetCurrentCertificateAsync());
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpPost("sri/certificate")]
+    [Authorize(Policy = AppPermissions.FiscalSettingsWrite)]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(MaxCertificateUploadRequestBytes)]
+    public async Task<ActionResult<CompanySriCertificateDto>> UploadSriCertificate(
+        [FromForm] IFormFile? file,
+        [FromForm] string? password)
+    {
+        try
+        {
+            return Ok(await _sriCertificateService.UploadCertificateAsync(file, password));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpDelete("sri/certificate")]
+    [Authorize(Policy = AppPermissions.FiscalSettingsWrite)]
+    public async Task<IActionResult> DeleteSriCertificate()
+    {
+        try
+        {
+            await _sriCertificateService.DeactivateCertificateAsync();
+            return NoContent();
         }
         catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
         {
@@ -151,14 +205,25 @@ public class FiscalSettingsController : ControllerBase
         {
             "COMPANY_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
+            "CERTIFICATE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "INVALID_COMPANY_RUC" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_COMPANY_FISCAL_SETTINGS" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_SRI_ENVIRONMENT" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_SRI_EMISSION_TYPE" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_DOCUMENT_SEQUENCE" => BadRequest(new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_REASON_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CERTIFICATE_FILE_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CERTIFICATE_PASSWORD_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "INVALID_CERTIFICATE_FILE" => BadRequest(new ApiErrorResponse { Error = code }),
+            "INVALID_CERTIFICATE_PASSWORD" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CERTIFICATE_WITHOUT_PRIVATE_KEY" => BadRequest(new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_ALREADY_EXISTS" => Conflict(new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_BELOW_USED_NUMBER" => Conflict(new ApiErrorResponse { Error = code }),
+            "CERTIFICATE_EXPIRED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CERTIFICATE_NOT_VALID_YET" => Conflict(new ApiErrorResponse { Error = code }),
+            "CERTIFICATE_PROTECTION_FAILED" => StatusCode(
+                StatusCodes.Status500InternalServerError,
+                new ApiErrorResponse { Error = code }),
             _ => BadRequest(new ApiErrorResponse { Error = "FISCAL_SETTINGS_OPERATION_FAILED" })
         };
     }
