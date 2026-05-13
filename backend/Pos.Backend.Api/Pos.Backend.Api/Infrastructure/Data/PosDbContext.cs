@@ -16,6 +16,7 @@ public class PosDbContext : DbContext
     public DbSet<Permission> Permissions { get; set; }
     public DbSet<RolePermission> RolePermissions { get; set; }
     public DbSet<Company> Companies { get; set; }
+    public DbSet<CompanySriSettings> CompanySriSettings { get; set; }
     public DbSet<Establishment> Establishments { get; set; }
     public DbSet<EmissionPoint> EmissionPoints { get; set; }
     public DbSet<Category> Categories { get; set; }
@@ -24,6 +25,7 @@ public class PosDbContext : DbContext
     public DbSet<ProductStock> ProductStocks { get; set; }
     public DbSet<InventoryMovement> InventoryMovements { get; set; }
     public DbSet<DocumentSequence> DocumentSequences { get; set; }
+    public DbSet<DocumentSequenceAudit> DocumentSequenceAudits { get; set; }
     public DbSet<Sale> Sales { get; set; }
     public DbSet<SaleItem> SaleItems { get; set; }
 
@@ -46,6 +48,41 @@ public class PosDbContext : DbContext
             entity.HasOne(rp => rp.Permission)
                 .WithMany(p => p.RolePermissions)
                 .HasForeignKey(rp => rp.PermissionId);
+        });
+
+        modelBuilder.Entity<Company>(entity =>
+        {
+            entity.Property(c => c.TradeName)
+                .HasMaxLength(150);
+
+            entity.Property(c => c.MatrixAddress)
+                .HasMaxLength(250);
+
+            entity.Property(c => c.Email)
+                .HasMaxLength(150);
+
+            entity.Property(c => c.Phone)
+                .HasMaxLength(30);
+
+            entity.Property(c => c.SpecialTaxpayerNumber)
+                .HasMaxLength(50);
+
+            entity.Property(c => c.TaxpayerRegime)
+                .HasMaxLength(80);
+        });
+
+        modelBuilder.Entity<CompanySriSettings>(entity =>
+        {
+            entity.HasIndex(s => s.CompanyId)
+                .IsUnique();
+
+            entity.HasOne(s => s.Company)
+                .WithMany()
+                .HasForeignKey(s => s.CompanyId);
+
+            entity.HasOne(s => s.LastUpdatedByUser)
+                .WithMany()
+                .HasForeignKey(s => s.LastUpdatedByUserId);
         });
 
 
@@ -209,6 +246,39 @@ public class PosDbContext : DbContext
             entity.HasOne(ds => ds.EmissionPoint)
                 .WithMany()
                 .HasForeignKey(ds => ds.EmissionPointId);
+        });
+
+        modelBuilder.Entity<DocumentSequenceAudit>(entity =>
+        {
+            entity.Property(a => a.DocumentType)
+                .HasConversion<int>();
+
+            entity.Property(a => a.Reason)
+                .IsRequired()
+                .HasMaxLength(500);
+
+            entity.HasIndex(a => new { a.CompanyId, a.CreatedAt });
+            entity.HasIndex(a => new { a.DocumentSequenceId, a.CreatedAt });
+
+            entity.HasOne(a => a.DocumentSequence)
+                .WithMany()
+                .HasForeignKey(a => a.DocumentSequenceId);
+
+            entity.HasOne(a => a.Company)
+                .WithMany()
+                .HasForeignKey(a => a.CompanyId);
+
+            entity.HasOne(a => a.Establishment)
+                .WithMany()
+                .HasForeignKey(a => a.EstablishmentId);
+
+            entity.HasOne(a => a.EmissionPoint)
+                .WithMany()
+                .HasForeignKey(a => a.EmissionPointId);
+
+            entity.HasOne(a => a.User)
+                .WithMany()
+                .HasForeignKey(a => a.UserId);
         });
 
         modelBuilder.Entity<Sale>(entity =>

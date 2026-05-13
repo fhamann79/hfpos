@@ -74,6 +74,8 @@ public static class SeedData
             new { Code = AppPermissions.InventoryWrite, Description = "Escribir inventario" },
             new { Code = AppPermissions.PosSalesVoid, Description = "Anular ventas POS" },
             new { Code = AppPermissions.ReportsSalesRead, Description = "Leer reportes de ventas" },
+            new { Code = AppPermissions.FiscalSettingsRead, Description = "Leer configuración fiscal y empresarial" },
+            new { Code = AppPermissions.FiscalSettingsWrite, Description = "Escribir configuración fiscal y empresarial" },
             new { Code = AppPermissions.AdminUsersRead, Description = "Leer administración de usuarios" },
             new { Code = AppPermissions.AdminUsersWrite, Description = "Escribir administración de usuarios" },
             new { Code = AppPermissions.AdminRolesRead, Description = "Leer administración de roles" },
@@ -140,6 +142,8 @@ public static class SeedData
                     AppPermissions.InventoryRead,
                     AppPermissions.InventoryWrite,
                     AppPermissions.ReportsSalesRead,
+                    AppPermissions.FiscalSettingsRead,
+                    AppPermissions.FiscalSettingsWrite,
                     AppPermissions.AdminUsersRead,
                     AppPermissions.AdminUsersWrite,
                     AppPermissions.AdminRolesRead,
@@ -162,6 +166,7 @@ public static class SeedData
                     AppPermissions.InventoryRead,
                     AppPermissions.InventoryWrite,
                     AppPermissions.ReportsSalesRead,
+                    AppPermissions.FiscalSettingsRead,
                     AppPermissions.AdminUsersRead,
                     AppPermissions.AdminUsersWrite,
                     AppPermissions.AdminRolesRead,
@@ -228,11 +233,32 @@ public static class SeedData
             {
                 Name = companyName,
                 Ruc = companyRuc,
+                TradeName = "HF POS Demo",
+                MatrixAddress = "Direccion matriz demo",
+                Email = "demo@example.com",
+                Phone = "0999999999",
+                IsAccountingRequired = false,
+                TaxpayerRegime = "GENERAL",
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
             };
             context.Companies.Add(company);
             await context.SaveChangesAsync();
+        }
+        else
+        {
+            var companyNeedsUpdate = false;
+
+            if (string.IsNullOrWhiteSpace(company.MatrixAddress))
+            {
+                company.MatrixAddress = "Direccion matriz demo";
+                companyNeedsUpdate = true;
+            }
+
+            if (companyNeedsUpdate)
+            {
+                await context.SaveChangesAsync();
+            }
         }
 
         var establishment = await context.Establishments
@@ -267,6 +293,23 @@ public static class SeedData
                 CreatedAt = DateTime.UtcNow
             };
             context.EmissionPoints.Add(emissionPoint);
+            await context.SaveChangesAsync();
+        }
+
+        var sriSettings = await context.CompanySriSettings
+            .FirstOrDefaultAsync(s => s.CompanyId == company.Id);
+
+        if (sriSettings is null)
+        {
+            context.CompanySriSettings.Add(new CompanySriSettings
+            {
+                CompanyId = company.Id,
+                Environment = 1,
+                EmissionType = 1,
+                IsEnabled = false,
+                CertificateConfigured = false,
+                CreatedAt = DateTime.UtcNow
+            });
             await context.SaveChangesAsync();
         }
 
