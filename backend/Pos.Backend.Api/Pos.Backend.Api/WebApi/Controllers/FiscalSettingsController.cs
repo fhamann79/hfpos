@@ -104,12 +104,11 @@ public class FiscalSettingsController : ControllerBase
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(MaxCertificateUploadRequestBytes)]
     public async Task<ActionResult<CompanySriCertificateDto>> UploadSriCertificate(
-        [FromForm] IFormFile? file,
-        [FromForm] string? password)
+        [FromForm] UploadSriCertificateRequest request)
     {
         try
         {
-            return Ok(await _sriCertificateService.UploadCertificateAsync(file, password));
+            return Ok(await _sriCertificateService.UploadCertificateAsync(request.File, request.Password));
         }
         catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
         {

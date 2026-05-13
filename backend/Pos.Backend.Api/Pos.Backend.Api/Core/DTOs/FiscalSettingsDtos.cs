@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Pos.Backend.Api.Core.Enums;
 
 namespace Pos.Backend.Api.Core.DTOs;
@@ -58,6 +59,12 @@ public class CompanySriCertificateDto
     public bool IsActive { get; set; }
     public int DaysUntilExpiration { get; set; }
     public bool IsExpired { get; set; }
+}
+
+public class UploadSriCertificateRequest
+{
+    public IFormFile? File { get; set; }
+    public string? Password { get; set; }
 }
 
 public class UpdateCompanySriSettingsDto
