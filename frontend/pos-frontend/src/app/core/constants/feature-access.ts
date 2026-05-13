@@ -39,6 +39,11 @@ export const INVENTORY_ACCESS_REQUIREMENT: PermissionRequirement = {
   matchMode: 'all',
 };
 
+export const FISCAL_SETTINGS_ACCESS_REQUIREMENT: PermissionRequirement = {
+  requiredPermissions: [PERMISSIONS.fiscalSettingsRead],
+  matchMode: 'all',
+};
+
 export const NAVIGATION_ITEMS: NavigationItemConfig[] = [
   {
     label: 'Dashboard',
@@ -56,6 +61,12 @@ export const NAVIGATION_ITEMS: NavigationItemConfig[] = [
     icon: 'pi pi-sitemap',
     route: '/operational-structure',
     ...OPERATIONAL_STRUCTURE_ACCESS_REQUIREMENT,
+  },
+  {
+    label: 'Configuración Fiscal',
+    icon: 'pi pi-receipt',
+    route: '/fiscal-settings',
+    ...FISCAL_SETTINGS_ACCESS_REQUIREMENT,
   },
   {
     label: 'Administración',
