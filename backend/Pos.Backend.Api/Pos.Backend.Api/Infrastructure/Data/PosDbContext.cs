@@ -17,6 +17,7 @@ public class PosDbContext : DbContext
     public DbSet<RolePermission> RolePermissions { get; set; }
     public DbSet<Company> Companies { get; set; }
     public DbSet<CompanySriSettings> CompanySriSettings { get; set; }
+    public DbSet<CompanySriCertificate> CompanySriCertificates { get; set; }
     public DbSet<Establishment> Establishments { get; set; }
     public DbSet<EmissionPoint> EmissionPoints { get; set; }
     public DbSet<Category> Categories { get; set; }
@@ -83,6 +84,62 @@ public class PosDbContext : DbContext
             entity.HasOne(s => s.LastUpdatedByUser)
                 .WithMany()
                 .HasForeignKey(s => s.LastUpdatedByUserId);
+        });
+
+        modelBuilder.Entity<CompanySriCertificate>(entity =>
+        {
+            entity.Property(c => c.FileName)
+                .IsRequired()
+                .HasMaxLength(255);
+
+            entity.Property(c => c.ContentType)
+                .IsRequired()
+                .HasMaxLength(100);
+
+            entity.Property(c => c.EncryptedCertificateBytes)
+                .IsRequired()
+                .HasColumnType("bytea");
+
+            entity.Property(c => c.EncryptedPassword)
+                .IsRequired()
+                .HasColumnType("bytea");
+
+            entity.Property(c => c.Thumbprint)
+                .IsRequired()
+                .HasMaxLength(100);
+
+            entity.Property(c => c.Subject)
+                .IsRequired()
+                .HasMaxLength(500);
+
+            entity.Property(c => c.Issuer)
+                .IsRequired()
+                .HasMaxLength(500);
+
+            entity.Property(c => c.SerialNumber)
+                .IsRequired()
+                .HasMaxLength(100);
+
+            entity.HasIndex(c => c.CompanyId)
+                .IsUnique()
+                .HasFilter(@"""IsActive"" = true");
+
+            entity.HasIndex(c => new { c.CompanyId, c.IsActive });
+
+            entity.HasOne(c => c.Company)
+                .WithMany()
+                .HasForeignKey(c => c.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.UploadedByUser)
+                .WithMany()
+                .HasForeignKey(c => c.UploadedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.DeactivatedByUser)
+                .WithMany()
+                .HasForeignKey(c => c.DeactivatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
 
