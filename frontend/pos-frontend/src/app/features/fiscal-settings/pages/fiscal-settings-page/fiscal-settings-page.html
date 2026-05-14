@@ -198,20 +198,111 @@
                 </div>
               </div>
 
-              <div class="certificate-card">
-                <div>
-                  <span>Certificado digital</span>
-                  <strong>{{ sriSettings()?.certificateConfigured ? 'Configurado' : 'Pendiente' }}</strong>
-                  <small>La carga de certificado .p12 será implementada en una etapa posterior.</small>
+              <div class="certificate-card certificate-card--managed">
+                <div class="certificate-card__header">
+                  <div>
+                    <span>Certificado digital</span>
+                    <strong>Firma electrónica futura</strong>
+                    <small>Gestiona el certificado .p12/.pfx que se usará más adelante para firmar XML.</small>
+                  </div>
+                  <p-tag [severity]="certificateSeverity()" [value]="certificateStatusLabel()"></p-tag>
                 </div>
-                <p-tag
-                  [severity]="sriSettings()?.certificateConfigured ? 'success' : 'secondary'"
-                  [value]="sriSettings()?.certificateConfigured ? 'Activo' : 'No configurado'"
-                ></p-tag>
-                <div>
-                  <span>Vencimiento certificado</span>
-                  <strong>{{ sriSettings()?.certificateExpiresAt ? (sriSettings()?.certificateExpiresAt | date: 'mediumDate') : '-' }}</strong>
+
+                @if (certificateError()) {
+                  <p-message severity="error" [text]="certificateError()"></p-message>
+                }
+
+                @if (certificateLoading()) {
+                  <div class="certificate-empty compact">
+                    <i class="pi pi-spin pi-spinner"></i>
+                    <span>Cargando estado del certificado...</span>
+                  </div>
+                } @else if (sriCertificate(); as certificate) {
+                  <div class="certificate-metadata">
+                    <div>
+                      <span>Archivo</span>
+                      <strong>{{ certificate.fileName }}</strong>
+                    </div>
+                    <div>
+                      <span>Vigente hasta</span>
+                      <strong>{{ certificate.notAfter | date: 'mediumDate' }}</strong>
+                      <small>{{ certificateExpirationText(certificate) }}</small>
+                    </div>
+                    <div>
+                      <span>Clave privada</span>
+                      <strong>{{ certificatePrivateKeyLabel(certificate) }}</strong>
+                    </div>
+                    <div class="metadata-wide">
+                      <span>Titular / Subject</span>
+                      <strong>{{ certificate.subject }}</strong>
+                    </div>
+                    <div class="metadata-wide">
+                      <span>Emisor / Issuer</span>
+                      <strong>{{ certificate.issuer }}</strong>
+                    </div>
+                    <div>
+                      <span>Huella / Thumbprint</span>
+                      <strong class="mono">{{ certificate.thumbprint }}</strong>
+                    </div>
+                    <div>
+                      <span>Número de serie</span>
+                      <strong class="mono">{{ certificate.serialNumber }}</strong>
+                    </div>
+                    <div>
+                      <span>Vigente desde</span>
+                      <strong>{{ certificate.notBefore | date: 'mediumDate' }}</strong>
+                    </div>
+                    <div>
+                      <span>Cargado el</span>
+                      <strong>{{ certificate.uploadedAt | date: 'medium' }}</strong>
+                    </div>
+                    <div>
+                      <span>Cargado por usuario</span>
+                      <strong>userId {{ certificate.uploadedByUserId }}</strong>
+                    </div>
+                  </div>
+                } @else {
+                  <div class="certificate-empty">
+                    <i class="pi pi-key"></i>
+                    <strong>No hay certificado digital activo configurado.</strong>
+                    <span>Carga un certificado .p12 o .pfx para preparar la firma electrónica futura.</span>
+                  </div>
+                }
+
+                <div class="certificate-settings-status">
+                  <div>
+                    <span>Estado reportado en configuración SRI</span>
+                    <strong>{{ sriSettings()?.certificateConfigured ? 'Configurado' : 'No configurado' }}</strong>
+                  </div>
+                  <div>
+                    <span>Vencimiento certificado</span>
+                    <strong>{{ sriSettings()?.certificateExpiresAt ? (sriSettings()?.certificateExpiresAt | date: 'mediumDate') : '-' }}</strong>
+                  </div>
                 </div>
+
+                @if (canWrite()) {
+                  <div class="certificate-actions">
+                    <p-button
+                      type="button"
+                      [label]="sriCertificate() ? 'Reemplazar certificado' : 'Cargar certificado'"
+                      icon="pi pi-upload"
+                      [disabled]="certificateLoading() || certificateUploading() || certificateDeleting()"
+                      (onClick)="openCertificateDialog()"
+                    ></p-button>
+                    @if (sriCertificate()) {
+                      <p-button
+                        type="button"
+                        label="Eliminar certificado"
+                        icon="pi pi-trash"
+                        severity="danger"
+                        [outlined]="true"
+                        [loading]="certificateDeleting()"
+                        [disabled]="certificateLoading() || certificateUploading()"
+                        (onClick)="confirmDeleteSriCertificate()"
+                      ></p-button>
+                    }
+                  </div>
+                }
               </div>
 
               @if (canWrite()) {
@@ -222,8 +313,8 @@
                     icon="pi pi-refresh"
                     severity="secondary"
                     [outlined]="true"
-                    [disabled]="sriLoading() || sriSaving()"
-                    (onClick)="loadSriSettings()"
+                    [disabled]="sriLoading() || sriSaving() || certificateLoading()"
+                    (onClick)="reloadSriSection()"
                   ></p-button>
                   <p-button
                     type="submit"
@@ -431,6 +522,80 @@
         (onClick)="onSequenceDialogVisibleChange(false)"
       ></p-button>
       <p-button type="submit" label="Guardar secuencial" icon="pi pi-check" [loading]="sequenceSaving()"></p-button>
+    </footer>
+  </form>
+</p-dialog>
+
+<p-dialog
+  header="Cargar certificado digital"
+  [visible]="certificateDialogVisible"
+  [modal]="true"
+  [draggable]="false"
+  [style]="{ width: '40rem', maxWidth: '95vw' }"
+  (visibleChange)="onCertificateDialogVisibleChange($event)"
+>
+  <form class="certificate-upload-form" [formGroup]="certificateForm" (ngSubmit)="uploadSriCertificate()">
+    <p-message
+      severity="info"
+      text="La contraseña se enviará al backend para validar y proteger el certificado. No se mostrará ni se almacenará en el navegador después de cargarlo."
+    ></p-message>
+
+    @if (sriCertificate()) {
+      <p-message
+        severity="warn"
+        text="Al cargar un nuevo certificado, el certificado activo actual será desactivado de forma segura."
+      ></p-message>
+    }
+
+    @if (certificateUploadError()) {
+      <p-message severity="error" [text]="certificateUploadError()"></p-message>
+    }
+
+    <label class="field file-field">
+      <span>Archivo .p12/.pfx</span>
+      <input
+        #certificateFileInput
+        type="file"
+        accept=".p12,.pfx"
+        [disabled]="certificateUploading()"
+        (change)="onCertificateFileSelected($event)"
+      />
+      @if (selectedCertificateFile(); as file) {
+        <small>Seleccionado: {{ file.name }}</small>
+      } @else {
+        <small>Máximo 2 MB. Usa únicamente archivos .p12 o .pfx.</small>
+      }
+    </label>
+
+    <label class="field">
+      <span>Contraseña del certificado</span>
+      <input
+        pInputText
+        type="password"
+        autocomplete="new-password"
+        formControlName="password"
+        placeholder="Contraseña del archivo"
+      />
+      @if (certificateForm.controls.password.touched && certificateForm.controls.password.invalid) {
+        <small class="p-error">Debes ingresar la contraseña del certificado.</small>
+      }
+    </label>
+
+    <footer class="dialog-actions">
+      <p-button
+        type="button"
+        label="Cancelar"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="certificateUploading()"
+        (onClick)="onCertificateDialogVisibleChange(false)"
+      ></p-button>
+      <p-button
+        type="submit"
+        label="Cargar certificado"
+        icon="pi pi-upload"
+        [loading]="certificateUploading()"
+      ></p-button>
     </footer>
   </form>
 </p-dialog>

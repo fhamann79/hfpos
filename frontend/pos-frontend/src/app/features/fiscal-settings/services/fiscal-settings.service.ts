@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { environment } from '../../../../environments/environment';
 import {
   CompanyFiscalSettings,
+  CompanySriCertificate,
   CompanySriSettings,
   CreateDocumentSequenceRequest,
   DocumentSequence,
@@ -32,6 +33,22 @@ export class FiscalSettingsService {
 
   updateSriSettings(payload: UpdateCompanySriSettingsRequest) {
     return this.http.put<CompanySriSettings>(`${this.baseUrl}/sri`, payload);
+  }
+
+  getSriCertificate() {
+    return this.http.get<CompanySriCertificate>(`${this.baseUrl}/sri/certificate`);
+  }
+
+  uploadSriCertificate(file: File, password: string) {
+    const formData = new FormData();
+    formData.append('File', file);
+    formData.append('Password', password);
+
+    return this.http.post<CompanySriCertificate>(`${this.baseUrl}/sri/certificate`, formData);
+  }
+
+  deleteSriCertificate() {
+    return this.http.delete<void>(`${this.baseUrl}/sri/certificate`);
   }
 
   getDocumentSequences(filters: DocumentSequenceFilters = {}) {

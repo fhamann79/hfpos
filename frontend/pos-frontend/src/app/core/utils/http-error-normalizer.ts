@@ -45,6 +45,16 @@ const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
   DOCUMENT_SEQUENCE_BELOW_USED_NUMBER: 'No puedes bajar el secuencial por debajo de documentos ya emitidos o del valor actual.',
   DOCUMENT_SEQUENCE_REASON_REQUIRED: 'Debes ingresar un motivo para cambiar el secuencial.',
   FISCAL_SETTINGS_OPERATION_FAILED: 'No se pudo completar la operación de configuración fiscal.',
+  CERTIFICATE_NOT_FOUND: 'No hay certificado digital activo configurado.',
+  CERTIFICATE_FILE_REQUIRED: 'Debes seleccionar un archivo de certificado.',
+  CERTIFICATE_PASSWORD_REQUIRED: 'Debes ingresar la contraseña del certificado.',
+  INVALID_CERTIFICATE_FILE: 'El archivo no es un certificado válido. Usa un archivo .p12 o .pfx.',
+  INVALID_CERTIFICATE_PASSWORD: 'La contraseña del certificado no es correcta.',
+  CERTIFICATE_WITHOUT_PRIVATE_KEY: 'El certificado no contiene clave privada y no puede usarse para firmar.',
+  CERTIFICATE_EXPIRED: 'El certificado está vencido.',
+  CERTIFICATE_NOT_VALID_YET: 'El certificado aún no está vigente.',
+  CERTIFICATE_PROTECTION_FAILED: 'No se pudo proteger el certificado. Intenta nuevamente.',
+  CERTIFICATE_OPERATION_FAILED: 'No se pudo completar la operación del certificado.',
 };
 
 const STATUS_ERROR_MESSAGES: Record<number, string> = {
