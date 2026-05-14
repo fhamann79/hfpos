@@ -1,6 +1,6 @@
 import { CommonModule, DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -18,20 +18,24 @@ import { ToastModule } from 'primeng/toast';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
-import { resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
+import { hasHttpBusinessError, resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
 import {
   CompanyFiscalSettings,
+  CompanySriCertificate,
   CompanySriSettings,
   DocumentSequence,
   DocumentSequenceAudit,
   FiscalDocumentType,
   SelectOption,
+  certificateSeverity,
+  certificateStatusLabel,
   fiscalDocumentTypeLabel,
   formatFiscalSequential,
 } from '../../models/fiscal-settings.model';
 import { FiscalSettingsService } from '../../services/fiscal-settings.service';
 
 type SequenceDialogMode = 'create' | 'update';
+type CertificateSeverity = 'success' | 'secondary' | 'warn' | 'danger';
 
 @Component({
   selector: 'app-fiscal-settings-page',
@@ -59,6 +63,10 @@ type SequenceDialogMode = 'create' | 'update';
   styleUrl: './fiscal-settings-page.scss',
 })
 export class FiscalSettingsPage implements OnInit {
+  @ViewChild('certificateFileInput') private certificateFileInput?: ElementRef<HTMLInputElement>;
+
+  private static readonly maxCertificateFileSizeBytes = 2 * 1024 * 1024;
+
   private readonly fb = inject(FormBuilder);
   private readonly fiscalSettingsService = inject(FiscalSettingsService);
   private readonly permissionService = inject(PermissionService);
@@ -77,6 +85,13 @@ export class FiscalSettingsPage implements OnInit {
   readonly sriSaving = signal(false);
   readonly sriError = signal('');
   readonly sriSettings = signal<CompanySriSettings | null>(null);
+  readonly certificateLoading = signal(false);
+  readonly certificateUploading = signal(false);
+  readonly certificateDeleting = signal(false);
+  readonly certificateError = signal('');
+  readonly certificateUploadError = signal('');
+  readonly sriCertificate = signal<CompanySriCertificate | null>(null);
+  readonly selectedCertificateFile = signal<File | null>(null);
 
   readonly sequences = signal<DocumentSequence[]>([]);
   readonly sequencesLoading = signal(false);
@@ -92,6 +107,7 @@ export class FiscalSettingsPage implements OnInit {
 
   sequenceDialogVisible = false;
   auditDialogVisible = false;
+  certificateDialogVisible = false;
 
   readonly environmentOptions: SelectOption<number>[] = [
     { label: 'Pruebas', value: 1 },
@@ -123,6 +139,10 @@ export class FiscalSettingsPage implements OnInit {
     isEnabled: [false],
   });
 
+  readonly certificateForm = this.fb.nonNullable.group({
+    password: ['', [Validators.required]],
+  });
+
   readonly sequenceForm = this.fb.nonNullable.group({
     establishmentId: [0, [Validators.required, Validators.min(1)]],
     emissionPointId: [0, [Validators.required, Validators.min(1)]],
@@ -142,6 +162,7 @@ export class FiscalSettingsPage implements OnInit {
   refreshAll(): void {
     this.loadCompanySettings();
     this.loadSriSettings();
+    this.loadSriCertificate();
     this.loadSequences();
   }
 
@@ -228,6 +249,33 @@ export class FiscalSettingsPage implements OnInit {
     });
   }
 
+  loadSriCertificate(): void {
+    this.certificateLoading.set(true);
+    this.certificateError.set('');
+
+    this.fiscalSettingsService.getSriCertificate().subscribe({
+      next: (certificate) => {
+        this.sriCertificate.set(certificate);
+        this.certificateLoading.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        this.certificateLoading.set(false);
+
+        if (hasHttpBusinessError(error, 'CERTIFICATE_NOT_FOUND')) {
+          this.sriCertificate.set(null);
+          return;
+        }
+
+        this.certificateError.set(resolveHttpErrorMessage(error, 'No se pudo cargar el certificado digital.'));
+      },
+    });
+  }
+
+  reloadSriSection(): void {
+    this.loadSriSettings();
+    this.loadSriCertificate();
+  }
+
   saveSriSettings(): void {
     if (!this.canWrite()) {
       return;
@@ -262,6 +310,137 @@ export class FiscalSettingsPage implements OnInit {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
         },
       });
+  }
+
+  openCertificateDialog(): void {
+    if (!this.canWrite()) {
+      return;
+    }
+
+    this.resetCertificateUploadForm();
+    this.certificateDialogVisible = true;
+  }
+
+  onCertificateDialogVisibleChange(visible: boolean): void {
+    this.certificateDialogVisible = visible;
+
+    if (!visible) {
+      this.resetCertificateUploadForm();
+      this.certificateUploading.set(false);
+    }
+  }
+
+  onCertificateFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.item(0) ?? null;
+
+    this.selectedCertificateFile.set(file);
+    this.certificateUploadError.set('');
+
+    if (!file) {
+      return;
+    }
+
+    const validationError = this.validateCertificateFile(file);
+
+    if (validationError) {
+      this.certificateUploadError.set(validationError);
+    }
+  }
+
+  uploadSriCertificate(): void {
+    if (!this.canWrite()) {
+      return;
+    }
+
+    this.certificateUploadError.set('');
+
+    const file = this.selectedCertificateFile();
+    const password = this.certificateForm.controls.password.value;
+
+    if (!file) {
+      this.certificateUploadError.set('Debes seleccionar un archivo de certificado.');
+      return;
+    }
+
+    const validationError = this.validateCertificateFile(file);
+
+    if (validationError) {
+      this.certificateUploadError.set(validationError);
+      return;
+    }
+
+    if (this.certificateForm.invalid) {
+      this.certificateForm.markAllAsTouched();
+      return;
+    }
+
+    this.certificateUploading.set(true);
+
+    this.fiscalSettingsService.uploadSriCertificate(file, password).subscribe({
+      next: (certificate) => {
+        this.sriCertificate.set(certificate);
+        this.certificateUploading.set(false);
+        this.certificateDialogVisible = false;
+        this.resetCertificateUploadForm();
+        this.loadSriSettings();
+        this.loadSriCertificate();
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Certificado cargado',
+          detail: 'El certificado digital fue validado y configurado.',
+        });
+      },
+      error: (error: HttpErrorResponse) => {
+        const message = resolveHttpErrorMessage(error, 'No se pudo cargar el certificado digital.');
+        this.certificateUploading.set(false);
+        this.certificateUploadError.set(message);
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: message });
+      },
+    });
+  }
+
+  confirmDeleteSriCertificate(): void {
+    if (!this.canWrite() || !this.sriCertificate()) {
+      return;
+    }
+
+    this.confirmationService.confirm({
+      header: 'Eliminar certificado digital',
+      message:
+        'Esta acción desactivará el certificado configurado. No se eliminará el historial, pero la empresa quedará sin certificado activo para futuras firmas. ¿Deseas continuar?',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Eliminar certificado',
+      rejectLabel: 'Cancelar',
+      acceptButtonProps: { severity: 'danger' },
+      accept: () => this.deleteSriCertificate(),
+    });
+  }
+
+  deleteSriCertificate(): void {
+    if (!this.canWrite()) {
+      return;
+    }
+
+    this.certificateDeleting.set(true);
+
+    this.fiscalSettingsService.deleteSriCertificate().subscribe({
+      next: () => {
+        this.certificateDeleting.set(false);
+        this.sriCertificate.set(null);
+        this.loadSriSettings();
+        this.loadSriCertificate();
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Certificado eliminado',
+          detail: 'El certificado activo fue desactivado.',
+        });
+      },
+      error: (error: HttpErrorResponse) => {
+        this.certificateDeleting.set(false);
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
+      },
+    });
   }
 
   loadSequences(): void {
@@ -395,6 +574,28 @@ export class FiscalSettingsPage implements OnInit {
     return this.sriForm.controls.environment.value === 2;
   }
 
+  certificateStatusLabel(): string {
+    return certificateStatusLabel(this.sriCertificate());
+  }
+
+  certificateSeverity(): CertificateSeverity {
+    return certificateSeverity(this.sriCertificate());
+  }
+
+  certificateExpirationText(certificate: CompanySriCertificate): string {
+    if (certificate.isExpired) {
+      return 'Vencido';
+    }
+
+    return certificate.daysUntilExpiration === 1
+      ? '1 día restante'
+      : `${certificate.daysUntilExpiration} días restantes`;
+  }
+
+  certificatePrivateKeyLabel(certificate: CompanySriCertificate): string {
+    return certificate.hasPrivateKey ? 'Disponible' : 'No disponible';
+  }
+
   private saveSequence(): void {
     const values = this.sequenceForm.getRawValue();
     const reason = values.reason.trim();
@@ -465,11 +666,13 @@ export class FiscalSettingsPage implements OnInit {
     if (this.canWrite()) {
       this.companyForm.enable({ emitEvent: false });
       this.sriForm.enable({ emitEvent: false });
+      this.certificateForm.enable({ emitEvent: false });
       return;
     }
 
     this.companyForm.disable({ emitEvent: false });
     this.sriForm.disable({ emitEvent: false });
+    this.certificateForm.disable({ emitEvent: false });
     this.sequenceForm.disable({ emitEvent: false });
   }
 
@@ -495,5 +698,30 @@ export class FiscalSettingsPage implements OnInit {
   private normalizeOptional(value: string): string | null {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private validateCertificateFile(file: File): string | null {
+    const fileName = file.name.toLowerCase();
+    const hasValidExtension = fileName.endsWith('.p12') || fileName.endsWith('.pfx');
+
+    if (!hasValidExtension) {
+      return 'El archivo debe tener extensión .p12 o .pfx.';
+    }
+
+    if (file.size > FiscalSettingsPage.maxCertificateFileSizeBytes) {
+      return 'El archivo no debe superar 2 MB.';
+    }
+
+    return null;
+  }
+
+  private resetCertificateUploadForm(): void {
+    this.certificateForm.reset({ password: '' });
+    this.selectedCertificateFile.set(null);
+    this.certificateUploadError.set('');
+
+    if (this.certificateFileInput?.nativeElement) {
+      this.certificateFileInput.nativeElement.value = '';
+    }
   }
 }

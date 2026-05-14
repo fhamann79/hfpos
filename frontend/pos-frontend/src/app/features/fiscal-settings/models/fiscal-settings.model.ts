@@ -39,6 +39,24 @@ export interface CompanySriSettings {
   updatedAt: string | null;
 }
 
+export interface CompanySriCertificate {
+  companyId: number;
+  certificateConfigured: boolean;
+  fileName: string;
+  thumbprint: string;
+  subject: string;
+  issuer: string;
+  serialNumber: string;
+  notBefore: string;
+  notAfter: string;
+  hasPrivateKey: boolean;
+  uploadedAt: string;
+  uploadedByUserId: number;
+  isActive: boolean;
+  daysUntilExpiration: number;
+  isExpired: boolean;
+}
+
 export interface UpdateCompanySriSettingsRequest {
   environment: number;
   emissionType: number;
@@ -105,4 +123,30 @@ export function formatFiscalSequential(value: number | null | undefined): string
 
 export function fiscalDocumentTypeLabel(value: FiscalDocumentType): string {
   return value === FiscalDocumentType.Invoice ? 'Factura' : 'Ticket';
+}
+
+export function certificateStatusLabel(certificate: CompanySriCertificate | null | undefined): string {
+  if (!certificate?.isActive) {
+    return 'No configurado';
+  }
+
+  if (certificate.isExpired) {
+    return 'Vencido';
+  }
+
+  return certificate.daysUntilExpiration <= 30 ? 'Próximo a vencer' : 'Activo';
+}
+
+export function certificateSeverity(
+  certificate: CompanySriCertificate | null | undefined,
+): 'success' | 'secondary' | 'warn' | 'danger' {
+  if (!certificate?.isActive) {
+    return 'secondary';
+  }
+
+  if (certificate.isExpired) {
+    return 'danger';
+  }
+
+  return certificate.daysUntilExpiration <= 30 ? 'warn' : 'success';
 }
