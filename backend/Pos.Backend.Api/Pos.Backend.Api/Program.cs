@@ -86,6 +86,8 @@ builder.Services.AddScoped<ISriAccessKeyService, SriAccessKeyService>();
 builder.Services.AddScoped<ISriXmlDraftService, SriXmlDraftService>();
 builder.Services.AddScoped<IFiscalSettingsService, FiscalSettingsService>();
 builder.Services.AddScoped<ISriCertificateService, SriCertificateService>();
+builder.Services.AddScoped<ISriSigningCertificateProvider, SriSigningCertificateProvider>();
+builder.Services.AddScoped<ISriInvoiceSigningService, SriInvoiceSigningService>();
 builder.Services.AddScoped<ISalesService, SalesService>();
 builder.Services.AddScoped<Pos.Backend.Api.WebApi.Filters.OperationalContextFilter>();
 
@@ -116,6 +118,7 @@ builder.Services.AddAuthorization(options =>
         AppPermissions.InventoryWrite,
         AppPermissions.PosSalesVoid,
         AppPermissions.ReportsSalesRead,
+        AppPermissions.SriDocumentsSign,
         AppPermissions.FiscalSettingsRead,
         AppPermissions.FiscalSettingsWrite,
         AppPermissions.AdminUsersRead,

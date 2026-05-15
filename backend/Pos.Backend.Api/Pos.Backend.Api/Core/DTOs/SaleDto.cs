@@ -44,6 +44,18 @@ public class SaleDto
 
     public bool HasSriXmlDraft { get; set; }
 
+    public DateTime? SriSignedAt { get; set; }
+
+    public bool HasSriSignedXml { get; set; }
+
+    public string? SriSignatureHash { get; set; }
+
+    public string? SriSigningCertificateThumbprint { get; set; }
+
+    public string? SriSigningCertificateSubject { get; set; }
+
+    public string? SriSigningCertificateSerialNumber { get; set; }
+
     public decimal GrossSubtotal { get; set; }
 
     public decimal DiscountAmount { get; set; }
