@@ -17,7 +17,13 @@
       @for (sale of sales; track sale.id) {
         <li [class.sale-voided]="sale.isVoided">
           <div>
-            <strong>#{{ sale.id }}</strong>
+            <strong>{{ sale.number || ('#' + sale.id) }}</strong>
+            <span class="sale-badges">
+              <p-tag [value]="documentTypeLabel(sale)" [severity]="documentTypeSeverity(sale)"></p-tag>
+              @if (isInvoice(sale)) {
+                <p-tag [value]="signatureStatusLabel(sale)" [severity]="signatureStatusSeverity(sale)"></p-tag>
+              }
+            </span>
             <small>{{ sale.createdAt | date: 'short' }}</small>
             <small>{{ sale.total | currency: 'USD' }}</small>
             <small class="status" [class.status--voided]="sale.isVoided">{{ sale.isVoided ? 'Anulada' : sale.status }}</small>

@@ -2,7 +2,7 @@
   header="Detalle de venta"
   [visible]="visible"
   [modal]="true"
-  [style]="{ width: '44rem' }"
+  [style]="{ width: '58rem', maxWidth: '96vw' }"
   (visibleChange)="visibleChange.emit($event)"
 >
   @if (!sale) {
@@ -10,12 +10,128 @@
   } @else {
     <div class="detail-head">
       <span><strong>ID:</strong> #{{ sale.id }}</span>
+      <span><strong>Documento:</strong> {{ sale.number || ('#' + sale.id) }}</span>
       <span><strong>Estado:</strong> <span class="status" [class.status--voided]="sale.isVoided">{{ sale.isVoided ? 'Anulada' : sale.status }}</span></span>
       <span><strong>Fecha:</strong> {{ sale.createdAt | date: 'short' }}</span>
       <span><strong>Usuario:</strong> {{ sale.createdBy || 'N/A' }}</span>
       <span><strong>Cliente:</strong> {{ sale.customerName || 'Sin cliente' }}</span>
       <span><strong>Notas:</strong> {{ sale.notes || 'Sin notas' }}</span>
     </div>
+
+    <section class="fiscal-document">
+      <div class="fiscal-document__header">
+        <div>
+          <span class="section-kicker">Documento fiscal</span>
+          <h3>{{ documentTypeLabel(sale) }} {{ sale.number || '' }}</h3>
+        </div>
+
+        <div class="document-tags">
+          <p-tag [value]="documentTypeLabel(sale)" [severity]="sale.documentType === 1 ? 'info' : 'secondary'"></p-tag>
+          <p-tag [value]="documentStatusLabel(sale)" [severity]="documentStatusSeverity(sale)"></p-tag>
+          <p-tag [value]="signatureStatusLabel(sale)" [severity]="signatureStatusSeverity(sale)"></p-tag>
+        </div>
+      </div>
+
+      <p class="sri-warning">
+        Firmado no significa autorizado por el SRI. La recepción y autorización se implementarán en una etapa posterior.
+      </p>
+
+      <div class="fiscal-grid">
+        <div>
+          <span>Número</span>
+          <strong>{{ sale.number || '-' }}</strong>
+        </div>
+        <div>
+          <span>Serie</span>
+          <strong>{{ sale.establishmentCodeSnapshot || '---' }}-{{ sale.emissionPointCodeSnapshot || '---' }}</strong>
+        </div>
+        <div>
+          <span>Secuencial</span>
+          <strong>{{ sale.sequential || '-' }}</strong>
+        </div>
+        <div>
+          <span>Fecha emisión</span>
+          <strong>{{ sale.documentIssuedAt ? (sale.documentIssuedAt | date: 'short') : '-' }}</strong>
+        </div>
+        <div>
+          <span>Ambiente SRI</span>
+          <strong>{{ sriEnvironmentLabel(sale) }}</strong>
+        </div>
+        <div>
+          <span>XML draft</span>
+          <strong>{{ sale.hasSriXmlDraft ? 'Disponible' : 'No disponible' }}</strong>
+        </div>
+        <div>
+          <span>XML firmado</span>
+          <strong>{{ sale.hasSriSignedXml ? 'Firmado' : 'Pendiente' }}</strong>
+        </div>
+        <div>
+          <span>Fecha firma</span>
+          <strong>{{ sale.sriSignedAt ? (sale.sriSignedAt | date: 'short') : '-' }}</strong>
+        </div>
+      </div>
+
+      @if (sale.accessKey) {
+        <div class="sri-long-field">
+          <span>Clave de acceso</span>
+          <code>{{ sale.accessKey }}</code>
+        </div>
+      }
+
+      @if (sale.sriSignatureHash || sale.sriSigningCertificateThumbprint) {
+        <div class="signature-metadata">
+          @if (sale.sriSigningCertificateThumbprint) {
+            <div>
+              <span>Certificado firmante</span>
+              <code>{{ sale.sriSigningCertificateThumbprint }}</code>
+            </div>
+          }
+          @if (sale.sriSigningCertificateSubject) {
+            <div>
+              <span>Titular certificado</span>
+              <strong>{{ sale.sriSigningCertificateSubject }}</strong>
+            </div>
+          }
+          @if (sale.sriSignatureHash) {
+            <div>
+              <span>Hash firma</span>
+              <code>{{ sale.sriSignatureHash }}</code>
+            </div>
+          }
+        </div>
+      }
+
+      <div class="sri-actions">
+        @if (sale.hasSriXmlDraft) {
+          <p-button
+            label="Descargar XML draft"
+            icon="pi pi-download"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="downloadSriXmlDraft.emit(sale.id)"
+          ></p-button>
+        }
+
+        @if (canSignSale(sale)) {
+          <p-button
+            label="Firmar XML"
+            icon="pi pi-verified"
+            [loading]="isSigning(sale)"
+            (onClick)="signSriXml.emit(sale.id)"
+          ></p-button>
+        }
+
+        @if (sale.hasSriSignedXml) {
+          <p-button
+            label="Descargar XML firmado"
+            icon="pi pi-download"
+            severity="success"
+            [outlined]="true"
+            (onClick)="downloadSriSignedXml.emit(sale.id)"
+          ></p-button>
+        }
+      </div>
+    </section>
 
     <ul class="items">
       @for (item of sale.items; track item.productId) {

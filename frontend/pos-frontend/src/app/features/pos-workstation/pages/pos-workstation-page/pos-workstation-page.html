@@ -152,14 +152,21 @@
     [taxAmount]="taxAmount()"
     [total]="total()"
     [notes]="notes()"
+    [documentType]="selectedDocumentType()"
     (visibleChange)="checkoutVisible.set($event)"
+    (documentTypeChange)="selectedDocumentType.set($event)"
     (confirm)="confirmCheckout()"
   ></app-checkout-confirm-dialog>
 
   <app-sale-detail-dialog
     [visible]="saleDetailVisible()"
     [sale]="selectedSale()"
+    [canSignSriDocuments]="canSignSriDocuments"
+    [signingSaleId]="sriSigningSaleId()"
     (visibleChange)="saleDetailVisible.set($event)"
+    (signSriXml)="signSriXml($event)"
+    (downloadSriXmlDraft)="downloadSriXmlDraft($event)"
+    (downloadSriSignedXml)="downloadSriSignedXml($event)"
   ></app-sale-detail-dialog>
 
   <app-void-sale-dialog

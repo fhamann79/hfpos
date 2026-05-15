@@ -3,3 +3,26 @@
 .money-lines { display:grid; gap:.25rem; padding:.65rem; border-radius:.75rem; background:#f8fafc; }
 .money-lines > strong { color:#0f172a; font-size:1.2rem; }
 .discount-line { color:#b45309; }
+.document-choice {
+  display:grid;
+  gap:.45rem;
+  padding:.75rem;
+  border:1px solid #dbeafe;
+  border-radius:.85rem;
+  background:#eff6ff;
+}
+.document-choice > div {
+  display:grid;
+  gap:.35rem;
+}
+.document-choice label {
+  color:#1e3a8a;
+  font-weight:800;
+}
+.document-choice small {
+  color:#475569;
+  line-height:1.35;
+}
+:host ::ng-deep .document-choice .p-select {
+  width:100%;
+}

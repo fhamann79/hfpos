@@ -1,9 +1,31 @@
 import { SaleItem } from './sale-item.model';
+import { SaleDocumentStatus, SaleDocumentType } from './sale-document.model';
 
 export interface Sale {
   id: number;
   createdAt: string;
   status: string;
+  documentType: SaleDocumentType;
+  documentStatus: SaleDocumentStatus;
+  number: string | null;
+  establishmentCodeSnapshot: string | null;
+  emissionPointCodeSnapshot: string | null;
+  sequential: number | null;
+  documentIssuedAt: string | null;
+  accessKey: string | null;
+  authorizationNumber: string | null;
+  authorizedAt: string | null;
+  sriEnvironment: number | null;
+  sriEmissionType: number | null;
+  sriNumericCode: string | null;
+  sriXmlGeneratedAt: string | null;
+  hasSriXmlDraft: boolean;
+  sriSignedAt: string | null;
+  hasSriSignedXml: boolean;
+  sriSignatureHash: string | null;
+  sriSigningCertificateThumbprint: string | null;
+  sriSigningCertificateSubject: string | null;
+  sriSigningCertificateSerialNumber: string | null;
   customerName: string | null;
   notes: string | null;
   grossSubtotal: number;

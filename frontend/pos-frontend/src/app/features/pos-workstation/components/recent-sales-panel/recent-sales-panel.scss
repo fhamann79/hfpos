@@ -42,6 +42,13 @@ header {
   gap: 0.15rem;
 }
 
+.sale-badges {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  margin: 0.1rem 0;
+}
+
 .sales-list strong {
   color: #0f172a;
   font-size: 1rem;
