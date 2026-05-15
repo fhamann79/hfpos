@@ -55,6 +55,18 @@ public class Sale
 
     public DateTime? SriXmlGeneratedAt { get; set; }
 
+    public string? SriSignedXml { get; set; }
+
+    public DateTime? SriSignedAt { get; set; }
+
+    public string? SriSignatureHash { get; set; }
+
+    public string? SriSigningCertificateThumbprint { get; set; }
+
+    public string? SriSigningCertificateSubject { get; set; }
+
+    public string? SriSigningCertificateSerialNumber { get; set; }
+
     public string? Notes { get; set; }
 
     public decimal GrossSubtotal { get; set; }

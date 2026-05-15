@@ -16,6 +16,7 @@ public static class AppPermissions
     public const string InventoryWrite = "INVENTORY_WRITE";
     public const string PosSalesVoid = "POS_SALES_VOID";
     public const string ReportsSalesRead = "REPORTS_SALES_READ";
+    public const string SriDocumentsSign = "SRI_DOCUMENTS_SIGN";
     public const string FiscalSettingsRead = "FISCAL_SETTINGS_READ";
     public const string FiscalSettingsWrite = "FISCAL_SETTINGS_WRITE";
     public const string AdminUsersRead = "ADMIN_USERS_READ";

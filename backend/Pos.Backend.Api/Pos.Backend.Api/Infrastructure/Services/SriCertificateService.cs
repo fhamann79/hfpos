@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
+using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.Infrastructure.Data;
 
@@ -20,8 +21,6 @@ public class SriCertificateService : ISriCertificateService
     private const int MaxSubjectLength = 500;
     private const int MaxIssuerLength = 500;
     private const int MaxSerialNumberLength = 100;
-    private const string DataProtectionPurpose = "hfpos.sri.certificate.v1";
-
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly IDataProtector _protector;
@@ -35,7 +34,7 @@ public class SriCertificateService : ISriCertificateService
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
-        _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
+        _protector = dataProtectionProvider.CreateProtector(SriCertificateProtectionPurposes.CertificateV1);
         _logger = logger;
     }
 
