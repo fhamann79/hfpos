@@ -22,6 +22,7 @@ import { CartItem } from '../../models/cart-item.model';
 import { CheckoutRequest } from '../../models/checkout-request.model';
 import { PosCustomer } from '../../models/pos-customer.model';
 import { PosProduct } from '../../models/pos-product.model';
+import { SaleDocumentType } from '../../models/sale-document.model';
 import { Sale } from '../../models/sale.model';
 import { SaleListItem } from '../../models/sale-list-item.model';
 import { PosKeyboardService } from '../../services/pos-keyboard.service';
@@ -62,6 +63,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly canSell = this.permissionService.hasPermission(PERMISSIONS.posSalesCreate);
   readonly canReadReports = this.permissionService.hasPermission(PERMISSIONS.reportsSalesRead);
   readonly canVoid = this.permissionService.hasPermission(PERMISSIONS.posSalesVoid);
+  readonly canSignSriDocuments = this.permissionService.hasPermission(PERMISSIONS.sriDocumentsSign);
 
   readonly allProducts = signal<PosProduct[]>([]);
   readonly searchTerm = signal('');
@@ -74,6 +76,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly activeCartProductId = signal<number | null>(null);
   readonly selectedCustomer = signal<PosCustomer | null>(null);
   readonly saleDiscountAmount = signal(0);
+  readonly selectedDocumentType = signal<SaleDocumentType>(SaleDocumentType.Ticket);
   readonly notes = signal('');
   readonly checkoutVisible = signal(false);
   readonly customerSelectorVisible = signal(false);
@@ -86,6 +89,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly salesError = signal('');
   readonly saleDetailVisible = signal(false);
   readonly selectedSale = signal<Sale | null>(null);
+  readonly sriSigningSaleId = signal<number | null>(null);
 
   readonly voidVisible = signal(false);
   readonly voidLoading = signal(false);
@@ -476,6 +480,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
     const payload: CheckoutRequest = {
       customerId: this.selectedCustomer()?.id ?? null,
+      documentType: this.selectedDocumentType(),
       discountAmount: this.effectiveSaleDiscountAmount(),
       notes: this.notes().trim() || undefined,
       items: this.cart().map((item) => ({
@@ -496,6 +501,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         this.activeCartProductId.set(null);
         this.selectedCustomer.set(null);
         this.saleDiscountAmount.set(0);
+        this.selectedDocumentType.set(SaleDocumentType.Ticket);
         this.notes.set('');
         this.messageService.add({ severity: 'success', summary: 'Venta registrada', detail: 'La venta fue creada correctamente.' });
         this.refreshOperationalData();
@@ -520,6 +526,61 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         }
 
         this.refreshOperationalData();
+      },
+    });
+  }
+
+  signSriXml(saleId: number): void {
+    if (!this.canSignSriDocuments || this.sriSigningSaleId()) {
+      return;
+    }
+
+    this.sriSigningSaleId.set(saleId);
+
+    this.workstationService.signInvoiceXml(saleId).subscribe({
+      next: (sale) => {
+        this.sriSigningSaleId.set(null);
+        this.selectedSale.set(sale);
+        this.loadSales();
+        this.messageService.add({
+          severity: 'success',
+          summary: 'XML firmado',
+          detail: 'XML firmado correctamente. La factura aún no ha sido autorizada por el SRI.',
+        });
+      },
+      error: (error: HttpErrorResponse) => {
+        this.sriSigningSaleId.set(null);
+        this.messageService.add({
+          severity: 'error',
+          summary: 'No se pudo firmar',
+          detail: this.workstationService.resolveBusinessError(error),
+        });
+      },
+    });
+  }
+
+  downloadSriXmlDraft(saleId: number): void {
+    this.workstationService.getSriXmlDraft(saleId).subscribe({
+      next: (blob) => this.downloadXmlBlob(blob, this.buildXmlFileName(saleId, 'draft')),
+      error: (error: HttpErrorResponse) => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'No se pudo descargar',
+          detail: this.workstationService.resolveBusinessError(error),
+        });
+      },
+    });
+  }
+
+  downloadSriSignedXml(saleId: number): void {
+    this.workstationService.getSriSignedXml(saleId).subscribe({
+      next: (blob) => this.downloadXmlBlob(blob, this.buildXmlFileName(saleId, 'signed')),
+      error: (error: HttpErrorResponse) => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'No se pudo descargar',
+          detail: this.workstationService.resolveBusinessError(error),
+        });
       },
     });
   }
@@ -888,6 +949,29 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
   private focusMainSearch(): void {
     this.productSearchPanel?.focusSearchInput();
+  }
+
+  private downloadXmlBlob(blob: Blob, fileName: string): void {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  private buildXmlFileName(saleId: number, suffix: 'draft' | 'signed'): string {
+    const sale = this.selectedSale()?.id === saleId ? this.selectedSale() : null;
+    const fallback = this.sales().find((item) => item.id === saleId);
+    const identifier = sale?.number ?? fallback?.number ?? String(saleId);
+    return `factura-${this.sanitizeFileNamePart(identifier)}-${suffix}.xml`;
+  }
+
+  private sanitizeFileNamePart(value: string): string {
+    return value.trim().replace(/[^a-zA-Z0-9-]/g, '-') || 'sin-numero';
   }
 
   private closeContextualDialog(): void {

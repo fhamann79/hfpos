@@ -12,6 +12,7 @@ export const PERMISSIONS = {
   posSalesCreate: 'POS_SALES_CREATE',
   posSalesVoid: 'POS_SALES_VOID',
   reportsSalesRead: 'REPORTS_SALES_READ',
+  sriDocumentsSign: 'SRI_DOCUMENTS_SIGN',
   fiscalSettingsRead: 'FISCAL_SETTINGS_READ',
   fiscalSettingsWrite: 'FISCAL_SETTINGS_WRITE',
   inventoryRead: 'INVENTORY_READ',

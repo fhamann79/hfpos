@@ -53,8 +53,19 @@ const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
   CERTIFICATE_WITHOUT_PRIVATE_KEY: 'El certificado no contiene clave privada y no puede usarse para firmar.',
   CERTIFICATE_EXPIRED: 'El certificado está vencido.',
   CERTIFICATE_NOT_VALID_YET: 'El certificado aún no está vigente.',
+  CERTIFICATE_UNPROTECT_FAILED: 'No se pudo acceder de forma segura al certificado configurado.',
+  CERTIFICATE_LOAD_FAILED: 'No se pudo cargar el certificado digital.',
   CERTIFICATE_PROTECTION_FAILED: 'No se pudo proteger el certificado. Intenta nuevamente.',
   CERTIFICATE_OPERATION_FAILED: 'No se pudo completar la operación del certificado.',
+  SRI_SIGNING_ONLY_INVOICE: 'Solo las facturas pueden firmarse electrónicamente.',
+  SRI_SIGNING_SALE_VOIDED: 'No se puede firmar una venta anulada.',
+  SRI_XML_DRAFT_NOT_FOUND: 'No existe XML draft para esta factura.',
+  SRI_ACCESS_KEY_REQUIRED: 'La factura no tiene clave de acceso SRI.',
+  SRI_XML_ALREADY_SIGNED: 'Esta factura ya tiene XML firmado.',
+  SRI_XML_SIGNING_FAILED: 'No se pudo firmar el XML de la factura.',
+  SRI_SIGNATURE_VALIDATION_FAILED: 'La firma generada no pudo ser validada.',
+  SRI_SIGNED_XML_NOT_FOUND: 'No existe XML firmado para esta factura.',
+  SRI_DOCUMENT_SIGN_OPERATION_FAILED: 'No se pudo completar la firma electrónica.',
 };
 
 const STATUS_ERROR_MESSAGES: Record<number, string> = {

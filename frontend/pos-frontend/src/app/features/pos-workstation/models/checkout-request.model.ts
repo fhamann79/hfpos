@@ -1,3 +1,5 @@
+import { SaleDocumentType } from './sale-document.model';
+
 export interface CheckoutItemRequest {
   productId: number;
   quantity: number;
@@ -7,6 +9,7 @@ export interface CheckoutItemRequest {
 
 export interface CheckoutRequest {
   customerId?: number | null;
+  documentType?: SaleDocumentType;
   discountAmount?: number;
   notes?: string;
   items: CheckoutItemRequest[];

@@ -5,6 +5,7 @@ import { environment } from '../../../../environments/environment';
 import { hasHttpBusinessError, resolveHttpErrorMessage } from '../../../core/utils/http-error-normalizer';
 import { normalizeVatCategory } from '../../../core/utils/vat-category';
 import { CheckoutRequest } from '../models/checkout-request.model';
+import { normalizeSaleDocumentStatus, normalizeSaleDocumentType } from '../models/sale-document.model';
 import { Sale } from '../models/sale.model';
 import { SaleItem } from '../models/sale-item.model';
 import { SaleListItem } from '../models/sale-list-item.model';
@@ -23,12 +24,24 @@ export class PosWorkstationService {
     return this.http.get<unknown>(`${this.salesUrl}/${id}`).pipe(map((row) => this.toSale(row)));
   }
 
-  createSale(payload: CheckoutRequest): Observable<unknown> {
-    return this.http.post<unknown>(this.salesUrl, payload);
+  createSale(payload: CheckoutRequest): Observable<Sale> {
+    return this.http.post<unknown>(this.salesUrl, payload).pipe(map((row) => this.toSale(row)));
   }
 
   voidSale(id: number, payload: VoidSaleRequest): Observable<unknown> {
     return this.http.post<unknown>(`${this.salesUrl}/${id}/void`, payload);
+  }
+
+  signInvoiceXml(id: number): Observable<Sale> {
+    return this.http.post<unknown>(`${this.salesUrl}/${id}/sri/sign`, {}).pipe(map((row) => this.toSale(row)));
+  }
+
+  getSriXmlDraft(id: number): Observable<Blob> {
+    return this.http.get(`${this.salesUrl}/${id}/sri/xml-draft`, { responseType: 'blob' });
+  }
+
+  getSriSignedXml(id: number): Observable<Blob> {
+    return this.http.get(`${this.salesUrl}/${id}/sri/signed-xml`, { responseType: 'blob' });
   }
 
   isBusinessError(error: HttpErrorResponse, code: string): boolean {
@@ -41,13 +54,21 @@ export class PosWorkstationService {
 
   private toSaleListItem(source: unknown): SaleListItem {
     const row = this.asRecord(source);
-    const status = this.readString(row, ['status', 'state'], 'UNKNOWN');
+    const status = this.readSaleStatus(row);
     const isVoided = this.isVoided(row);
 
     return {
       id: this.readNumber(row, ['id', 'saleId'], 0),
       createdAt: this.readString(row, ['createdAt', 'createdOn', 'date'], ''),
       status: isVoided ? 'Anulada' : status,
+      documentType: normalizeSaleDocumentType(row?.['documentType']),
+      documentStatus: normalizeSaleDocumentStatus(row?.['documentStatus']),
+      number: this.readString(row, ['number'], null),
+      hasSriXmlDraft: this.readBoolean(row, ['hasSriXmlDraft'], false),
+      hasSriSignedXml: this.readBoolean(row, ['hasSriSignedXml'], false),
+      sriSignatureStatusKnown: this.hasOwn(row, 'hasSriSignedXml'),
+      accessKey: this.readString(row, ['accessKey'], null),
+      sriSignedAt: this.readString(row, ['sriSignedAt'], null),
       total: this.readNumber(row, ['total', 'grandTotal'], 0),
       createdBy: this.readString(row, ['createdBy', 'username', 'userName'], null),
       isVoided,
@@ -58,13 +79,34 @@ export class PosWorkstationService {
     const row = this.asRecord(source);
     const itemsRaw = row?.['items'];
     const items = Array.isArray(itemsRaw) ? itemsRaw.map((item) => this.toSaleItem(item)) : [];
-    const status = this.readString(row, ['status', 'state'], 'UNKNOWN');
+    const status = this.readSaleStatus(row);
     const isVoided = this.isVoided(row);
 
     return {
       id: this.readNumber(row, ['id', 'saleId'], 0),
       createdAt: this.readString(row, ['createdAt', 'createdOn', 'date'], ''),
       status: isVoided ? 'Anulada' : status,
+      documentType: normalizeSaleDocumentType(row?.['documentType']),
+      documentStatus: normalizeSaleDocumentStatus(row?.['documentStatus']),
+      number: this.readString(row, ['number'], null),
+      establishmentCodeSnapshot: this.readString(row, ['establishmentCodeSnapshot'], null),
+      emissionPointCodeSnapshot: this.readString(row, ['emissionPointCodeSnapshot'], null),
+      sequential: this.readOptionalNumber(row, ['sequential']),
+      documentIssuedAt: this.readString(row, ['documentIssuedAt'], null),
+      accessKey: this.readString(row, ['accessKey'], null),
+      authorizationNumber: this.readString(row, ['authorizationNumber'], null),
+      authorizedAt: this.readString(row, ['authorizedAt'], null),
+      sriEnvironment: this.readOptionalNumber(row, ['sriEnvironment']),
+      sriEmissionType: this.readOptionalNumber(row, ['sriEmissionType']),
+      sriNumericCode: this.readString(row, ['sriNumericCode'], null),
+      sriXmlGeneratedAt: this.readString(row, ['sriXmlGeneratedAt'], null),
+      hasSriXmlDraft: this.readBoolean(row, ['hasSriXmlDraft'], false),
+      sriSignedAt: this.readString(row, ['sriSignedAt'], null),
+      hasSriSignedXml: this.readBoolean(row, ['hasSriSignedXml'], false),
+      sriSignatureHash: this.readString(row, ['sriSignatureHash'], null),
+      sriSigningCertificateThumbprint: this.readString(row, ['sriSigningCertificateThumbprint'], null),
+      sriSigningCertificateSubject: this.readString(row, ['sriSigningCertificateSubject'], null),
+      sriSigningCertificateSerialNumber: this.readString(row, ['sriSigningCertificateSerialNumber'], null),
       customerName: this.readString(row, ['customerName'], null),
       notes: this.readString(row, ['notes'], null),
       grossSubtotal: this.readNumber(row, ['grossSubtotal', 'subtotal'], 0),
@@ -164,8 +206,35 @@ export class PosWorkstationService {
       return true;
     }
 
+    const statusValue = this.readNumber(record, ['status'], -1);
+    if (statusValue === 2) {
+      return true;
+    }
+
     const statusCode = this.readNumber(record, ['statusCode', 'stateCode'], -1);
     return statusCode === 3;
+  }
+
+  private readSaleStatus(record: Record<string, unknown> | null): string {
+    if (!record) {
+      return 'Desconocida';
+    }
+
+    const status = this.readString(record, ['status', 'state'], '');
+    if (status) {
+      return status;
+    }
+
+    switch (this.readNumber(record, ['status', 'state'], -1)) {
+      case 0:
+        return 'Borrador';
+      case 1:
+        return 'Completada';
+      case 2:
+        return 'Anulada';
+      default:
+        return 'Desconocida';
+    }
   }
 
   private readNumber(record: Record<string, unknown> | null, keys: string[], fallback: number): number {
@@ -187,5 +256,30 @@ export class PosWorkstationService {
     }
 
     return fallback;
+  }
+
+  private readOptionalNumber(record: Record<string, unknown> | null, keys: string[]): number | null {
+    if (!record) {
+      return null;
+    }
+
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+      }
+      if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+          return parsed;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private hasOwn(record: Record<string, unknown> | null, key: string): boolean {
+    return !!record && Object.prototype.hasOwnProperty.call(record, key);
   }
 }
