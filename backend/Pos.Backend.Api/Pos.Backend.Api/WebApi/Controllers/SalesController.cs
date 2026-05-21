@@ -17,13 +17,16 @@ public class SalesController : ControllerBase
 {
     private readonly ISalesService _salesService;
     private readonly ISriInvoiceSigningService _sriInvoiceSigningService;
+    private readonly ISriSubmissionService _sriSubmissionService;
 
     public SalesController(
         ISalesService salesService,
-        ISriInvoiceSigningService sriInvoiceSigningService)
+        ISriInvoiceSigningService sriInvoiceSigningService,
+        ISriSubmissionService sriSubmissionService)
     {
         _salesService = salesService;
         _sriInvoiceSigningService = sriInvoiceSigningService;
+        _sriSubmissionService = sriSubmissionService;
     }
 
     [HttpGet]
@@ -107,6 +110,65 @@ public class SalesController : ControllerBase
         }
     }
 
+    [HttpPost("{id:int}/sri/submit")]
+    [Authorize(Policy = AppPermissions.SriDocumentsSubmit)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<SaleDto>> SubmitSriSignedInvoice(int id)
+    {
+        try
+        {
+            return Ok(await _sriSubmissionService.SubmitSignedInvoiceAsync(id));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpPost("{id:int}/sri/check-authorization")]
+    [Authorize(Policy = AppPermissions.SriDocumentsSubmit)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<SaleDto>> CheckSriAuthorization(int id)
+    {
+        try
+        {
+            return Ok(await _sriSubmissionService.CheckAuthorizationAsync(id));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpGet("{id:int}/sri/submission-attempts")]
+    [Authorize(Policy = AppPermissions.ReportsSalesRead)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<SriSubmissionAttemptDto>>> GetSriSubmissionAttempts(int id)
+    {
+        try
+        {
+            return Ok(await _sriSubmissionService.GetAttemptsAsync(id));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
     [HttpPost]
     [Authorize(Policy = AppPermissions.PosSalesCreate)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -166,6 +228,8 @@ public class SalesController : ControllerBase
             "INVALID_SRI_DOCUMENT_CONTEXT" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_SRI_CUSTOMER_IDENTIFICATION" => BadRequest(new ApiErrorResponse { Error = code }),
             "SRI_SIGNING_ONLY_INVOICE" => BadRequest(new ApiErrorResponse { Error = code }),
+            "SRI_SUBMISSION_ONLY_INVOICE" => BadRequest(new ApiErrorResponse { Error = code }),
+            "SRI_SIGNED_XML_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "SRI_ACCESS_KEY_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "SRI_ACCESS_KEY_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_XML_DRAFT_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
@@ -176,6 +240,13 @@ public class SalesController : ControllerBase
             "CERTIFICATE_WITHOUT_PRIVATE_KEY" => Conflict(new ApiErrorResponse { Error = code }),
             "CERTIFICATE_LOAD_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_SIGNATURE_VALIDATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_SUBMISSION_SALE_VOIDED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_SETTINGS_DISABLED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_PRODUCTION_SUBMISSION_DISABLED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_RECEPTION_REJECTED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_AUTHORIZATION_REJECTED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_ALREADY_AUTHORIZED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_AUTHORIZATION_PENDING" => StatusCode(StatusCodes.Status202Accepted, new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_ERROR" => Conflict(new ApiErrorResponse { Error = code }),
             "DOCUMENT_NUMBER_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
             "SALE_ALREADY_VOIDED" => Conflict(new ApiErrorResponse { Error = code }),
@@ -184,6 +255,10 @@ public class SalesController : ControllerBase
             "INVENTORY_CONCURRENCY_CONFLICT" => Conflict(new ApiErrorResponse { Error = code }),
             "CERTIFICATE_UNPROTECT_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "SRI_XML_SIGNING_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
+            "SRI_RECEPTION_ENDPOINT_NOT_CONFIGURED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
+            "SRI_AUTHORIZATION_ENDPOINT_NOT_CONFIGURED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
+            "SRI_RECEPTION_COMMUNICATION_FAILED" => StatusCode(StatusCodes.Status502BadGateway, new ApiErrorResponse { Error = code }),
+            "SRI_AUTHORIZATION_COMMUNICATION_FAILED" => StatusCode(StatusCodes.Status502BadGateway, new ApiErrorResponse { Error = code }),
             _ => BadRequest(new ApiErrorResponse { Error = "SALE_OPERATION_FAILED" })
         };
     }

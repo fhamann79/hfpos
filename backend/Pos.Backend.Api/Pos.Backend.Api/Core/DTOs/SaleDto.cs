@@ -56,6 +56,16 @@ public class SaleDto
 
     public string? SriSigningCertificateSerialNumber { get; set; }
 
+    public DateTime? SriSubmittedAt { get; set; }
+
+    public string? SriReceptionStatus { get; set; }
+
+    public string? SriAuthorizationStatus { get; set; }
+
+    public string? SriLastSubmissionError { get; set; }
+
+    public DateTime? SriLastCheckedAt { get; set; }
+
     public decimal GrossSubtotal { get; set; }
 
     public decimal DiscountAmount { get; set; }

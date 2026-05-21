@@ -1,0 +1,12 @@
+using Pos.Backend.Api.Core.DTOs;
+
+namespace Pos.Backend.Api.Core.Services;
+
+public interface ISriSubmissionService
+{
+    Task<SaleDto> SubmitSignedInvoiceAsync(int saleId);
+
+    Task<SaleDto> CheckAuthorizationAsync(int saleId);
+
+    Task<IReadOnlyList<SriSubmissionAttemptDto>> GetAttemptsAsync(int saleId);
+}

@@ -88,8 +88,15 @@ builder.Services.AddScoped<IFiscalSettingsService, FiscalSettingsService>();
 builder.Services.AddScoped<ISriCertificateService, SriCertificateService>();
 builder.Services.AddScoped<ISriSigningCertificateProvider, SriSigningCertificateProvider>();
 builder.Services.AddScoped<ISriInvoiceSigningService, SriInvoiceSigningService>();
+builder.Services.AddScoped<ISriSubmissionService, SriSubmissionService>();
 builder.Services.AddScoped<ISalesService, SalesService>();
 builder.Services.AddScoped<Pos.Backend.Api.WebApi.Filters.OperationalContextFilter>();
+builder.Services.AddHttpClient<ISriWebServiceClient, SriWebServiceClient>((serviceProvider, client) =>
+{
+    var options = serviceProvider.GetRequiredService<IOptions<SriOptions>>().Value;
+    var timeoutSeconds = Math.Clamp(options.TimeoutSeconds, 5, 120);
+    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+});
 
 builder.Services.AddAuthorization(options =>
 {
@@ -119,6 +126,7 @@ builder.Services.AddAuthorization(options =>
         AppPermissions.PosSalesVoid,
         AppPermissions.ReportsSalesRead,
         AppPermissions.SriDocumentsSign,
+        AppPermissions.SriDocumentsSubmit,
         AppPermissions.FiscalSettingsRead,
         AppPermissions.FiscalSettingsWrite,
         AppPermissions.AdminUsersRead,

@@ -29,6 +29,7 @@ public class PosDbContext : DbContext
     public DbSet<DocumentSequenceAudit> DocumentSequenceAudits { get; set; }
     public DbSet<Sale> Sales { get; set; }
     public DbSet<SaleItem> SaleItems { get; set; }
+    public DbSet<SriSubmissionAttempt> SriSubmissionAttempts { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -420,6 +421,15 @@ public class PosDbContext : DbContext
             entity.Property(s => s.SriSigningCertificateSerialNumber)
                 .HasMaxLength(100);
 
+            entity.Property(s => s.SriReceptionStatus)
+                .HasMaxLength(50);
+
+            entity.Property(s => s.SriAuthorizationStatus)
+                .HasMaxLength(50);
+
+            entity.Property(s => s.SriLastSubmissionError)
+                .HasMaxLength(1000);
+
             entity.Property(s => s.Notes)
                 .HasMaxLength(500);
 
@@ -455,6 +465,82 @@ public class PosDbContext : DbContext
             entity.HasOne(s => s.EmissionPoint)
                 .WithMany()
                 .HasForeignKey(s => s.EmissionPointId);
+        });
+
+        modelBuilder.Entity<SriSubmissionAttempt>(entity =>
+        {
+            entity.Property(a => a.AccessKey)
+                .IsRequired()
+                .HasMaxLength(49);
+
+            entity.Property(a => a.AttemptType)
+                .HasConversion<int>();
+
+            entity.Property(a => a.Status)
+                .HasConversion<int>();
+
+            entity.Property(a => a.ReceptionStatus)
+                .HasMaxLength(50);
+
+            entity.Property(a => a.AuthorizationStatus)
+                .HasMaxLength(50);
+
+            entity.Property(a => a.AuthorizationNumber)
+                .HasMaxLength(50);
+
+            entity.Property(a => a.RequestXmlSnapshot)
+                .HasColumnType("text");
+
+            entity.Property(a => a.ResponseXml)
+                .HasColumnType("text");
+
+            entity.Property(a => a.ErrorCode)
+                .HasMaxLength(100);
+
+            entity.Property(a => a.ErrorMessage)
+                .HasMaxLength(1000);
+
+            entity.Property(a => a.SriMessageIdentifier)
+                .HasMaxLength(100);
+
+            entity.Property(a => a.SriMessageType)
+                .HasMaxLength(100);
+
+            entity.Property(a => a.SriMessage)
+                .HasMaxLength(1000);
+
+            entity.Property(a => a.SriAdditionalInfo)
+                .HasMaxLength(2000);
+
+            entity.HasIndex(a => new { a.SaleId, a.CreatedAt });
+            entity.HasIndex(a => new { a.CompanyId, a.AccessKey });
+            entity.HasIndex(a => new { a.CompanyId, a.CreatedAt });
+            entity.HasIndex(a => a.AccessKey);
+
+            entity.HasOne(a => a.Sale)
+                .WithMany(s => s.SriSubmissionAttempts)
+                .HasForeignKey(a => a.SaleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(a => a.Company)
+                .WithMany()
+                .HasForeignKey(a => a.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(a => a.Establishment)
+                .WithMany()
+                .HasForeignKey(a => a.EstablishmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(a => a.EmissionPoint)
+                .WithMany()
+                .HasForeignKey(a => a.EmissionPointId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(a => a.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(a => a.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<SaleItem>(entity =>

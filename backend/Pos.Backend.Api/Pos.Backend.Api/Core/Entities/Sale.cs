@@ -67,6 +67,16 @@ public class Sale
 
     public string? SriSigningCertificateSerialNumber { get; set; }
 
+    public DateTime? SriSubmittedAt { get; set; }
+
+    public string? SriReceptionStatus { get; set; }
+
+    public string? SriAuthorizationStatus { get; set; }
+
+    public string? SriLastSubmissionError { get; set; }
+
+    public DateTime? SriLastCheckedAt { get; set; }
+
     public string? Notes { get; set; }
 
     public decimal GrossSubtotal { get; set; }
@@ -96,4 +106,6 @@ public class Sale
     public DateTime? VoidedAt { get; set; }
 
     public ICollection<SaleItem> Items { get; set; } = new List<SaleItem>();
+
+    public ICollection<SriSubmissionAttempt> SriSubmissionAttempts { get; set; } = new List<SriSubmissionAttempt>();
 }
