@@ -17,6 +17,7 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly ISriSigningCertificateProvider _certificateProvider;
+    private readonly ISriInvoiceXmlValidator _sriInvoiceXmlValidator;
     private readonly ISalesService _salesService;
     private readonly ILogger<SriInvoiceSigningService> _logger;
 
@@ -24,12 +25,14 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
         PosDbContext context,
         IOperationalContextAccessor operationalContextAccessor,
         ISriSigningCertificateProvider certificateProvider,
+        ISriInvoiceXmlValidator sriInvoiceXmlValidator,
         ISalesService salesService,
         ILogger<SriInvoiceSigningService> logger)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
         _certificateProvider = certificateProvider;
+        _sriInvoiceXmlValidator = sriInvoiceXmlValidator;
         _salesService = salesService;
         _logger = logger;
     }
@@ -61,6 +64,7 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
             }
 
             ValidateSaleCanBeSigned(sale);
+            _sriInvoiceXmlValidator.ValidateUnsignedInvoiceXml(sale.SriXmlDraft!);
 
             using var certificateMaterial = await _certificateProvider.GetActiveCertificateMaterialAsync();
             var signedXml = SignXml(sale.SriXmlDraft!, certificateMaterial.Certificate);

@@ -19,6 +19,7 @@ public class SalesService : ISalesService
     private readonly IInventoryService _inventoryService;
     private readonly ISriAccessKeyService _sriAccessKeyService;
     private readonly ISriXmlDraftService _sriXmlDraftService;
+    private readonly ISriInvoiceXmlValidator _sriInvoiceXmlValidator;
     private readonly SriOptions _sriOptions;
 
     public SalesService(
@@ -28,6 +29,7 @@ public class SalesService : ISalesService
         IInventoryService inventoryService,
         ISriAccessKeyService sriAccessKeyService,
         ISriXmlDraftService sriXmlDraftService,
+        ISriInvoiceXmlValidator sriInvoiceXmlValidator,
         IOptions<SriOptions> sriOptions)
     {
         _context = context;
@@ -36,6 +38,7 @@ public class SalesService : ISalesService
         _inventoryService = inventoryService;
         _sriAccessKeyService = sriAccessKeyService;
         _sriXmlDraftService = sriXmlDraftService;
+        _sriInvoiceXmlValidator = sriInvoiceXmlValidator;
         _sriOptions = sriOptions.Value;
     }
 
@@ -711,16 +714,27 @@ public class SalesService : ISalesService
             sale.SriEmissionType = accessKey.EmissionType;
             sale.SriNumericCode = accessKey.NumericCode;
 
-            sale.SriXmlDraft = _sriXmlDraftService.GenerateInvoiceXmlDraft(new SriXmlDraftRequest
+            var xmlDraft = _sriXmlDraftService.GenerateInvoiceXmlDraft(new SriXmlDraftRequest
             {
                 Sale = sale,
                 Company = fiscalContext.Company,
                 Establishment = fiscalContext.Establishment,
                 Customer = customer,
-                ProductNames = products.ToDictionary(p => p.Key, p => p.Value.Name),
+                Products = products.ToDictionary(
+                    p => p.Key,
+                    p => new SriXmlProductSnapshot
+                    {
+                        ProductId = p.Value.Id,
+                        Name = p.Value.Name,
+                        Barcode = p.Value.Barcode,
+                        InternalCode = p.Value.InternalCode
+                    }),
                 Environment = sriSettings.Environment,
                 EmissionType = sriSettings.EmissionType
             });
+
+            _sriInvoiceXmlValidator.ValidateUnsignedInvoiceXml(xmlDraft);
+            sale.SriXmlDraft = xmlDraft;
             sale.SriXmlGeneratedAt = DateTime.UtcNow;
         }
         catch (InvalidOperationException)
