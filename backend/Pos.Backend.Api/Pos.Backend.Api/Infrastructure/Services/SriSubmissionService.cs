@@ -16,6 +16,7 @@ public class SriSubmissionService : ISriSubmissionService
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly ISriWebServiceClient _sriWebServiceClient;
     private readonly ISalesService _salesService;
+    private readonly ISriInvoiceXmlValidator _sriInvoiceXmlValidator;
     private readonly SriOptions _sriOptions;
     private readonly ILogger<SriSubmissionService> _logger;
 
@@ -24,6 +25,7 @@ public class SriSubmissionService : ISriSubmissionService
         IOperationalContextAccessor operationalContextAccessor,
         ISriWebServiceClient sriWebServiceClient,
         ISalesService salesService,
+        ISriInvoiceXmlValidator sriInvoiceXmlValidator,
         IOptions<SriOptions> sriOptions,
         ILogger<SriSubmissionService> logger)
     {
@@ -31,6 +33,7 @@ public class SriSubmissionService : ISriSubmissionService
         _operationalContextAccessor = operationalContextAccessor;
         _sriWebServiceClient = sriWebServiceClient;
         _salesService = salesService;
+        _sriInvoiceXmlValidator = sriInvoiceXmlValidator;
         _sriOptions = sriOptions.Value;
         _logger = logger;
     }
@@ -41,6 +44,7 @@ public class SriSubmissionService : ISriSubmissionService
         var sale = await LoadSaleSnapshotAsync(saleId, operationalContext);
 
         ValidateSaleCanBeSubmitted(sale);
+        ValidateUnsignedDraftIfPresent(sale);
 
         var sriContext = await ResolveSriSubmissionContextAsync(sale.CompanyId, sale.SriEnvironment);
 
@@ -70,6 +74,7 @@ public class SriSubmissionService : ISriSubmissionService
         {
             var trackedSale = await LockSaleAsync(sale.Id, operationalContext);
             ValidateSaleCanBeSubmitted(trackedSale);
+            ValidateUnsignedDraftIfPresent(trackedSale);
 
             var attempt = BuildBaseAttempt(
                 trackedSale,
@@ -321,6 +326,14 @@ public class SriSubmissionService : ISriSubmissionService
         if (string.IsNullOrWhiteSpace(sale.AccessKey))
         {
             throw new InvalidOperationException("SRI_ACCESS_KEY_REQUIRED");
+        }
+    }
+
+    private void ValidateUnsignedDraftIfPresent(Sale sale)
+    {
+        if (!string.IsNullOrWhiteSpace(sale.SriXmlDraft))
+        {
+            _sriInvoiceXmlValidator.ValidateUnsignedInvoiceXml(sale.SriXmlDraft);
         }
     }
 

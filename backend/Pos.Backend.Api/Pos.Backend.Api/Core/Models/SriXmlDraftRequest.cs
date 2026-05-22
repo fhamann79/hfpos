@@ -12,7 +12,8 @@ public class SriXmlDraftRequest
 
     public Customer? Customer { get; set; }
 
-    public IReadOnlyDictionary<int, string> ProductNames { get; set; } = new Dictionary<int, string>();
+    public IReadOnlyDictionary<int, SriXmlProductSnapshot> Products { get; set; } =
+        new Dictionary<int, SriXmlProductSnapshot>();
 
     public int Environment { get; set; }
 
