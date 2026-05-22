@@ -1,0 +1,92 @@
+<p-dialog
+  header="Historial SRI"
+  [visible]="visible"
+  [modal]="true"
+  [draggable]="false"
+  [style]="{ width: '68rem', maxWidth: '96vw' }"
+  (visibleChange)="visibleChange.emit($event)"
+>
+  @if (sale) {
+    <section class="attempt-context">
+      <div>
+        <span>Documento</span>
+        <strong>{{ sale.number || ('#' + sale.id) }}</strong>
+      </div>
+      <div>
+        <span>Clave acceso</span>
+        <code>{{ sale.accessKey || '-' }}</code>
+      </div>
+      <p-button
+        label="Refrescar"
+        icon="pi pi-refresh"
+        severity="secondary"
+        [outlined]="true"
+        [loading]="loading"
+        (onClick)="refresh.emit()"
+      ></p-button>
+    </section>
+  }
+
+  @if (errorMessage) {
+    <p-message severity="error" [text]="errorMessage"></p-message>
+  }
+
+  <p-table
+    [value]="attempts"
+    [loading]="loading"
+    [paginator]="true"
+    [rows]="6"
+    responsiveLayout="scroll"
+    [tableStyle]="{ 'min-width': '62rem' }"
+  >
+    <ng-template pTemplate="header">
+      <tr>
+        <th>Fecha</th>
+        <th>Tipo</th>
+        <th>Estado intento</th>
+        <th>Recepción</th>
+        <th>Autorización</th>
+        <th>Número autorización</th>
+        <th>Mensaje SRI</th>
+        <th>Información adicional</th>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="body" let-attempt>
+      <tr>
+        <td>{{ attempt.createdAt | date: 'medium' }}</td>
+        <td>{{ attemptTypeLabel(attempt) }}</td>
+        <td>
+          <p-tag [value]="attemptStatusLabel(attempt)" [severity]="attemptStatusSeverity(attempt)"></p-tag>
+        </td>
+        <td>
+          <p-tag [value]="receptionStatusLabel(attempt)" [severity]="receptionStatusSeverity(attempt)"></p-tag>
+        </td>
+        <td>
+          <p-tag [value]="authorizationStatusLabel(attempt)" [severity]="authorizationStatusSeverity(attempt)"></p-tag>
+        </td>
+        <td>{{ attempt.authorizationNumber || '-' }}</td>
+        <td class="message-cell">
+          @if (attempt.sriMessageIdentifier || attempt.sriMessageType) {
+            <small>{{ attempt.sriMessageIdentifier || '-' }} · {{ attempt.sriMessageType || '-' }}</small>
+          }
+          <strong>{{ primaryMessage(attempt) }}</strong>
+          @if (attempt.errorCode) {
+            <small>Error: {{ attempt.errorCode }}</small>
+          }
+        </td>
+        <td class="message-cell">
+          <span>{{ attempt.sriAdditionalInfo || '-' }}</span>
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="emptymessage">
+      <tr>
+        <td colspan="8">
+          <div class="empty-state">No hay intentos SRI registrados.</div>
+        </td>
+      </tr>
+    </ng-template>
+  </p-table>
+</p-dialog>

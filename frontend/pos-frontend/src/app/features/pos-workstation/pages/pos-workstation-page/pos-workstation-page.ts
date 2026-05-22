@@ -17,6 +17,7 @@ import { ProductSearchPanel } from '../../components/product-search-panel/produc
 import { QuickProductSearchDialog } from '../../components/quick-product-search-dialog/quick-product-search-dialog';
 import { RecentSalesPanel } from '../../components/recent-sales-panel/recent-sales-panel';
 import { SaleDetailDialog } from '../../components/sale-detail-dialog/sale-detail-dialog';
+import { SriSubmissionAttemptsDialog } from '../../components/sri-submission-attempts-dialog/sri-submission-attempts-dialog';
 import { VoidSaleDialog } from '../../components/void-sale-dialog/void-sale-dialog';
 import { CartItem } from '../../models/cart-item.model';
 import { CheckoutRequest } from '../../models/checkout-request.model';
@@ -25,6 +26,7 @@ import { PosProduct } from '../../models/pos-product.model';
 import { SaleDocumentType } from '../../models/sale-document.model';
 import { Sale } from '../../models/sale.model';
 import { SaleListItem } from '../../models/sale-list-item.model';
+import { SriSubmissionAttempt } from '../../models/sri-submission-attempt.model';
 import { PosKeyboardService } from '../../services/pos-keyboard.service';
 import { PosCatalogSnapshot, PosProductCatalogService } from '../../services/pos-product-catalog.service';
 import { PosWorkstationService } from '../../services/pos-workstation.service';
@@ -45,6 +47,7 @@ import { PosWorkstationService } from '../../services/pos-workstation.service';
     CustomerSelectorDialog,
     RecentSalesPanel,
     SaleDetailDialog,
+    SriSubmissionAttemptsDialog,
     VoidSaleDialog,
   ],
   providers: [MessageService],
@@ -64,6 +67,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly canReadReports = this.permissionService.hasPermission(PERMISSIONS.reportsSalesRead);
   readonly canVoid = this.permissionService.hasPermission(PERMISSIONS.posSalesVoid);
   readonly canSignSriDocuments = this.permissionService.hasPermission(PERMISSIONS.sriDocumentsSign);
+  readonly canSubmitSriDocuments = this.permissionService.hasPermission(PERMISSIONS.sriDocumentsSubmit);
 
   readonly allProducts = signal<PosProduct[]>([]);
   readonly searchTerm = signal('');
@@ -90,6 +94,13 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly saleDetailVisible = signal(false);
   readonly selectedSale = signal<Sale | null>(null);
   readonly sriSigningSaleId = signal<number | null>(null);
+  readonly sriSubmittingSaleId = signal<number | null>(null);
+  readonly sriCheckingAuthorizationSaleId = signal<number | null>(null);
+  readonly sriAttemptsVisible = signal(false);
+  readonly sriAttemptsLoading = signal(false);
+  readonly sriAttemptsError = signal('');
+  readonly sriAttempts = signal<SriSubmissionAttempt[]>([]);
+  readonly sriAttemptsSale = signal<Sale | null>(null);
 
   readonly voidVisible = signal(false);
   readonly voidLoading = signal(false);
@@ -559,6 +570,99 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     });
   }
 
+  submitSriInvoice(saleId: number): void {
+    if (!this.canSubmitSriDocuments || this.sriSubmittingSaleId()) {
+      return;
+    }
+
+    this.sriSubmittingSaleId.set(saleId);
+
+    this.workstationService.submitSriInvoice(saleId).subscribe({
+      next: (sale) => {
+        this.sriSubmittingSaleId.set(null);
+        this.selectedSale.set(sale);
+        this.loadSales();
+        this.reloadSriAttemptsIfOpen(saleId);
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Recibido por SRI',
+          detail: 'Comprobante recibido por SRI. Consulta la autorización.',
+        });
+      },
+      error: (error: HttpErrorResponse) => {
+        this.sriSubmittingSaleId.set(null);
+        this.refreshSelectedSale(saleId);
+        this.reloadSriAttemptsIfOpen(saleId);
+        this.messageService.add({
+          severity: this.workstationService.isBusinessError(error, 'SRI_RECEPTION_REJECTED') ? 'warn' : 'error',
+          summary: 'Envío SRI',
+          detail: this.workstationService.resolveBusinessError(error),
+        });
+      },
+    });
+  }
+
+  checkSriAuthorization(saleId: number): void {
+    if (!this.canSubmitSriDocuments || this.sriCheckingAuthorizationSaleId()) {
+      return;
+    }
+
+    this.sriCheckingAuthorizationSaleId.set(saleId);
+
+    this.workstationService.checkSriAuthorization(saleId).subscribe({
+      next: (sale) => {
+        this.sriCheckingAuthorizationSaleId.set(null);
+        this.selectedSale.set(sale);
+        this.loadSales();
+        this.reloadSriAttemptsIfOpen(saleId);
+        this.messageService.add({
+          severity: sale.sriAuthorizationStatus === 'AUTORIZADO' ? 'success' : 'info',
+          summary: sale.sriAuthorizationStatus === 'AUTORIZADO' ? 'Autorizado por SRI' : 'Consulta SRI',
+          detail: sale.sriAuthorizationStatus === 'AUTORIZADO'
+            ? 'Comprobante autorizado por SRI.'
+            : 'Consulta de autorización realizada.',
+        });
+      },
+      error: (error: HttpErrorResponse) => {
+        this.sriCheckingAuthorizationSaleId.set(null);
+        this.refreshSelectedSale(saleId);
+        this.reloadSriAttemptsIfOpen(saleId);
+        this.messageService.add({
+          severity: this.workstationService.isBusinessError(error, 'SRI_AUTHORIZATION_PENDING') ? 'warn' : 'error',
+          summary: 'Autorización SRI',
+          detail: this.workstationService.resolveBusinessError(error),
+        });
+      },
+    });
+  }
+
+  openSriAttempts(saleId: number): void {
+    const sale = this.selectedSale()?.id === saleId ? this.selectedSale() : null;
+    this.sriAttemptsSale.set(sale);
+    this.sriAttemptsVisible.set(true);
+    this.loadSriAttempts(saleId);
+  }
+
+  loadSriAttempts(saleId = this.sriAttemptsSale()?.id): void {
+    if (!saleId) {
+      return;
+    }
+
+    this.sriAttemptsLoading.set(true);
+    this.sriAttemptsError.set('');
+
+    this.workstationService.getSriSubmissionAttempts(saleId).subscribe({
+      next: (attempts) => {
+        this.sriAttempts.set(attempts);
+        this.sriAttemptsLoading.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        this.sriAttemptsLoading.set(false);
+        this.sriAttemptsError.set(this.workstationService.resolveBusinessError(error));
+      },
+    });
+  }
+
   downloadSriXmlDraft(saleId: number): void {
     this.workstationService.getSriXmlDraft(saleId).subscribe({
       next: (blob) => this.downloadXmlBlob(blob, this.buildXmlFileName(saleId, 'draft')),
@@ -693,6 +797,25 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
     if (this.canReadReports) {
       this.loadSales();
+    }
+  }
+
+  private refreshSelectedSale(saleId: number): void {
+    if (this.selectedSale()?.id !== saleId) {
+      return;
+    }
+
+    this.workstationService.getSaleDetail(saleId).subscribe({
+      next: (sale) => this.selectedSale.set(sale),
+      error: () => undefined,
+    });
+
+    this.loadSales();
+  }
+
+  private reloadSriAttemptsIfOpen(saleId: number): void {
+    if (this.sriAttemptsVisible() && this.sriAttemptsSale()?.id === saleId) {
+      this.loadSriAttempts(saleId);
     }
   }
 
@@ -1000,6 +1123,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
 
     if (this.saleDetailVisible()) {
+      if (this.sriAttemptsVisible()) {
+        this.sriAttemptsVisible.set(false);
+        return;
+      }
+
       this.saleDetailVisible.set(false);
       this.focusMainSearch();
       return;

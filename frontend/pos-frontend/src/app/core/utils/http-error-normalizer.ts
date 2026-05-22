@@ -66,6 +66,20 @@ const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
   SRI_SIGNATURE_VALIDATION_FAILED: 'La firma generada no pudo ser validada.',
   SRI_SIGNED_XML_NOT_FOUND: 'No existe XML firmado para esta factura.',
   SRI_DOCUMENT_SIGN_OPERATION_FAILED: 'No se pudo completar la firma electrónica.',
+  SRI_SUBMISSION_ONLY_INVOICE: 'Solo las facturas pueden enviarse al SRI.',
+  SRI_SIGNED_XML_REQUIRED: 'Primero debes firmar el XML antes de enviarlo al SRI.',
+  SRI_SUBMISSION_SALE_VOIDED: 'No se puede enviar al SRI una venta anulada.',
+  SRI_SETTINGS_DISABLED: 'La integración SRI está deshabilitada en la configuración fiscal.',
+  SRI_PRODUCTION_SUBMISSION_DISABLED: 'El envío a producción está bloqueado por seguridad.',
+  SRI_RECEPTION_ENDPOINT_NOT_CONFIGURED: 'No está configurado el endpoint de recepción SRI.',
+  SRI_AUTHORIZATION_ENDPOINT_NOT_CONFIGURED: 'No está configurado el endpoint de autorización SRI.',
+  SRI_RECEPTION_COMMUNICATION_FAILED: 'No se pudo comunicar con el servicio de recepción del SRI.',
+  SRI_AUTHORIZATION_COMMUNICATION_FAILED: 'No se pudo comunicar con el servicio de autorización del SRI.',
+  SRI_RECEPTION_REJECTED: 'El SRI devolvió el comprobante. Revisa el historial de intentos para ver el detalle.',
+  SRI_AUTHORIZATION_REJECTED: 'El SRI no autorizó el comprobante. Revisa el historial de intentos.',
+  SRI_AUTHORIZATION_PENDING: 'La autorización aún está pendiente en el SRI. Intenta consultar nuevamente más tarde.',
+  SRI_ALREADY_AUTHORIZED: 'Esta factura ya está autorizada.',
+  SRI_SUBMISSION_OPERATION_FAILED: 'No se pudo completar la operación SRI.',
 };
 
 const STATUS_ERROR_MESSAGES: Record<number, string> = {

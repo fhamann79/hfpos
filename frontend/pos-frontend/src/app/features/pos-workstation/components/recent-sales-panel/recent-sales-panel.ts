@@ -11,6 +11,12 @@ import {
   sriSignatureStatusSeverity,
 } from '../../models/sale-document.model';
 import { SaleListItem } from '../../models/sale-list-item.model';
+import {
+  sriAuthorizationStatusLabel,
+  sriAuthorizationStatusSeverity,
+  sriReceptionStatusLabel,
+  sriReceptionStatusSeverity,
+} from '../../models/sri-submission-attempt.model';
 
 @Component({
   selector: 'app-recent-sales-panel',
@@ -47,5 +53,21 @@ export class RecentSalesPanel {
 
   signatureStatusSeverity(sale: SaleListItem): DocumentTagSeverity {
     return sriSignatureStatusSeverity(sale.hasSriSignedXml, sale.sriSignatureStatusKnown);
+  }
+
+  receptionStatusLabel(sale: SaleListItem): string {
+    return sriReceptionStatusLabel(sale.sriReceptionStatus);
+  }
+
+  receptionStatusSeverity(sale: SaleListItem): DocumentTagSeverity {
+    return sriReceptionStatusSeverity(sale.sriReceptionStatus);
+  }
+
+  authorizationStatusLabel(sale: SaleListItem): string {
+    return sriAuthorizationStatusLabel(sale.sriAuthorizationStatus);
+  }
+
+  authorizationStatusSeverity(sale: SaleListItem): DocumentTagSeverity {
+    return sriAuthorizationStatusSeverity(sale.sriAuthorizationStatus);
   }
 }

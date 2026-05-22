@@ -29,11 +29,15 @@
           <p-tag [value]="documentTypeLabel(sale)" [severity]="sale.documentType === 1 ? 'info' : 'secondary'"></p-tag>
           <p-tag [value]="documentStatusLabel(sale)" [severity]="documentStatusSeverity(sale)"></p-tag>
           <p-tag [value]="signatureStatusLabel(sale)" [severity]="signatureStatusSeverity(sale)"></p-tag>
+          @if (sale.documentType === 1) {
+            <p-tag [value]="receptionStatusLabel(sale)" [severity]="receptionStatusSeverity(sale)"></p-tag>
+            <p-tag [value]="authorizationStatusLabel(sale)" [severity]="authorizationStatusSeverity(sale)"></p-tag>
+          }
         </div>
       </div>
 
       <p class="sri-warning">
-        Firmado no significa autorizado por el SRI. La recepción y autorización se implementarán en una etapa posterior.
+        Firmado no significa autorizado por el SRI. La factura solo queda autorizada cuando el SRI confirma la autorización.
       </p>
 
       <div class="fiscal-grid">
@@ -101,6 +105,58 @@
         </div>
       }
 
+      @if (sale.documentType === 1) {
+        <section class="sri-status-panel">
+          <div class="sri-status-panel__header">
+            <div>
+              <span class="section-kicker">Estado SRI</span>
+              <h4>Recepción y autorización</h4>
+            </div>
+            <p-button
+              label="Ver historial SRI"
+              icon="pi pi-list"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="viewSriAttempts.emit(sale.id)"
+            ></p-button>
+          </div>
+
+          <div class="sri-status-grid">
+            <div>
+              <span>Recepción</span>
+              <p-tag [value]="receptionStatusLabel(sale)" [severity]="receptionStatusSeverity(sale)"></p-tag>
+            </div>
+            <div>
+              <span>Enviado el</span>
+              <strong>{{ sale.sriSubmittedAt ? (sale.sriSubmittedAt | date: 'short') : '-' }}</strong>
+            </div>
+            <div>
+              <span>Autorización</span>
+              <p-tag [value]="authorizationStatusLabel(sale)" [severity]="authorizationStatusSeverity(sale)"></p-tag>
+            </div>
+            <div>
+              <span>Última consulta</span>
+              <strong>{{ sale.sriLastCheckedAt ? (sale.sriLastCheckedAt | date: 'short') : '-' }}</strong>
+            </div>
+            <div>
+              <span>Número autorización</span>
+              <strong>{{ sale.authorizationNumber || '-' }}</strong>
+            </div>
+            <div>
+              <span>Autorizado el</span>
+              <strong>{{ sale.authorizedAt ? (sale.authorizedAt | date: 'short') : '-' }}</strong>
+            </div>
+          </div>
+
+          @if (sale.sriLastSubmissionError) {
+            <div class="sri-last-error">
+              <span>Último mensaje SRI</span>
+              <strong>{{ sale.sriLastSubmissionError }}</strong>
+            </div>
+          }
+        </section>
+      }
+
       <div class="sri-actions">
         @if (sale.hasSriXmlDraft) {
           <p-button
@@ -118,6 +174,26 @@
             icon="pi pi-verified"
             [loading]="isSigning(sale)"
             (onClick)="signSriXml.emit(sale.id)"
+          ></p-button>
+        }
+
+        @if (canSubmitSale(sale)) {
+          <p-button
+            label="Enviar al SRI"
+            icon="pi pi-send"
+            [loading]="isSubmitting(sale)"
+            (onClick)="submitSriInvoice.emit(sale.id)"
+          ></p-button>
+        }
+
+        @if (canCheckAuthorization(sale)) {
+          <p-button
+            label="Consultar autorización"
+            icon="pi pi-search"
+            severity="info"
+            [outlined]="true"
+            [loading]="isCheckingAuthorization(sale)"
+            (onClick)="checkSriAuthorization.emit(sale.id)"
           ></p-button>
         }
 

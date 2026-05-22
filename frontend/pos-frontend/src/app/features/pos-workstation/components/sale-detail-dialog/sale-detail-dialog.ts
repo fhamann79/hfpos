@@ -7,6 +7,7 @@ import { getVatCategoryOption } from '../../../../core/utils/vat-category';
 import {
   DocumentTagSeverity,
   SaleDocumentType,
+  SaleDocumentStatus,
   saleDocumentStatusLabel,
   saleDocumentStatusSeverity,
   saleDocumentTypeLabel,
@@ -16,6 +17,12 @@ import {
 } from '../../models/sale-document.model';
 import { SaleItem } from '../../models/sale-item.model';
 import { Sale } from '../../models/sale.model';
+import {
+  sriAuthorizationStatusLabel,
+  sriAuthorizationStatusSeverity,
+  sriReceptionStatusLabel,
+  sriReceptionStatusSeverity,
+} from '../../models/sri-submission-attempt.model';
 
 @Component({
   selector: 'app-sale-detail-dialog',
@@ -28,12 +35,18 @@ export class SaleDetailDialog {
   @Input({ required: true }) visible = false;
   @Input() sale: Sale | null = null;
   @Input() canSignSriDocuments = false;
+  @Input() canSubmitSriDocuments = false;
   @Input() signingSaleId: number | null = null;
+  @Input() submittingSaleId: number | null = null;
+  @Input() checkingAuthorizationSaleId: number | null = null;
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() signSriXml = new EventEmitter<number>();
   @Output() downloadSriXmlDraft = new EventEmitter<number>();
   @Output() downloadSriSignedXml = new EventEmitter<number>();
+  @Output() submitSriInvoice = new EventEmitter<number>();
+  @Output() checkSriAuthorization = new EventEmitter<number>();
+  @Output() viewSriAttempts = new EventEmitter<number>();
 
   getVatLabel(item: SaleItem): string {
     return getVatCategoryOption(item.vatCategory).shortLabel;
@@ -63,6 +76,22 @@ export class SaleDetailDialog {
     return sriSignatureStatusSeverity(sale.hasSriSignedXml);
   }
 
+  receptionStatusLabel(sale: Sale): string {
+    return sriReceptionStatusLabel(sale.sriReceptionStatus);
+  }
+
+  receptionStatusSeverity(sale: Sale): DocumentTagSeverity {
+    return sriReceptionStatusSeverity(sale.sriReceptionStatus);
+  }
+
+  authorizationStatusLabel(sale: Sale): string {
+    return sriAuthorizationStatusLabel(sale.sriAuthorizationStatus);
+  }
+
+  authorizationStatusSeverity(sale: Sale): DocumentTagSeverity {
+    return sriAuthorizationStatusSeverity(sale.sriAuthorizationStatus);
+  }
+
   canSignSale(sale: Sale): boolean {
     return this.canSignSriDocuments
       && sale.documentType === SaleDocumentType.Invoice
@@ -71,7 +100,35 @@ export class SaleDetailDialog {
       && !sale.isVoided;
   }
 
+  canSubmitSale(sale: Sale): boolean {
+    return this.canSubmitSriDocuments
+      && sale.documentType === SaleDocumentType.Invoice
+      && sale.hasSriSignedXml
+      && !sale.isVoided
+      && sale.documentStatus !== SaleDocumentStatus.Authorized;
+  }
+
+  canCheckAuthorization(sale: Sale): boolean {
+    return this.canSubmitSriDocuments
+      && sale.documentType === SaleDocumentType.Invoice
+      && !!sale.accessKey
+      && !sale.isVoided
+      && sale.documentStatus !== SaleDocumentStatus.Authorized;
+  }
+
+  canViewSriAttempts(sale: Sale): boolean {
+    return sale.documentType === SaleDocumentType.Invoice;
+  }
+
   isSigning(sale: Sale): boolean {
     return this.signingSaleId === sale.id;
+  }
+
+  isSubmitting(sale: Sale): boolean {
+    return this.submittingSaleId === sale.id;
+  }
+
+  isCheckingAuthorization(sale: Sale): boolean {
+    return this.checkingAuthorizationSaleId === sale.id;
   }
 }

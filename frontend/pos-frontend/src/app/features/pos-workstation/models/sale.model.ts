@@ -26,6 +26,11 @@ export interface Sale {
   sriSigningCertificateThumbprint: string | null;
   sriSigningCertificateSubject: string | null;
   sriSigningCertificateSerialNumber: string | null;
+  sriSubmittedAt: string | null;
+  sriReceptionStatus: string | null;
+  sriAuthorizationStatus: string | null;
+  sriLastSubmissionError: string | null;
+  sriLastCheckedAt: string | null;
   customerName: string | null;
   notes: string | null;
   grossSubtotal: number;
