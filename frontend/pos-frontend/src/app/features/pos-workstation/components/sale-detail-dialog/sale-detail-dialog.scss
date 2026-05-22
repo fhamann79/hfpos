@@ -80,6 +80,58 @@
   display:grid;
   gap:.5rem;
 }
+.sri-status-panel {
+  display:grid;
+  gap:.65rem;
+  padding:.75rem;
+  border-radius:.85rem;
+  border:1px solid #bae6fd;
+  background:linear-gradient(135deg,#f0f9ff 0%,#ecfeff 100%);
+}
+.sri-status-panel__header {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem;
+}
+.sri-status-panel h4 {
+  margin:.1rem 0 0;
+  color:#0f172a;
+}
+.sri-status-grid {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:.55rem;
+}
+.sri-status-grid div,
+.sri-last-error {
+  min-width:0;
+  display:grid;
+  gap:.18rem;
+  padding:.55rem;
+  border-radius:.7rem;
+  background:rgba(255,255,255,.72);
+  border:1px solid rgba(125,211,252,.65);
+}
+.sri-status-grid span,
+.sri-last-error span {
+  color:#0369a1;
+  font-size:.72rem;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.sri-last-error {
+  border-color:#fed7aa;
+  background:#fff7ed;
+}
+.sri-last-error span {
+  color:#9a3412;
+}
+.sri-last-error strong {
+  color:#7c2d12;
+  line-height:1.35;
+}
 code {
   overflow:hidden;
   text-overflow:ellipsis;
@@ -113,7 +165,16 @@ footer strong { font-size:1.35rem; }
     grid-template-columns:1fr;
   }
 
+  .sri-status-grid {
+    grid-template-columns:1fr;
+  }
+
   .fiscal-document__header {
+    flex-direction:column;
+  }
+
+  .sri-status-panel__header {
+    align-items:flex-start;
     flex-direction:column;
   }
 

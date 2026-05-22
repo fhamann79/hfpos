@@ -162,12 +162,28 @@
     [visible]="saleDetailVisible()"
     [sale]="selectedSale()"
     [canSignSriDocuments]="canSignSriDocuments"
+    [canSubmitSriDocuments]="canSubmitSriDocuments"
     [signingSaleId]="sriSigningSaleId()"
+    [submittingSaleId]="sriSubmittingSaleId()"
+    [checkingAuthorizationSaleId]="sriCheckingAuthorizationSaleId()"
     (visibleChange)="saleDetailVisible.set($event)"
     (signSriXml)="signSriXml($event)"
+    (submitSriInvoice)="submitSriInvoice($event)"
+    (checkSriAuthorization)="checkSriAuthorization($event)"
+    (viewSriAttempts)="openSriAttempts($event)"
     (downloadSriXmlDraft)="downloadSriXmlDraft($event)"
     (downloadSriSignedXml)="downloadSriSignedXml($event)"
   ></app-sale-detail-dialog>
+
+  <app-sri-submission-attempts-dialog
+    [visible]="sriAttemptsVisible()"
+    [sale]="sriAttemptsSale()"
+    [attempts]="sriAttempts()"
+    [loading]="sriAttemptsLoading()"
+    [errorMessage]="sriAttemptsError()"
+    (visibleChange)="sriAttemptsVisible.set($event)"
+    (refresh)="loadSriAttempts()"
+  ></app-sri-submission-attempts-dialog>
 
   <app-void-sale-dialog
     [visible]="voidVisible()"

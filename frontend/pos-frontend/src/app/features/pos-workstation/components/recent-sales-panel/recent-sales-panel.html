@@ -22,6 +22,8 @@
               <p-tag [value]="documentTypeLabel(sale)" [severity]="documentTypeSeverity(sale)"></p-tag>
               @if (isInvoice(sale)) {
                 <p-tag [value]="signatureStatusLabel(sale)" [severity]="signatureStatusSeverity(sale)"></p-tag>
+                <p-tag [value]="receptionStatusLabel(sale)" [severity]="receptionStatusSeverity(sale)"></p-tag>
+                <p-tag [value]="authorizationStatusLabel(sale)" [severity]="authorizationStatusSeverity(sale)"></p-tag>
               }
             </span>
             <small>{{ sale.createdAt | date: 'short' }}</small>

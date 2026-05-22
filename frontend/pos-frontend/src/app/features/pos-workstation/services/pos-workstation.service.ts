@@ -9,6 +9,11 @@ import { normalizeSaleDocumentStatus, normalizeSaleDocumentType } from '../model
 import { Sale } from '../models/sale.model';
 import { SaleItem } from '../models/sale-item.model';
 import { SaleListItem } from '../models/sale-list-item.model';
+import {
+  normalizeSriSubmissionAttemptStatus,
+  normalizeSriSubmissionAttemptType,
+  SriSubmissionAttempt,
+} from '../models/sri-submission-attempt.model';
 import { VoidSaleRequest } from '../models/void-sale.model';
 
 @Injectable({ providedIn: 'root' })
@@ -44,6 +49,35 @@ export class PosWorkstationService {
     return this.http.get(`${this.salesUrl}/${id}/sri/signed-xml`, { responseType: 'blob' });
   }
 
+  submitSriInvoice(id: number): Observable<Sale> {
+    return this.http.post<unknown>(`${this.salesUrl}/${id}/sri/submit`, {}).pipe(map((row) => this.toSale(row)));
+  }
+
+  checkSriAuthorization(id: number): Observable<Sale> {
+    const url = `${this.salesUrl}/${id}/sri/check-authorization`;
+
+    return this.http.post<unknown>(url, {}, { observe: 'response' }).pipe(
+      map((response) => {
+        if (response.status === 202 && this.isApiErrorPayload(response.body)) {
+          throw new HttpErrorResponse({
+            error: response.body,
+            status: response.status,
+            statusText: response.statusText,
+            url,
+          });
+        }
+
+        return this.toSale(response.body);
+      })
+    );
+  }
+
+  getSriSubmissionAttempts(id: number): Observable<SriSubmissionAttempt[]> {
+    return this.http.get<unknown>(`${this.salesUrl}/${id}/sri/submission-attempts`).pipe(
+      map((rows) => Array.isArray(rows) ? rows.map((row) => this.toSriSubmissionAttempt(row)) : [])
+    );
+  }
+
   isBusinessError(error: HttpErrorResponse, code: string): boolean {
     return hasHttpBusinessError(error, code);
   }
@@ -69,6 +103,11 @@ export class PosWorkstationService {
       sriSignatureStatusKnown: this.hasOwn(row, 'hasSriSignedXml'),
       accessKey: this.readString(row, ['accessKey'], null),
       sriSignedAt: this.readString(row, ['sriSignedAt'], null),
+      sriSubmittedAt: this.readString(row, ['sriSubmittedAt'], null),
+      sriReceptionStatus: this.readString(row, ['sriReceptionStatus'], null),
+      sriAuthorizationStatus: this.readString(row, ['sriAuthorizationStatus'], null),
+      sriLastSubmissionError: this.readString(row, ['sriLastSubmissionError'], null),
+      sriLastCheckedAt: this.readString(row, ['sriLastCheckedAt'], null),
       total: this.readNumber(row, ['total', 'grandTotal'], 0),
       createdBy: this.readString(row, ['createdBy', 'username', 'userName'], null),
       isVoided,
@@ -107,6 +146,11 @@ export class PosWorkstationService {
       sriSigningCertificateThumbprint: this.readString(row, ['sriSigningCertificateThumbprint'], null),
       sriSigningCertificateSubject: this.readString(row, ['sriSigningCertificateSubject'], null),
       sriSigningCertificateSerialNumber: this.readString(row, ['sriSigningCertificateSerialNumber'], null),
+      sriSubmittedAt: this.readString(row, ['sriSubmittedAt'], null),
+      sriReceptionStatus: this.readString(row, ['sriReceptionStatus'], null),
+      sriAuthorizationStatus: this.readString(row, ['sriAuthorizationStatus'], null),
+      sriLastSubmissionError: this.readString(row, ['sriLastSubmissionError'], null),
+      sriLastCheckedAt: this.readString(row, ['sriLastCheckedAt'], null),
       customerName: this.readString(row, ['customerName'], null),
       notes: this.readString(row, ['notes'], null),
       grossSubtotal: this.readNumber(row, ['grossSubtotal', 'subtotal'], 0),
@@ -122,6 +166,31 @@ export class PosWorkstationService {
       createdBy: this.readString(row, ['createdBy', 'username', 'userName'], null),
       isVoided,
       items,
+    };
+  }
+
+  private toSriSubmissionAttempt(source: unknown): SriSubmissionAttempt {
+    const row = this.asRecord(source);
+
+    return {
+      id: this.readNumber(row, ['id'], 0),
+      saleId: this.readNumber(row, ['saleId'], 0),
+      accessKey: this.readString(row, ['accessKey'], ''),
+      environment: this.readNumber(row, ['environment'], 1),
+      attemptType: normalizeSriSubmissionAttemptType(row?.['attemptType']),
+      status: normalizeSriSubmissionAttemptStatus(row?.['status']),
+      receptionStatus: this.readString(row, ['receptionStatus'], null),
+      authorizationStatus: this.readString(row, ['authorizationStatus'], null),
+      authorizationNumber: this.readString(row, ['authorizationNumber'], null),
+      authorizationDate: this.readString(row, ['authorizationDate'], null),
+      errorCode: this.readString(row, ['errorCode'], null),
+      errorMessage: this.readString(row, ['errorMessage'], null),
+      sriMessageIdentifier: this.readString(row, ['sriMessageIdentifier'], null),
+      sriMessageType: this.readString(row, ['sriMessageType'], null),
+      sriMessage: this.readString(row, ['sriMessage'], null),
+      sriAdditionalInfo: this.readString(row, ['sriAdditionalInfo'], null),
+      createdAt: this.readString(row, ['createdAt'], ''),
+      createdByUserId: this.readNumber(row, ['createdByUserId'], 0),
     };
   }
 
@@ -281,5 +350,10 @@ export class PosWorkstationService {
 
   private hasOwn(record: Record<string, unknown> | null, key: string): boolean {
     return !!record && Object.prototype.hasOwnProperty.call(record, key);
+  }
+
+  private isApiErrorPayload(value: unknown): boolean {
+    const record = this.asRecord(value);
+    return !!record && (typeof record['error'] === 'string' || typeof record['code'] === 'string');
   }
 }

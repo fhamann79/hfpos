@@ -12,6 +12,11 @@ export interface SaleListItem {
   sriSignatureStatusKnown: boolean;
   accessKey: string | null;
   sriSignedAt: string | null;
+  sriSubmittedAt: string | null;
+  sriReceptionStatus: string | null;
+  sriAuthorizationStatus: string | null;
+  sriLastSubmissionError: string | null;
+  sriLastCheckedAt: string | null;
   total: number;
   createdBy: string | null;
   isVoided: boolean;
