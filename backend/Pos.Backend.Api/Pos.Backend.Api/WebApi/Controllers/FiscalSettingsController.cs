@@ -20,13 +20,16 @@ public class FiscalSettingsController : ControllerBase
 
     private readonly IFiscalSettingsService _fiscalSettingsService;
     private readonly ISriCertificateService _sriCertificateService;
+    private readonly ISriFiscalReadinessService _sriFiscalReadinessService;
 
     public FiscalSettingsController(
         IFiscalSettingsService fiscalSettingsService,
-        ISriCertificateService sriCertificateService)
+        ISriCertificateService sriCertificateService,
+        ISriFiscalReadinessService sriFiscalReadinessService)
     {
         _fiscalSettingsService = fiscalSettingsService;
         _sriCertificateService = sriCertificateService;
+        _sriFiscalReadinessService = sriFiscalReadinessService;
     }
 
     [HttpGet("company")]
@@ -78,6 +81,20 @@ public class FiscalSettingsController : ControllerBase
         try
         {
             return Ok(await _fiscalSettingsService.UpdateCompanySriSettingsAsync(dto));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpGet("sri/readiness")]
+    [Authorize(Policy = AppPermissions.FiscalSettingsRead)]
+    public async Task<ActionResult<SriFiscalReadinessDto>> GetSriReadiness()
+    {
+        try
+        {
+            return Ok(await _sriFiscalReadinessService.GetReadinessAsync());
         }
         catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
         {
