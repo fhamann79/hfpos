@@ -26,16 +26,31 @@ import {
   DocumentSequence,
   DocumentSequenceAudit,
   FiscalDocumentType,
+  ReadinessTagSeverity,
   SelectOption,
+  SriFiscalReadiness,
+  SriFiscalReadinessCheck,
   certificateSeverity,
   certificateStatusLabel,
   fiscalDocumentTypeLabel,
   formatFiscalSequential,
+  readinessCategoryLabel as resolveReadinessCategoryLabel,
+  readinessCheckIcon as resolveReadinessCheckIcon,
+  readinessSeverityToTagSeverity,
+  readinessSummaryLabel,
+  readinessSummarySeverity,
 } from '../../models/fiscal-settings.model';
 import { FiscalSettingsService } from '../../services/fiscal-settings.service';
 
 type SequenceDialogMode = 'create' | 'update';
 type CertificateSeverity = 'success' | 'secondary' | 'warn' | 'danger';
+type ReadinessTarget = 'sandbox' | 'production';
+
+interface ReadinessCheckGroup {
+  category: string;
+  categoryLabel: string;
+  checks: SriFiscalReadinessCheck[];
+}
 
 @Component({
   selector: 'app-fiscal-settings-page',
@@ -92,6 +107,9 @@ export class FiscalSettingsPage implements OnInit {
   readonly certificateUploadError = signal('');
   readonly sriCertificate = signal<CompanySriCertificate | null>(null);
   readonly selectedCertificateFile = signal<File | null>(null);
+  readonly readiness = signal<SriFiscalReadiness | null>(null);
+  readonly readinessLoading = signal(false);
+  readonly readinessError = signal('');
 
   readonly sequences = signal<DocumentSequence[]>([]);
   readonly sequencesLoading = signal(false);
@@ -104,6 +122,30 @@ export class FiscalSettingsPage implements OnInit {
   readonly audits = signal<DocumentSequenceAudit[]>([]);
   readonly auditsLoading = signal(false);
   readonly auditsError = signal('');
+  readonly readinessBlockingChecks = computed(() =>
+    this.sortReadinessChecks((this.readiness()?.checks ?? []).filter((check) => check.isBlocking && check.severity === 'error')),
+  );
+  readonly readinessWarningChecks = computed(() =>
+    this.sortReadinessChecks((this.readiness()?.checks ?? []).filter((check) => check.severity === 'warning')),
+  );
+  readonly readinessSuccessChecks = computed(() =>
+    this.sortReadinessChecks((this.readiness()?.checks ?? []).filter((check) => check.severity === 'success')),
+  );
+  readonly readinessChecksByCategory = computed<ReadinessCheckGroup[]>(() => {
+    const groups = new Map<string, SriFiscalReadinessCheck[]>();
+
+    for (const check of this.sortReadinessChecks(this.readiness()?.checks ?? [])) {
+      const categoryChecks = groups.get(check.category) ?? [];
+      categoryChecks.push(check);
+      groups.set(check.category, categoryChecks);
+    }
+
+    return Array.from(groups.entries()).map(([category, checks]) => ({
+      category,
+      categoryLabel: resolveReadinessCategoryLabel(category),
+      checks,
+    }));
+  });
 
   sequenceDialogVisible = false;
   auditDialogVisible = false;
@@ -163,6 +205,7 @@ export class FiscalSettingsPage implements OnInit {
     this.loadCompanySettings();
     this.loadSriSettings();
     this.loadSriCertificate();
+    this.loadSriReadiness();
     this.loadSequences();
   }
 
@@ -214,6 +257,7 @@ export class FiscalSettingsPage implements OnInit {
           this.companySettings.set(settings);
           this.patchCompanyForm(settings);
           this.companySaving.set(false);
+          this.loadSriReadiness();
           this.messageService.add({
             severity: 'success',
             summary: 'Configuración actualizada',
@@ -274,6 +318,23 @@ export class FiscalSettingsPage implements OnInit {
   reloadSriSection(): void {
     this.loadSriSettings();
     this.loadSriCertificate();
+    this.loadSriReadiness();
+  }
+
+  loadSriReadiness(): void {
+    this.readinessLoading.set(true);
+    this.readinessError.set('');
+
+    this.fiscalSettingsService.getSriReadiness().subscribe({
+      next: (readiness) => {
+        this.readiness.set(readiness);
+        this.readinessLoading.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        this.readinessLoading.set(false);
+        this.readinessError.set(resolveHttpErrorMessage(error, 'No se pudo cargar el diagnóstico SRI.'));
+      },
+    });
   }
 
   saveSriSettings(): void {
@@ -299,6 +360,7 @@ export class FiscalSettingsPage implements OnInit {
         next: (settings) => {
           this.sriSettings.set(settings);
           this.sriSaving.set(false);
+          this.loadSriReadiness();
           this.messageService.add({
             severity: 'success',
             summary: 'Configuración SRI guardada',
@@ -385,6 +447,7 @@ export class FiscalSettingsPage implements OnInit {
         this.resetCertificateUploadForm();
         this.loadSriSettings();
         this.loadSriCertificate();
+        this.loadSriReadiness();
         this.messageService.add({
           severity: 'success',
           summary: 'Certificado cargado',
@@ -408,7 +471,7 @@ export class FiscalSettingsPage implements OnInit {
     this.confirmationService.confirm({
       header: 'Eliminar certificado digital',
       message:
-        'Esta acción desactivará el certificado configurado. No se eliminará el historial, pero la empresa quedará sin certificado activo para futuras firmas. ¿Deseas continuar?',
+        'Esta acción desactivará el certificado configurado. No se eliminará el historial, pero la empresa quedará sin certificado activo para firmar XML SRI. ¿Deseas continuar?',
       icon: 'pi pi-exclamation-triangle',
       acceptLabel: 'Eliminar certificado',
       rejectLabel: 'Cancelar',
@@ -430,6 +493,7 @@ export class FiscalSettingsPage implements OnInit {
         this.sriCertificate.set(null);
         this.loadSriSettings();
         this.loadSriCertificate();
+        this.loadSriReadiness();
         this.messageService.add({
           severity: 'success',
           summary: 'Certificado eliminado',
@@ -596,6 +660,39 @@ export class FiscalSettingsPage implements OnInit {
     return certificate.hasPrivateKey ? 'Disponible' : 'No disponible';
   }
 
+  readinessStatusLabel(readiness: SriFiscalReadiness, target: ReadinessTarget): string {
+    return readinessSummaryLabel(this.isReadyForTarget(readiness, target));
+  }
+
+  readinessStatusSeverity(readiness: SriFiscalReadiness, target: ReadinessTarget): ReadinessTagSeverity {
+    return readinessSummarySeverity(this.isReadyForTarget(readiness, target), target === 'production');
+  }
+
+  readinessCategoryLabel(category: string): string {
+    return resolveReadinessCategoryLabel(category);
+  }
+
+  readinessCheckSeverity(check: SriFiscalReadinessCheck): ReadinessTagSeverity {
+    return readinessSeverityToTagSeverity(check.severity);
+  }
+
+  readinessCheckIcon(check: SriFiscalReadinessCheck): string {
+    return resolveReadinessCheckIcon(check);
+  }
+
+  readinessSeverityLabel(check: SriFiscalReadinessCheck): string {
+    switch (check.severity) {
+      case 'success':
+        return 'Correcto';
+      case 'warning':
+        return 'Advertencia';
+      case 'error':
+        return 'Error';
+      case 'info':
+        return 'Info';
+    }
+  }
+
   private saveSequence(): void {
     const values = this.sequenceForm.getRawValue();
     const reason = values.reason.trim();
@@ -640,6 +737,7 @@ export class FiscalSettingsPage implements OnInit {
     this.sequenceDialogVisible = false;
     this.selectedSequence.set(null);
     this.loadSequences();
+    this.loadSriReadiness();
     this.messageService.add({ severity: 'success', summary: 'Secuencial actualizado', detail });
   }
 
@@ -693,6 +791,51 @@ export class FiscalSettingsPage implements OnInit {
 
     this.sequenceForm.controls.nextNumber.enable({ emitEvent: false });
     this.sequenceForm.controls.reason.enable({ emitEvent: false });
+  }
+
+  private isReadyForTarget(readiness: SriFiscalReadiness, target: ReadinessTarget): boolean {
+    return target === 'sandbox' ? readiness.isReadyForSandboxSubmission : readiness.isReadyForProductionSubmission;
+  }
+
+  private sortReadinessChecks(checks: SriFiscalReadinessCheck[]): SriFiscalReadinessCheck[] {
+    return [...checks].sort((left, right) => {
+      const rankDifference = this.readinessSortRank(left) - this.readinessSortRank(right);
+
+      if (rankDifference !== 0) {
+        return rankDifference;
+      }
+
+      const categoryDifference = this.readinessCategoryLabel(left.category).localeCompare(
+        this.readinessCategoryLabel(right.category),
+        'es',
+      );
+
+      if (categoryDifference !== 0) {
+        return categoryDifference;
+      }
+
+      return left.title.localeCompare(right.title, 'es');
+    });
+  }
+
+  private readinessSortRank(check: SriFiscalReadinessCheck): number {
+    if (check.isBlocking && check.severity === 'error') {
+      return 0;
+    }
+
+    if (check.severity === 'error') {
+      return 1;
+    }
+
+    if (check.severity === 'warning') {
+      return 2;
+    }
+
+    if (check.severity === 'info') {
+      return 3;
+    }
+
+    return 4;
   }
 
   private normalizeOptional(value: string): string | null {

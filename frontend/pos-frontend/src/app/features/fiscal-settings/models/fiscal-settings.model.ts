@@ -57,6 +57,41 @@ export interface CompanySriCertificate {
   isExpired: boolean;
 }
 
+export type SriFiscalReadinessSeverity = 'success' | 'warning' | 'error' | 'info';
+export type ReadinessTagSeverity = 'success' | 'secondary' | 'info' | 'warn' | 'danger';
+export type ReadinessCheckIcon =
+  | 'pi pi-check-circle'
+  | 'pi pi-exclamation-triangle'
+  | 'pi pi-times-circle'
+  | 'pi pi-info-circle';
+
+export interface SriFiscalReadiness {
+  companyId: number;
+  establishmentId: number;
+  emissionPointId: number;
+  environment: number | null;
+  environmentLabel: string;
+  isReadyForSandboxSubmission: boolean;
+  isReadyForProductionSubmission: boolean;
+  hasBlockingErrors: boolean;
+  hasWarnings: boolean;
+  generatedAt: string;
+  blockingErrorCount: number;
+  warningCount: number;
+  successCount: number;
+  checks: SriFiscalReadinessCheck[];
+}
+
+export interface SriFiscalReadinessCheck {
+  category: string;
+  code: string;
+  severity: SriFiscalReadinessSeverity;
+  title: string;
+  message: string;
+  details: string | null;
+  isBlocking: boolean;
+}
+
 export interface UpdateCompanySriSettingsRequest {
   environment: number;
   emissionType: number;
@@ -149,4 +184,63 @@ export function certificateSeverity(
   }
 
   return certificate.daysUntilExpiration <= 30 ? 'warn' : 'success';
+}
+
+export function readinessSeverityToTagSeverity(severity: SriFiscalReadinessSeverity): ReadinessTagSeverity {
+  switch (severity) {
+    case 'success':
+      return 'success';
+    case 'warning':
+      return 'warn';
+    case 'error':
+      return 'danger';
+    case 'info':
+      return 'info';
+  }
+}
+
+export function readinessCategoryLabel(category: string): string {
+  switch (category) {
+    case 'Company':
+      return 'Empresa';
+    case 'OperationalStructure':
+      return 'Estructura operativa';
+    case 'SriSettings':
+      return 'Configuración SRI';
+    case 'Certificate':
+      return 'Certificado';
+    case 'CertificateTrust':
+      return 'Confianza del certificado';
+    case 'DocumentSequence':
+      return 'Secuenciales';
+    case 'ProductionSafety':
+      return 'Seguridad producción';
+    default:
+      return category;
+  }
+}
+
+export function readinessSummarySeverity(isReady: boolean, production = false): ReadinessTagSeverity {
+  if (isReady) {
+    return 'success';
+  }
+
+  return production ? 'warn' : 'danger';
+}
+
+export function readinessSummaryLabel(isReady: boolean): string {
+  return isReady ? 'Sí' : 'No';
+}
+
+export function readinessCheckIcon(check: SriFiscalReadinessCheck): ReadinessCheckIcon {
+  switch (check.severity) {
+    case 'success':
+      return 'pi pi-check-circle';
+    case 'warning':
+      return 'pi pi-exclamation-triangle';
+    case 'error':
+      return 'pi pi-times-circle';
+    case 'info':
+      return 'pi pi-info-circle';
+  }
 }
