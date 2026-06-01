@@ -61,6 +61,35 @@ public class CompanySriCertificateDto
     public bool IsExpired { get; set; }
 }
 
+public class SriFiscalReadinessDto
+{
+    public int CompanyId { get; set; }
+    public int EstablishmentId { get; set; }
+    public int EmissionPointId { get; set; }
+    public int? Environment { get; set; }
+    public string EnvironmentLabel { get; set; } = string.Empty;
+    public bool IsReadyForSandboxSubmission { get; set; }
+    public bool IsReadyForProductionSubmission { get; set; }
+    public bool HasBlockingErrors { get; set; }
+    public bool HasWarnings { get; set; }
+    public DateTime GeneratedAt { get; set; }
+    public int BlockingErrorCount { get; set; }
+    public int WarningCount { get; set; }
+    public int SuccessCount { get; set; }
+    public IReadOnlyList<SriFiscalReadinessCheckDto> Checks { get; set; } = Array.Empty<SriFiscalReadinessCheckDto>();
+}
+
+public class SriFiscalReadinessCheckDto
+{
+    public string Category { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+    public string Severity { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public string? Details { get; set; }
+    public bool IsBlocking { get; set; }
+}
+
 public class UploadSriCertificateRequest
 {
     public IFormFile? File { get; set; }
