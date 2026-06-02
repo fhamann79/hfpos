@@ -9,7 +9,7 @@
 >
   <div class="ride-actions">
     <p-button
-      label="Imprimir"
+      label="Imprimir / Guardar PDF"
       icon="pi pi-print"
       severity="secondary"
       [outlined]="true"
@@ -27,9 +27,10 @@
   }
 
   @if (ride) {
-    <article class="ride-print-area">
+    <article #ridePrintArea class="ride-print-area">
       <header class="ride-header">
         <section class="issuer-block">
+          <span class="ride-kicker">Emisor</span>
           <h2>{{ ride.issuer.tradeName || ride.issuer.legalName || 'Emisor' }}</h2>
           <p>{{ ride.issuer.legalName || '-' }}</p>
           <dl>
@@ -61,7 +62,8 @@
         </section>
 
         <section class="document-block">
-          <span>{{ ride.documentTypeLabel }}</span>
+          <span>Comprobante electronico</span>
+          <strong>{{ ride.documentTypeLabel }}</strong>
           <h1>{{ ride.documentNumber || '-' }}</h1>
           <dl>
             <div>
@@ -85,7 +87,7 @@
       </header>
 
       <section class="access-key-block">
-        <span>Clave de acceso</span>
+        <span>Clave de acceso / consulta SRI</span>
         <code>{{ ride.accessKey || '-' }}</code>
       </section>
 
@@ -96,7 +98,7 @@
         </div>
         <div>
           <span>Identificacion</span>
-          <strong>{{ ride.buyer.identificationType || '-' }} {{ ride.buyer.identification || '' }}</strong>
+          <strong>{{ buyerIdentification(ride) }}</strong>
         </div>
         <div>
           <span>Fecha emision</span>
@@ -124,11 +126,11 @@
                 <td>{{ item.mainCode || '-' }}</td>
                 <td>{{ item.description || '-' }}</td>
                 <td class="number-cell">{{ item.quantity | number: '1.0-4' }}</td>
-                <td class="number-cell">{{ item.unitPrice | currency: currencyCode(ride) }}</td>
-                <td class="number-cell">{{ item.discount | currency: currencyCode(ride) }}</td>
-                <td class="number-cell">{{ item.subtotal | currency: currencyCode(ride) }}</td>
-                <td class="number-cell">{{ item.taxAmount | currency: currencyCode(ride) }}</td>
-                <td class="number-cell">{{ item.lineTotal | currency: currencyCode(ride) }}</td>
+                <td class="number-cell">{{ formatMoney(item.unitPrice, ride) }}</td>
+                <td class="number-cell">{{ formatMoney(item.discount, ride) }}</td>
+                <td class="number-cell">{{ formatMoney(item.subtotal, ride) }}</td>
+                <td class="number-cell">{{ formatMoney(item.taxAmount, ride) }}</td>
+                <td class="number-cell">{{ formatMoney(item.lineTotal, ride) }}</td>
               </tr>
             } @empty {
               <tr>
@@ -145,7 +147,7 @@
           @for (payment of ride.payments; track $index) {
             <div>
               <span>{{ payment.paymentMethod || '-' }}</span>
-              <strong>{{ payment.amount | currency: currencyCode(ride) }}</strong>
+              <strong>{{ formatMoney(payment.amount, ride) }}</strong>
             </div>
           } @empty {
             <p>Sin pagos informados.</p>
@@ -155,55 +157,55 @@
         <div class="totals-block">
           <div>
             <span>Subtotal sin impuestos</span>
-            <strong>{{ ride.totals.subtotalWithoutTaxes | currency: currencyCode(ride) }}</strong>
+            <strong>{{ formatMoney(ride.totals.subtotalWithoutTaxes, ride) }}</strong>
           </div>
           <div>
             <span>Descuento</span>
-            <strong>{{ ride.totals.totalDiscount | currency: currencyCode(ride) }}</strong>
+            <strong>{{ formatMoney(ride.totals.totalDiscount, ride) }}</strong>
           </div>
           @if (ride.totals.vat15Subtotal > 0) {
             <div>
               <span>Base IVA 15%</span>
-              <strong>{{ ride.totals.vat15Subtotal | currency: currencyCode(ride) }}</strong>
+              <strong>{{ formatMoney(ride.totals.vat15Subtotal, ride) }}</strong>
             </div>
           }
           @if (ride.totals.vat5Subtotal > 0) {
             <div>
               <span>Base IVA 5%</span>
-              <strong>{{ ride.totals.vat5Subtotal | currency: currencyCode(ride) }}</strong>
+              <strong>{{ formatMoney(ride.totals.vat5Subtotal, ride) }}</strong>
             </div>
           }
           @if (ride.totals.vat0Subtotal > 0) {
             <div>
               <span>Base IVA 0%</span>
-              <strong>{{ ride.totals.vat0Subtotal | currency: currencyCode(ride) }}</strong>
+              <strong>{{ formatMoney(ride.totals.vat0Subtotal, ride) }}</strong>
             </div>
           }
           @if (ride.totals.exemptSubtotal > 0) {
             <div>
               <span>Exento</span>
-              <strong>{{ ride.totals.exemptSubtotal | currency: currencyCode(ride) }}</strong>
+              <strong>{{ formatMoney(ride.totals.exemptSubtotal, ride) }}</strong>
             </div>
           }
           @if (ride.totals.notSubjectSubtotal > 0) {
             <div>
               <span>No objeto</span>
-              <strong>{{ ride.totals.notSubjectSubtotal | currency: currencyCode(ride) }}</strong>
+              <strong>{{ formatMoney(ride.totals.notSubjectSubtotal, ride) }}</strong>
             </div>
           }
           <div>
             <span>IVA</span>
-            <strong>{{ ride.totals.taxAmount | currency: currencyCode(ride) }}</strong>
+            <strong>{{ formatMoney(ride.totals.taxAmount, ride) }}</strong>
           </div>
           <div class="total-row">
             <span>Total</span>
-            <strong>{{ ride.totals.total | currency: currencyCode(ride) }}</strong>
+            <strong>{{ formatMoney(ride.totals.total, ride) }}</strong>
           </div>
         </div>
       </section>
 
       <footer class="ride-footer">
-        {{ ride.footerNote }}
+        {{ footerNote() }}
       </footer>
     </article>
   }

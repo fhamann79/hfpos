@@ -131,3 +131,48 @@ h4 {
 .catalog-dialog.p-dialog {
   background: var(--app-surface) !important;
 }
+
+body > .ride-print-clone {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  body.ride-printing {
+    min-height: auto !important;
+    margin: 0 !important;
+    background: #fff !important;
+  }
+
+  body.ride-printing > *:not(.ride-print-clone) {
+    display: none !important;
+  }
+
+  body.ride-printing .ride-print-clone {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #111827 !important;
+    background: #fff !important;
+  }
+
+  body.ride-printing .ride-print-clone .ride-print-area {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  body.ride-printing .ride-print-clone .ride-actions,
+  body.ride-printing .ride-print-clone .p-dialog-header,
+  body.ride-printing .ride-print-clone .p-dialog-footer {
+    display: none !important;
+  }
+}
