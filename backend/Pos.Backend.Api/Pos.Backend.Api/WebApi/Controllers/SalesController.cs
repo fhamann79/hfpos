@@ -110,6 +110,26 @@ public class SalesController : ControllerBase
         }
     }
 
+    [HttpGet("{id:int}/sri/authorized-xml")]
+    [Authorize(Policy = AppPermissions.ReportsSalesRead)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult> GetSriAuthorizedXml(int id)
+    {
+        try
+        {
+            var authorizedXml = await _sriSubmissionService.GetAuthorizedXmlAsync(id);
+            return Content(authorizedXml, "application/xml");
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
     [HttpPost("{id:int}/sri/submit")]
     [Authorize(Policy = AppPermissions.SriDocumentsSubmit)]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -235,6 +255,7 @@ public class SalesController : ControllerBase
             "INVALID_SRI_PRODUCT_CODE" => BadRequest(new ApiErrorResponse { Error = code }),
             "SRI_SIGNING_ONLY_INVOICE" => BadRequest(new ApiErrorResponse { Error = code }),
             "SRI_SUBMISSION_ONLY_INVOICE" => BadRequest(new ApiErrorResponse { Error = code }),
+            "SRI_AUTHORIZED_XML_ONLY_INVOICE" => BadRequest(new ApiErrorResponse { Error = code }),
             "SRI_SIGNED_XML_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "SRI_ACCESS_KEY_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "SRI_ACCESS_KEY_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
@@ -253,6 +274,9 @@ public class SalesController : ControllerBase
             "SRI_RECEPTION_REJECTED" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_AUTHORIZATION_REJECTED" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_ALREADY_AUTHORIZED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_AUTHORIZED_XML_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
+            "SRI_AUTHORIZED_XML_SALE_NOT_AUTHORIZED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_AUTHORIZED_XML_INVALID_RESPONSE" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_AUTHORIZATION_PENDING" => StatusCode(StatusCodes.Status202Accepted, new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_ERROR" => Conflict(new ApiErrorResponse { Error = code }),
             "DOCUMENT_NUMBER_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),

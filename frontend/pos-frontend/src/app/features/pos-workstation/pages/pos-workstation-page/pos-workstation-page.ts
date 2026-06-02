@@ -734,6 +734,19 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     });
   }
 
+  downloadSriAuthorizedXml(saleId: number): void {
+    this.workstationService.getSriAuthorizedXml(saleId).subscribe({
+      next: (blob) => this.downloadXmlBlob(blob, this.buildAuthorizedXmlFileName(saleId)),
+      error: (error: HttpErrorResponse) => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'No se pudo descargar',
+          detail: this.workstationService.resolveBusinessError(error),
+        });
+      },
+    });
+  }
+
   openSaleDetail(saleId: number): void {
     this.saleDetailVisible.set(true);
     this.selectedSale.set(null);
@@ -1328,6 +1341,14 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     const fallback = this.sales().find((item) => item.id === saleId);
     const identifier = sale?.number ?? fallback?.number ?? String(saleId);
     return `factura-${this.sanitizeFileNamePart(identifier)}-${suffix}.xml`;
+  }
+
+  private buildAuthorizedXmlFileName(saleId: number): string {
+    const sale = this.selectedSale()?.id === saleId ? this.selectedSale() : null;
+    const fallback = this.sales().find((item) => item.id === saleId);
+    const identifier = sale?.number ?? fallback?.number;
+    const prefix = identifier ? this.sanitizeFileNamePart(identifier) : `sale-${saleId}`;
+    return `${prefix}-authorized.xml`;
   }
 
   private sanitizeFileNamePart(value: string): string {

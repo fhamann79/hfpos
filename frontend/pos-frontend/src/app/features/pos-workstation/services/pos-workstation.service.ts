@@ -49,6 +49,10 @@ export class PosWorkstationService {
     return this.http.get(`${this.salesUrl}/${id}/sri/signed-xml`, { responseType: 'blob' });
   }
 
+  getSriAuthorizedXml(id: number): Observable<Blob> {
+    return this.http.get(`${this.salesUrl}/${id}/sri/authorized-xml`, { responseType: 'blob' });
+  }
+
   submitSriInvoice(id: number): Observable<Sale> {
     return this.http.post<unknown>(`${this.salesUrl}/${id}/sri/submit`, {}).pipe(map((row) => this.toSale(row)));
   }

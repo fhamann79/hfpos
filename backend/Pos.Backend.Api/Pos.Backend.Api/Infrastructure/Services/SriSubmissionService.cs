@@ -1,3 +1,5 @@
+using System.Xml;
+using System.Xml.Linq;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Pos.Backend.Api.Configuration;
@@ -225,6 +227,38 @@ public class SriSubmissionService : ISriSubmissionService
         return await GetSaleDtoOrThrowAsync(sale.Id);
     }
 
+    public async Task<string> GetAuthorizedXmlAsync(int saleId)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var sale = await LoadSaleSnapshotAsync(saleId, operationalContext);
+
+        ValidateSaleCanDownloadAuthorizedXml(sale);
+
+        var responseXml = await _context.SriSubmissionAttempts
+            .AsNoTracking()
+            .Where(a => a.SaleId == sale.Id
+                && a.CompanyId == operationalContext.CompanyId
+                && a.EstablishmentId == operationalContext.EstablishmentId
+                && a.EmissionPointId == operationalContext.EmissionPointId
+                && a.AttemptType == SriSubmissionAttemptType.Authorization
+                && a.Status == SriSubmissionAttemptStatus.Success
+                && a.AuthorizationStatus != null
+                && a.AuthorizationStatus.ToUpper() == "AUTORIZADO"
+                && a.ResponseXml != null
+                && a.ResponseXml != string.Empty)
+            .OrderByDescending(a => a.CreatedAt)
+            .ThenByDescending(a => a.Id)
+            .Select(a => a.ResponseXml)
+            .FirstOrDefaultAsync();
+
+        if (string.IsNullOrWhiteSpace(responseXml))
+        {
+            throw new InvalidOperationException("SRI_AUTHORIZED_XML_NOT_FOUND");
+        }
+
+        return ExtractAuthorizationXml(responseXml);
+    }
+
     public async Task<IReadOnlyList<SriSubmissionAttemptDto>> GetAttemptsAsync(int saleId)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
@@ -353,6 +387,65 @@ public class SriSubmissionService : ISriSubmissionService
         {
             throw new InvalidOperationException("SRI_ACCESS_KEY_REQUIRED");
         }
+    }
+
+    private static void ValidateSaleCanDownloadAuthorizedXml(Sale sale)
+    {
+        if (sale.DocumentType != SaleDocumentType.Invoice)
+        {
+            throw new InvalidOperationException("SRI_AUTHORIZED_XML_ONLY_INVOICE");
+        }
+
+        var isAuthorized = sale.DocumentStatus == SaleDocumentStatus.Authorized
+            || string.Equals(sale.SriAuthorizationStatus, "AUTORIZADO", StringComparison.OrdinalIgnoreCase);
+
+        if (!isAuthorized)
+        {
+            throw new InvalidOperationException("SRI_AUTHORIZED_XML_SALE_NOT_AUTHORIZED");
+        }
+
+        if (string.IsNullOrWhiteSpace(sale.AuthorizationNumber))
+        {
+            throw new InvalidOperationException("SRI_AUTHORIZED_XML_NOT_FOUND");
+        }
+    }
+
+    private static string ExtractAuthorizationXml(string responseXml)
+    {
+        XDocument document;
+
+        try
+        {
+            var settings = new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null
+            };
+
+            using var stringReader = new StringReader(responseXml);
+            using var xmlReader = XmlReader.Create(stringReader, settings);
+            document = XDocument.Load(xmlReader, LoadOptions.PreserveWhitespace);
+        }
+        catch (XmlException ex)
+        {
+            throw new InvalidOperationException("SRI_AUTHORIZED_XML_INVALID_RESPONSE", ex);
+        }
+
+        var authorizationNode = document.Root is not null
+            && string.Equals(document.Root.Name.LocalName, "autorizacion", StringComparison.OrdinalIgnoreCase)
+                ? document.Root
+                : document.Descendants()
+                    .FirstOrDefault(element => string.Equals(
+                        element.Name.LocalName,
+                        "autorizacion",
+                        StringComparison.OrdinalIgnoreCase));
+
+        if (authorizationNode is null)
+        {
+            throw new InvalidOperationException("SRI_AUTHORIZED_XML_NOT_FOUND");
+        }
+
+        return authorizationNode.ToString(SaveOptions.DisableFormatting);
     }
 
     private async Task<(int Environment, int EmissionType)> ResolveSriSubmissionContextAsync(
