@@ -36,9 +36,36 @@
         </div>
       </div>
 
-      <p class="sri-warning">
-        Firmado no significa autorizado por el SRI. La factura solo queda autorizada cuando el SRI confirma la autorización.
-      </p>
+      @if (isAuthorized(sale)) {
+        <section class="sri-authorized-card">
+          <div class="sri-authorized-card__title">
+            <div>
+              <span class="section-kicker">Autorizado por SRI</span>
+              <h4>Factura autorizada por SRI</h4>
+              <p>Este comprobante fue autorizado correctamente. No requiere procesarse nuevamente.</p>
+            </div>
+          </div>
+
+          <div class="sri-status-grid sri-authorized-card__grid">
+            <div>
+              <span>Número autorización</span>
+              <code class="long-code">{{ sale.authorizationNumber || '-' }}</code>
+            </div>
+            <div>
+              <span>Autorizado el</span>
+              <strong>{{ sale.authorizedAt ? (sale.authorizedAt | date: 'short') : '-' }}</strong>
+            </div>
+            <div>
+              <span>Clave de acceso</span>
+              <code class="long-code">{{ sale.accessKey || '-' }}</code>
+            </div>
+          </div>
+        </section>
+      } @else {
+        <p class="sri-warning">
+          Firmado no significa autorizado por el SRI. La factura solo queda autorizada cuando el SRI confirma la autorización.
+        </p>
+      }
 
       <div class="fiscal-grid">
         <div>
@@ -78,7 +105,7 @@
       @if (sale.accessKey) {
         <div class="sri-long-field">
           <span>Clave de acceso</span>
-          <code>{{ sale.accessKey }}</code>
+          <code class="long-code">{{ sale.accessKey }}</code>
         </div>
       }
 
@@ -110,7 +137,7 @@
           <div class="sri-status-panel__header">
             <div>
               <span class="section-kicker">Estado SRI</span>
-              <h4>Recepción y autorización</h4>
+              <h4>{{ isAuthorized(sale) ? 'Autorización confirmada' : 'Recepción y autorización' }}</h4>
             </div>
             <p-button
               label="Ver historial SRI"
@@ -140,7 +167,7 @@
             </div>
             <div>
               <span>Número autorización</span>
-              <strong>{{ sale.authorizationNumber || '-' }}</strong>
+              <code class="long-code">{{ sale.authorizationNumber || '-' }}</code>
             </div>
             <div>
               <span>Autorizado el</span>

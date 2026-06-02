@@ -5,6 +5,7 @@ import { MessageModule } from 'primeng/message';
 import { TagModule } from 'primeng/tag';
 import {
   DocumentTagSeverity,
+  SaleDocumentStatus,
   SaleDocumentType,
   saleDocumentTypeLabel,
   sriSignatureStatusLabel,
@@ -48,26 +49,59 @@ export class RecentSalesPanel {
   }
 
   signatureStatusLabel(sale: SaleListItem): string {
+    if (this.isAuthorized(sale)) {
+      return sriSignatureStatusLabel(true);
+    }
+
     return sriSignatureStatusLabel(sale.hasSriSignedXml, sale.sriSignatureStatusKnown);
   }
 
   signatureStatusSeverity(sale: SaleListItem): DocumentTagSeverity {
+    if (this.isAuthorized(sale)) {
+      return sriSignatureStatusSeverity(true);
+    }
+
     return sriSignatureStatusSeverity(sale.hasSriSignedXml, sale.sriSignatureStatusKnown);
   }
 
   receptionStatusLabel(sale: SaleListItem): string {
+    if (this.isAuthorized(sale)) {
+      return sriReceptionStatusLabel('RECIBIDA');
+    }
+
     return sriReceptionStatusLabel(sale.sriReceptionStatus);
   }
 
   receptionStatusSeverity(sale: SaleListItem): DocumentTagSeverity {
+    if (this.isAuthorized(sale)) {
+      return sriReceptionStatusSeverity('RECIBIDA');
+    }
+
     return sriReceptionStatusSeverity(sale.sriReceptionStatus);
   }
 
   authorizationStatusLabel(sale: SaleListItem): string {
+    if (this.isAuthorized(sale)) {
+      return sriAuthorizationStatusLabel('AUTORIZADO');
+    }
+
     return sriAuthorizationStatusLabel(sale.sriAuthorizationStatus);
   }
 
   authorizationStatusSeverity(sale: SaleListItem): DocumentTagSeverity {
+    if (this.isAuthorized(sale)) {
+      return sriAuthorizationStatusSeverity('AUTORIZADO');
+    }
+
     return sriAuthorizationStatusSeverity(sale.sriAuthorizationStatus);
+  }
+
+  private isAuthorized(sale: SaleListItem): boolean {
+    return sale.documentStatus === SaleDocumentStatus.Authorized
+      || this.normalizeSriStatus(sale.sriAuthorizationStatus) === 'AUTORIZADO';
+  }
+
+  private normalizeSriStatus(status: string | null | undefined): string {
+    return status?.trim().toUpperCase() ?? '';
   }
 }

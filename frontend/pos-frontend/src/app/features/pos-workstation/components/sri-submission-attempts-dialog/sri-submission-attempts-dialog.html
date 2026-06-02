@@ -14,7 +14,7 @@
       </div>
       <div>
         <span>Clave acceso</span>
-        <code>{{ sale.accessKey || '-' }}</code>
+        <code class="long-code">{{ sale.accessKey || '-' }}</code>
       </div>
       <p-button
         label="Refrescar"
@@ -37,35 +37,38 @@
     [paginator]="true"
     [rows]="6"
     responsiveLayout="scroll"
-    [tableStyle]="{ 'min-width': '62rem' }"
+    styleClass="sri-attempts-table"
+    [tableStyle]="{ 'min-width': '78rem', 'table-layout': 'fixed' }"
   >
     <ng-template pTemplate="header">
       <tr>
-        <th>Fecha</th>
-        <th>Tipo</th>
-        <th>Estado intento</th>
-        <th>Recepción</th>
-        <th>Autorización</th>
-        <th>Número autorización</th>
-        <th>Mensaje SRI</th>
-        <th>Información adicional</th>
+        <th class="date-column">Fecha</th>
+        <th class="type-column">Tipo</th>
+        <th class="status-column">Estado intento</th>
+        <th class="status-column">Recepción</th>
+        <th class="status-column">Autorización</th>
+        <th class="authorization-column">Número autorización</th>
+        <th class="message-column">Mensaje SRI</th>
+        <th class="additional-info-column">Información adicional</th>
       </tr>
     </ng-template>
 
     <ng-template pTemplate="body" let-attempt>
       <tr>
-        <td>{{ attempt.createdAt | date: 'medium' }}</td>
-        <td>{{ attemptTypeLabel(attempt) }}</td>
-        <td>
+        <td class="date-cell">{{ attempt.createdAt | date: 'medium' }}</td>
+        <td class="type-cell">{{ attemptTypeLabel(attempt) }}</td>
+        <td class="status-cell">
           <p-tag [value]="attemptStatusLabel(attempt)" [severity]="attemptStatusSeverity(attempt)"></p-tag>
         </td>
-        <td>
+        <td class="status-cell">
           <p-tag [value]="receptionStatusLabel(attempt)" [severity]="receptionStatusSeverity(attempt)"></p-tag>
         </td>
-        <td>
+        <td class="status-cell">
           <p-tag [value]="authorizationStatusLabel(attempt)" [severity]="authorizationStatusSeverity(attempt)"></p-tag>
         </td>
-        <td>{{ attempt.authorizationNumber || '-' }}</td>
+        <td class="authorization-number-cell">
+          <code class="long-code">{{ attempt.authorizationNumber || '-' }}</code>
+        </td>
         <td class="message-cell">
           @if (attempt.sriMessageIdentifier || attempt.sriMessageType) {
             <small>{{ attempt.sriMessageIdentifier || '-' }} · {{ attempt.sriMessageType || '-' }}</small>
@@ -75,7 +78,7 @@
             <small>Error: {{ attempt.errorCode }}</small>
           }
         </td>
-        <td class="message-cell">
+        <td class="message-cell additional-info-cell">
           <span>{{ attempt.sriAdditionalInfo || '-' }}</span>
         </td>
       </tr>
