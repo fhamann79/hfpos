@@ -82,6 +82,7 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<IOperationalContextAccessor, OperationalContextAccessor>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddSingleton<ISriFiscalClock, SriFiscalClock>();
 builder.Services.AddScoped<ISriAccessKeyService, SriAccessKeyService>();
 builder.Services.AddScoped<ISriXmlDraftService, SriXmlDraftService>();
 builder.Services.AddScoped<ISriInvoiceXmlValidator, SriInvoiceXmlValidator>();

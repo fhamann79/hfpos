@@ -4,6 +4,8 @@ public class SriAccessKeyRequest
 {
     public DateTime EmissionDate { get; set; }
 
+    public DateOnly? FiscalEmissionDate { get; set; }
+
     public string DocumentCode { get; set; } = string.Empty;
 
     public string IssuerRuc { get; set; } = string.Empty;

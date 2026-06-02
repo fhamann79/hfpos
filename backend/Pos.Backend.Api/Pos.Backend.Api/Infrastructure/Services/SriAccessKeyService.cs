@@ -25,10 +25,11 @@ public class SriAccessKeyService : ISriAccessKeyService
             throw new InvalidOperationException("INVALID_SRI_DOCUMENT_CONTEXT");
         }
 
+        var emissionDate = request.FiscalEmissionDate ?? DateOnly.FromDateTime(request.EmissionDate);
         var sequential = request.Sequential.ToString("000000000", CultureInfo.InvariantCulture);
         var numericCode = GenerateNumericCode(request.NumericCodeSeed);
         var accessKeyBase = string.Concat(
-            request.EmissionDate.ToString("ddMMyyyy", CultureInfo.InvariantCulture),
+            emissionDate.ToString("ddMMyyyy", CultureInfo.InvariantCulture),
             request.DocumentCode,
             request.IssuerRuc,
             request.Environment.ToString(CultureInfo.InvariantCulture),

@@ -19,6 +19,7 @@ public class SalesService : ISalesService
     private readonly IInventoryService _inventoryService;
     private readonly ISriAccessKeyService _sriAccessKeyService;
     private readonly ISriXmlDraftService _sriXmlDraftService;
+    private readonly ISriFiscalClock _sriFiscalClock;
     private readonly ISriInvoiceXmlValidator _sriInvoiceXmlValidator;
     private readonly SriOptions _sriOptions;
 
@@ -29,6 +30,7 @@ public class SalesService : ISalesService
         IInventoryService inventoryService,
         ISriAccessKeyService sriAccessKeyService,
         ISriXmlDraftService sriXmlDraftService,
+        ISriFiscalClock sriFiscalClock,
         ISriInvoiceXmlValidator sriInvoiceXmlValidator,
         IOptions<SriOptions> sriOptions)
     {
@@ -38,6 +40,7 @@ public class SalesService : ISalesService
         _inventoryService = inventoryService;
         _sriAccessKeyService = sriAccessKeyService;
         _sriXmlDraftService = sriXmlDraftService;
+        _sriFiscalClock = sriFiscalClock;
         _sriInvoiceXmlValidator = sriInvoiceXmlValidator;
         _sriOptions = sriOptions.Value;
     }
@@ -577,7 +580,7 @@ public class SalesService : ISalesService
             throw new InvalidOperationException("DOCUMENT_NUMBER_GENERATION_FAILED");
         }
 
-        var now = DateTime.UtcNow;
+        var now = _sriFiscalClock.UtcNow;
         var documentTypeValue = (int)documentType;
 
         try
@@ -690,9 +693,11 @@ public class SalesService : ISalesService
         try
         {
             var sriSettings = await ResolveSriSettingsAsync(operationalContext.CompanyId);
+            var fiscalEmissionDate = _sriFiscalClock.GetEcuadorFiscalDate(sale.DocumentIssuedAt.Value);
             var accessKey = _sriAccessKeyService.GenerateInvoiceAccessKey(new SriAccessKeyRequest
             {
                 EmissionDate = sale.DocumentIssuedAt.Value,
+                FiscalEmissionDate = fiscalEmissionDate,
                 DocumentCode = "01",
                 IssuerRuc = issuerRuc!,
                 Environment = sriSettings.Environment,
@@ -730,7 +735,8 @@ public class SalesService : ISalesService
                         InternalCode = p.Value.InternalCode
                     }),
                 Environment = sriSettings.Environment,
-                EmissionType = sriSettings.EmissionType
+                EmissionType = sriSettings.EmissionType,
+                FiscalEmissionDate = fiscalEmissionDate
             });
 
             _sriInvoiceXmlValidator.ValidateUnsignedInvoiceXml(xmlDraft);
