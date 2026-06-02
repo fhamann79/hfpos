@@ -14,6 +14,24 @@ public class SaleListItemDto
 
     public SaleDocumentStatus DocumentStatus { get; set; }
 
+    public string? AccessKey { get; set; }
+
+    public bool HasSriXmlDraft { get; set; }
+
+    public DateTime? SriSignedAt { get; set; }
+
+    public bool HasSriSignedXml { get; set; }
+
+    public DateTime? SriSubmittedAt { get; set; }
+
+    public string? SriReceptionStatus { get; set; }
+
+    public string? SriAuthorizationStatus { get; set; }
+
+    public string? SriLastSubmissionError { get; set; }
+
+    public DateTime? SriLastCheckedAt { get; set; }
+
     public decimal Total { get; set; }
 
     public int ItemsCount { get; set; }
