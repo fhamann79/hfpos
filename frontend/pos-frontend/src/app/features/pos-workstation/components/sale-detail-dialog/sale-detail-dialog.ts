@@ -45,6 +45,7 @@ export class SaleDetailDialog {
   @Output() signSriXml = new EventEmitter<number>();
   @Output() downloadSriXmlDraft = new EventEmitter<number>();
   @Output() downloadSriSignedXml = new EventEmitter<number>();
+  @Output() downloadSriAuthorizedXml = new EventEmitter<number>();
   @Output() submitSriInvoice = new EventEmitter<number>();
   @Output() checkSriAuthorization = new EventEmitter<number>();
   @Output() viewSriAttempts = new EventEmitter<number>();
@@ -131,6 +132,15 @@ export class SaleDetailDialog {
       && sale.hasSriXmlDraft
       && !sale.isVoided
       && !this.isAuthorized(sale);
+  }
+
+  canDownloadAuthorizedXml(sale: Sale): boolean {
+    return sale.documentType === SaleDocumentType.Invoice
+      && this.isAuthorized(sale)
+      && (
+        !!sale.authorizationNumber
+        || this.normalizeSriStatus(sale.sriAuthorizationStatus) === 'AUTORIZADO'
+      );
   }
 
   canViewSriAttempts(sale: Sale): boolean {

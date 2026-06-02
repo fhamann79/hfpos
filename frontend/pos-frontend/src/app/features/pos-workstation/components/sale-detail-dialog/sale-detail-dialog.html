@@ -250,6 +250,16 @@
             (onClick)="downloadSriSignedXml.emit(sale.id)"
           ></p-button>
         }
+
+        @if (canDownloadAuthorizedXml(sale)) {
+          <p-button
+            label="Descargar XML autorizado"
+            icon="pi pi-download"
+            severity="success"
+            [disabled]="isProcessingSriWorkflow(sale)"
+            (onClick)="downloadSriAuthorizedXml.emit(sale.id)"
+          ></p-button>
+        }
       </div>
     </section>
 
