@@ -101,6 +101,137 @@
   border-top: 1px solid #eef2f7;
 }
 
+.readiness-card {
+  gap: 1.1rem;
+}
+
+.readiness-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #dbeafe;
+  border-radius: 0.75rem;
+  color: #075985;
+  background: #f0f9ff;
+  font-weight: 700;
+}
+
+.readiness-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.readiness-summary-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem 0.7rem;
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #fbfdff;
+
+  span {
+    color: #64748b;
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+
+  strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: #0f172a;
+    font-size: 1.05rem;
+  }
+
+  p-tag {
+    grid-row: span 2;
+  }
+}
+
+.readiness-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  color: #64748b;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.readiness-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.readiness-category {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px solid #e5edf6;
+  border-radius: 0.75rem;
+  background: #ffffff;
+
+  > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+
+    span {
+      display: block;
+      color: #64748b;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    strong {
+      display: block;
+      margin-top: 0.12rem;
+      color: #0f172a;
+    }
+  }
+}
+
+.readiness-check-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #0f172a;
+  font-weight: 800;
+
+  i {
+    flex: 0 0 auto;
+  }
+}
+
+.readiness-details {
+  display: block;
+  max-width: 32rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.readiness-blocking {
+  background: #fff7ed;
+}
+
+.readiness-muted {
+  display: block;
+  margin-top: 0.18rem;
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
 .fiscal-form,
 .sequence-form {
   display: flex;
@@ -366,12 +497,19 @@
   }
 
   .form-grid,
+  .readiness-summary-grid,
   .certificate-card,
   .certificate-card__header,
   .certificate-settings-status,
   .certificate-actions,
   .audit-context {
     grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .readiness-category > header,
+  .readiness-meta {
+    align-items: flex-start;
     flex-direction: column;
   }
 

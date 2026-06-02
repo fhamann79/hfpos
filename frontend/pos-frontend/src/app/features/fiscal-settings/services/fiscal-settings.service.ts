@@ -9,6 +9,7 @@ import {
   DocumentSequence,
   DocumentSequenceAudit,
   DocumentSequenceFilters,
+  SriFiscalReadiness,
   UpdateCompanyFiscalSettingsRequest,
   UpdateCompanySriSettingsRequest,
   UpdateDocumentSequenceRequest,
@@ -33,6 +34,10 @@ export class FiscalSettingsService {
 
   updateSriSettings(payload: UpdateCompanySriSettingsRequest) {
     return this.http.put<CompanySriSettings>(`${this.baseUrl}/sri`, payload);
+  }
+
+  getSriReadiness() {
+    return this.http.get<SriFiscalReadiness>(`${this.baseUrl}/sri/readiness`);
   }
 
   getSriCertificate() {

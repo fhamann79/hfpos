@@ -16,7 +16,7 @@
   @if (canRead()) {
     <p-message
       severity="info"
-      text="Esta sección prepara la operación fiscal. La firma electrónica, autorización SRI y RIDE se implementarán en una etapa posterior."
+      text="Esta sección administra datos fiscales, SRI, certificado digital, secuenciales y diagnóstico de preparación. RIDE y envío por correo se implementarán en una etapa posterior."
     ></p-message>
 
     <p-tabs value="company">
@@ -32,7 +32,7 @@
             <div class="section-heading">
               <div>
                 <h3>Identidad fiscal de la empresa</h3>
-                <p>Estos datos serán usados más adelante en XML SRI, RIDE y documentos comerciales.</p>
+                <p>Estos datos se usan en XML SRI y documentos comerciales; RIDE se implementará en una etapa posterior.</p>
               </div>
               @if (!canWrite()) {
                 <p-tag severity="secondary" value="Solo lectura"></p-tag>
@@ -144,11 +144,166 @@
         </p-tabpanel>
 
         <p-tabpanel value="sri">
+          <section class="settings-card readiness-card">
+            <div class="section-heading">
+              <div>
+                <h3>Diagnóstico SRI</h3>
+                <p>Verifica si la empresa está lista para emitir comprobantes electrónicos en ambiente de pruebas o producción.</p>
+              </div>
+              <p-button
+                type="button"
+                label="Actualizar diagnóstico"
+                icon="pi pi-refresh"
+                severity="secondary"
+                [outlined]="true"
+                [loading]="readinessLoading()"
+                (onClick)="loadSriReadiness()"
+              ></p-button>
+            </div>
+
+            @if (readinessError()) {
+              <p-message severity="error" [text]="readinessError()"></p-message>
+            }
+
+            @if (readinessLoading() && !readiness()) {
+              <div class="readiness-loading">
+                <i class="pi pi-spin pi-spinner"></i>
+                <span>Calculando diagnóstico SRI...</span>
+              </div>
+            }
+
+            @if (readiness(); as sriReadiness) {
+              <div class="readiness-summary-grid">
+                <div class="readiness-summary-item">
+                  <span>Ambiente</span>
+                  <strong>{{ sriReadiness.environmentLabel || environmentLabel(sriReadiness.environment) }}</strong>
+                  <p-tag
+                    [severity]="sriReadiness.environment === 2 ? 'warn' : 'info'"
+                    [value]="sriReadiness.environmentLabel || environmentLabel(sriReadiness.environment)"
+                  ></p-tag>
+                </div>
+
+                <div class="readiness-summary-item">
+                  <span>Listo para pruebas</span>
+                  <strong>{{ readinessStatusLabel(sriReadiness, 'sandbox') }}</strong>
+                  <p-tag
+                    [severity]="readinessStatusSeverity(sriReadiness, 'sandbox')"
+                    [value]="readinessStatusLabel(sriReadiness, 'sandbox')"
+                  ></p-tag>
+                </div>
+
+                <div class="readiness-summary-item">
+                  <span>Listo para producción</span>
+                  <strong>{{ readinessStatusLabel(sriReadiness, 'production') }}</strong>
+                  <p-tag
+                    [severity]="readinessStatusSeverity(sriReadiness, 'production')"
+                    [value]="readinessStatusLabel(sriReadiness, 'production')"
+                  ></p-tag>
+                </div>
+
+                <div class="readiness-summary-item">
+                  <span>Errores bloqueantes</span>
+                  <strong>{{ sriReadiness.blockingErrorCount }}</strong>
+                  <p-tag
+                    [severity]="sriReadiness.blockingErrorCount > 0 ? 'danger' : 'success'"
+                    [value]="sriReadiness.blockingErrorCount.toString()"
+                  ></p-tag>
+                </div>
+
+                <div class="readiness-summary-item">
+                  <span>Advertencias</span>
+                  <strong>{{ sriReadiness.warningCount }}</strong>
+                  <p-tag
+                    [severity]="sriReadiness.warningCount > 0 ? 'warn' : 'secondary'"
+                    [value]="sriReadiness.warningCount.toString()"
+                  ></p-tag>
+                </div>
+
+                <div class="readiness-summary-item">
+                  <span>Checks correctos</span>
+                  <strong>{{ sriReadiness.successCount }}</strong>
+                  <p-tag severity="success" [value]="sriReadiness.successCount.toString()"></p-tag>
+                </div>
+              </div>
+
+              <div class="readiness-meta">
+                <span>Actualizado: {{ sriReadiness.generatedAt | date: 'medium' }}</span>
+                <span>{{ readinessBlockingChecks().length }} bloqueantes · {{ readinessWarningChecks().length }} advertencias · {{ readinessSuccessChecks().length }} correctos</span>
+              </div>
+
+              <div class="readiness-checks">
+                @for (group of readinessChecksByCategory(); track group.category) {
+                  <section class="readiness-category">
+                    <header>
+                      <div>
+                        <span>Categoría</span>
+                        <strong>{{ group.categoryLabel }}</strong>
+                      </div>
+                      <p-tag severity="secondary" [value]="group.checks.length.toString()"></p-tag>
+                    </header>
+
+                    <p-table
+                      [value]="group.checks"
+                      responsiveLayout="scroll"
+                      [tableStyle]="{ 'min-width': '70rem' }"
+                    >
+                      <ng-template pTemplate="header">
+                        <tr>
+                          <th>Estado</th>
+                          <th>Categoría</th>
+                          <th>Revisión</th>
+                          <th>Mensaje</th>
+                          <th>Detalle</th>
+                          <th>Bloquea</th>
+                        </tr>
+                      </ng-template>
+
+                      <ng-template pTemplate="body" let-check>
+                        <tr [class.readiness-blocking]="check.isBlocking">
+                          <td>
+                            <p-tag
+                              [severity]="readinessCheckSeverity(check)"
+                              [value]="readinessSeverityLabel(check)"
+                            ></p-tag>
+                          </td>
+                          <td>{{ readinessCategoryLabel(check.category) }}</td>
+                          <td>
+                            <div class="readiness-check-title">
+                              <i [class]="readinessCheckIcon(check)"></i>
+                              <span>{{ check.title }}</span>
+                            </div>
+                            <small class="readiness-muted">{{ check.code }}</small>
+                          </td>
+                          <td>{{ check.message }}</td>
+                          <td>
+                            <span class="readiness-details">{{ check.details || '-' }}</span>
+                          </td>
+                          <td>
+                            <p-tag
+                              [severity]="check.isBlocking ? 'danger' : 'secondary'"
+                              [value]="check.isBlocking ? 'Sí' : 'No'"
+                            ></p-tag>
+                          </td>
+                        </tr>
+                      </ng-template>
+                    </p-table>
+                  </section>
+                }
+              </div>
+            } @else if (!readinessLoading()) {
+              <div class="empty-state compact">
+                <i class="pi pi-list-check"></i>
+                <strong>Diagnóstico no cargado.</strong>
+                <span>Actualiza el diagnóstico para ver la preparación SRI de la empresa.</span>
+              </div>
+            }
+          </section>
+
           <section class="settings-card">
             <div class="section-heading">
               <div>
                 <h3>Ambiente y emisión SRI</h3>
-                <p>Define el ambiente fiscal por compañía sin activar todavía firma ni autorización electrónica.</p>
+                <p>Define el ambiente fiscal por compañía. La emisión electrónica debe validarse con certificado, secuenciales y diagnóstico SRI.</p>
               </div>
               <p-tag
                 [severity]="sriForm.controls.environment.value === 2 ? 'warn' : 'info'"
@@ -163,7 +318,7 @@
             @if (isProductionEnvironment()) {
               <p-message
                 severity="warn"
-                text="Ambiente Producción seleccionado. Aún no se enviarán comprobantes al SRI hasta implementar firma y autorización."
+                text="Ambiente Producción seleccionado. El envío a producción permanece protegido por configuración del backend."
               ></p-message>
             }
 
@@ -192,7 +347,7 @@
                 <div class="switch-field field-wide">
                   <div>
                     <strong>Habilitar SRI</strong>
-                    <span>Prepara la compañía para emisión electrónica futura. No realiza autorización real aún.</span>
+                    <span>Permite usar la integración SRI configurada para firma, envío y consulta de autorización según permisos y ambiente.</span>
                   </div>
                   <p-toggleswitch formControlName="isEnabled"></p-toggleswitch>
                 </div>
@@ -202,8 +357,8 @@
                 <div class="certificate-card__header">
                   <div>
                     <span>Certificado digital</span>
-                    <strong>Firma electrónica futura</strong>
-                    <small>Gestiona el certificado .p12/.pfx que se usará más adelante para firmar XML.</small>
+                    <strong>Firma electrónica</strong>
+                    <small>Gestiona el certificado .p12/.pfx usado para firmar XML SRI.</small>
                   </div>
                   <p-tag [severity]="certificateSeverity()" [value]="certificateStatusLabel()"></p-tag>
                 </div>
@@ -265,7 +420,7 @@
                   <div class="certificate-empty">
                     <i class="pi pi-key"></i>
                     <strong>No hay certificado digital activo configurado.</strong>
-                    <span>Carga un certificado .p12 o .pfx para preparar la firma electrónica futura.</span>
+                    <span>Carga un certificado .p12 o .pfx para firmar XML SRI.</span>
                   </div>
                 }
 
