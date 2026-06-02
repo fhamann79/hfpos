@@ -260,6 +260,17 @@
             (onClick)="downloadSriAuthorizedXml.emit(sale.id)"
           ></p-button>
         }
+
+        @if (canViewSriRide(sale)) {
+          <p-button
+            label="Ver / Imprimir RIDE"
+            icon="pi pi-print"
+            severity="info"
+            [outlined]="true"
+            [disabled]="isProcessingSriWorkflow(sale)"
+            (onClick)="viewSriRide.emit(sale.id)"
+          ></p-button>
+        }
       </div>
     </section>
 

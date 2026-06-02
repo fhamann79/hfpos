@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Xml;
 using System.Xml.Linq;
 using Microsoft.EntityFrameworkCore;
@@ -234,29 +235,41 @@ public class SriSubmissionService : ISriSubmissionService
 
         ValidateSaleCanDownloadAuthorizedXml(sale);
 
-        var responseXml = await _context.SriSubmissionAttempts
-            .AsNoTracking()
-            .Where(a => a.SaleId == sale.Id
-                && a.CompanyId == operationalContext.CompanyId
-                && a.EstablishmentId == operationalContext.EstablishmentId
-                && a.EmissionPointId == operationalContext.EmissionPointId
-                && a.AttemptType == SriSubmissionAttemptType.Authorization
-                && a.Status == SriSubmissionAttemptStatus.Success
-                && a.AuthorizationStatus != null
-                && a.AuthorizationStatus.ToUpper() == "AUTORIZADO"
-                && a.ResponseXml != null
-                && a.ResponseXml != string.Empty)
-            .OrderByDescending(a => a.CreatedAt)
-            .ThenByDescending(a => a.Id)
-            .Select(a => a.ResponseXml)
-            .FirstOrDefaultAsync();
+        var responseXml = await GetLatestSuccessfulAuthorizationResponseXmlAsync(sale, operationalContext);
 
         if (string.IsNullOrWhiteSpace(responseXml))
         {
             throw new InvalidOperationException("SRI_AUTHORIZED_XML_NOT_FOUND");
         }
 
-        return ExtractAuthorizationXml(responseXml);
+        var authorizationNode = ExtractAuthorizationNode(
+            responseXml,
+            invalidResponseErrorCode: "SRI_AUTHORIZED_XML_INVALID_RESPONSE",
+            notFoundErrorCode: "SRI_AUTHORIZED_XML_NOT_FOUND");
+
+        return authorizationNode.ToString(SaveOptions.DisableFormatting);
+    }
+
+    public async Task<SriRideDto> GetRideAsync(int saleId)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var sale = await LoadSaleSnapshotAsync(saleId, operationalContext);
+
+        ValidateSaleCanBuildRide(sale);
+
+        var responseXml = await GetLatestSuccessfulAuthorizationResponseXmlAsync(sale, operationalContext);
+
+        if (string.IsNullOrWhiteSpace(responseXml))
+        {
+            throw new InvalidOperationException("SRI_RIDE_NOT_FOUND");
+        }
+
+        var authorizationNode = ExtractAuthorizationNode(
+            responseXml,
+            invalidResponseErrorCode: "SRI_RIDE_INVALID_AUTHORIZED_XML",
+            notFoundErrorCode: "SRI_RIDE_NOT_FOUND");
+
+        return BuildRide(sale, authorizationNode);
     }
 
     public async Task<IReadOnlyList<SriSubmissionAttemptDto>> GetAttemptsAsync(int saleId)
@@ -410,10 +423,125 @@ public class SriSubmissionService : ISriSubmissionService
         }
     }
 
-    private static string ExtractAuthorizationXml(string responseXml)
+    private static void ValidateSaleCanBuildRide(Sale sale)
     {
-        XDocument document;
+        if (sale.DocumentType != SaleDocumentType.Invoice)
+        {
+            throw new InvalidOperationException("SRI_RIDE_ONLY_AUTHORIZED_INVOICE");
+        }
 
+        var isAuthorized = sale.DocumentStatus == SaleDocumentStatus.Authorized
+            || string.Equals(sale.SriAuthorizationStatus, "AUTORIZADO", StringComparison.OrdinalIgnoreCase);
+
+        if (!isAuthorized)
+        {
+            throw new InvalidOperationException("SRI_RIDE_ONLY_AUTHORIZED_INVOICE");
+        }
+    }
+
+    private async Task<string?> GetLatestSuccessfulAuthorizationResponseXmlAsync(
+        Sale sale,
+        OperationalContext operationalContext)
+        => await _context.SriSubmissionAttempts
+            .AsNoTracking()
+            .Where(a => a.SaleId == sale.Id
+                && a.CompanyId == operationalContext.CompanyId
+                && a.EstablishmentId == operationalContext.EstablishmentId
+                && a.EmissionPointId == operationalContext.EmissionPointId
+                && a.AttemptType == SriSubmissionAttemptType.Authorization
+                && a.Status == SriSubmissionAttemptStatus.Success
+                && a.AuthorizationStatus != null
+                && a.AuthorizationStatus.ToUpper() == "AUTORIZADO"
+                && a.ResponseXml != null
+                && a.ResponseXml != string.Empty)
+            .OrderByDescending(a => a.CreatedAt)
+            .ThenByDescending(a => a.Id)
+            .Select(a => a.ResponseXml)
+            .FirstOrDefaultAsync();
+
+    private static XElement ExtractAuthorizationNode(
+        string responseXml,
+        string invalidResponseErrorCode,
+        string notFoundErrorCode)
+    {
+        var document = LoadXmlDocument(responseXml, invalidResponseErrorCode);
+        var authorizationNode = FindElement(document, "autorizacion");
+
+        return authorizationNode ?? throw new InvalidOperationException(notFoundErrorCode);
+    }
+
+    private static SriRideDto BuildRide(Sale sale, XElement authorizationNode)
+    {
+        var invoiceDocument = ExtractComprobanteDocument(authorizationNode);
+        var invoice = invoiceDocument.Root
+            ?? throw new InvalidOperationException("SRI_RIDE_INVALID_AUTHORIZED_XML");
+        var infoTributaria = ChildElement(invoice, "infoTributaria")
+            ?? throw new InvalidOperationException("SRI_RIDE_INVALID_AUTHORIZED_XML");
+        var infoFactura = ChildElement(invoice, "infoFactura")
+            ?? throw new InvalidOperationException("SRI_RIDE_INVALID_AUTHORIZED_XML");
+
+        var environment = ChildValue(infoTributaria, "ambiente")
+            ?? sale.SriEnvironment?.ToString(CultureInfo.InvariantCulture);
+        var emissionType = ChildValue(infoTributaria, "tipoEmision")
+            ?? sale.SriEmissionType?.ToString(CultureInfo.InvariantCulture);
+
+        return new SriRideDto
+        {
+            SaleId = sale.Id,
+            DocumentTypeLabel = "Factura",
+            DocumentNumber = BuildDocumentNumber(infoTributaria) ?? sale.Number,
+            AccessKey = ChildValue(infoTributaria, "claveAcceso") ?? sale.AccessKey,
+            AuthorizationNumber = ChildValue(authorizationNode, "numeroAutorizacion") ?? sale.AuthorizationNumber,
+            AuthorizationDate = ParseSriDate(ChildValue(authorizationNode, "fechaAutorizacion")) ?? sale.AuthorizedAt,
+            EnvironmentLabel = SriEnvironmentLabel(environment),
+            EmissionTypeLabel = SriEmissionTypeLabel(emissionType),
+            IssueDate = ParseSriDate(ChildValue(infoFactura, "fechaEmision")) ?? sale.DocumentIssuedAt,
+            Issuer = new SriRideIssuerDto
+            {
+                Ruc = ChildValue(infoTributaria, "ruc"),
+                LegalName = ChildValue(infoTributaria, "razonSocial"),
+                TradeName = ChildValue(infoTributaria, "nombreComercial"),
+                MatrixAddress = ChildValue(infoTributaria, "dirMatriz"),
+                EstablishmentAddress = ChildValue(infoFactura, "dirEstablecimiento"),
+                AccountingRequired = ChildValue(infoFactura, "obligadoContabilidad"),
+                TaxpayerRegime = ChildValue(infoFactura, "contribuyenteRimpe")
+                    ?? ChildValue(infoFactura, "regimenMicroempresas")
+            },
+            Buyer = new SriRideBuyerDto
+            {
+                IdentificationType = BuyerIdentificationTypeLabel(ChildValue(infoFactura, "tipoIdentificacionComprador")),
+                Identification = ChildValue(infoFactura, "identificacionComprador"),
+                LegalName = ChildValue(infoFactura, "razonSocialComprador")
+            },
+            Items = BuildRideItems(invoice),
+            Totals = BuildRideTotals(sale, infoFactura),
+            Payments = BuildRidePayments(sale, infoFactura)
+        };
+    }
+
+    private static XDocument ExtractComprobanteDocument(XElement authorizationNode)
+    {
+        var comprobanteNode = FindElement(authorizationNode, "comprobante")
+            ?? throw new InvalidOperationException("SRI_RIDE_INVALID_AUTHORIZED_XML");
+        var embeddedInvoice = comprobanteNode.Elements().FirstOrDefault();
+
+        if (embeddedInvoice is not null)
+        {
+            return new XDocument(new XElement(embeddedInvoice));
+        }
+
+        var comprobanteXml = TrimToNull(comprobanteNode.Value);
+
+        if (comprobanteXml is null)
+        {
+            throw new InvalidOperationException("SRI_RIDE_INVALID_AUTHORIZED_XML");
+        }
+
+        return LoadXmlDocument(comprobanteXml, "SRI_RIDE_INVALID_AUTHORIZED_XML");
+    }
+
+    private static XDocument LoadXmlDocument(string xml, string errorCode)
+    {
         try
         {
             var settings = new XmlReaderSettings
@@ -422,30 +550,306 @@ public class SriSubmissionService : ISriSubmissionService
                 XmlResolver = null
             };
 
-            using var stringReader = new StringReader(responseXml);
+            using var stringReader = new StringReader(xml);
             using var xmlReader = XmlReader.Create(stringReader, settings);
-            document = XDocument.Load(xmlReader, LoadOptions.PreserveWhitespace);
+            return XDocument.Load(xmlReader, LoadOptions.PreserveWhitespace);
         }
         catch (XmlException ex)
         {
-            throw new InvalidOperationException("SRI_AUTHORIZED_XML_INVALID_RESPONSE", ex);
+            throw new InvalidOperationException(errorCode, ex);
         }
+    }
 
-        var authorizationNode = document.Root is not null
-            && string.Equals(document.Root.Name.LocalName, "autorizacion", StringComparison.OrdinalIgnoreCase)
-                ? document.Root
-                : document.Descendants()
-                    .FirstOrDefault(element => string.Equals(
-                        element.Name.LocalName,
-                        "autorizacion",
-                        StringComparison.OrdinalIgnoreCase));
+    private static List<SriRideItemDto> BuildRideItems(XElement invoice)
+    {
+        var detalles = ChildElement(invoice, "detalles");
 
-        if (authorizationNode is null)
+        return ChildElements(detalles, "detalle")
+            .Select(detail =>
+            {
+                var impuestos = ChildElement(detail, "impuestos");
+                var taxAmount = ChildElements(impuestos, "impuesto")
+                    .Select(tax => ParseDecimal(ChildValue(tax, "valor")) ?? 0)
+                    .Sum();
+                var subtotal = ParseDecimal(ChildValue(detail, "precioTotalSinImpuesto")) ?? 0;
+
+                return new SriRideItemDto
+                {
+                    MainCode = ChildValue(detail, "codigoPrincipal"),
+                    Description = ChildValue(detail, "descripcion"),
+                    Quantity = ParseDecimal(ChildValue(detail, "cantidad")) ?? 0,
+                    UnitPrice = ParseDecimal(ChildValue(detail, "precioUnitario")) ?? 0,
+                    Discount = ParseDecimal(ChildValue(detail, "descuento")) ?? 0,
+                    Subtotal = subtotal,
+                    TaxAmount = taxAmount,
+                    LineTotal = subtotal + taxAmount
+                };
+            })
+            .ToList();
+    }
+
+    private static SriRideTotalsDto BuildRideTotals(Sale sale, XElement infoFactura)
+    {
+        var totals = new SriRideTotalsDto
         {
-            throw new InvalidOperationException("SRI_AUTHORIZED_XML_NOT_FOUND");
+            SubtotalWithoutTaxes = ParseDecimal(ChildValue(infoFactura, "totalSinImpuestos")) ?? sale.Subtotal,
+            TotalDiscount = ParseDecimal(ChildValue(infoFactura, "totalDescuento")) ?? sale.DiscountAmount,
+            TaxAmount = sale.TaxAmount,
+            Total = ParseDecimal(ChildValue(infoFactura, "importeTotal")) ?? sale.Total,
+            Currency = ChildValue(infoFactura, "moneda") ?? "USD"
+        };
+
+        var taxSummary = ChildElement(infoFactura, "totalConImpuestos");
+        var hasXmlTaxTotals = false;
+        var xmlTaxAmount = 0m;
+
+        foreach (var tax in ChildElements(taxSummary, "totalImpuesto"))
+        {
+            hasXmlTaxTotals = true;
+            var code = ChildValue(tax, "codigo");
+            var percentageCode = ChildValue(tax, "codigoPorcentaje");
+            var taxableBase = ParseDecimal(ChildValue(tax, "baseImponible")) ?? 0;
+            var amount = ParseDecimal(ChildValue(tax, "valor")) ?? 0;
+
+            xmlTaxAmount += amount;
+
+            if (code != "2")
+            {
+                continue;
+            }
+
+            switch (percentageCode)
+            {
+                case "4":
+                    totals.Vat15Subtotal += taxableBase;
+                    break;
+                case "5":
+                    totals.Vat5Subtotal += taxableBase;
+                    break;
+                case "0":
+                    totals.Vat0Subtotal += taxableBase;
+                    break;
+                case "6":
+                    totals.NotSubjectSubtotal += taxableBase;
+                    break;
+                case "7":
+                    totals.ExemptSubtotal += taxableBase;
+                    break;
+            }
         }
 
-        return authorizationNode.ToString(SaveOptions.DisableFormatting);
+        if (hasXmlTaxTotals)
+        {
+            totals.TaxAmount = xmlTaxAmount;
+        }
+        else
+        {
+            totals.Vat15Subtotal = sale.Vat15Subtotal;
+            totals.Vat5Subtotal = sale.Vat5Subtotal;
+            totals.Vat0Subtotal = sale.Vat0Subtotal;
+            totals.ExemptSubtotal = sale.VatExemptSubtotal;
+            totals.NotSubjectSubtotal = sale.VatNotSubjectSubtotal;
+        }
+
+        return totals;
+    }
+
+    private static List<SriRidePaymentDto> BuildRidePayments(Sale sale, XElement infoFactura)
+    {
+        var pagos = ChildElement(infoFactura, "pagos");
+        var payments = ChildElements(pagos, "pago")
+            .Select(payment => new SriRidePaymentDto
+            {
+                PaymentMethod = SriPaymentMethodLabel(ChildValue(payment, "formaPago")),
+                Amount = ParseDecimal(ChildValue(payment, "total")) ?? 0
+            })
+            .Where(payment => !string.IsNullOrWhiteSpace(payment.PaymentMethod) || payment.Amount > 0)
+            .ToList();
+
+        if (payments.Count > 0)
+        {
+            return payments;
+        }
+
+        return new List<SriRidePaymentDto>
+        {
+            new()
+            {
+                PaymentMethod = SalePaymentMethodLabel(sale.PaymentMethod),
+                Amount = sale.Total
+            }
+        };
+    }
+
+    private static XElement? FindElement(XContainer container, string localName)
+    {
+        if (container is XDocument { Root: not null } document
+            && HasLocalName(document.Root, localName))
+        {
+            return document.Root;
+        }
+
+        if (container is XElement element
+            && HasLocalName(element, localName))
+        {
+            return element;
+        }
+
+        return container.Descendants()
+            .FirstOrDefault(element => HasLocalName(element, localName));
+    }
+
+    private static XElement? ChildElement(XElement parent, string localName)
+        => parent.Elements().FirstOrDefault(element => HasLocalName(element, localName));
+
+    private static IEnumerable<XElement> ChildElements(XElement? parent, string localName)
+        => parent?.Elements().Where(element => HasLocalName(element, localName)) ?? Enumerable.Empty<XElement>();
+
+    private static string? ChildValue(XElement parent, string localName)
+        => TrimToNull(ChildElement(parent, localName)?.Value);
+
+    private static bool HasLocalName(XElement element, string localName)
+        => string.Equals(element.Name.LocalName, localName, StringComparison.OrdinalIgnoreCase);
+
+    private static string? BuildDocumentNumber(XElement infoTributaria)
+    {
+        var establishment = ChildValue(infoTributaria, "estab");
+        var emissionPoint = ChildValue(infoTributaria, "ptoEmi");
+        var sequential = ChildValue(infoTributaria, "secuencial");
+
+        return establishment is not null && emissionPoint is not null && sequential is not null
+            ? $"{establishment}-{emissionPoint}-{sequential}"
+            : null;
+    }
+
+    private static decimal? ParseDecimal(string? value)
+    {
+        var normalized = TrimToNull(value);
+
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        if (decimal.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out var invariantValue))
+        {
+            return invariantValue;
+        }
+
+        return decimal.TryParse(normalized, NumberStyles.Number, CultureInfo.GetCultureInfo("es-EC"), out var localValue)
+            ? localValue
+            : null;
+    }
+
+    private static DateTime? ParseSriDate(string? value)
+    {
+        var normalized = TrimToNull(value);
+
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        string[] formats =
+        [
+            "dd/MM/yyyy",
+            "d/M/yyyy",
+            "dd-MM-yyyy",
+            "d-M-yyyy",
+            "yyyy-MM-dd",
+            "yyyy-MM-ddTHH:mm:ss",
+            "yyyy-MM-ddTHH:mm:ssK",
+            "yyyy-MM-ddTHH:mm:sszzz",
+            "yyyy-MM-ddTHH:mm:ss.fffK",
+            "yyyy-MM-ddTHH:mm:ss.fffzzz"
+        ];
+
+        if (DateTime.TryParseExact(
+            normalized,
+            formats,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AllowWhiteSpaces,
+            out var exactValue))
+        {
+            return exactValue;
+        }
+
+        if (DateTime.TryParse(
+            normalized,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AllowWhiteSpaces,
+            out var invariantValue))
+        {
+            return invariantValue;
+        }
+
+        return DateTime.TryParse(
+            normalized,
+            CultureInfo.GetCultureInfo("es-EC"),
+            DateTimeStyles.AllowWhiteSpaces,
+            out var localValue)
+                ? localValue
+                : null;
+    }
+
+    private static string? SriEnvironmentLabel(string? environment)
+        => environment switch
+        {
+            "1" => "Pruebas",
+            "2" => "Produccion",
+            _ => environment
+        };
+
+    private static string? SriEmissionTypeLabel(string? emissionType)
+        => emissionType switch
+        {
+            "1" => "Normal",
+            _ => emissionType
+        };
+
+    private static string? BuyerIdentificationTypeLabel(string? code)
+        => code switch
+        {
+            "04" => "RUC",
+            "05" => "Cedula",
+            "06" => "Pasaporte",
+            "07" => "Consumidor final",
+            "08" => "Identificacion exterior",
+            "09" => "Placa",
+            _ => code
+        };
+
+    private static string? SriPaymentMethodLabel(string? code)
+        => code switch
+        {
+            "01" => "Sin uso del sistema financiero",
+            "15" => "Compensacion de deudas",
+            "16" => "Tarjeta de debito",
+            "17" => "Dinero electronico",
+            "18" => "Tarjeta prepago",
+            "19" => "Tarjeta de credito",
+            "20" => "Otros",
+            "21" => "Endoso de titulos",
+            _ => code
+        };
+
+    private static string SalePaymentMethodLabel(SalePaymentMethod paymentMethod)
+        => paymentMethod switch
+        {
+            SalePaymentMethod.Cash => "Efectivo",
+            SalePaymentMethod.Card => "Tarjeta",
+            SalePaymentMethod.Transfer => "Transferencia",
+            _ => "Otro"
+        };
+
+    private static string? TrimToNull(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim();
     }
 
     private async Task<(int Environment, int EmissionType)> ResolveSriSubmissionContextAsync(

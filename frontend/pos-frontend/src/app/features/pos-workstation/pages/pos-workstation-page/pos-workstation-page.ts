@@ -17,6 +17,7 @@ import { ProductSearchPanel } from '../../components/product-search-panel/produc
 import { QuickProductSearchDialog } from '../../components/quick-product-search-dialog/quick-product-search-dialog';
 import { RecentSalesPanel } from '../../components/recent-sales-panel/recent-sales-panel';
 import { SaleDetailDialog } from '../../components/sale-detail-dialog/sale-detail-dialog';
+import { SriRideDialog } from '../../components/sri-ride-dialog/sri-ride-dialog';
 import { SriSubmissionAttemptsDialog } from '../../components/sri-submission-attempts-dialog/sri-submission-attempts-dialog';
 import { VoidSaleDialog } from '../../components/void-sale-dialog/void-sale-dialog';
 import { CartItem } from '../../models/cart-item.model';
@@ -26,6 +27,7 @@ import { PosProduct } from '../../models/pos-product.model';
 import { SaleDocumentStatus, SaleDocumentType } from '../../models/sale-document.model';
 import { Sale } from '../../models/sale.model';
 import { SaleListItem } from '../../models/sale-list-item.model';
+import { SriRide } from '../../models/sri-ride.model';
 import { SriSubmissionAttempt } from '../../models/sri-submission-attempt.model';
 import { PosKeyboardService } from '../../services/pos-keyboard.service';
 import { PosCatalogSnapshot, PosProductCatalogService } from '../../services/pos-product-catalog.service';
@@ -47,6 +49,7 @@ import { PosWorkstationService } from '../../services/pos-workstation.service';
     CustomerSelectorDialog,
     RecentSalesPanel,
     SaleDetailDialog,
+    SriRideDialog,
     SriSubmissionAttemptsDialog,
     VoidSaleDialog,
   ],
@@ -102,6 +105,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly sriAttemptsError = signal('');
   readonly sriAttempts = signal<SriSubmissionAttempt[]>([]);
   readonly sriAttemptsSale = signal<Sale | null>(null);
+  readonly sriRideVisible = signal(false);
+  readonly sriRideLoading = signal(false);
+  readonly sriRideError = signal('');
+  readonly sriRide = signal<SriRide | null>(null);
 
   readonly voidVisible = signal(false);
   readonly voidLoading = signal(false);
@@ -704,6 +711,24 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       error: (error: HttpErrorResponse) => {
         this.sriAttemptsLoading.set(false);
         this.sriAttemptsError.set(this.workstationService.resolveBusinessError(error));
+      },
+    });
+  }
+
+  openSriRide(saleId: number): void {
+    this.sriRide.set(null);
+    this.sriRideError.set('');
+    this.sriRideLoading.set(true);
+    this.sriRideVisible.set(true);
+
+    this.workstationService.getSriRide(saleId).subscribe({
+      next: (ride) => {
+        this.sriRide.set(ride);
+        this.sriRideLoading.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        this.sriRideLoading.set(false);
+        this.sriRideError.set(this.workstationService.resolveBusinessError(error));
       },
     });
   }
