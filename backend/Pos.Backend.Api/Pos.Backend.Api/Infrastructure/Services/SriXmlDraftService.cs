@@ -39,8 +39,10 @@ public class SriXmlDraftService : ISriXmlDraftService
             new XElement("dirMatriz", matrixAddress),
             ResolveRimpeElement(request.Company.TaxpayerRegime));
 
+        var emissionDate = request.FiscalEmissionDate ?? DateOnly.FromDateTime(sale.DocumentIssuedAt!.Value);
+
         var infoFactura = new XElement("infoFactura",
-            new XElement("fechaEmision", sale.DocumentIssuedAt!.Value.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)),
+            new XElement("fechaEmision", emissionDate.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)),
             OptionalElement("dirEstablecimiento", request.Establishment.Address, 300),
             OptionalElement("contribuyenteEspecial", NormalizeSpecialTaxpayerNumber(request.Company.SpecialTaxpayerNumber), 13),
             new XElement("obligadoContabilidad", request.Company.IsAccountingRequired ? "SI" : "NO"),

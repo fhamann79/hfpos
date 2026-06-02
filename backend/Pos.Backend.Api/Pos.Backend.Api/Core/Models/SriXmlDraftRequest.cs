@@ -18,4 +18,6 @@ public class SriXmlDraftRequest
     public int Environment { get; set; }
 
     public int EmissionType { get; set; }
+
+    public DateOnly? FiscalEmissionDate { get; set; }
 }
