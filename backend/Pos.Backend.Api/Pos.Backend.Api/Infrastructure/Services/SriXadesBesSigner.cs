@@ -102,6 +102,8 @@ public class SriXadesBesSigner : ISriXadesBesSigner
                 DigestMethod = DigestMethod
             };
 
+            // SignedProperties is embedded under ds:Object after digesting; exclusive C14N keeps ancestor namespaces stable.
+            signedPropertiesReference.AddTransform(new XmlDsigExcC14NTransform());
             signedXml.AddReference(signedPropertiesReference);
 
             var keyInfo = new KeyInfo
