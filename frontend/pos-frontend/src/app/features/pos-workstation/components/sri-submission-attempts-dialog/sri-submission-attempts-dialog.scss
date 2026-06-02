@@ -38,9 +38,72 @@ code {
   font-size:.78rem;
 }
 
-.message-cell {
-  min-width:14rem;
+code.long-code {
+  display:block;
+  max-width:100%;
+  overflow:visible;
+  overflow-wrap:anywhere;
+  text-overflow:clip;
   white-space:normal;
+  word-break:break-word;
+  line-height:1.35;
+}
+
+:host ::ng-deep .sri-attempts-table .p-datatable-wrapper {
+  overflow-x:auto;
+}
+
+.date-column,
+.date-cell {
+  width:9.5rem;
+}
+
+.type-column,
+.type-cell {
+  width:7rem;
+}
+
+.status-column,
+.status-cell {
+  width:8.75rem;
+}
+
+.authorization-column,
+.authorization-number-cell {
+  width:16rem;
+}
+
+.message-column,
+.message-cell {
+  width:18rem;
+}
+
+.additional-info-column,
+.additional-info-cell {
+  width:20rem;
+}
+
+.date-cell,
+.type-cell,
+.status-cell,
+.authorization-number-cell,
+.message-cell {
+  vertical-align:top;
+}
+
+.status-cell {
+  overflow:hidden;
+}
+
+.authorization-number-cell {
+  min-width:16rem;
+}
+
+.message-cell {
+  min-width:18rem;
+  overflow-wrap:anywhere;
+  white-space:normal;
+  word-break:break-word;
 }
 
 .message-cell strong,

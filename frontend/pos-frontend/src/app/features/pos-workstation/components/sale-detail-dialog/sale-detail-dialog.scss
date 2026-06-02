@@ -25,7 +25,7 @@
 .fiscal-document h3 {
   margin:.1rem 0 0;
   color:#0f172a;
-  letter-spacing:-.02em;
+  letter-spacing:0;
 }
 .document-tags {
   display:flex;
@@ -42,6 +42,10 @@
   font-size:.86rem;
   font-weight:700;
 }
+.sri-authorized-card { display:grid; gap:.7rem; padding:.8rem; border-radius:.85rem; border:1px solid #86efac; background:linear-gradient(135deg,#f0fdf4 0%,#ecfdf5 100%); }
+.sri-authorized-card h4,
+.sri-authorized-card p { margin:0; }
+.sri-authorized-card p { color:#166534; font-size:.88rem; font-weight:700; line-height:1.35; }
 .fiscal-grid {
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));
@@ -140,6 +144,7 @@ code {
   font-family:"Courier New", monospace;
   font-size:.78rem;
 }
+code.long-code { display:block; max-width:100%; overflow-wrap:anywhere; white-space:normal; line-height:1.35; }
 .sri-actions {
   display:flex;
   gap:.45rem;

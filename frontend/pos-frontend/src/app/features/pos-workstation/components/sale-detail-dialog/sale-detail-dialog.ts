@@ -78,6 +78,11 @@ export class SaleDetailDialog {
     return sriSignatureStatusSeverity(sale.hasSriSignedXml);
   }
 
+  isAuthorized(sale: Sale): boolean {
+    return sale.documentStatus === SaleDocumentStatus.Authorized
+      || this.normalizeSriStatus(sale.sriAuthorizationStatus) === 'AUTORIZADO';
+  }
+
   receptionStatusLabel(sale: Sale): string {
     return sriReceptionStatusLabel(sale.sriReceptionStatus);
   }
@@ -99,7 +104,8 @@ export class SaleDetailDialog {
       && sale.documentType === SaleDocumentType.Invoice
       && sale.hasSriXmlDraft
       && !sale.hasSriSignedXml
-      && !sale.isVoided;
+      && !sale.isVoided
+      && !this.isAuthorized(sale);
   }
 
   canSubmitSale(sale: Sale): boolean {
@@ -107,7 +113,7 @@ export class SaleDetailDialog {
       && sale.documentType === SaleDocumentType.Invoice
       && sale.hasSriSignedXml
       && !sale.isVoided
-      && sale.documentStatus !== SaleDocumentStatus.Authorized;
+      && !this.isAuthorized(sale);
   }
 
   canCheckAuthorization(sale: Sale): boolean {
@@ -115,7 +121,7 @@ export class SaleDetailDialog {
       && sale.documentType === SaleDocumentType.Invoice
       && !!sale.accessKey
       && !sale.isVoided
-      && sale.documentStatus !== SaleDocumentStatus.Authorized;
+      && !this.isAuthorized(sale);
   }
 
   canProcessSriWorkflow(sale: Sale): boolean {
@@ -124,7 +130,7 @@ export class SaleDetailDialog {
       && sale.documentType === SaleDocumentType.Invoice
       && sale.hasSriXmlDraft
       && !sale.isVoided
-      && sale.documentStatus !== SaleDocumentStatus.Authorized;
+      && !this.isAuthorized(sale);
   }
 
   canViewSriAttempts(sale: Sale): boolean {
@@ -153,5 +159,9 @@ export class SaleDetailDialog {
 
   isProcessingSriWorkflow(sale: Sale): boolean {
     return this.processingSriSaleId === sale.id;
+  }
+
+  private normalizeSriStatus(status: string | null | undefined): string {
+    return status?.trim().toUpperCase() ?? '';
   }
 }
