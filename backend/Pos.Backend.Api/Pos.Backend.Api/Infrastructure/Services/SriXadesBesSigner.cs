@@ -106,23 +106,16 @@ public class SriXadesBesSigner : ISriXadesBesSigner
             signedPropertiesReference.AddTransform(new XmlDsigExcC14NTransform());
             signedXml.AddReference(signedPropertiesReference);
 
-            var keyInfo = new KeyInfo
-            {
-                Id = certificateId
-            };
-
-            var x509Data = new KeyInfoX509Data();
-            x509Data.AddCertificate(certificate);
-            x509Data.AddIssuerSerial(certificate.Issuer, GetCertificateSerialNumber(certificate));
-            keyInfo.AddClause(x509Data);
-            signedXml.KeyInfo = keyInfo;
+            signedXml.KeyInfo = BuildKeyInfo(xmlDocument, certificate, certificateId);
 
             signedXml.ComputeSignature();
 
             var signatureElement = signedXml.GetXml();
+            PrefixUnsignedKeyInfo(signatureElement);
             root.AppendChild(xmlDocument.ImportNode(signatureElement, true));
 
             AssertXadesMetadata(xmlDocument);
+            AssertKeyInfoCertificate(xmlDocument, certificate);
             VerifySignature(xmlDocument, certificate);
 
             return xmlDocument.OuterXml;
@@ -218,6 +211,50 @@ public class SriXadesBesSigner : ISriXadesBesSigner
         return signingCertificate;
     }
 
+    private static KeyInfo BuildKeyInfo(
+        XmlDocument document,
+        X509Certificate2 certificate,
+        string certificateId)
+    {
+        var keyInfo = new KeyInfo
+        {
+            Id = certificateId
+        };
+
+        var x509Data = document.CreateElement("ds", "X509Data", DsNamespace);
+        x509Data.AppendChild(CreateTextElement(
+            document,
+            "ds",
+            "X509Certificate",
+            DsNamespace,
+            Convert.ToBase64String(certificate.RawData)));
+        x509Data.AppendChild(CreateTextElement(
+            document,
+            "ds",
+            "X509SubjectName",
+            DsNamespace,
+            certificate.Subject));
+
+        var issuerSerial = document.CreateElement("ds", "X509IssuerSerial", DsNamespace);
+        issuerSerial.AppendChild(CreateTextElement(
+            document,
+            "ds",
+            "X509IssuerName",
+            DsNamespace,
+            certificate.Issuer));
+        issuerSerial.AppendChild(CreateTextElement(
+            document,
+            "ds",
+            "X509SerialNumber",
+            DsNamespace,
+            GetCertificateSerialNumber(certificate)));
+        x509Data.AppendChild(issuerSerial);
+
+        keyInfo.AddClause(new KeyInfoNode(x509Data));
+
+        return keyInfo;
+    }
+
     private static XmlElement CreateTextElement(
         XmlDocument document,
         string prefix,
@@ -275,6 +312,34 @@ public class SriXadesBesSigner : ISriXadesBesSigner
         }
     }
 
+    private static void PrefixUnsignedKeyInfo(XmlElement signatureElement)
+    {
+        var keyInfo = signatureElement
+            .GetElementsByTagName("KeyInfo", DsNamespace)
+            .OfType<XmlElement>()
+            .FirstOrDefault();
+
+        if (keyInfo is null)
+        {
+            throw new InvalidOperationException("SRI_XML_SIGNING_FAILED");
+        }
+
+        SetDsPrefix(keyInfo);
+    }
+
+    private static void SetDsPrefix(XmlElement element)
+    {
+        if (string.Equals(element.NamespaceURI, DsNamespace, StringComparison.Ordinal))
+        {
+            element.Prefix = "ds";
+        }
+
+        foreach (var child in element.ChildNodes.OfType<XmlElement>())
+        {
+            SetDsPrefix(child);
+        }
+    }
+
     private static void AssertXadesMetadata(XmlDocument xmlDocument)
     {
         var hasQualifyingProperties = xmlDocument
@@ -294,6 +359,70 @@ public class SriXadesBesSigner : ISriXadesBesSigner
         {
             throw new InvalidOperationException("SRI_XML_SIGNING_FAILED");
         }
+    }
+
+    private static void AssertKeyInfoCertificate(
+        XmlDocument xmlDocument,
+        X509Certificate2 expectedCertificate)
+    {
+        var encodedCertificate = xmlDocument
+            .GetElementsByTagName("X509Certificate", DsNamespace)
+            .OfType<XmlElement>()
+            .Where(IsInsideKeyInfo)
+            .Select(element => element.InnerText)
+            .FirstOrDefault();
+
+        if (string.IsNullOrWhiteSpace(encodedCertificate))
+        {
+            throw new InvalidOperationException("SRI_XML_SIGNING_FAILED");
+        }
+
+        var normalizedCertificate = new string(encodedCertificate
+            .Where(character => !char.IsWhiteSpace(character))
+            .ToArray());
+
+        byte[] certificateBytes;
+
+        try
+        {
+            certificateBytes = Convert.FromBase64String(normalizedCertificate);
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidOperationException("SRI_XML_SIGNING_FAILED", ex);
+        }
+
+        try
+        {
+            using var decodedCertificate = new X509Certificate2(certificateBytes);
+
+            if (!string.Equals(
+                decodedCertificate.Thumbprint,
+                expectedCertificate.Thumbprint,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("SRI_SIGNATURE_VALIDATION_FAILED");
+            }
+        }
+        finally
+        {
+            Array.Clear(certificateBytes);
+        }
+    }
+
+    private static bool IsInsideKeyInfo(XmlElement element)
+    {
+        for (var parent = element.ParentNode; parent is not null; parent = parent.ParentNode)
+        {
+            if (parent is XmlElement parentElement
+                && string.Equals(parentElement.LocalName, "KeyInfo", StringComparison.Ordinal)
+                && string.Equals(parentElement.NamespaceURI, DsNamespace, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string BuildDeterministicIdToken(string accessKey, string unsignedXml)
