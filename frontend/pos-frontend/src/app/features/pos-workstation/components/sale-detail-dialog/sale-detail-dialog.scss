@@ -146,6 +146,11 @@ code {
   flex-wrap:wrap;
   justify-content:flex-end;
 }
+.sri-actions-main {
+  display:flex;
+  justify-content:flex-end;
+  width:100%;
+}
 .items { list-style:none; margin:0; padding:0; display:grid; gap:.35rem; }
 .items li { display:grid; grid-template-columns:1fr 100px 120px; gap:.5rem; border:1px solid #e2e8f0; border-radius:6px; padding:.5rem; align-items:center; }
 .item-main { display:grid; gap:.16rem; }
