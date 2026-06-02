@@ -9,6 +9,7 @@ import { normalizeSaleDocumentStatus, normalizeSaleDocumentType } from '../model
 import { Sale } from '../models/sale.model';
 import { SaleItem } from '../models/sale-item.model';
 import { SaleListItem } from '../models/sale-list-item.model';
+import { SriRide } from '../models/sri-ride.model';
 import {
   normalizeSriSubmissionAttemptStatus,
   normalizeSriSubmissionAttemptType,
@@ -51,6 +52,10 @@ export class PosWorkstationService {
 
   getSriAuthorizedXml(id: number): Observable<Blob> {
     return this.http.get(`${this.salesUrl}/${id}/sri/authorized-xml`, { responseType: 'blob' });
+  }
+
+  getSriRide(id: number): Observable<SriRide> {
+    return this.http.get<SriRide>(`${this.salesUrl}/${id}/sri/ride`);
   }
 
   submitSriInvoice(id: number): Observable<Sale> {

@@ -176,7 +176,16 @@
     (downloadSriXmlDraft)="downloadSriXmlDraft($event)"
     (downloadSriSignedXml)="downloadSriSignedXml($event)"
     (downloadSriAuthorizedXml)="downloadSriAuthorizedXml($event)"
+    (viewSriRide)="openSriRide($event)"
   ></app-sale-detail-dialog>
+
+  <app-sri-ride-dialog
+    [visible]="sriRideVisible()"
+    [ride]="sriRide()"
+    [loading]="sriRideLoading()"
+    [errorMessage]="sriRideError()"
+    (visibleChange)="sriRideVisible.set($event)"
+  ></app-sri-ride-dialog>
 
   <app-sri-submission-attempts-dialog
     [visible]="sriAttemptsVisible()"

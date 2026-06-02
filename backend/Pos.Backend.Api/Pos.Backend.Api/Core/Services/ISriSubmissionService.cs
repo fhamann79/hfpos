@@ -10,5 +10,7 @@ public interface ISriSubmissionService
 
     Task<string> GetAuthorizedXmlAsync(int saleId);
 
+    Task<SriRideDto> GetRideAsync(int saleId);
+
     Task<IReadOnlyList<SriSubmissionAttemptDto>> GetAttemptsAsync(int saleId);
 }

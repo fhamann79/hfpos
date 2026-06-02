@@ -130,6 +130,25 @@ public class SalesController : ControllerBase
         }
     }
 
+    [HttpGet("{id:int}/sri/ride")]
+    [Authorize(Policy = AppPermissions.ReportsSalesRead)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<SriRideDto>> GetSriRide(int id)
+    {
+        try
+        {
+            return Ok(await _sriSubmissionService.GetRideAsync(id));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
     [HttpPost("{id:int}/sri/submit")]
     [Authorize(Policy = AppPermissions.SriDocumentsSubmit)]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -277,6 +296,9 @@ public class SalesController : ControllerBase
             "SRI_AUTHORIZED_XML_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "SRI_AUTHORIZED_XML_SALE_NOT_AUTHORIZED" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_AUTHORIZED_XML_INVALID_RESPONSE" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_RIDE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
+            "SRI_RIDE_ONLY_AUTHORIZED_INVOICE" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_RIDE_INVALID_AUTHORIZED_XML" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_AUTHORIZATION_PENDING" => StatusCode(StatusCodes.Status202Accepted, new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_ERROR" => Conflict(new ApiErrorResponse { Error = code }),
             "DOCUMENT_NUMBER_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
