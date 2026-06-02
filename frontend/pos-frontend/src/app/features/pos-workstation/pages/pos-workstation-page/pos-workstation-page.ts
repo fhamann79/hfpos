@@ -6,7 +6,7 @@ import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { MessageModule } from 'primeng/message';
 import { ToastModule } from 'primeng/toast';
-import { Subscription, fromEvent } from 'rxjs';
+import { EMPTY, Observable, Subscription, finalize, fromEvent, of, switchMap, tap } from 'rxjs';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { calculateTaxSummary, roundMoney } from '../../../../core/utils/vat-category';
@@ -23,7 +23,7 @@ import { CartItem } from '../../models/cart-item.model';
 import { CheckoutRequest } from '../../models/checkout-request.model';
 import { PosCustomer } from '../../models/pos-customer.model';
 import { PosProduct } from '../../models/pos-product.model';
-import { SaleDocumentType } from '../../models/sale-document.model';
+import { SaleDocumentStatus, SaleDocumentType } from '../../models/sale-document.model';
 import { Sale } from '../../models/sale.model';
 import { SaleListItem } from '../../models/sale-list-item.model';
 import { SriSubmissionAttempt } from '../../models/sri-submission-attempt.model';
@@ -96,6 +96,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly sriSigningSaleId = signal<number | null>(null);
   readonly sriSubmittingSaleId = signal<number | null>(null);
   readonly sriCheckingAuthorizationSaleId = signal<number | null>(null);
+  readonly sriProcessingSaleId = signal<number | null>(null);
   readonly sriAttemptsVisible = signal(false);
   readonly sriAttemptsLoading = signal(false);
   readonly sriAttemptsError = signal('');
@@ -541,8 +542,52 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     });
   }
 
+  processSriWorkflow(saleId: number): void {
+    if (!this.canSignSriDocuments || !this.canSubmitSriDocuments) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Permisos SRI',
+        detail: 'No tienes permisos suficientes para procesar SRI.',
+      });
+      return;
+    }
+
+    if (!saleId || this.hasActiveSriProcessing()) {
+      return;
+    }
+
+    this.sriProcessingSaleId.set(saleId);
+
+    const selectedSale = this.selectedSale()?.id === saleId ? this.selectedSale() : null;
+    const sale$ = selectedSale ? of(selectedSale) : this.workstationService.getSaleDetail(saleId);
+
+    sale$.pipe(
+      switchMap((sale) => {
+        const validationMessage = this.getSriWorkflowValidationMessage(sale);
+
+        if (validationMessage) {
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Procesamiento SRI',
+            detail: validationMessage,
+          });
+          return EMPTY;
+        }
+
+        return this.runSriWorkflow(sale);
+      }),
+      finalize(() => {
+        this.sriProcessingSaleId.set(null);
+        this.refreshSriWorkflowContext(saleId);
+      })
+    ).subscribe({
+      next: (sale) => this.handleSriWorkflowSuccess(sale),
+      error: (error: unknown) => this.handleSriWorkflowError(error),
+    });
+  }
+
   signSriXml(saleId: number): void {
-    if (!this.canSignSriDocuments || this.sriSigningSaleId()) {
+    if (!this.canSignSriDocuments || this.sriSigningSaleId() || this.sriProcessingSaleId()) {
       return;
     }
 
@@ -571,7 +616,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   submitSriInvoice(saleId: number): void {
-    if (!this.canSubmitSriDocuments || this.sriSubmittingSaleId()) {
+    if (!this.canSubmitSriDocuments || this.sriSubmittingSaleId() || this.sriProcessingSaleId()) {
       return;
     }
 
@@ -603,7 +648,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   checkSriAuthorization(saleId: number): void {
-    if (!this.canSubmitSriDocuments || this.sriCheckingAuthorizationSaleId()) {
+    if (!this.canSubmitSriDocuments || this.sriCheckingAuthorizationSaleId() || this.sriProcessingSaleId()) {
       return;
     }
 
@@ -775,6 +820,198 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     if (this.addProduct(product)) {
       this.clearSearchAndFocus();
     }
+  }
+
+  private hasActiveSriProcessing(): boolean {
+    return !!(
+      this.sriProcessingSaleId()
+      || this.sriSigningSaleId()
+      || this.sriSubmittingSaleId()
+      || this.sriCheckingAuthorizationSaleId()
+    );
+  }
+
+  private getSriWorkflowValidationMessage(sale: Sale): string | null {
+    if (!sale.id) {
+      return 'La venta no es válida para procesamiento SRI.';
+    }
+
+    if (sale.documentType !== SaleDocumentType.Invoice) {
+      return 'Solo las facturas pueden procesarse con SRI.';
+    }
+
+    if (sale.isVoided) {
+      return 'No se puede procesar SRI para una venta anulada.';
+    }
+
+    if (this.isSriAuthorized(sale)) {
+      return 'El comprobante ya está autorizado por SRI.';
+    }
+
+    if (!sale.hasSriXmlDraft) {
+      return 'La factura no tiene XML draft disponible para procesar SRI.';
+    }
+
+    return null;
+  }
+
+  private runSriWorkflow(sale: Sale): Observable<Sale> {
+    return this.ensureSriXmlSigned(sale).pipe(
+      switchMap((signedSale) => this.submitSignedXmlIfNeeded(signedSale)),
+      switchMap((submittedSale) => this.workstationService.checkSriAuthorization(submittedSale.id))
+    );
+  }
+
+  private ensureSriXmlSigned(sale: Sale): Observable<Sale> {
+    if (sale.hasSriSignedXml) {
+      return of(sale);
+    }
+
+    return this.workstationService.signInvoiceXml(sale.id).pipe(
+      tap((signedSale) => this.selectedSale.set(signedSale))
+    );
+  }
+
+  private submitSignedXmlIfNeeded(sale: Sale): Observable<Sale> {
+    if (this.isSriReceived(sale)) {
+      return of(sale);
+    }
+
+    return this.workstationService.submitSriInvoice(sale.id).pipe(
+      tap((submittedSale) => {
+        this.selectedSale.set(submittedSale);
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Recibido por SRI',
+          detail: 'Comprobante recibido por SRI. La autorización aún está pendiente.',
+        });
+      })
+    );
+  }
+
+  private handleSriWorkflowSuccess(sale: Sale): void {
+    this.selectedSale.set(sale);
+
+    if (this.isSriAuthorized(sale)) {
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Autorizado por SRI',
+        detail: 'Comprobante autorizado por SRI.',
+      });
+      return;
+    }
+
+    if (this.isSriAuthorizationPending(sale)) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Autorización pendiente',
+        detail: 'Comprobante recibido por SRI. La autorización aún está pendiente.',
+      });
+      return;
+    }
+
+    if (this.isSriAuthorizationRejected(sale)) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Autorización SRI',
+        detail: sale.sriLastSubmissionError || 'El SRI no autorizó el comprobante. Revisa el historial de intentos.',
+      });
+      return;
+    }
+
+    if (this.isSriReceptionRejected(sale)) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Recepción SRI',
+        detail: sale.sriLastSubmissionError || 'El SRI devolvió el comprobante. Revisa el historial de intentos.',
+      });
+      return;
+    }
+
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Consulta SRI',
+      detail: 'Consulta de autorización realizada.',
+    });
+  }
+
+  private handleSriWorkflowError(error: unknown): void {
+    if (!(error instanceof HttpErrorResponse)) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Procesamiento SRI',
+        detail: 'No se pudo completar el procesamiento SRI.',
+      });
+      return;
+    }
+
+    if (this.workstationService.isBusinessError(error, 'SRI_AUTHORIZATION_PENDING')) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Autorización pendiente',
+        detail: 'Comprobante recibido por SRI. La autorización aún está pendiente.',
+      });
+      return;
+    }
+
+    if (this.workstationService.isBusinessError(error, 'SRI_RECEPTION_REJECTED')) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Recepción SRI',
+        detail: this.workstationService.resolveBusinessError(error),
+      });
+      return;
+    }
+
+    if (this.workstationService.isBusinessError(error, 'SRI_AUTHORIZATION_REJECTED')) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Autorización SRI',
+        detail: this.workstationService.resolveBusinessError(error),
+      });
+      return;
+    }
+
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Procesamiento SRI',
+      detail: this.workstationService.resolveBusinessError(error) || 'No se pudo completar el procesamiento SRI.',
+    });
+  }
+
+  private refreshSriWorkflowContext(saleId: number): void {
+    this.refreshSelectedSale(saleId);
+    this.loadSales();
+    this.reloadSriAttemptsIfOpen(saleId);
+  }
+
+  private isSriReceived(sale: Sale): boolean {
+    return this.normalizeSriStatus(sale.sriReceptionStatus) === 'RECIBIDA';
+  }
+
+  private isSriReceptionRejected(sale: Sale): boolean {
+    return this.normalizeSriStatus(sale.sriReceptionStatus) === 'DEVUELTA';
+  }
+
+  private isSriAuthorized(sale: Sale): boolean {
+    return sale.documentStatus === SaleDocumentStatus.Authorized
+      || this.normalizeSriStatus(sale.sriAuthorizationStatus) === 'AUTORIZADO';
+  }
+
+  private isSriAuthorizationPending(sale: Sale): boolean {
+    return this.normalizeSriStatus(sale.sriAuthorizationStatus) === 'PENDIENTE';
+  }
+
+  private isSriAuthorizationRejected(sale: Sale): boolean {
+    const authorizationStatus = this.normalizeSriStatus(sale.sriAuthorizationStatus);
+
+    return sale.documentStatus === SaleDocumentStatus.Rejected
+      || authorizationStatus === 'NO AUTORIZADO'
+      || authorizationStatus === 'NO_AUTORIZADO';
+  }
+
+  private normalizeSriStatus(status: string | null | undefined): string {
+    return status?.trim().toUpperCase() ?? '';
   }
 
   private applyCatalogSnapshot(snapshot: PosCatalogSnapshot): void {

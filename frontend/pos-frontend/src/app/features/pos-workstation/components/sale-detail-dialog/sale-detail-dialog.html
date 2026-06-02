@@ -158,12 +158,25 @@
       }
 
       <div class="sri-actions">
+        @if (canProcessSriWorkflow(sale)) {
+          <div class="sri-actions-main">
+            <p-button
+              [label]="isProcessingSriWorkflow(sale) ? 'Procesando SRI...' : 'Procesar SRI'"
+              icon="pi pi-bolt"
+              severity="success"
+              [loading]="isProcessingSriWorkflow(sale)"
+              (onClick)="processSriWorkflow.emit(sale.id)"
+            ></p-button>
+          </div>
+        }
+
         @if (sale.hasSriXmlDraft) {
           <p-button
             label="Descargar XML draft"
             icon="pi pi-download"
             severity="secondary"
             [outlined]="true"
+            [disabled]="isProcessingSriWorkflow(sale)"
             (onClick)="downloadSriXmlDraft.emit(sale.id)"
           ></p-button>
         }
@@ -173,6 +186,7 @@
             label="Firmar XML"
             icon="pi pi-verified"
             [loading]="isSigning(sale)"
+            [disabled]="isProcessingSriWorkflow(sale)"
             (onClick)="signSriXml.emit(sale.id)"
           ></p-button>
         }
@@ -182,6 +196,7 @@
             label="Enviar al SRI"
             icon="pi pi-send"
             [loading]="isSubmitting(sale)"
+            [disabled]="isProcessingSriWorkflow(sale)"
             (onClick)="submitSriInvoice.emit(sale.id)"
           ></p-button>
         }
@@ -193,6 +208,7 @@
             severity="info"
             [outlined]="true"
             [loading]="isCheckingAuthorization(sale)"
+            [disabled]="isProcessingSriWorkflow(sale)"
             (onClick)="checkSriAuthorization.emit(sale.id)"
           ></p-button>
         }
@@ -203,6 +219,7 @@
             icon="pi pi-download"
             severity="success"
             [outlined]="true"
+            [disabled]="isProcessingSriWorkflow(sale)"
             (onClick)="downloadSriSignedXml.emit(sale.id)"
           ></p-button>
         }

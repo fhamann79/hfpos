@@ -39,6 +39,7 @@ export class SaleDetailDialog {
   @Input() signingSaleId: number | null = null;
   @Input() submittingSaleId: number | null = null;
   @Input() checkingAuthorizationSaleId: number | null = null;
+  @Input() processingSriSaleId: number | null = null;
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() signSriXml = new EventEmitter<number>();
@@ -47,6 +48,7 @@ export class SaleDetailDialog {
   @Output() submitSriInvoice = new EventEmitter<number>();
   @Output() checkSriAuthorization = new EventEmitter<number>();
   @Output() viewSriAttempts = new EventEmitter<number>();
+  @Output() processSriWorkflow = new EventEmitter<number>();
 
   getVatLabel(item: SaleItem): string {
     return getVatCategoryOption(item.vatCategory).shortLabel;
@@ -116,8 +118,25 @@ export class SaleDetailDialog {
       && sale.documentStatus !== SaleDocumentStatus.Authorized;
   }
 
+  canProcessSriWorkflow(sale: Sale): boolean {
+    return this.canSignSriDocuments
+      && this.canSubmitSriDocuments
+      && sale.documentType === SaleDocumentType.Invoice
+      && sale.hasSriXmlDraft
+      && !sale.isVoided
+      && sale.documentStatus !== SaleDocumentStatus.Authorized;
+  }
+
   canViewSriAttempts(sale: Sale): boolean {
     return sale.documentType === SaleDocumentType.Invoice;
+  }
+
+  hasManualSriActions(sale: Sale): boolean {
+    return sale.hasSriXmlDraft
+      || this.canSignSale(sale)
+      || this.canSubmitSale(sale)
+      || this.canCheckAuthorization(sale)
+      || sale.hasSriSignedXml;
   }
 
   isSigning(sale: Sale): boolean {
@@ -130,5 +149,9 @@ export class SaleDetailDialog {
 
   isCheckingAuthorization(sale: Sale): boolean {
     return this.checkingAuthorizationSaleId === sale.id;
+  }
+
+  isProcessingSriWorkflow(sale: Sale): boolean {
+    return this.processingSriSaleId === sale.id;
   }
 }
