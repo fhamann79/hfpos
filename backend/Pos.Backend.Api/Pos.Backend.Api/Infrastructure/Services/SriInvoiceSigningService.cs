@@ -1,8 +1,5 @@
 using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
-using System.Security.Cryptography.Xml;
 using System.Text;
-using System.Xml;
 using Microsoft.EntityFrameworkCore;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Enums;
@@ -17,6 +14,7 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly ISriSigningCertificateProvider _certificateProvider;
+    private readonly ISriXadesBesSigner _sriXadesBesSigner;
     private readonly ISriInvoiceXmlValidator _sriInvoiceXmlValidator;
     private readonly ISalesService _salesService;
     private readonly ILogger<SriInvoiceSigningService> _logger;
@@ -25,6 +23,7 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
         PosDbContext context,
         IOperationalContextAccessor operationalContextAccessor,
         ISriSigningCertificateProvider certificateProvider,
+        ISriXadesBesSigner sriXadesBesSigner,
         ISriInvoiceXmlValidator sriInvoiceXmlValidator,
         ISalesService salesService,
         ILogger<SriInvoiceSigningService> logger)
@@ -32,6 +31,7 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
         _certificateProvider = certificateProvider;
+        _sriXadesBesSigner = sriXadesBesSigner;
         _sriInvoiceXmlValidator = sriInvoiceXmlValidator;
         _salesService = salesService;
         _logger = logger;
@@ -67,8 +67,12 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
             _sriInvoiceXmlValidator.ValidateUnsignedInvoiceXml(sale.SriXmlDraft!);
 
             using var certificateMaterial = await _certificateProvider.GetActiveCertificateMaterialAsync();
-            var signedXml = SignXml(sale.SriXmlDraft!, certificateMaterial.Certificate);
             var now = DateTime.UtcNow;
+            var signedXml = _sriXadesBesSigner.SignInvoiceXml(
+                sale.SriXmlDraft!,
+                certificateMaterial.Certificate,
+                sale.AccessKey!,
+                now);
 
             sale.SriSignedXml = signedXml;
             sale.SriSignedAt = now;
@@ -171,113 +175,6 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
         if (!string.IsNullOrWhiteSpace(sale.SriSignedXml))
         {
             throw new InvalidOperationException("SRI_XML_ALREADY_SIGNED");
-        }
-    }
-
-    private static string SignXml(string unsignedXml, X509Certificate2 certificate)
-    {
-        try
-        {
-            var xmlDocument = LoadXmlDocument(unsignedXml);
-            var root = xmlDocument.DocumentElement;
-
-            if (root is null || !string.Equals(root.Name, "factura", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException("SRI_XML_SIGNING_FAILED");
-            }
-
-            using var privateKey = certificate.GetRSAPrivateKey();
-
-            if (privateKey is null)
-            {
-                throw new InvalidOperationException("CERTIFICATE_WITHOUT_PRIVATE_KEY");
-            }
-
-            var signedXml = new SignedXml(xmlDocument)
-            {
-                SigningKey = privateKey
-            };
-
-            var signedInfo = signedXml.SignedInfo
-                ?? throw new InvalidOperationException("SRI_XML_SIGNING_FAILED");
-
-            signedInfo.CanonicalizationMethod = SignedXml.XmlDsigExcC14NTransformUrl;
-            signedInfo.SignatureMethod = SignedXml.XmlDsigRSASHA256Url;
-
-            var reference = new Reference
-            {
-                Uri = "",
-                DigestMethod = SignedXml.XmlDsigSHA256Url
-            };
-
-            reference.AddTransform(new XmlDsigEnvelopedSignatureTransform());
-            reference.AddTransform(new XmlDsigExcC14NTransform());
-            signedXml.AddReference(reference);
-
-            var keyInfo = new KeyInfo();
-            keyInfo.AddClause(new KeyInfoX509Data(certificate));
-            signedXml.KeyInfo = keyInfo;
-
-            signedXml.ComputeSignature();
-
-            var signatureElement = signedXml.GetXml();
-            root.AppendChild(xmlDocument.ImportNode(signatureElement, true));
-
-            VerifySignature(xmlDocument, certificate);
-
-            return xmlDocument.OuterXml;
-        }
-        catch (InvalidOperationException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException("SRI_XML_SIGNING_FAILED", ex);
-        }
-    }
-
-    private static XmlDocument LoadXmlDocument(string xml)
-    {
-        var settings = new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null
-        };
-
-        var document = new XmlDocument
-        {
-            PreserveWhitespace = true,
-            XmlResolver = null
-        };
-
-        using var stringReader = new StringReader(xml);
-        using var xmlReader = XmlReader.Create(stringReader, settings);
-        document.Load(xmlReader);
-
-        return document;
-    }
-
-    private static void VerifySignature(
-        XmlDocument xmlDocument,
-        X509Certificate2 certificate)
-    {
-        var signatureNode = xmlDocument
-            .GetElementsByTagName("Signature", SignedXml.XmlDsigNamespaceUrl)
-            .OfType<XmlElement>()
-            .FirstOrDefault();
-
-        if (signatureNode is null)
-        {
-            throw new InvalidOperationException("SRI_XML_SIGNING_FAILED");
-        }
-
-        var signedXml = new SignedXml(xmlDocument);
-        signedXml.LoadXml(signatureNode);
-
-        if (!signedXml.CheckSignature(certificate, true))
-        {
-            throw new InvalidOperationException("SRI_SIGNATURE_VALIDATION_FAILED");
         }
     }
 
