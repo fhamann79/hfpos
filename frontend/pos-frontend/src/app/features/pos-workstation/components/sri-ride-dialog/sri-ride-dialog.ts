@@ -70,15 +70,28 @@ export class SriRideDialog {
       maximumFractionDigits: 2,
     }).format(amount);
 
-    return `${this.currencyLabel(ride)} ${formattedAmount}`;
+    const currencyDisplay = this.currencySymbolOrLabel(ride);
+    const separator = currencyDisplay === '$' ? '' : ' ';
+
+    return `${currencyDisplay}${separator}${formattedAmount}`;
   }
 
-  currencyLabel(ride: SriRide): string {
+  currencySymbolOrLabel(ride: SriRide): string {
     const rawCurrency = ride.totals.currency?.trim().toUpperCase() || 'USD';
     const normalized = rawCurrency.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const compactCurrency = normalized.replace(/[^A-Z$]/g, '');
 
-    if (normalized === 'DOLAR' || normalized === 'DOLARES' || normalized.includes('DOLLAR')) {
-      return 'USD';
+    if (
+      compactCurrency === '$' ||
+      compactCurrency === 'USD' ||
+      compactCurrency === 'DOLAR' ||
+      compactCurrency === 'DOLARES' ||
+      compactCurrency === 'DOLLAR' ||
+      compactCurrency === 'DOLLARS' ||
+      compactCurrency === 'USDOLLAR' ||
+      compactCurrency === 'USDOLLARS'
+    ) {
+      return '$';
     }
 
     return normalized;
