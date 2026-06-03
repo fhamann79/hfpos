@@ -87,6 +87,7 @@
 .heading-actions,
 .row-actions,
 .dialog-actions,
+.logo-actions,
 .section-actions {
   display: flex;
   align-items: center;
@@ -312,6 +313,47 @@
   }
 }
 
+.branding-layout {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.85fr) minmax(0, 1.15fr);
+  gap: 1rem;
+}
+
+.branding-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.branding-preview {
+  display: grid;
+  min-height: 11rem;
+  place-items: center;
+  padding: 1rem;
+  border: 1px solid #dbe3ef;
+  border-radius: 0.85rem;
+  background: #f8fafc;
+}
+
+.branding-logo-preview {
+  max-width: 100%;
+  max-height: 8rem;
+  object-fit: contain;
+}
+
+.logo-actions {
+  justify-content: flex-end;
+}
+
+.color-swatch-input {
+  width: 4.5rem;
+  height: 2.5rem;
+  padding: 0.18rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.75rem;
+}
+
 .certificate-card,
 .audit-context {
   display: grid;
@@ -497,6 +539,7 @@
   }
 
   .form-grid,
+  .branding-layout,
   .readiness-summary-grid,
   .certificate-card,
   .certificate-card__header,

@@ -105,8 +105,10 @@ export class SriRideDialog {
     return `${type}: ${identification}`;
   }
 
-  footerNote(): string {
-    return 'Representación impresa de comprobante electrónico autorizado.';
+  footerNote(ride: SriRide): string {
+    return ride.branding?.documentFooterText?.trim()
+      || ride.footerNote?.trim()
+      || 'Representacion impresa de comprobante electronico autorizado.';
   }
 
   private isFinalConsumer(ride: SriRide): boolean {

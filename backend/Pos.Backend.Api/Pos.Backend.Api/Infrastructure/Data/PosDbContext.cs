@@ -16,6 +16,7 @@ public class PosDbContext : DbContext
     public DbSet<Permission> Permissions { get; set; }
     public DbSet<RolePermission> RolePermissions { get; set; }
     public DbSet<Company> Companies { get; set; }
+    public DbSet<CompanyBranding> CompanyBrandings { get; set; }
     public DbSet<CompanySriSettings> CompanySriSettings { get; set; }
     public DbSet<CompanySriCertificate> CompanySriCertificates { get; set; }
     public DbSet<Establishment> Establishments { get; set; }
@@ -71,6 +72,37 @@ public class PosDbContext : DbContext
 
             entity.Property(c => c.TaxpayerRegime)
                 .HasMaxLength(80);
+        });
+
+        modelBuilder.Entity<CompanyBranding>(entity =>
+        {
+            entity.Property(b => b.LogoBytes)
+                .HasColumnType("bytea");
+
+            entity.Property(b => b.LogoContentType)
+                .HasMaxLength(100);
+
+            entity.Property(b => b.LogoFileName)
+                .HasMaxLength(255);
+
+            entity.Property(b => b.PrimaryColor)
+                .HasMaxLength(20);
+
+            entity.Property(b => b.DocumentFooterText)
+                .HasMaxLength(500);
+
+            entity.HasIndex(b => b.CompanyId)
+                .IsUnique();
+
+            entity.HasOne(b => b.Company)
+                .WithOne(c => c.Branding)
+                .HasForeignKey<CompanyBranding>(b => b.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(b => b.UpdatedByUser)
+                .WithMany()
+                .HasForeignKey(b => b.UpdatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<CompanySriSettings>(entity =>

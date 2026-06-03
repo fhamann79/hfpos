@@ -14,5 +14,6 @@ public class Company
     public string? TaxpayerRegime { get; set; }
     public DateTime CreatedAt { get; set; }
     public bool IsActive { get; set; }
+    public CompanyBranding? Branding { get; set; }
     public ICollection<Establishment> Establishments { get; set; } = new List<Establishment>();
 }

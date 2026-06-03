@@ -16,7 +16,7 @@
   @if (canRead()) {
     <p-message
       severity="info"
-      text="Esta sección administra datos fiscales, SRI, certificado digital, secuenciales y diagnóstico de preparación. RIDE y envío por correo se implementarán en una etapa posterior."
+      text="Esta seccion administra datos fiscales, SRI, certificado digital, identidad visual, secuenciales y diagnostico de preparacion."
     ></p-message>
 
     <p-tabs value="company">
@@ -32,7 +32,7 @@
             <div class="section-heading">
               <div>
                 <h3>Identidad fiscal de la empresa</h3>
-                <p>Estos datos se usan en XML SRI y documentos comerciales; RIDE se implementará en una etapa posterior.</p>
+                <p>Estos datos se usan en XML SRI, RIDE y documentos comerciales.</p>
               </div>
               @if (!canWrite()) {
                 <p-tag severity="secondary" value="Solo lectura"></p-tag>
@@ -140,6 +140,147 @@
                 </footer>
               }
             </form>
+          </section>
+
+          <section class="settings-card branding-card">
+            <div class="section-heading">
+              <div>
+                <h3>Identidad visual para documentos</h3>
+                <p>Define el logo, color principal y texto inferior que se mostraran en RIDE y documentos impresos.</p>
+              </div>
+              @if (companyBranding()?.logoConfigured) {
+                <p-tag severity="success" value="Logo configurado"></p-tag>
+              } @else {
+                <p-tag severity="secondary" value="Sin logo"></p-tag>
+              }
+            </div>
+
+            @if (brandingError()) {
+              <p-message severity="error" [text]="brandingError()"></p-message>
+            }
+
+            <div class="branding-layout">
+              <div class="branding-preview-panel">
+                <div class="branding-preview">
+                  @if (brandingLogoPreviewUrl(); as logoUrl) {
+                    <img class="branding-logo-preview" [src]="logoUrl" alt="Logo de la empresa" />
+                  } @else {
+                    <div class="certificate-empty compact">
+                      <i class="pi pi-image"></i>
+                      <strong>No hay logo cargado.</strong>
+                      <span>Usa una imagen horizontal con fondo transparente o blanco.</span>
+                    </div>
+                  }
+                </div>
+
+                @if (companyBranding(); as branding) {
+                  <div class="certificate-metadata branding-metadata">
+                    <div>
+                      <span>Archivo</span>
+                      <strong>{{ branding.logoFileName || '-' }}</strong>
+                    </div>
+                    <div>
+                      <span>Tamano</span>
+                      <strong>{{ formatLogoSize(branding.logoSizeBytes) }}</strong>
+                    </div>
+                    <div>
+                      <span>Actualizado</span>
+                      <strong>{{ branding.logoUpdatedAt ? (branding.logoUpdatedAt | date: 'medium') : '-' }}</strong>
+                    </div>
+                  </div>
+                }
+
+                @if (brandingLogoError()) {
+                  <p-message severity="error" [text]="brandingLogoError()"></p-message>
+                }
+
+                @if (canWrite()) {
+                  <div class="logo-actions">
+                    <input
+                      #brandingLogoInput
+                      hidden
+                      type="file"
+                      accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                      [disabled]="logoUploading() || logoDeleting()"
+                      (change)="onBrandingLogoSelected($event)"
+                    />
+                    <p-button
+                      type="button"
+                      [label]="companyBranding()?.logoConfigured ? 'Cambiar logo' : 'Cargar logo'"
+                      icon="pi pi-upload"
+                      [loading]="logoUploading()"
+                      [disabled]="brandingLoading() || logoDeleting()"
+                      (onClick)="brandingLogoInput.click()"
+                    ></p-button>
+                    @if (companyBranding()?.logoConfigured) {
+                      <p-button
+                        type="button"
+                        label="Eliminar logo"
+                        icon="pi pi-trash"
+                        severity="danger"
+                        [outlined]="true"
+                        [loading]="logoDeleting()"
+                        [disabled]="brandingLoading() || logoUploading()"
+                        (onClick)="confirmDeleteBrandingLogo()"
+                      ></p-button>
+                    }
+                  </div>
+                }
+              </div>
+
+              <form class="fiscal-form branding-form" [formGroup]="brandingForm" (ngSubmit)="saveBranding()">
+                <div class="form-grid">
+                  <label class="field">
+                    <span>Color principal</span>
+                    <input class="color-swatch-input" type="color" formControlName="primaryColor" />
+                    <small>{{ brandingForm.controls.primaryColor.value || '-' }}</small>
+                    @if (brandingForm.controls.primaryColor.touched && brandingForm.controls.primaryColor.invalid) {
+                      <small class="p-error">Usa un color hexadecimal valido.</small>
+                    }
+                  </label>
+
+                  <label class="field field-wide">
+                    <span>Texto inferior para documentos</span>
+                    <textarea
+                      pTextarea
+                      rows="4"
+                      formControlName="documentFooterText"
+                      placeholder="Representacion impresa de comprobante electronico autorizado."
+                    ></textarea>
+                    @if (brandingForm.controls.documentFooterText.touched && brandingForm.controls.documentFooterText.invalid) {
+                      <small class="p-error">El texto no puede superar 500 caracteres.</small>
+                    }
+                  </label>
+                </div>
+
+                <div class="branding-recommendations">
+                  <span>PNG, JPG o WEBP.</span>
+                  <span>Maximo 512 KB.</span>
+                  <span>El logo se ajusta sin deformarse.</span>
+                </div>
+
+                @if (canWrite()) {
+                  <footer class="section-actions">
+                    <p-button
+                      type="button"
+                      label="Recargar"
+                      icon="pi pi-refresh"
+                      severity="secondary"
+                      [outlined]="true"
+                      [disabled]="brandingLoading() || brandingSaving() || logoUploading() || logoDeleting()"
+                      (onClick)="loadBranding()"
+                    ></p-button>
+                    <p-button
+                      type="submit"
+                      label="Guardar identidad visual"
+                      icon="pi pi-check"
+                      [loading]="brandingSaving()"
+                      [disabled]="brandingLoading()"
+                    ></p-button>
+                  </footer>
+                }
+              </form>
+            </div>
           </section>
         </p-tabpanel>
 

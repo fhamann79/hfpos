@@ -29,6 +29,22 @@ export interface UpdateCompanyFiscalSettingsRequest {
   taxpayerRegime: string | null;
 }
 
+export interface CompanyBranding {
+  companyId: number;
+  logoConfigured: boolean;
+  logoFileName: string | null;
+  logoContentType: string | null;
+  logoSizeBytes: number | null;
+  logoUpdatedAt: string | null;
+  primaryColor: string | null;
+  documentFooterText: string | null;
+}
+
+export interface UpdateCompanyBrandingRequest {
+  primaryColor: string | null;
+  documentFooterText: string | null;
+}
+
 export interface CompanySriSettings {
   companyId: number;
   environment: number;

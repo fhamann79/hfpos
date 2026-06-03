@@ -269,7 +269,10 @@ public class SriSubmissionService : ISriSubmissionService
             invalidResponseErrorCode: "SRI_RIDE_INVALID_AUTHORIZED_XML",
             notFoundErrorCode: "SRI_RIDE_NOT_FOUND");
 
-        return BuildRide(sale, authorizationNode);
+        var ride = BuildRide(sale, authorizationNode);
+        await ApplyRideBrandingAsync(ride, sale.CompanyId);
+
+        return ride;
     }
 
     public async Task<IReadOnlyList<SriSubmissionAttemptDto>> GetAttemptsAsync(int saleId)
@@ -517,6 +520,38 @@ public class SriSubmissionService : ISriSubmissionService
             Totals = BuildRideTotals(sale, infoFactura),
             Payments = BuildRidePayments(sale, infoFactura)
         };
+    }
+
+    private async Task ApplyRideBrandingAsync(SriRideDto ride, int companyId)
+    {
+        var branding = await _context.CompanyBrandings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(b => b.CompanyId == companyId);
+
+        if (branding is null)
+        {
+            return;
+        }
+
+        var logoConfigured = branding.LogoBytes is { Length: > 0 }
+            && !string.IsNullOrWhiteSpace(branding.LogoContentType);
+        var logoBase64 = logoConfigured
+            ? Convert.ToBase64String(branding.LogoBytes!)
+            : null;
+
+        ride.Branding = new SriRideBrandingDto
+        {
+            LogoConfigured = logoConfigured,
+            LogoContentType = logoConfigured ? branding.LogoContentType : null,
+            LogoDataUrl = logoConfigured ? $"data:{branding.LogoContentType};base64,{logoBase64}" : null,
+            PrimaryColor = branding.PrimaryColor,
+            DocumentFooterText = branding.DocumentFooterText
+        };
+
+        if (!string.IsNullOrWhiteSpace(branding.DocumentFooterText))
+        {
+            ride.FooterNote = branding.DocumentFooterText;
+        }
     }
 
     private static XDocument ExtractComprobanteDocument(XElement authorizationNode)
