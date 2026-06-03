@@ -16,6 +16,7 @@ namespace Pos.Backend.Api.WebApi.Controllers;
 [RequireOperationalContext]
 public class FiscalSettingsController : ControllerBase
 {
+    private const int MaxLogoUploadRequestBytes = 1024 * 1024;
     private const int MaxCertificateUploadRequestBytes = 3 * 1024 * 1024;
 
     private readonly IFiscalSettingsService _fiscalSettingsService;
@@ -53,6 +54,81 @@ public class FiscalSettingsController : ControllerBase
         try
         {
             return Ok(await _fiscalSettingsService.UpdateCompanyFiscalSettingsAsync(dto));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpGet("branding")]
+    [Authorize(Policy = AppPermissions.FiscalSettingsRead)]
+    public async Task<ActionResult<CompanyBrandingDto>> GetBranding()
+    {
+        try
+        {
+            return Ok(await _fiscalSettingsService.GetCompanyBrandingAsync());
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpPut("branding")]
+    [Authorize(Policy = AppPermissions.FiscalSettingsWrite)]
+    public async Task<ActionResult<CompanyBrandingDto>> UpdateBranding([FromBody] UpdateCompanyBrandingDto dto)
+    {
+        try
+        {
+            return Ok(await _fiscalSettingsService.UpdateCompanyBrandingAsync(dto));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpPost("branding/logo")]
+    [Authorize(Policy = AppPermissions.FiscalSettingsWrite)]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(MaxLogoUploadRequestBytes)]
+    public async Task<ActionResult<CompanyBrandingDto>> UploadBrandingLogo(
+        [FromForm] UploadCompanyLogoRequest request)
+    {
+        try
+        {
+            return Ok(await _fiscalSettingsService.UploadCompanyLogoAsync(request.File));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpGet("branding/logo")]
+    [Authorize(Policy = AppPermissions.FiscalSettingsRead)]
+    public async Task<IActionResult> GetBrandingLogo()
+    {
+        try
+        {
+            var logo = await _fiscalSettingsService.GetCompanyLogoAsync();
+            return File(logo.Bytes, logo.ContentType, logo.FileName);
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpDelete("branding/logo")]
+    [Authorize(Policy = AppPermissions.FiscalSettingsWrite)]
+    public async Task<IActionResult> DeleteBrandingLogo()
+    {
+        try
+        {
+            await _fiscalSettingsService.DeleteCompanyLogoAsync();
+            return NoContent();
         }
         catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
         {
@@ -222,8 +298,14 @@ public class FiscalSettingsController : ControllerBase
             "COMPANY_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CERTIFICATE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
+            "COMPANY_LOGO_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "INVALID_COMPANY_RUC" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_COMPANY_FISCAL_SETTINGS" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_BRANDING_OPERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_LOGO_FILE_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_LOGO_INVALID" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_LOGO_UNSUPPORTED_TYPE" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_LOGO_TOO_LARGE" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_SRI_ENVIRONMENT" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_SRI_EMISSION_TYPE" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_DOCUMENT_SEQUENCE" => BadRequest(new ApiErrorResponse { Error = code }),

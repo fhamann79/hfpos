@@ -31,6 +31,46 @@ public class UpdateCompanyFiscalSettingsDto
     public string? TaxpayerRegime { get; set; }
 }
 
+public class CompanyBrandingDto
+{
+    public int CompanyId { get; set; }
+
+    public bool LogoConfigured { get; set; }
+
+    public string? LogoFileName { get; set; }
+
+    public string? LogoContentType { get; set; }
+
+    public long? LogoSizeBytes { get; set; }
+
+    public DateTime? LogoUpdatedAt { get; set; }
+
+    public string? PrimaryColor { get; set; }
+
+    public string? DocumentFooterText { get; set; }
+}
+
+public class UpdateCompanyBrandingDto
+{
+    public string? PrimaryColor { get; set; }
+
+    public string? DocumentFooterText { get; set; }
+}
+
+public class UploadCompanyLogoRequest
+{
+    public IFormFile? File { get; set; }
+}
+
+public class CompanyLogoFileResult
+{
+    public byte[] Bytes { get; set; } = Array.Empty<byte>();
+
+    public string ContentType { get; set; } = string.Empty;
+
+    public string FileName { get; set; } = string.Empty;
+}
+
 public class CompanySriSettingsDto
 {
     public int CompanyId { get; set; }

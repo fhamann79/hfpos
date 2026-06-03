@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
@@ -10,6 +11,15 @@ namespace Pos.Backend.Api.Infrastructure.Services;
 
 public class FiscalSettingsService : IFiscalSettingsService
 {
+    private const int MaxLogoFileSizeBytes = 512 * 1024;
+
+    private static readonly HashSet<string> AllowedLogoContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/png",
+        "image/jpeg",
+        "image/webp"
+    };
+
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
 
@@ -74,6 +84,145 @@ public class FiscalSettingsService : IFiscalSettingsService
         await _context.SaveChangesAsync();
 
         return MapCompany(company);
+    }
+
+    public async Task<CompanyBrandingDto> GetCompanyBrandingAsync()
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        await GetCompanyAsync(operationalContext.CompanyId);
+
+        var branding = await _context.CompanyBrandings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(b => b.CompanyId == operationalContext.CompanyId);
+
+        return MapBranding(operationalContext.CompanyId, branding);
+    }
+
+    public async Task<CompanyBrandingDto> UpdateCompanyBrandingAsync(UpdateCompanyBrandingDto dto)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var primaryColor = NormalizeOptional(dto.PrimaryColor);
+        var documentFooterText = NormalizeOptional(dto.DocumentFooterText);
+
+        if (!IsValidBrandingColor(primaryColor)
+            || primaryColor?.Length > 20
+            || documentFooterText?.Length > 500)
+        {
+            throw new InvalidOperationException("COMPANY_BRANDING_OPERATION_FAILED");
+        }
+
+        var branding = await GetOrCreateCompanyBrandingAsync(operationalContext.CompanyId, operationalContext.UserId);
+        var now = DateTime.UtcNow;
+
+        branding.PrimaryColor = primaryColor;
+        branding.DocumentFooterText = documentFooterText;
+        branding.UpdatedAt = now;
+        branding.UpdatedByUserId = operationalContext.UserId;
+
+        await _context.SaveChangesAsync();
+
+        return MapBranding(branding.CompanyId, branding);
+    }
+
+    public async Task<CompanyBrandingDto> UploadCompanyLogoAsync(IFormFile? file)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+
+        if (file is null)
+        {
+            throw new InvalidOperationException("COMPANY_LOGO_FILE_REQUIRED");
+        }
+
+        if (file.Length <= 0)
+        {
+            throw new InvalidOperationException("COMPANY_LOGO_INVALID");
+        }
+
+        if (file.Length > MaxLogoFileSizeBytes)
+        {
+            throw new InvalidOperationException("COMPANY_LOGO_TOO_LARGE");
+        }
+
+        var contentType = NormalizeLogoContentType(file.ContentType);
+
+        if (contentType is null)
+        {
+            throw new InvalidOperationException("COMPANY_LOGO_UNSUPPORTED_TYPE");
+        }
+
+        byte[] logoBytes;
+
+        await using (var stream = file.OpenReadStream())
+        {
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            logoBytes = memory.ToArray();
+        }
+
+        if (logoBytes.Length == 0 || logoBytes.LongLength > MaxLogoFileSizeBytes || !HasValidLogoSignature(logoBytes, contentType))
+        {
+            throw new InvalidOperationException("COMPANY_LOGO_INVALID");
+        }
+
+        var branding = await GetOrCreateCompanyBrandingAsync(operationalContext.CompanyId, operationalContext.UserId);
+        var now = DateTime.UtcNow;
+
+        branding.LogoBytes = logoBytes;
+        branding.LogoContentType = contentType;
+        branding.LogoFileName = TruncateFileName(file.FileName);
+        branding.LogoSizeBytes = logoBytes.LongLength;
+        branding.LogoUpdatedAt = now;
+        branding.UpdatedAt = now;
+        branding.UpdatedByUserId = operationalContext.UserId;
+
+        await _context.SaveChangesAsync();
+
+        return MapBranding(branding.CompanyId, branding);
+    }
+
+    public async Task<CompanyLogoFileResult> GetCompanyLogoAsync()
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+
+        var branding = await _context.CompanyBrandings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(b => b.CompanyId == operationalContext.CompanyId);
+
+        if (branding?.LogoBytes is not { Length: > 0 }
+            || string.IsNullOrWhiteSpace(branding.LogoContentType))
+        {
+            throw new KeyNotFoundException("COMPANY_LOGO_NOT_FOUND");
+        }
+
+        return new CompanyLogoFileResult
+        {
+            Bytes = branding.LogoBytes,
+            ContentType = branding.LogoContentType,
+            FileName = branding.LogoFileName ?? "company-logo"
+        };
+    }
+
+    public async Task DeleteCompanyLogoAsync()
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+
+        var branding = await _context.CompanyBrandings
+            .FirstOrDefaultAsync(b => b.CompanyId == operationalContext.CompanyId);
+
+        if (branding is null)
+        {
+            return;
+        }
+
+        branding.LogoBytes = null;
+        branding.LogoContentType = null;
+        branding.LogoFileName = null;
+        branding.LogoSizeBytes = null;
+        branding.LogoUpdatedAt = null;
+        branding.UpdatedAt = DateTime.UtcNow;
+        branding.UpdatedByUserId = operationalContext.UserId;
+
+        await _context.SaveChangesAsync();
     }
 
     public async Task<CompanySriSettingsDto> GetCompanySriSettingsAsync()
@@ -367,6 +516,32 @@ public class FiscalSettingsService : IFiscalSettingsService
         return settings;
     }
 
+    private async Task<CompanyBranding> GetOrCreateCompanyBrandingAsync(int companyId, int userId)
+    {
+        await GetCompanyAsync(companyId);
+
+        var branding = await _context.CompanyBrandings
+            .FirstOrDefaultAsync(b => b.CompanyId == companyId);
+
+        if (branding is not null)
+        {
+            return branding;
+        }
+
+        var now = DateTime.UtcNow;
+        branding = new CompanyBranding
+        {
+            CompanyId = companyId,
+            CreatedAt = now,
+            UpdatedAt = now,
+            UpdatedByUserId = userId
+        };
+
+        _context.CompanyBrandings.Add(branding);
+
+        return branding;
+    }
+
     private async Task ValidateOperationalStructureAsync(int companyId, int establishmentId, int emissionPointId)
     {
         var valid = await _context.Establishments
@@ -450,6 +625,24 @@ public class FiscalSettingsService : IFiscalSettingsService
         };
     }
 
+    private static CompanyBrandingDto MapBranding(int companyId, CompanyBranding? branding)
+    {
+        var logoConfigured = branding?.LogoBytes is { Length: > 0 }
+            && !string.IsNullOrWhiteSpace(branding.LogoContentType);
+
+        return new CompanyBrandingDto
+        {
+            CompanyId = companyId,
+            LogoConfigured = logoConfigured,
+            LogoFileName = logoConfigured ? branding?.LogoFileName : null,
+            LogoContentType = logoConfigured ? branding?.LogoContentType : null,
+            LogoSizeBytes = logoConfigured ? branding?.LogoSizeBytes ?? branding?.LogoBytes?.LongLength : null,
+            LogoUpdatedAt = logoConfigured ? branding?.LogoUpdatedAt : null,
+            PrimaryColor = branding?.PrimaryColor,
+            DocumentFooterText = branding?.DocumentFooterText
+        };
+    }
+
     private static DocumentSequenceDto MapDocumentSequence(DocumentSequence sequence, int maxUsed)
     {
         return new DocumentSequenceDto
@@ -522,6 +715,72 @@ public class FiscalSettingsService : IFiscalSettingsService
         var normalized = value?.Trim();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
+
+    private static string? NormalizeLogoContentType(string? value)
+    {
+        var normalized = NormalizeOptional(value)?.Split(';', 2)[0].Trim().ToLowerInvariant();
+
+        return normalized switch
+        {
+            "image/jpg" or "image/pjpeg" => "image/jpeg",
+            _ when normalized is not null && AllowedLogoContentTypes.Contains(normalized) => normalized,
+            _ => null
+        };
+    }
+
+    private static bool HasValidLogoSignature(byte[] bytes, string contentType)
+        => contentType switch
+        {
+            "image/png" => bytes.Length >= 8
+                && bytes[0] == 0x89
+                && bytes[1] == 0x50
+                && bytes[2] == 0x4E
+                && bytes[3] == 0x47
+                && bytes[4] == 0x0D
+                && bytes[5] == 0x0A
+                && bytes[6] == 0x1A
+                && bytes[7] == 0x0A,
+            "image/jpeg" => bytes.Length >= 3
+                && bytes[0] == 0xFF
+                && bytes[1] == 0xD8
+                && bytes[2] == 0xFF,
+            "image/webp" => bytes.Length >= 12
+                && bytes[0] == 0x52
+                && bytes[1] == 0x49
+                && bytes[2] == 0x46
+                && bytes[3] == 0x46
+                && bytes[8] == 0x57
+                && bytes[9] == 0x45
+                && bytes[10] == 0x42
+                && bytes[11] == 0x50,
+            _ => false
+        };
+
+    private static string TruncateFileName(string? value)
+    {
+        var fileName = Path.GetFileName(NormalizeOptional(value) ?? "company-logo");
+
+        return fileName.Length <= 255
+            ? fileName
+            : fileName[..255];
+    }
+
+    private static bool IsValidBrandingColor(string? value)
+    {
+        if (value is null)
+        {
+            return true;
+        }
+
+        return value.Length is 4 or 7
+            && value[0] == '#'
+            && value.Skip(1).All(IsHex);
+    }
+
+    private static bool IsHex(char value)
+        => value is >= '0' and <= '9'
+            or >= 'a' and <= 'f'
+            or >= 'A' and <= 'F';
 
     private static bool IsNumeric(string? value, int expectedLength)
     {

@@ -24,6 +24,8 @@ public class SriRideDto
 
     public SriRideBuyerDto Buyer { get; set; } = new();
 
+    public SriRideBrandingDto Branding { get; set; } = new();
+
     public List<SriRideItemDto> Items { get; set; } = new();
 
     public SriRideTotalsDto Totals { get; set; } = new();
@@ -57,6 +59,19 @@ public class SriRideBuyerDto
     public string? Identification { get; set; }
 
     public string? LegalName { get; set; }
+}
+
+public class SriRideBrandingDto
+{
+    public bool LogoConfigured { get; set; }
+
+    public string? LogoContentType { get; set; }
+
+    public string? LogoDataUrl { get; set; }
+
+    public string? PrimaryColor { get; set; }
+
+    public string? DocumentFooterText { get; set; }
 }
 
 public class SriRideItemDto

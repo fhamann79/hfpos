@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Enums;
 
@@ -8,6 +9,16 @@ public interface IFiscalSettingsService
     Task<CompanyFiscalSettingsDto> GetCompanyFiscalSettingsAsync();
 
     Task<CompanyFiscalSettingsDto> UpdateCompanyFiscalSettingsAsync(UpdateCompanyFiscalSettingsDto dto);
+
+    Task<CompanyBrandingDto> GetCompanyBrandingAsync();
+
+    Task<CompanyBrandingDto> UpdateCompanyBrandingAsync(UpdateCompanyBrandingDto dto);
+
+    Task<CompanyBrandingDto> UploadCompanyLogoAsync(IFormFile? file);
+
+    Task<CompanyLogoFileResult> GetCompanyLogoAsync();
+
+    Task DeleteCompanyLogoAsync();
 
     Task<CompanySriSettingsDto> GetCompanySriSettingsAsync();
 

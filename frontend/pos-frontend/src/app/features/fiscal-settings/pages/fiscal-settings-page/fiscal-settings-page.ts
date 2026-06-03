@@ -1,6 +1,6 @@
 import { CommonModule, DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -20,6 +20,7 @@ import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { hasHttpBusinessError, resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
 import {
+  CompanyBranding,
   CompanyFiscalSettings,
   CompanySriCertificate,
   CompanySriSettings,
@@ -77,9 +78,11 @@ interface ReadinessCheckGroup {
   templateUrl: './fiscal-settings-page.html',
   styleUrl: './fiscal-settings-page.scss',
 })
-export class FiscalSettingsPage implements OnInit {
+export class FiscalSettingsPage implements OnInit, OnDestroy {
   @ViewChild('certificateFileInput') private certificateFileInput?: ElementRef<HTMLInputElement>;
+  @ViewChild('brandingLogoInput') private brandingLogoInput?: ElementRef<HTMLInputElement>;
 
+  private static readonly maxBrandingLogoSizeBytes = 512 * 1024;
   private static readonly maxCertificateFileSizeBytes = 2 * 1024 * 1024;
 
   private readonly fb = inject(FormBuilder);
@@ -95,6 +98,14 @@ export class FiscalSettingsPage implements OnInit {
   readonly companySaving = signal(false);
   readonly companyError = signal('');
   readonly companySettings = signal<CompanyFiscalSettings | null>(null);
+  readonly brandingLoading = signal(false);
+  readonly brandingSaving = signal(false);
+  readonly brandingError = signal('');
+  readonly logoUploading = signal(false);
+  readonly logoDeleting = signal(false);
+  readonly brandingLogoError = signal('');
+  readonly brandingLogoPreviewUrl = signal<string | null>(null);
+  readonly companyBranding = signal<CompanyBranding | null>(null);
 
   readonly sriLoading = signal(false);
   readonly sriSaving = signal(false);
@@ -175,6 +186,11 @@ export class FiscalSettingsPage implements OnInit {
     taxpayerRegime: ['', [Validators.maxLength(80)]],
   });
 
+  readonly brandingForm = this.fb.nonNullable.group({
+    primaryColor: ['#1d4ed8', [Validators.required, Validators.pattern(/^#[0-9A-Fa-f]{6}$/), Validators.maxLength(20)]],
+    documentFooterText: ['', [Validators.maxLength(500)]],
+  });
+
   readonly sriForm = this.fb.nonNullable.group({
     environment: [1, [Validators.required]],
     emissionType: [1, [Validators.required]],
@@ -201,8 +217,13 @@ export class FiscalSettingsPage implements OnInit {
     }
   }
 
+  ngOnDestroy(): void {
+    this.revokeBrandingLogoPreview();
+  }
+
   refreshAll(): void {
     this.loadCompanySettings();
+    this.loadBranding();
     this.loadSriSettings();
     this.loadSriCertificate();
     this.loadSriReadiness();
@@ -269,6 +290,164 @@ export class FiscalSettingsPage implements OnInit {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
         },
       });
+  }
+
+  loadBranding(): void {
+    this.brandingLoading.set(true);
+    this.brandingError.set('');
+    this.brandingLogoError.set('');
+
+    this.fiscalSettingsService.getBranding().subscribe({
+      next: (branding) => {
+        this.companyBranding.set(branding);
+        this.patchBrandingForm(branding);
+        this.syncWriteAccess();
+        this.brandingLoading.set(false);
+
+        if (branding.logoConfigured) {
+          this.loadBrandingLogoPreview();
+        } else {
+          this.revokeBrandingLogoPreview();
+        }
+      },
+      error: (error: HttpErrorResponse) => {
+        this.brandingLoading.set(false);
+        this.brandingError.set(resolveHttpErrorMessage(error, 'No se pudo cargar la identidad visual de documentos.'));
+      },
+    });
+  }
+
+  saveBranding(): void {
+    if (!this.canWrite()) {
+      return;
+    }
+
+    if (this.brandingForm.invalid) {
+      this.brandingForm.markAllAsTouched();
+      return;
+    }
+
+    const values = this.brandingForm.getRawValue();
+    this.brandingSaving.set(true);
+
+    this.fiscalSettingsService
+      .updateBranding({
+        primaryColor: this.normalizeOptional(values.primaryColor),
+        documentFooterText: this.normalizeOptional(values.documentFooterText),
+      })
+      .subscribe({
+        next: (branding) => {
+          this.companyBranding.set(branding);
+          this.patchBrandingForm(branding);
+          this.brandingSaving.set(false);
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Identidad visual guardada',
+            detail: 'La configuracion visual para documentos fue actualizada.',
+          });
+        },
+        error: (error: HttpErrorResponse) => {
+          this.brandingSaving.set(false);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
+        },
+      });
+  }
+
+  onBrandingLogoSelected(event: Event): void {
+    if (!this.canWrite()) {
+      return;
+    }
+
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.item(0) ?? null;
+    this.brandingLogoError.set('');
+
+    if (!file) {
+      return;
+    }
+
+    const validationError = this.validateBrandingLogoFile(file);
+
+    if (validationError) {
+      this.brandingLogoError.set(validationError);
+      this.resetBrandingLogoInput();
+      return;
+    }
+
+    this.uploadBrandingLogo(file);
+  }
+
+  uploadBrandingLogo(file: File): void {
+    if (!this.canWrite()) {
+      return;
+    }
+
+    this.logoUploading.set(true);
+    this.brandingLogoError.set('');
+
+    this.fiscalSettingsService.uploadBrandingLogo(file).subscribe({
+      next: (branding) => {
+        this.companyBranding.set(branding);
+        this.logoUploading.set(false);
+        this.resetBrandingLogoInput();
+        this.loadBrandingLogoPreview();
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Logo actualizado',
+          detail: 'El logo para RIDE y documentos fue guardado.',
+        });
+      },
+      error: (error: HttpErrorResponse) => {
+        const message = resolveHttpErrorMessage(error, 'No se pudo cargar el logo.');
+        this.logoUploading.set(false);
+        this.resetBrandingLogoInput();
+        this.brandingLogoError.set(message);
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: message });
+      },
+    });
+  }
+
+  confirmDeleteBrandingLogo(): void {
+    if (!this.canWrite() || !this.companyBranding()?.logoConfigured) {
+      return;
+    }
+
+    this.confirmationService.confirm({
+      header: 'Eliminar logo',
+      message: 'El logo dejara de mostrarse en RIDE y documentos impresos. Los datos fiscales y XML SRI no cambiaran. Deseas continuar?',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Eliminar logo',
+      rejectLabel: 'Cancelar',
+      acceptButtonProps: { severity: 'danger' },
+      accept: () => this.deleteBrandingLogo(),
+    });
+  }
+
+  deleteBrandingLogo(): void {
+    if (!this.canWrite()) {
+      return;
+    }
+
+    this.logoDeleting.set(true);
+    this.brandingLogoError.set('');
+
+    this.fiscalSettingsService.deleteBrandingLogo().subscribe({
+      next: () => {
+        this.logoDeleting.set(false);
+        this.revokeBrandingLogoPreview();
+        this.resetBrandingLogoInput();
+        this.loadBranding();
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Logo eliminado',
+          detail: 'El logo de documentos fue eliminado.',
+        });
+      },
+      error: (error: HttpErrorResponse) => {
+        this.logoDeleting.set(false);
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
+      },
+    });
   }
 
   loadSriSettings(): void {
@@ -634,6 +813,16 @@ export class FiscalSettingsPage implements OnInit {
     return value === 1 ? 'Normal' : 'No válido';
   }
 
+  formatLogoSize(value: number | null | undefined): string {
+    if (!value) {
+      return '-';
+    }
+
+    return value >= 1024 * 1024
+      ? `${(value / 1024 / 1024).toFixed(1)} MB`
+      : `${Math.ceil(value / 1024)} KB`;
+  }
+
   isProductionEnvironment(): boolean {
     return this.sriForm.controls.environment.value === 2;
   }
@@ -760,15 +949,41 @@ export class FiscalSettingsPage implements OnInit {
     });
   }
 
+  private patchBrandingForm(branding: CompanyBranding): void {
+    this.brandingForm.patchValue({
+      primaryColor: branding.primaryColor ?? '#1d4ed8',
+      documentFooterText: branding.documentFooterText ?? '',
+    });
+  }
+
+  private loadBrandingLogoPreview(): void {
+    this.fiscalSettingsService.getBrandingLogoBlob().subscribe({
+      next: (blob) => {
+        this.revokeBrandingLogoPreview();
+        this.brandingLogoPreviewUrl.set(URL.createObjectURL(blob));
+      },
+      error: (error: HttpErrorResponse) => {
+        if (hasHttpBusinessError(error, 'COMPANY_LOGO_NOT_FOUND')) {
+          this.revokeBrandingLogoPreview();
+          return;
+        }
+
+        this.brandingLogoError.set(resolveHttpErrorMessage(error, 'No se pudo cargar la vista previa del logo.'));
+      },
+    });
+  }
+
   private syncWriteAccess(): void {
     if (this.canWrite()) {
       this.companyForm.enable({ emitEvent: false });
+      this.brandingForm.enable({ emitEvent: false });
       this.sriForm.enable({ emitEvent: false });
       this.certificateForm.enable({ emitEvent: false });
       return;
     }
 
     this.companyForm.disable({ emitEvent: false });
+    this.brandingForm.disable({ emitEvent: false });
     this.sriForm.disable({ emitEvent: false });
     this.certificateForm.disable({ emitEvent: false });
     this.sequenceForm.disable({ emitEvent: false });
@@ -841,6 +1056,45 @@ export class FiscalSettingsPage implements OnInit {
   private normalizeOptional(value: string): string | null {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private validateBrandingLogoFile(file: File): string | null {
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp'];
+    const fileName = file.name.toLowerCase();
+    const hasValidExtension = fileName.endsWith('.png')
+      || fileName.endsWith('.jpg')
+      || fileName.endsWith('.jpeg')
+      || fileName.endsWith('.webp');
+
+    if (file.type && !allowedTypes.includes(file.type)) {
+      return 'El logo debe ser PNG, JPG o WEBP.';
+    }
+
+    if (!hasValidExtension) {
+      return 'El archivo debe tener extension .png, .jpg, .jpeg o .webp.';
+    }
+
+    if (file.size > FiscalSettingsPage.maxBrandingLogoSizeBytes) {
+      return 'El logo no debe superar 512 KB.';
+    }
+
+    return null;
+  }
+
+  private resetBrandingLogoInput(): void {
+    if (this.brandingLogoInput?.nativeElement) {
+      this.brandingLogoInput.nativeElement.value = '';
+    }
+  }
+
+  private revokeBrandingLogoPreview(): void {
+    const currentUrl = this.brandingLogoPreviewUrl();
+
+    if (currentUrl) {
+      URL.revokeObjectURL(currentUrl);
+    }
+
+    this.brandingLogoPreviewUrl.set(null);
   }
 
   private validateCertificateFile(file: File): string | null {

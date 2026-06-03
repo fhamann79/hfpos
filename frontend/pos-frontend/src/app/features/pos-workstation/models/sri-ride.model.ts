@@ -10,6 +10,7 @@ export interface SriRide {
   issueDate: string | null;
   issuer: SriRideIssuer;
   buyer: SriRideBuyer;
+  branding: SriRideBranding;
   items: SriRideItem[];
   totals: SriRideTotals;
   payments: SriRidePayment[];
@@ -30,6 +31,14 @@ export interface SriRideBuyer {
   identificationType: string | null;
   identification: string | null;
   legalName: string | null;
+}
+
+export interface SriRideBranding {
+  logoConfigured: boolean;
+  logoContentType: string | null;
+  logoDataUrl: string | null;
+  primaryColor: string | null;
+  documentFooterText: string | null;
 }
 
 export interface SriRideItem {

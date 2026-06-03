@@ -27,10 +27,15 @@
   }
 
   @if (ride) {
-    <article #ridePrintArea class="ride-print-area">
+    <article #ridePrintArea class="ride-print-area" [style.--ride-brand-color]="ride.branding.primaryColor || '#1d4ed8'">
       <header class="ride-header">
         <section class="issuer-block">
-          <span class="ride-kicker">Emisor</span>
+          <div class="issuer-branding">
+            @if (ride.branding.logoDataUrl) {
+              <img class="company-logo" [src]="ride.branding.logoDataUrl" alt="Logo de la empresa" />
+            }
+            <span class="ride-kicker">Emisor</span>
+          </div>
           <h2>{{ ride.issuer.tradeName || ride.issuer.legalName || 'Emisor' }}</h2>
           <p>{{ ride.issuer.legalName || '-' }}</p>
           <dl>
@@ -205,7 +210,7 @@
       </section>
 
       <footer class="ride-footer">
-        {{ footerNote() }}
+        {{ footerNote(ride) }}
       </footer>
     </article>
   }

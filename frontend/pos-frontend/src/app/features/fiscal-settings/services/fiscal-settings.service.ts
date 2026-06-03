@@ -2,6 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { environment } from '../../../../environments/environment';
 import {
+  CompanyBranding,
   CompanyFiscalSettings,
   CompanySriCertificate,
   CompanySriSettings,
@@ -10,6 +11,7 @@ import {
   DocumentSequenceAudit,
   DocumentSequenceFilters,
   SriFiscalReadiness,
+  UpdateCompanyBrandingRequest,
   UpdateCompanyFiscalSettingsRequest,
   UpdateCompanySriSettingsRequest,
   UpdateDocumentSequenceRequest,
@@ -26,6 +28,29 @@ export class FiscalSettingsService {
 
   updateCompanySettings(payload: UpdateCompanyFiscalSettingsRequest) {
     return this.http.put<CompanyFiscalSettings>(`${this.baseUrl}/company`, payload);
+  }
+
+  getBranding() {
+    return this.http.get<CompanyBranding>(`${this.baseUrl}/branding`);
+  }
+
+  updateBranding(payload: UpdateCompanyBrandingRequest) {
+    return this.http.put<CompanyBranding>(`${this.baseUrl}/branding`, payload);
+  }
+
+  uploadBrandingLogo(file: File) {
+    const formData = new FormData();
+    formData.append('File', file);
+
+    return this.http.post<CompanyBranding>(`${this.baseUrl}/branding/logo`, formData);
+  }
+
+  getBrandingLogoBlob() {
+    return this.http.get(`${this.baseUrl}/branding/logo`, { responseType: 'blob' });
+  }
+
+  deleteBrandingLogo() {
+    return this.http.delete<void>(`${this.baseUrl}/branding/logo`);
   }
 
   getSriSettings() {
