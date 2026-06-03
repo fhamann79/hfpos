@@ -15,6 +15,8 @@ import { SriRide } from '../../models/sri-ride.model';
 export class SriRideDialog {
   @ViewChild('ridePrintArea') private ridePrintArea?: ElementRef<HTMLElement>;
 
+  private static readonly defaultFooterNote = 'Representacion impresa de comprobante electronico autorizado.';
+
   @Input({ required: true }) visible = false;
   @Input() ride: SriRide | null = null;
   @Input() loading = false;
@@ -68,15 +70,28 @@ export class SriRideDialog {
       maximumFractionDigits: 2,
     }).format(amount);
 
-    return `${this.currencyLabel(ride)} ${formattedAmount}`;
+    const currencyDisplay = this.currencySymbolOrLabel(ride);
+    const separator = currencyDisplay === '$' ? '' : ' ';
+
+    return `${currencyDisplay}${separator}${formattedAmount}`;
   }
 
-  currencyLabel(ride: SriRide): string {
+  currencySymbolOrLabel(ride: SriRide): string {
     const rawCurrency = ride.totals.currency?.trim().toUpperCase() || 'USD';
     const normalized = rawCurrency.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const compactCurrency = normalized.replace(/[^A-Z$]/g, '');
 
-    if (normalized === 'DOLAR' || normalized === 'DOLARES' || normalized.includes('DOLLAR')) {
-      return 'USD';
+    if (
+      compactCurrency === '$' ||
+      compactCurrency === 'USD' ||
+      compactCurrency === 'DOLAR' ||
+      compactCurrency === 'DOLARES' ||
+      compactCurrency === 'DOLLAR' ||
+      compactCurrency === 'DOLLARS' ||
+      compactCurrency === 'USDOLLAR' ||
+      compactCurrency === 'USDOLLARS'
+    ) {
+      return '$';
     }
 
     return normalized;
@@ -108,7 +123,25 @@ export class SriRideDialog {
   footerNote(ride: SriRide): string {
     return ride.branding?.documentFooterText?.trim()
       || ride.footerNote?.trim()
-      || 'Representacion impresa de comprobante electronico autorizado.';
+      || SriRideDialog.defaultFooterNote;
+  }
+
+  hasCustomFooterNote(ride: SriRide): boolean {
+    const configuredFooter = ride.branding?.documentFooterText?.trim();
+
+    return !!configuredFooter && configuredFooter !== SriRideDialog.defaultFooterNote;
+  }
+
+  issuerInitials(ride: SriRide): string {
+    const name = ride.issuer.tradeName || ride.issuer.legalName || 'HFPOS';
+    const initials = name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join('');
+
+    return initials || 'HF';
   }
 
   private isFinalConsumer(ride: SriRide): boolean {

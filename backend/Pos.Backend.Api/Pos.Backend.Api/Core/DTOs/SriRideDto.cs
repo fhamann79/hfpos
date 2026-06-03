@@ -32,6 +32,8 @@ public class SriRideDto
 
     public List<SriRidePaymentDto> Payments { get; set; } = new();
 
+    public List<SriRideAdditionalInfoDto> AdditionalInfo { get; set; } = new();
+
     public string FooterNote { get; set; } = "Representacion impresa de comprobante electronico autorizado.";
 }
 
@@ -121,4 +123,11 @@ public class SriRidePaymentDto
     public string? PaymentMethod { get; set; }
 
     public decimal Amount { get; set; }
+}
+
+public class SriRideAdditionalInfoDto
+{
+    public string Name { get; set; } = string.Empty;
+
+    public string Value { get; set; } = string.Empty;
 }

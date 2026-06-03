@@ -31,14 +31,21 @@
       <header class="ride-header">
         <section class="issuer-block">
           <div class="issuer-branding">
-            @if (ride.branding.logoDataUrl) {
-              <img class="company-logo" [src]="ride.branding.logoDataUrl" alt="Logo de la empresa" />
-            }
-            <span class="ride-kicker">Emisor</span>
+            <div class="logo-frame">
+              @if (ride.branding.logoDataUrl) {
+                <img class="company-logo" [src]="ride.branding.logoDataUrl" alt="Logo de la empresa" />
+              } @else {
+                <div class="logo-fallback">{{ issuerInitials(ride) }}</div>
+              }
+            </div>
+            <div class="issuer-identity">
+              <span class="ride-kicker">Emisor</span>
+              <h2>{{ ride.issuer.tradeName || ride.issuer.legalName || 'Emisor' }}</h2>
+              <p>{{ ride.issuer.legalName || '-' }}</p>
+            </div>
           </div>
-          <h2>{{ ride.issuer.tradeName || ride.issuer.legalName || 'Emisor' }}</h2>
-          <p>{{ ride.issuer.legalName || '-' }}</p>
-          <dl>
+
+          <dl class="issuer-data">
             <div>
               <dt>RUC</dt>
               <dd>{{ ride.issuer.ruc || '-' }}</dd>
@@ -98,7 +105,7 @@
 
       <section class="buyer-block">
         <div>
-          <span>Comprador</span>
+          <span>Razon social / Nombres y apellidos</span>
           <strong>{{ ride.buyer.legalName || '-' }}</strong>
         </div>
         <div>
@@ -118,7 +125,7 @@
               <th>Codigo</th>
               <th>Descripcion</th>
               <th class="number-cell">Cant.</th>
-              <th class="number-cell">P. unit.</th>
+              <th class="number-cell">P. Unit.</th>
               <th class="number-cell">Desc.</th>
               <th class="number-cell">Subtotal</th>
               <th class="number-cell">IVA</th>
@@ -128,14 +135,14 @@
           <tbody>
             @for (item of ride.items; track $index) {
               <tr>
-                <td>{{ item.mainCode || '-' }}</td>
-                <td>{{ item.description || '-' }}</td>
+                <td class="code-cell">{{ item.mainCode || '-' }}</td>
+                <td class="description-cell">{{ item.description || '-' }}</td>
                 <td class="number-cell">{{ item.quantity | number: '1.0-4' }}</td>
                 <td class="number-cell">{{ formatMoney(item.unitPrice, ride) }}</td>
                 <td class="number-cell">{{ formatMoney(item.discount, ride) }}</td>
                 <td class="number-cell">{{ formatMoney(item.subtotal, ride) }}</td>
                 <td class="number-cell">{{ formatMoney(item.taxAmount, ride) }}</td>
-                <td class="number-cell">{{ formatMoney(item.lineTotal, ride) }}</td>
+                <td class="number-cell strong-cell">{{ formatMoney(item.lineTotal, ride) }}</td>
               </tr>
             } @empty {
               <tr>
@@ -147,19 +154,65 @@
       </section>
 
       <section class="summary-block">
-        <div class="payments-block">
-          <h3>Pagos</h3>
-          @for (payment of ride.payments; track $index) {
-            <div>
-              <span>{{ payment.paymentMethod || '-' }}</span>
-              <strong>{{ formatMoney(payment.amount, ride) }}</strong>
-            </div>
-          } @empty {
-            <p>Sin pagos informados.</p>
+        <div class="lower-left">
+          @if (ride.additionalInfo.length > 0) {
+            <section class="additional-info-block">
+              <h3>Informacion adicional</h3>
+              <dl>
+                @for (field of ride.additionalInfo; track field.name + field.value + $index) {
+                  <div>
+                    <dt>{{ field.name }}</dt>
+                    <dd>{{ field.value }}</dd>
+                  </div>
+                }
+              </dl>
+            </section>
           }
+
+          <section class="payments-block">
+            <h3>Forma de pago</h3>
+            @for (payment of ride.payments; track $index) {
+              <div>
+                <span>{{ payment.paymentMethod || '-' }}</span>
+                <strong>{{ formatMoney(payment.amount, ride) }}</strong>
+              </div>
+            } @empty {
+              <p>Sin pagos informados.</p>
+            }
+          </section>
         </div>
 
-        <div class="totals-block">
+        <section class="totals-block">
+          @if (ride.totals.vat15Subtotal > 0) {
+            <div>
+              <span>Subtotal IVA 15%</span>
+              <strong>{{ formatMoney(ride.totals.vat15Subtotal, ride) }}</strong>
+            </div>
+          }
+          @if (ride.totals.vat5Subtotal > 0) {
+            <div>
+              <span>Subtotal IVA 5%</span>
+              <strong>{{ formatMoney(ride.totals.vat5Subtotal, ride) }}</strong>
+            </div>
+          }
+          @if (ride.totals.vat0Subtotal > 0) {
+            <div>
+              <span>Subtotal IVA 0%</span>
+              <strong>{{ formatMoney(ride.totals.vat0Subtotal, ride) }}</strong>
+            </div>
+          }
+          @if (ride.totals.exemptSubtotal > 0) {
+            <div>
+              <span>Subtotal exento</span>
+              <strong>{{ formatMoney(ride.totals.exemptSubtotal, ride) }}</strong>
+            </div>
+          }
+          @if (ride.totals.notSubjectSubtotal > 0) {
+            <div>
+              <span>Subtotal no objeto</span>
+              <strong>{{ formatMoney(ride.totals.notSubjectSubtotal, ride) }}</strong>
+            </div>
+          }
           <div>
             <span>Subtotal sin impuestos</span>
             <strong>{{ formatMoney(ride.totals.subtotalWithoutTaxes, ride) }}</strong>
@@ -168,36 +221,6 @@
             <span>Descuento</span>
             <strong>{{ formatMoney(ride.totals.totalDiscount, ride) }}</strong>
           </div>
-          @if (ride.totals.vat15Subtotal > 0) {
-            <div>
-              <span>Base IVA 15%</span>
-              <strong>{{ formatMoney(ride.totals.vat15Subtotal, ride) }}</strong>
-            </div>
-          }
-          @if (ride.totals.vat5Subtotal > 0) {
-            <div>
-              <span>Base IVA 5%</span>
-              <strong>{{ formatMoney(ride.totals.vat5Subtotal, ride) }}</strong>
-            </div>
-          }
-          @if (ride.totals.vat0Subtotal > 0) {
-            <div>
-              <span>Base IVA 0%</span>
-              <strong>{{ formatMoney(ride.totals.vat0Subtotal, ride) }}</strong>
-            </div>
-          }
-          @if (ride.totals.exemptSubtotal > 0) {
-            <div>
-              <span>Exento</span>
-              <strong>{{ formatMoney(ride.totals.exemptSubtotal, ride) }}</strong>
-            </div>
-          }
-          @if (ride.totals.notSubjectSubtotal > 0) {
-            <div>
-              <span>No objeto</span>
-              <strong>{{ formatMoney(ride.totals.notSubjectSubtotal, ride) }}</strong>
-            </div>
-          }
           <div>
             <span>IVA</span>
             <strong>{{ formatMoney(ride.totals.taxAmount, ride) }}</strong>
@@ -206,11 +229,14 @@
             <span>Total</span>
             <strong>{{ formatMoney(ride.totals.total, ride) }}</strong>
           </div>
-        </div>
+        </section>
       </section>
 
       <footer class="ride-footer">
-        {{ footerNote(ride) }}
+        <strong>{{ footerNote(ride) }}</strong>
+        @if (hasCustomFooterNote(ride)) {
+          <span>Representacion impresa de comprobante electronico autorizado.</span>
+        }
       </footer>
     </article>
   }
