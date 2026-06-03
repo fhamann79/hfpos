@@ -14,6 +14,7 @@ export interface SriRide {
   items: SriRideItem[];
   totals: SriRideTotals;
   payments: SriRidePayment[];
+  additionalInfo: SriRideAdditionalInfo[];
   footerNote: string;
 }
 
@@ -68,4 +69,9 @@ export interface SriRideTotals {
 export interface SriRidePayment {
   paymentMethod: string | null;
   amount: number;
+}
+
+export interface SriRideAdditionalInfo {
+  name: string;
+  value: string;
 }

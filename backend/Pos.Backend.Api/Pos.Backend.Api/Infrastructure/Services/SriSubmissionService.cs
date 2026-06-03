@@ -518,7 +518,8 @@ public class SriSubmissionService : ISriSubmissionService
             },
             Items = BuildRideItems(invoice),
             Totals = BuildRideTotals(sale, infoFactura),
-            Payments = BuildRidePayments(sale, infoFactura)
+            Payments = BuildRidePayments(sale, infoFactura),
+            AdditionalInfo = BuildRideAdditionalInfo(invoice)
         };
     }
 
@@ -714,6 +715,44 @@ public class SriSubmissionService : ISriSubmissionService
                 Amount = sale.Total
             }
         };
+    }
+
+    private static List<SriRideAdditionalInfoDto> BuildRideAdditionalInfo(XElement invoice)
+    {
+        var infoAdicional = ChildElement(invoice, "infoAdicional");
+        var additionalInfo = new List<SriRideAdditionalInfoDto>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var field in ChildElements(infoAdicional, "campoAdicional"))
+        {
+            var value = TrimToNull(field.Value);
+
+            if (value is null)
+            {
+                continue;
+            }
+
+            var name = TrimToNull(field.Attributes()
+                .FirstOrDefault(attribute => string.Equals(
+                    attribute.Name.LocalName,
+                    "nombre",
+                    StringComparison.OrdinalIgnoreCase))
+                ?.Value) ?? "Informacion adicional";
+            var key = $"{name}\u001F{value}";
+
+            if (!seen.Add(key))
+            {
+                continue;
+            }
+
+            additionalInfo.Add(new SriRideAdditionalInfoDto
+            {
+                Name = name,
+                Value = value
+            });
+        }
+
+        return additionalInfo;
     }
 
     private static XElement? FindElement(XContainer container, string localName)

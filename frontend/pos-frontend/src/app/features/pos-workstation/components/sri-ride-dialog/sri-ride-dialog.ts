@@ -15,6 +15,8 @@ import { SriRide } from '../../models/sri-ride.model';
 export class SriRideDialog {
   @ViewChild('ridePrintArea') private ridePrintArea?: ElementRef<HTMLElement>;
 
+  private static readonly defaultFooterNote = 'Representacion impresa de comprobante electronico autorizado.';
+
   @Input({ required: true }) visible = false;
   @Input() ride: SriRide | null = null;
   @Input() loading = false;
@@ -108,7 +110,25 @@ export class SriRideDialog {
   footerNote(ride: SriRide): string {
     return ride.branding?.documentFooterText?.trim()
       || ride.footerNote?.trim()
-      || 'Representacion impresa de comprobante electronico autorizado.';
+      || SriRideDialog.defaultFooterNote;
+  }
+
+  hasCustomFooterNote(ride: SriRide): boolean {
+    const configuredFooter = ride.branding?.documentFooterText?.trim();
+
+    return !!configuredFooter && configuredFooter !== SriRideDialog.defaultFooterNote;
+  }
+
+  issuerInitials(ride: SriRide): string {
+    const name = ride.issuer.tradeName || ride.issuer.legalName || 'HFPOS';
+    const initials = name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join('');
+
+    return initials || 'HF';
   }
 
   private isFinalConsumer(ride: SriRide): boolean {
