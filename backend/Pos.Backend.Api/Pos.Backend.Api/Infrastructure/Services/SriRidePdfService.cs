@@ -32,6 +32,8 @@ public class SriRidePdfService : ISriRidePdfService
 
         try
         {
+            SriRidePdfFontResolver.Register();
+
             var bytes = new RidePdfRenderer(ride).Render();
 
             if (!IsPdf(bytes))
@@ -120,14 +122,14 @@ public class SriRidePdfService : ISriRidePdfService
         private readonly XPen _borderPen = new(XColor.FromArgb(203, 213, 225), 0.7);
         private readonly XPen _softBorderPen = new(XColor.FromArgb(226, 232, 240), 0.6);
         private readonly XPen _brandPen;
-        private readonly XFont _titleFont = new("Arial", 15, XFontStyleEx.Bold);
-        private readonly XFont _headerFont = new("Arial", 11, XFontStyleEx.Bold);
-        private readonly XFont _subHeaderFont = new("Arial", 9, XFontStyleEx.Bold);
-        private readonly XFont _bodyFont = new("Arial", 7.5, XFontStyleEx.Regular);
-        private readonly XFont _bodyBoldFont = new("Arial", 7.5, XFontStyleEx.Bold);
-        private readonly XFont _smallFont = new("Arial", 6.6, XFontStyleEx.Regular);
-        private readonly XFont _smallBoldFont = new("Arial", 6.6, XFontStyleEx.Bold);
-        private readonly XFont _codeFont = new("Courier New", 7.1, XFontStyleEx.Regular);
+        private readonly XFont _titleFont = new(SriRidePdfFontResolver.SansFamily, 15, XFontStyleEx.Bold);
+        private readonly XFont _headerFont = new(SriRidePdfFontResolver.SansFamily, 11, XFontStyleEx.Bold);
+        private readonly XFont _subHeaderFont = new(SriRidePdfFontResolver.SansFamily, 9, XFontStyleEx.Bold);
+        private readonly XFont _bodyFont = new(SriRidePdfFontResolver.SansFamily, 7.5, XFontStyleEx.Regular);
+        private readonly XFont _bodyBoldFont = new(SriRidePdfFontResolver.SansFamily, 7.5, XFontStyleEx.Bold);
+        private readonly XFont _smallFont = new(SriRidePdfFontResolver.SansFamily, 6.6, XFontStyleEx.Regular);
+        private readonly XFont _smallBoldFont = new(SriRidePdfFontResolver.SansFamily, 6.6, XFontStyleEx.Bold);
+        private readonly XFont _codeFont = new(SriRidePdfFontResolver.MonoFamily, 7.1, XFontStyleEx.Regular);
 
         private PdfPage _page = null!;
         private XGraphics _gfx = null!;
@@ -272,13 +274,16 @@ public class SriRidePdfService : ISriRidePdfService
             DrawKicker("Clave de acceso / consulta SRI", Margin + 8, _y + 8, textWidth);
             DrawWrapped(ValueOrDash(_ride.AccessKey), _codeFont, _textBrush, Margin + 8, _y + 22, textWidth, 42);
 
-            using var qr = TryCreateQrImage();
-            if (qr is not null)
+            var qrContent = TrimToNull(_ride.Qr?.Content) ?? TrimToNull(_ride.AccessKey);
+            if (qrContent is not null)
             {
                 var qrRect = new XRect(qrX, _y + 8, qrSize, qrSize);
                 DrawBox(qrRect.X - 3, qrRect.Y - 3, qrRect.Width + 6, qrRect.Height + 11, XBrushes.White, _softBorderPen);
-                _gfx.DrawImage(qr, qrRect);
-                _gfx.DrawString("QR clave", _smallBoldFont, _mutedBrush, new XRect(qrX - 3, _y + 63, qrSize + 6, 8), Center);
+
+                if (TryDrawQrCode(qrContent, qrRect))
+                {
+                    _gfx.DrawString("QR clave", _smallBoldFont, _mutedBrush, new XRect(qrX - 3, _y + 63, qrSize + 6, 8), Center);
+                }
             }
 
             _y += height + Gap;
@@ -658,23 +663,51 @@ public class SriRidePdfService : ISriRidePdfService
             _gfx.DrawImage(image, drawX, drawY, drawWidth, drawHeight);
         }
 
-        private XImage? TryCreateQrImage()
+        private bool TryDrawQrCode(string content, XRect rect)
         {
-            var content = TrimToNull(_ride.Qr?.Content) ?? TrimToNull(_ride.AccessKey);
-
-            if (content is null)
-            {
-                return null;
-            }
-
             try
             {
-                var bytes = PngByteQRCodeHelper.GetQRCode(content, QRCodeGenerator.ECCLevel.Q, 5, true);
-                return XImage.FromStream(new MemoryStream(bytes));
+                using var generator = new QRCodeGenerator();
+                using var qrData = generator.CreateQrCode(content, QRCodeGenerator.ECCLevel.Q);
+                var modules = qrData.ModuleMatrix;
+                var moduleCount = modules.Count;
+
+                if (moduleCount == 0)
+                {
+                    return false;
+                }
+
+                const int quietZoneModules = 4;
+                var moduleSize = Math.Min(rect.Width, rect.Height) / (moduleCount + quietZoneModules * 2);
+                var drawSize = moduleSize * moduleCount;
+                var drawX = rect.X + (rect.Width - drawSize) / 2;
+                var drawY = rect.Y + (rect.Height - drawSize) / 2;
+
+                _gfx.DrawRectangle(XBrushes.White, rect);
+
+                for (var row = 0; row < moduleCount; row++)
+                {
+                    for (var column = 0; column < moduleCount; column++)
+                    {
+                        if (!modules[row][column])
+                        {
+                            continue;
+                        }
+
+                        _gfx.DrawRectangle(
+                            XBrushes.Black,
+                            drawX + column * moduleSize,
+                            drawY + row * moduleSize,
+                            moduleSize + 0.05,
+                            moduleSize + 0.05);
+                    }
+                }
+
+                return true;
             }
             catch
             {
-                return null;
+                return false;
             }
         }
 

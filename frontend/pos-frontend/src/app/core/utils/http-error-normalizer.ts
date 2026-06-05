@@ -79,6 +79,7 @@ const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
   SRI_AUTHORIZATION_REJECTED: 'El SRI no autorizó el comprobante. Revisa el historial de intentos.',
   SRI_AUTHORIZATION_PENDING: 'La autorización aún está pendiente en el SRI. Intenta consultar nuevamente más tarde.',
   SRI_ALREADY_AUTHORIZED: 'Esta factura ya está autorizada.',
+  SRI_RIDE_PDF_GENERATION_FAILED: 'No se pudo generar el RIDE PDF. Intenta nuevamente.',
   SRI_SUBMISSION_OPERATION_FAILED: 'No se pudo completar la operación SRI.',
 };
 

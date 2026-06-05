@@ -17,6 +17,8 @@ using Pos.Backend.Api.WebApi.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
+SriRidePdfFontResolver.Register();
+
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole(options =>
 {

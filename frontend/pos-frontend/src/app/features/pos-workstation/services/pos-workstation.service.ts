@@ -1,6 +1,6 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { map, Observable } from 'rxjs';
+import { catchError, from, map, mergeMap, Observable, throwError } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { hasHttpBusinessError, resolveHttpErrorMessage } from '../../../core/utils/http-error-normalizer';
 import { normalizeVatCategory } from '../../../core/utils/vat-category';
@@ -59,7 +59,9 @@ export class PosWorkstationService {
   }
 
   getSriRidePdf(id: number): Observable<Blob> {
-    return this.http.get(`${this.salesUrl}/${id}/sri/ride-pdf`, { responseType: 'blob' });
+    return this.http.get(`${this.salesUrl}/${id}/sri/ride-pdf`, { responseType: 'blob' }).pipe(
+      catchError((error) => this.normalizeBlobHttpError(error))
+    );
   }
 
   submitSriInvoice(id: number): Observable<Sale> {
@@ -368,5 +370,39 @@ export class PosWorkstationService {
   private isApiErrorPayload(value: unknown): boolean {
     const record = this.asRecord(value);
     return !!record && (typeof record['error'] === 'string' || typeof record['code'] === 'string');
+  }
+
+  private normalizeBlobHttpError(error: unknown): Observable<never> {
+    if (!(error instanceof HttpErrorResponse) || !(error.error instanceof Blob)) {
+      return throwError(() => error);
+    }
+
+    return from(this.readBlobErrorPayload(error.error)).pipe(
+      mergeMap((payload) => throwError(() => new HttpErrorResponse({
+        error: payload ?? error.error,
+        headers: error.headers,
+        status: error.status,
+        statusText: error.statusText,
+        url: error.url ?? undefined,
+      })))
+    );
+  }
+
+  private async readBlobErrorPayload(blob: Blob): Promise<unknown | null> {
+    const contentType = blob.type.toLowerCase();
+    if (!contentType.includes('json') && !contentType.includes('text')) {
+      return null;
+    }
+
+    const text = await blob.text();
+    if (!text.trim()) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      return text;
+    }
   }
 }

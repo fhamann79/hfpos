@@ -22,6 +22,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Infrastructure\Assets\Fonts\Lato-Regular.ttf" LogicalName="HfposRideFonts.Lato-Regular.ttf" />
+    <EmbeddedResource Include="Infrastructure\Assets\Fonts\Lato-Bold.ttf" LogicalName="HfposRideFonts.Lato-Bold.ttf" />
+    <EmbeddedResource Include="Infrastructure\Assets\Fonts\IBMPlexMono-Regular.ttf" LogicalName="HfposRideFonts.IBMPlexMono-Regular.ttf" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Folder Include="Infrastructure\Services\" />
   </ItemGroup>
 
