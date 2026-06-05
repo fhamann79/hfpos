@@ -167,6 +167,7 @@
     [submittingSaleId]="sriSubmittingSaleId()"
     [checkingAuthorizationSaleId]="sriCheckingAuthorizationSaleId()"
     [processingSriSaleId]="sriProcessingSaleId()"
+    [downloadingSriRidePdfSaleId]="sriRidePdfDownloadingSaleId()"
     (visibleChange)="saleDetailVisible.set($event)"
     (signSriXml)="signSriXml($event)"
     (processSriWorkflow)="processSriWorkflow($event)"
@@ -177,6 +178,7 @@
     (downloadSriSignedXml)="downloadSriSignedXml($event)"
     (downloadSriAuthorizedXml)="downloadSriAuthorizedXml($event)"
     (viewSriRide)="openSriRide($event)"
+    (downloadSriRidePdf)="downloadSriRidePdf($event)"
   ></app-sale-detail-dialog>
 
   <app-sri-ride-dialog

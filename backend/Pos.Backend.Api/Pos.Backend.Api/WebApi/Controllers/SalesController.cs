@@ -18,15 +18,18 @@ public class SalesController : ControllerBase
     private readonly ISalesService _salesService;
     private readonly ISriInvoiceSigningService _sriInvoiceSigningService;
     private readonly ISriSubmissionService _sriSubmissionService;
+    private readonly ISriRidePdfService _sriRidePdfService;
 
     public SalesController(
         ISalesService salesService,
         ISriInvoiceSigningService sriInvoiceSigningService,
-        ISriSubmissionService sriSubmissionService)
+        ISriSubmissionService sriSubmissionService,
+        ISriRidePdfService sriRidePdfService)
     {
         _salesService = salesService;
         _sriInvoiceSigningService = sriInvoiceSigningService;
         _sriSubmissionService = sriSubmissionService;
+        _sriRidePdfService = sriRidePdfService;
     }
 
     [HttpGet]
@@ -142,6 +145,28 @@ public class SalesController : ControllerBase
         try
         {
             return Ok(await _sriSubmissionService.GetRideAsync(id));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpGet("{id:int}/sri/ride-pdf")]
+    [Authorize(Policy = AppPermissions.ReportsSalesRead)]
+    [Produces("application/pdf")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult> GetSriRidePdf(int id)
+    {
+        try
+        {
+            var result = await _sriRidePdfService.GenerateAsync(id);
+            return File(result.Bytes, result.ContentType, result.FileName);
         }
         catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
         {
@@ -299,6 +324,7 @@ public class SalesController : ControllerBase
             "SRI_RIDE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "SRI_RIDE_ONLY_AUTHORIZED_INVOICE" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_RIDE_INVALID_AUTHORIZED_XML" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_RIDE_PDF_GENERATION_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "SRI_AUTHORIZATION_PENDING" => StatusCode(StatusCodes.Status202Accepted, new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_ERROR" => Conflict(new ApiErrorResponse { Error = code }),
             "DOCUMENT_NUMBER_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),

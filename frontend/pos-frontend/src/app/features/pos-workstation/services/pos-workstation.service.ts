@@ -58,6 +58,10 @@ export class PosWorkstationService {
     return this.http.get<SriRide>(`${this.salesUrl}/${id}/sri/ride`);
   }
 
+  getSriRidePdf(id: number): Observable<Blob> {
+    return this.http.get(`${this.salesUrl}/${id}/sri/ride-pdf`, { responseType: 'blob' });
+  }
+
   submitSriInvoice(id: number): Observable<Sale> {
     return this.http.post<unknown>(`${this.salesUrl}/${id}/sri/submit`, {}).pipe(map((row) => this.toSale(row)));
   }

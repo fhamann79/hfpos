@@ -271,6 +271,17 @@
             (onClick)="viewSriRide.emit(sale.id)"
           ></p-button>
         }
+
+        @if (canDownloadSriRidePdf(sale)) {
+          <p-button
+            label="Descargar RIDE PDF"
+            icon="pi pi-file-pdf"
+            severity="info"
+            [loading]="isDownloadingSriRidePdf(sale)"
+            [disabled]="isProcessingSriWorkflow(sale)"
+            (onClick)="downloadSriRidePdf.emit(sale.id)"
+          ></p-button>
+        }
       </div>
     </section>
 
