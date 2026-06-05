@@ -200,6 +200,43 @@ dd,
   background: #f8fafc;
 }
 
+.access-key-block.has-qr {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.access-key-text {
+  display: grid;
+  min-width: 0;
+  gap: 0.16rem;
+}
+
+.access-key-qr {
+  display: grid;
+  justify-items: center;
+  gap: 0.12rem;
+  margin: 0;
+  padding: 0.16rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.access-key-qr img {
+  width: 5.35rem;
+  height: 5.35rem;
+  object-fit: contain;
+}
+
+.access-key-qr figcaption {
+  color: #475569;
+  font-size: 0.52rem;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 code {
   overflow-wrap: anywhere;
   color: #111827;
@@ -360,6 +397,14 @@ td {
     grid-template-columns: 1fr;
   }
 
+  .access-key-block.has-qr {
+    grid-template-columns: 1fr;
+  }
+
+  .access-key-qr {
+    justify-self: start;
+  }
+
   .logo-frame {
     justify-content: start;
   }
@@ -409,6 +454,25 @@ td {
   .company-logo {
     max-width: 1.65in;
     max-height: 0.55in;
+  }
+
+  .access-key-block.has-qr {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.08in;
+  }
+
+  .access-key-qr {
+    gap: 0.025in;
+    padding: 0.025in;
+  }
+
+  .access-key-qr img {
+    width: 0.84in;
+    height: 0.84in;
+  }
+
+  .access-key-qr figcaption {
+    font-size: 5.6pt;
   }
 
   .items-block {

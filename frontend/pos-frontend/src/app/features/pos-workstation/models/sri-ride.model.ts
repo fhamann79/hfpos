@@ -3,6 +3,7 @@ export interface SriRide {
   documentTypeLabel: string;
   documentNumber: string | null;
   accessKey: string | null;
+  qr?: SriRideQr | null;
   authorizationNumber: string | null;
   authorizationDate: string | null;
   environmentLabel: string | null;
@@ -32,6 +33,11 @@ export interface SriRideBuyer {
   identificationType: string | null;
   identification: string | null;
   legalName: string | null;
+}
+
+export interface SriRideQr {
+  content: string | null;
+  dataUrl: string | null;
 }
 
 export interface SriRideBranding {

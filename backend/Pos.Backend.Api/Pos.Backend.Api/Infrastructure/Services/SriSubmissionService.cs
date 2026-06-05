@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using Microsoft.EntityFrameworkCore;
@@ -10,6 +11,7 @@ using Pos.Backend.Api.Core.Enums;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.Infrastructure.Data;
+using QRCoder;
 
 namespace Pos.Backend.Api.Infrastructure.Services;
 
@@ -487,13 +489,15 @@ public class SriSubmissionService : ISriSubmissionService
             ?? sale.SriEnvironment?.ToString(CultureInfo.InvariantCulture);
         var emissionType = ChildValue(infoTributaria, "tipoEmision")
             ?? sale.SriEmissionType?.ToString(CultureInfo.InvariantCulture);
+        var accessKey = ChildValue(infoTributaria, "claveAcceso") ?? sale.AccessKey;
 
         return new SriRideDto
         {
             SaleId = sale.Id,
             DocumentTypeLabel = "Factura",
             DocumentNumber = BuildDocumentNumber(infoTributaria) ?? sale.Number,
-            AccessKey = ChildValue(infoTributaria, "claveAcceso") ?? sale.AccessKey,
+            AccessKey = accessKey,
+            Qr = BuildRideQr(accessKey),
             AuthorizationNumber = ChildValue(authorizationNode, "numeroAutorizacion") ?? sale.AuthorizationNumber,
             AuthorizationDate = ParseSriDate(ChildValue(authorizationNode, "fechaAutorizacion")) ?? sale.AuthorizedAt,
             EnvironmentLabel = SriEnvironmentLabel(environment),
@@ -521,6 +525,34 @@ public class SriSubmissionService : ISriSubmissionService
             Payments = BuildRidePayments(sale, infoFactura),
             AdditionalInfo = BuildRideAdditionalInfo(invoice)
         };
+    }
+
+    private static SriRideQrDto? BuildRideQr(string? accessKey)
+    {
+        var content = TrimToNull(accessKey);
+
+        if (content is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var qrCodeData = QRCodeGenerator.GenerateQrCode(content, QRCodeGenerator.ECCLevel.Q);
+            using var qrCode = new SvgQRCode(qrCodeData);
+            var svg = qrCode.GetGraphic();
+            var dataUrl = $"data:image/svg+xml;base64,{Convert.ToBase64String(Encoding.UTF8.GetBytes(svg))}";
+
+            return new SriRideQrDto
+            {
+                Content = content,
+                DataUrl = dataUrl
+            };
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async Task ApplyRideBrandingAsync(SriRideDto ride, int companyId)
