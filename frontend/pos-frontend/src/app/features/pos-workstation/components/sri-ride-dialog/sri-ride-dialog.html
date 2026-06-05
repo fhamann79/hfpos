@@ -98,9 +98,17 @@
         </section>
       </header>
 
-      <section class="access-key-block">
-        <span>Clave de acceso / consulta SRI</span>
-        <code>{{ ride.accessKey || '-' }}</code>
+      <section class="access-key-block" [class.has-qr]="ride.qr?.dataUrl">
+        <div class="access-key-text">
+          <span>Clave de acceso / consulta SRI</span>
+          <code>{{ ride.accessKey || '-' }}</code>
+        </div>
+        @if (ride.qr?.dataUrl; as qrDataUrl) {
+          <figure class="access-key-qr">
+            <img [src]="qrDataUrl" alt="QR de clave de acceso" />
+            <figcaption>QR clave de acceso</figcaption>
+          </figure>
+        }
       </section>
 
       <section class="buyer-block">

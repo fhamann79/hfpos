@@ -10,6 +10,8 @@ public class SriRideDto
 
     public string? AccessKey { get; set; }
 
+    public SriRideQrDto? Qr { get; set; }
+
     public string? AuthorizationNumber { get; set; }
 
     public DateTime? AuthorizationDate { get; set; }
@@ -61,6 +63,13 @@ public class SriRideBuyerDto
     public string? Identification { get; set; }
 
     public string? LegalName { get; set; }
+}
+
+public class SriRideQrDto
+{
+    public string? Content { get; set; }
+
+    public string? DataUrl { get; set; }
 }
 
 public class SriRideBrandingDto
