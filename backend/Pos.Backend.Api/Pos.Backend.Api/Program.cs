@@ -17,6 +17,8 @@ using Pos.Backend.Api.WebApi.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
+SriRidePdfFontResolver.Register();
+
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole(options =>
 {
@@ -93,6 +95,7 @@ builder.Services.AddScoped<ISriSigningCertificateProvider, SriSigningCertificate
 builder.Services.AddSingleton<ISriXadesBesSigner, SriXadesBesSigner>();
 builder.Services.AddScoped<ISriInvoiceSigningService, SriInvoiceSigningService>();
 builder.Services.AddScoped<ISriSubmissionService, SriSubmissionService>();
+builder.Services.AddScoped<ISriRidePdfService, SriRidePdfService>();
 builder.Services.AddScoped<ISalesService, SalesService>();
 builder.Services.AddScoped<Pos.Backend.Api.WebApi.Filters.OperationalContextFilter>();
 builder.Services.AddHttpClient<ISriWebServiceClient, SriWebServiceClient>((serviceProvider, client) =>

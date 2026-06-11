@@ -109,6 +109,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly sriRideLoading = signal(false);
   readonly sriRideError = signal('');
   readonly sriRide = signal<SriRide | null>(null);
+  readonly sriRidePdfDownloadingSaleId = signal<number | null>(null);
 
   readonly voidVisible = signal(false);
   readonly voidLoading = signal(false);
@@ -735,7 +736,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
   downloadSriXmlDraft(saleId: number): void {
     this.workstationService.getSriXmlDraft(saleId).subscribe({
-      next: (blob) => this.downloadXmlBlob(blob, this.buildXmlFileName(saleId, 'draft')),
+      next: (blob) => this.downloadBlob(blob, this.buildXmlFileName(saleId, 'draft')),
       error: (error: HttpErrorResponse) => {
         this.messageService.add({
           severity: 'error',
@@ -748,7 +749,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
   downloadSriSignedXml(saleId: number): void {
     this.workstationService.getSriSignedXml(saleId).subscribe({
-      next: (blob) => this.downloadXmlBlob(blob, this.buildXmlFileName(saleId, 'signed')),
+      next: (blob) => this.downloadBlob(blob, this.buildXmlFileName(saleId, 'signed')),
       error: (error: HttpErrorResponse) => {
         this.messageService.add({
           severity: 'error',
@@ -761,11 +762,39 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
   downloadSriAuthorizedXml(saleId: number): void {
     this.workstationService.getSriAuthorizedXml(saleId).subscribe({
-      next: (blob) => this.downloadXmlBlob(blob, this.buildAuthorizedXmlFileName(saleId)),
+      next: (blob) => this.downloadBlob(blob, this.buildAuthorizedXmlFileName(saleId)),
       error: (error: HttpErrorResponse) => {
         this.messageService.add({
           severity: 'error',
           summary: 'No se pudo descargar',
+          detail: this.workstationService.resolveBusinessError(error),
+        });
+      },
+    });
+  }
+
+  downloadSriRidePdf(saleId: number): void {
+    if (this.sriRidePdfDownloadingSaleId()) {
+      return;
+    }
+
+    this.sriRidePdfDownloadingSaleId.set(saleId);
+
+    this.workstationService.getSriRidePdf(saleId).pipe(
+      finalize(() => this.sriRidePdfDownloadingSaleId.set(null))
+    ).subscribe({
+      next: (blob) => {
+        this.downloadBlob(blob, this.buildRidePdfFileName(saleId));
+        this.messageService.add({
+          severity: 'success',
+          summary: 'RIDE PDF descargado',
+          detail: 'El RIDE PDF fue descargado correctamente.',
+        });
+      },
+      error: (error: HttpErrorResponse) => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'No se pudo descargar el RIDE PDF',
           detail: this.workstationService.resolveBusinessError(error),
         });
       },
@@ -1349,7 +1378,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.productSearchPanel?.focusSearchInput();
   }
 
-  private downloadXmlBlob(blob: Blob, fileName: string): void {
+  private downloadBlob(blob: Blob, fileName: string): void {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -1374,6 +1403,14 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     const identifier = sale?.number ?? fallback?.number;
     const prefix = identifier ? this.sanitizeFileNamePart(identifier) : `sale-${saleId}`;
     return `${prefix}-authorized.xml`;
+  }
+
+  private buildRidePdfFileName(saleId: number): string {
+    const sale = this.selectedSale()?.id === saleId ? this.selectedSale() : null;
+    const fallback = this.sales().find((item) => item.id === saleId);
+    const identifier = sale?.number ?? fallback?.number;
+    const prefix = identifier ? this.sanitizeFileNamePart(identifier) : `sale-${saleId}`;
+    return `${prefix}-RIDE.pdf`;
   }
 
   private sanitizeFileNamePart(value: string): string {

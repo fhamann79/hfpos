@@ -14,10 +14,17 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.2" />
+    <PackageReference Include="PDFsharp-MigraDoc" Version="6.2.4" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.3" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.15.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Infrastructure\Assets\Fonts\Lato-Regular.ttf" LogicalName="HfposRideFonts.Lato-Regular.ttf" />
+    <EmbeddedResource Include="Infrastructure\Assets\Fonts\Lato-Bold.ttf" LogicalName="HfposRideFonts.Lato-Bold.ttf" />
+    <EmbeddedResource Include="Infrastructure\Assets\Fonts\IBMPlexMono-Regular.ttf" LogicalName="HfposRideFonts.IBMPlexMono-Regular.ttf" />
   </ItemGroup>
 
   <ItemGroup>

@@ -40,6 +40,7 @@ export class SaleDetailDialog {
   @Input() submittingSaleId: number | null = null;
   @Input() checkingAuthorizationSaleId: number | null = null;
   @Input() processingSriSaleId: number | null = null;
+  @Input() downloadingSriRidePdfSaleId: number | null = null;
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() signSriXml = new EventEmitter<number>();
@@ -47,6 +48,7 @@ export class SaleDetailDialog {
   @Output() downloadSriSignedXml = new EventEmitter<number>();
   @Output() downloadSriAuthorizedXml = new EventEmitter<number>();
   @Output() viewSriRide = new EventEmitter<number>();
+  @Output() downloadSriRidePdf = new EventEmitter<number>();
   @Output() submitSriInvoice = new EventEmitter<number>();
   @Output() checkSriAuthorization = new EventEmitter<number>();
   @Output() viewSriAttempts = new EventEmitter<number>();
@@ -149,6 +151,10 @@ export class SaleDetailDialog {
       && this.isAuthorized(sale);
   }
 
+  canDownloadSriRidePdf(sale: Sale): boolean {
+    return this.canViewSriRide(sale);
+  }
+
   canViewSriAttempts(sale: Sale): boolean {
     return sale.documentType === SaleDocumentType.Invoice;
   }
@@ -175,6 +181,10 @@ export class SaleDetailDialog {
 
   isProcessingSriWorkflow(sale: Sale): boolean {
     return this.processingSriSaleId === sale.id;
+  }
+
+  isDownloadingSriRidePdf(sale: Sale): boolean {
+    return this.downloadingSriRidePdfSaleId === sale.id;
   }
 
   private normalizeSriStatus(status: string | null | undefined): string {
