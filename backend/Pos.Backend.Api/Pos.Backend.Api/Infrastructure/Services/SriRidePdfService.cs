@@ -130,6 +130,7 @@ public class SriRidePdfService : ISriRidePdfService
         private readonly XFont _smallFont = new(SriRidePdfFontResolver.SansFamily, 6.6, XFontStyleEx.Regular);
         private readonly XFont _smallBoldFont = new(SriRidePdfFontResolver.SansFamily, 6.6, XFontStyleEx.Bold);
         private readonly XFont _codeFont = new(SriRidePdfFontResolver.MonoFamily, 7.1, XFontStyleEx.Regular);
+        private readonly XFont _compactCodeFont = new(SriRidePdfFontResolver.MonoFamily, 6.2, XFontStyleEx.Regular);
 
         private PdfPage _page = null!;
         private XGraphics _gfx = null!;
@@ -256,7 +257,7 @@ public class SriRidePdfService : ISriRidePdfService
             _gfx.DrawString(ValueOrDash(_ride.DocumentNumber), _headerFont, _textBrush, numberRect, Center);
 
             var rowY = y + 61;
-            rowY = DrawWideField("Autorizacion", _ride.AuthorizationNumber, x, rowY, width);
+            rowY = DrawCodeField("Autorizacion", _ride.AuthorizationNumber, x, rowY, width);
             rowY = DrawWideField("Fecha autorizacion", FormatDateTime(_ride.AuthorizationDate), x, rowY, width);
             rowY = DrawField("Ambiente", _ride.EnvironmentLabel, x, rowY, width / 2 - 4);
             DrawField("Emision", _ride.EmissionTypeLabel, x + width / 2 + 4, rowY - 18, width / 2 - 4);
@@ -554,15 +555,24 @@ public class SriRidePdfService : ISriRidePdfService
             var customFooter = TrimToNull(_ride.FooterNote);
             var footerText = customFooter ?? DefaultFooterNote;
             var hasCustomFooter = !string.Equals(customFooter, DefaultFooterNote, StringComparison.Ordinal);
-            var height = hasCustomFooter ? 34 : 24;
+            var innerWidth = ContentWidth - 16;
+            var footerLines = WrapTextByWidth(footerText, _smallBoldFont, innerWidth);
+            var defaultLines = hasCustomFooter
+                ? WrapTextByWidth(DefaultFooterNote, _smallFont, innerWidth)
+                : Array.Empty<string>();
+            var footerHeight = LinesHeight(footerLines, _smallBoldFont);
+            var defaultHeight = hasCustomFooter ? LinesHeight(defaultLines, _smallFont) : 0;
+            var height = Math.Max(24, 14 + footerHeight + (hasCustomFooter ? 4 + defaultHeight : 0));
 
             EnsureSpace(height);
             DrawBox(Margin, _y, ContentWidth, height, XBrushes.White, _borderPen);
-            _gfx.DrawString(footerText, _smallBoldFont, _mutedBrush, new XRect(Margin + 8, _y + 7, ContentWidth - 16, 9), Center);
+            var cursor = _y + 7;
+            DrawWrappedLines(footerLines, _smallBoldFont, _mutedBrush, Margin + 8, cursor, innerWidth, Center);
 
             if (hasCustomFooter)
             {
-                _gfx.DrawString(DefaultFooterNote, _smallFont, _mutedBrush, new XRect(Margin + 8, _y + 20, ContentWidth - 16, 8), Center);
+                cursor += footerHeight + 4;
+                DrawWrappedLines(defaultLines, _smallFont, _mutedBrush, Margin + 8, cursor, innerWidth, Center);
             }
 
             _y += height;
@@ -633,6 +643,16 @@ public class SriRidePdfService : ISriRidePdfService
             return y + 12 + height;
         }
 
+        private double DrawCodeField(string label, string? value, double x, double y, double width)
+        {
+            DrawKicker(label, x, y, width);
+            var lines = WrapIdentifierByWidth(ValueOrDash(value), _compactCodeFont, width);
+            var height = Math.Max(12, LinesHeight(lines, _compactCodeFont));
+            DrawWrappedLines(lines, _compactCodeFont, _textBrush, x, y + 10, width, TopLeft);
+
+            return y + 12 + height;
+        }
+
         private void DrawTwoPartLine(string? label, string? value, double x, double y, double width)
         {
             _gfx.DrawString(ValueOrDash(label), _smallBoldFont, _mutedBrush, new XRect(x, y, width * 0.36, 10), TopLeft);
@@ -641,6 +661,25 @@ public class SriRidePdfService : ISriRidePdfService
 
         private void DrawWrapped(string text, XFont font, XBrush brush, double x, double y, double width, double height)
             => _text.DrawString(ValueOrDash(text), font, brush, new XRect(x, y, width, height), TopLeft);
+
+        private double DrawWrappedLines(
+            IReadOnlyList<string> lines,
+            XFont font,
+            XBrush brush,
+            double x,
+            double y,
+            double width,
+            XStringFormat format)
+        {
+            var lineHeight = LineHeight(font);
+
+            for (var index = 0; index < lines.Count; index++)
+            {
+                _gfx.DrawString(lines[index], font, brush, new XRect(x, y + index * lineHeight, width, lineHeight), format);
+            }
+
+            return lines.Count * lineHeight;
+        }
 
         private void DrawLogoFallback(XRect rect, string initials)
         {
@@ -768,6 +807,11 @@ public class SriRidePdfService : ISriRidePdfService
                 return identification ?? "-";
             }
 
+            if (IsFinalConsumerIdentificationType(type))
+            {
+                return identification ?? "-";
+            }
+
             return identification is null ? type : $"{type}: {identification}";
         }
 
@@ -822,6 +866,154 @@ public class SriRidePdfService : ISriRidePdfService
                 .Sum();
 
             return lines * font.Size * 1.22;
+        }
+
+        private IReadOnlyList<string> WrapTextByWidth(string text, XFont font, double width)
+        {
+            var lines = new List<string>();
+            var paragraphs = ValueOrDash(text)
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace('\r', '\n')
+                .Split('\n');
+
+            foreach (var paragraph in paragraphs)
+            {
+                var words = paragraph.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+                if (words.Length == 0)
+                {
+                    lines.Add(string.Empty);
+                    continue;
+                }
+
+                var current = string.Empty;
+
+                foreach (var word in words)
+                {
+                    var candidate = string.IsNullOrEmpty(current) ? word : $"{current} {word}";
+
+                    if (TextFits(candidate, font, width))
+                    {
+                        current = candidate;
+                        continue;
+                    }
+
+                    if (!string.IsNullOrEmpty(current))
+                    {
+                        lines.Add(current);
+                        current = string.Empty;
+                    }
+
+                    var chunks = SplitTokenByWidth(word, font, width);
+                    for (var index = 0; index < chunks.Count - 1; index++)
+                    {
+                        lines.Add(chunks[index]);
+                    }
+
+                    current = chunks[^1];
+                }
+
+                if (!string.IsNullOrEmpty(current))
+                {
+                    lines.Add(current);
+                }
+            }
+
+            return lines.Count == 0 ? new[] { "-" } : lines;
+        }
+
+        private IReadOnlyList<string> WrapIdentifierByWidth(string text, XFont font, double width)
+        {
+            var normalized = ValueOrDash(text);
+
+            if (normalized.Any(char.IsWhiteSpace))
+            {
+                return WrapTextByWidth(normalized, font, width);
+            }
+
+            var maxLength = FittingPrefixLength(normalized, font, width);
+            if (maxLength >= normalized.Length)
+            {
+                return new[] { normalized };
+            }
+
+            var lineCount = (int)Math.Ceiling((double)normalized.Length / maxLength);
+            var targetLength = (int)Math.Ceiling((double)normalized.Length / lineCount);
+
+            while (targetLength > 1 && !TextFits(normalized[..targetLength], font, width))
+            {
+                targetLength--;
+            }
+
+            var lines = new List<string>();
+            for (var index = 0; index < normalized.Length; index += targetLength)
+            {
+                lines.Add(normalized.Substring(index, Math.Min(targetLength, normalized.Length - index)));
+            }
+
+            return lines;
+        }
+
+        private IReadOnlyList<string> SplitTokenByWidth(string token, XFont font, double width)
+        {
+            var chunks = new List<string>();
+            var remaining = token;
+
+            while (remaining.Length > 0)
+            {
+                var length = FittingPrefixLength(remaining, font, width);
+                chunks.Add(remaining[..length]);
+                remaining = remaining[length..];
+            }
+
+            return chunks;
+        }
+
+        private int FittingPrefixLength(string text, XFont font, double width)
+        {
+            var low = 1;
+            var high = text.Length;
+            var best = 1;
+
+            while (low <= high)
+            {
+                var middle = (low + high) / 2;
+                if (TextFits(text[..middle], font, width))
+                {
+                    best = middle;
+                    low = middle + 1;
+                }
+                else
+                {
+                    high = middle - 1;
+                }
+            }
+
+            return best;
+        }
+
+        private bool TextFits(string text, XFont font, double width)
+            => _gfx.MeasureString(text, font).Width <= width;
+
+        private static double LinesHeight(IReadOnlyCollection<string> lines, XFont font)
+            => lines.Count * LineHeight(font);
+
+        private static double LineHeight(XFont font)
+            => font.Size * 1.28;
+
+        private static bool IsFinalConsumerIdentificationType(string value)
+        {
+            if (string.Equals(TrimToNull(value), "07", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            var normalized = value.ToUpperInvariant().Normalize(NormalizationForm.FormD);
+            var compact = new string(normalized
+                .Where(character => character >= 'A' && character <= 'Z')
+                .ToArray());
+
+            return compact is "CONSUMIDORFINAL" or "CONSUMIDORFIN";
         }
 
         private static XColor ParseBrandColor(string? value)
