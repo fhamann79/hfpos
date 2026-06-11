@@ -57,6 +57,72 @@ public class UpdateCompanyBrandingDto
     public string? DocumentFooterText { get; set; }
 }
 
+public class CompanyEmailSettingsDto
+{
+    public int CompanyId { get; set; }
+
+    public bool IsEnabled { get; set; }
+
+    public string? SmtpHost { get; set; }
+
+    public int SmtpPort { get; set; }
+
+    public string EncryptionMode { get; set; } = "StartTls";
+
+    public string? SmtpUsername { get; set; }
+
+    public string? FromEmail { get; set; }
+
+    public string? FromDisplayName { get; set; }
+
+    public string? ReplyToEmail { get; set; }
+
+    public bool PasswordConfigured { get; set; }
+
+    public DateTime? LastTestedAt { get; set; }
+
+    public bool? LastTestSucceeded { get; set; }
+
+    public string? LastTestMessage { get; set; }
+}
+
+public class UpdateCompanyEmailSettingsDto
+{
+    public bool IsEnabled { get; set; }
+
+    public string? SmtpHost { get; set; }
+
+    public int SmtpPort { get; set; } = 587;
+
+    public string? EncryptionMode { get; set; }
+
+    public string? SmtpUsername { get; set; }
+
+    public string? SmtpPassword { get; set; }
+
+    public bool ClearPassword { get; set; }
+
+    public string? FromEmail { get; set; }
+
+    public string? FromDisplayName { get; set; }
+
+    public string? ReplyToEmail { get; set; }
+}
+
+public class TestCompanyEmailSettingsDto
+{
+    public string? ToEmail { get; set; }
+}
+
+public class CompanyEmailTestResultDto
+{
+    public bool Success { get; set; }
+
+    public string Message { get; set; } = string.Empty;
+
+    public DateTime TestedAt { get; set; }
+}
+
 public class UploadCompanyLogoRequest
 {
     public IFormFile? File { get; set; }

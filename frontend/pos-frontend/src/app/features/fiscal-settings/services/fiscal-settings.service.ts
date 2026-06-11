@@ -3,6 +3,8 @@ import { Injectable, inject } from '@angular/core';
 import { environment } from '../../../../environments/environment';
 import {
   CompanyBranding,
+  CompanyEmailSettings,
+  CompanyEmailTestResult,
   CompanyFiscalSettings,
   CompanySriCertificate,
   CompanySriSettings,
@@ -11,7 +13,9 @@ import {
   DocumentSequenceAudit,
   DocumentSequenceFilters,
   SriFiscalReadiness,
+  TestCompanyEmailSettings,
   UpdateCompanyBrandingRequest,
+  UpdateCompanyEmailSettings,
   UpdateCompanyFiscalSettingsRequest,
   UpdateCompanySriSettingsRequest,
   UpdateDocumentSequenceRequest,
@@ -51,6 +55,18 @@ export class FiscalSettingsService {
 
   deleteBrandingLogo() {
     return this.http.delete<void>(`${this.baseUrl}/branding/logo`);
+  }
+
+  getEmailSettings() {
+    return this.http.get<CompanyEmailSettings>(`${this.baseUrl}/email`);
+  }
+
+  updateEmailSettings(payload: UpdateCompanyEmailSettings) {
+    return this.http.put<CompanyEmailSettings>(`${this.baseUrl}/email`, payload);
+  }
+
+  testEmailSettings(payload: TestCompanyEmailSettings) {
+    return this.http.post<CompanyEmailTestResult>(`${this.baseUrl}/email/test`, payload);
   }
 
   getSriSettings() {

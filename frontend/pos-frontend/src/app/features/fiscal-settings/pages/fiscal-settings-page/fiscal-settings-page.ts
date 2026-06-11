@@ -21,6 +21,8 @@ import { PermissionService } from '../../../../core/services/permission.service'
 import { hasHttpBusinessError, resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
 import {
   CompanyBranding,
+  CompanyEmailEncryptionMode,
+  CompanyEmailSettings,
   CompanyFiscalSettings,
   CompanySriCertificate,
   CompanySriSettings,
@@ -106,6 +108,12 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
   readonly brandingLogoError = signal('');
   readonly brandingLogoPreviewUrl = signal<string | null>(null);
   readonly companyBranding = signal<CompanyBranding | null>(null);
+  readonly emailLoading = signal(false);
+  readonly emailSaving = signal(false);
+  readonly emailTesting = signal(false);
+  readonly emailError = signal('');
+  readonly emailTestMessage = signal('');
+  readonly emailSettings = signal<CompanyEmailSettings | null>(null);
 
   readonly sriLoading = signal(false);
   readonly sriSaving = signal(false);
@@ -169,6 +177,12 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
 
   readonly emissionTypeOptions: SelectOption<number>[] = [{ label: 'Normal', value: 1 }];
 
+  readonly emailEncryptionOptions: SelectOption<CompanyEmailEncryptionMode>[] = [
+    { label: 'Sin cifrado', value: 'None' },
+    { label: 'STARTTLS', value: 'StartTls' },
+    { label: 'SSL directo', value: 'SslOnConnect' },
+  ];
+
   readonly documentTypeOptions: SelectOption<FiscalDocumentType>[] = [
     { label: 'Ticket', value: FiscalDocumentType.Ticket },
     { label: 'Factura', value: FiscalDocumentType.Invoice },
@@ -189,6 +203,19 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
   readonly brandingForm = this.fb.nonNullable.group({
     primaryColor: ['#1d4ed8', [Validators.required, Validators.pattern(/^#[0-9A-Fa-f]{6}$/), Validators.maxLength(20)]],
     documentFooterText: ['', [Validators.maxLength(500)]],
+  });
+
+  readonly emailForm = this.fb.nonNullable.group({
+    isEnabled: [false],
+    smtpHost: ['', [Validators.maxLength(255)]],
+    smtpPort: [587, [Validators.required, Validators.min(1), Validators.max(65535)]],
+    encryptionMode: ['StartTls' as CompanyEmailEncryptionMode, [Validators.required]],
+    smtpUsername: ['', [Validators.maxLength(255)]],
+    smtpPassword: ['', [Validators.maxLength(500)]],
+    fromEmail: ['', [Validators.email, Validators.maxLength(320)]],
+    fromDisplayName: ['', [Validators.maxLength(150)]],
+    replyToEmail: ['', [Validators.email, Validators.maxLength(320)]],
+    testToEmail: ['', [Validators.email, Validators.maxLength(320)]],
   });
 
   readonly sriForm = this.fb.nonNullable.group({
@@ -224,6 +251,7 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
   refreshAll(): void {
     this.loadCompanySettings();
     this.loadBranding();
+    this.loadEmailSettings();
     this.loadSriSettings();
     this.loadSriCertificate();
     this.loadSriReadiness();
@@ -448,6 +476,123 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
         this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
       },
     });
+  }
+
+  loadEmailSettings(): void {
+    this.emailLoading.set(true);
+    this.emailError.set('');
+    this.emailTestMessage.set('');
+
+    this.fiscalSettingsService.getEmailSettings().subscribe({
+      next: (settings) => {
+        this.emailSettings.set(settings);
+        this.patchEmailForm(settings);
+        this.syncWriteAccess();
+        this.emailLoading.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        this.emailLoading.set(false);
+        this.emailError.set(resolveHttpErrorMessage(error, 'No se pudo cargar la configuración de correo.'));
+      },
+    });
+  }
+
+  saveEmailSettings(clearPassword = false): void {
+    if (!this.canWrite()) {
+      return;
+    }
+
+    if (this.emailForm.invalid) {
+      this.emailForm.markAllAsTouched();
+      return;
+    }
+
+    const values = this.emailForm.getRawValue();
+    this.emailSaving.set(true);
+    this.emailTestMessage.set('');
+
+    this.fiscalSettingsService
+      .updateEmailSettings({
+        isEnabled: values.isEnabled,
+        smtpHost: this.normalizeOptional(values.smtpHost),
+        smtpPort: values.smtpPort,
+        encryptionMode: values.encryptionMode,
+        smtpUsername: this.normalizeOptional(values.smtpUsername),
+        smtpPassword: this.normalizeOptional(values.smtpPassword),
+        clearPassword,
+        fromEmail: this.normalizeOptional(values.fromEmail),
+        fromDisplayName: this.normalizeOptional(values.fromDisplayName),
+        replyToEmail: this.normalizeOptional(values.replyToEmail),
+      })
+      .subscribe({
+        next: (settings) => {
+          this.emailSettings.set(settings);
+          this.patchEmailForm(settings);
+          this.emailSaving.set(false);
+          this.messageService.add({
+            severity: 'success',
+            summary: clearPassword ? 'Contraseña limpiada' : 'Correo guardado',
+            detail: clearPassword
+              ? 'La contraseña/API Key SMTP fue eliminada.'
+              : 'La configuración de correo fue guardada.',
+          });
+        },
+        error: (error: HttpErrorResponse) => {
+          this.emailSaving.set(false);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
+        },
+      });
+  }
+
+  confirmClearEmailPassword(): void {
+    if (!this.canWrite() || !this.emailSettings()?.passwordConfigured) {
+      return;
+    }
+
+    this.confirmationService.confirm({
+      header: 'Limpiar contraseña SMTP',
+      message: 'Se eliminará la contraseña/API Key guardada. La configuración se conservará, pero no se podrán enviar pruebas hasta ingresar una nueva.',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Limpiar contraseña',
+      rejectLabel: 'Cancelar',
+      acceptButtonProps: { severity: 'danger' },
+      accept: () => this.saveEmailSettings(true),
+    });
+  }
+
+  testEmailSettings(): void {
+    if (!this.canWrite()) {
+      return;
+    }
+
+    const toEmailControl = this.emailForm.controls.testToEmail;
+
+    if (toEmailControl.invalid || !this.normalizeOptional(toEmailControl.value)) {
+      toEmailControl.markAsTouched();
+      return;
+    }
+
+    this.emailTesting.set(true);
+    this.emailTestMessage.set('');
+
+    this.fiscalSettingsService
+      .testEmailSettings({ toEmail: toEmailControl.value.trim() })
+      .subscribe({
+        next: (result) => {
+          this.emailTesting.set(false);
+          this.emailTestMessage.set(result.message);
+          this.loadEmailSettings();
+          this.messageService.add({
+            severity: result.success ? 'success' : 'error',
+            summary: result.success ? 'Correo enviado' : 'Prueba fallida',
+            detail: result.message,
+          });
+        },
+        error: (error: HttpErrorResponse) => {
+          this.emailTesting.set(false);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
+        },
+      });
   }
 
   loadSriSettings(): void {
@@ -849,6 +994,28 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
     return certificate.hasPrivateKey ? 'Disponible' : 'No disponible';
   }
 
+  emailPasswordStatusLabel(): string {
+    return this.emailSettings()?.passwordConfigured ? 'Contraseña configurada' : 'Sin contraseña';
+  }
+
+  emailPasswordSeverity(): 'success' | 'secondary' {
+    return this.emailSettings()?.passwordConfigured ? 'success' : 'secondary';
+  }
+
+  emailLastTestSeverity(): 'success' | 'secondary' | 'danger' {
+    const succeeded = this.emailSettings()?.lastTestSucceeded;
+
+    if (succeeded === true) {
+      return 'success';
+    }
+
+    if (succeeded === false) {
+      return 'danger';
+    }
+
+    return 'secondary';
+  }
+
   readinessStatusLabel(readiness: SriFiscalReadiness, target: ReadinessTarget): string {
     return readinessSummaryLabel(this.isReadyForTarget(readiness, target));
   }
@@ -956,6 +1123,20 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
     });
   }
 
+  private patchEmailForm(settings: CompanyEmailSettings): void {
+    this.emailForm.patchValue({
+      isEnabled: settings.isEnabled,
+      smtpHost: settings.smtpHost ?? '',
+      smtpPort: settings.smtpPort || 587,
+      encryptionMode: settings.encryptionMode ?? 'StartTls',
+      smtpUsername: settings.smtpUsername ?? '',
+      smtpPassword: '',
+      fromEmail: settings.fromEmail ?? '',
+      fromDisplayName: settings.fromDisplayName ?? '',
+      replyToEmail: settings.replyToEmail ?? '',
+    });
+  }
+
   private loadBrandingLogoPreview(): void {
     this.fiscalSettingsService.getBrandingLogoBlob().subscribe({
       next: (blob) => {
@@ -977,6 +1158,7 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
     if (this.canWrite()) {
       this.companyForm.enable({ emitEvent: false });
       this.brandingForm.enable({ emitEvent: false });
+      this.emailForm.enable({ emitEvent: false });
       this.sriForm.enable({ emitEvent: false });
       this.certificateForm.enable({ emitEvent: false });
       return;
@@ -984,6 +1166,7 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
 
     this.companyForm.disable({ emitEvent: false });
     this.brandingForm.disable({ emitEvent: false });
+    this.emailForm.disable({ emitEvent: false });
     this.sriForm.disable({ emitEvent: false });
     this.certificateForm.disable({ emitEvent: false });
     this.sequenceForm.disable({ emitEvent: false });

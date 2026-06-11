@@ -45,6 +45,47 @@ export interface UpdateCompanyBrandingRequest {
   documentFooterText: string | null;
 }
 
+export type CompanyEmailEncryptionMode = 'None' | 'StartTls' | 'SslOnConnect';
+
+export interface CompanyEmailSettings {
+  companyId: number;
+  isEnabled: boolean;
+  smtpHost: string | null;
+  smtpPort: number;
+  encryptionMode: CompanyEmailEncryptionMode;
+  smtpUsername: string | null;
+  fromEmail: string | null;
+  fromDisplayName: string | null;
+  replyToEmail: string | null;
+  passwordConfigured: boolean;
+  lastTestedAt: string | null;
+  lastTestSucceeded: boolean | null;
+  lastTestMessage: string | null;
+}
+
+export interface UpdateCompanyEmailSettings {
+  isEnabled: boolean;
+  smtpHost: string | null;
+  smtpPort: number;
+  encryptionMode: CompanyEmailEncryptionMode;
+  smtpUsername: string | null;
+  smtpPassword: string | null;
+  clearPassword: boolean;
+  fromEmail: string | null;
+  fromDisplayName: string | null;
+  replyToEmail: string | null;
+}
+
+export interface TestCompanyEmailSettings {
+  toEmail: string;
+}
+
+export interface CompanyEmailTestResult {
+  success: boolean;
+  message: string;
+  testedAt: string;
+}
+
 export interface CompanySriSettings {
   companyId: number;
   environment: number;
