@@ -566,9 +566,15 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
     }
 
     const toEmailControl = this.emailForm.controls.testToEmail;
+    const toEmail = this.normalizeOptional(toEmailControl.value);
 
-    if (toEmailControl.invalid || !this.normalizeOptional(toEmailControl.value)) {
+    if (!toEmail || toEmailControl.invalid) {
       toEmailControl.markAsTouched();
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Email destino requerido',
+        detail: 'Ingresa un correo destino válido para enviar la prueba SMTP.',
+      });
       return;
     }
 
@@ -576,7 +582,7 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
     this.emailTestMessage.set('');
 
     this.fiscalSettingsService
-      .testEmailSettings({ toEmail: toEmailControl.value.trim() })
+      .testEmailSettings({ toEmail })
       .subscribe({
         next: (result) => {
           this.emailTesting.set(false);

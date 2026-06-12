@@ -115,7 +115,19 @@
                       <strong>Obligado a llevar contabilidad</strong>
                       <span>Marca esta opción si aplica para la empresa emisora.</span>
                     </div>
-                    <p-toggleswitch formControlName="isAccountingRequired"></p-toggleswitch>
+                    <label class="app-boolean-switch">
+                      <input
+                        type="checkbox"
+                        formControlName="isAccountingRequired"
+                        aria-label="Obligado a llevar contabilidad"
+                      />
+                      <span class="app-boolean-switch__track">
+                        <span class="app-boolean-switch__thumb"></span>
+                      </span>
+                      <span class="app-boolean-switch__state">
+                        {{ companyForm.controls.isAccountingRequired.value ? 'Sí' : 'No' }}
+                      </span>
+                    </label>
                   </div>
                 </div>
               </div>
@@ -328,7 +340,15 @@
                       <strong>Habilitar envío de correos</strong>
                       <span>Permite usar esta configuración SMTP para próximos flujos de correo.</span>
                     </div>
-                    <p-toggleswitch formControlName="isEnabled"></p-toggleswitch>
+                    <label class="app-boolean-switch">
+                      <input type="checkbox" formControlName="isEnabled" aria-label="Habilitar envío de correos" />
+                      <span class="app-boolean-switch__track">
+                        <span class="app-boolean-switch__thumb"></span>
+                      </span>
+                      <span class="app-boolean-switch__state">
+                        {{ emailForm.controls.isEnabled.value ? 'Activo' : 'Inactivo' }}
+                      </span>
+                    </label>
                   </div>
 
                   <label class="field">

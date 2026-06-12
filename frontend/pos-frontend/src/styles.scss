@@ -293,6 +293,85 @@ h4 {
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22);
 }
 
+/* Native boolean switch used when PrimeNG toggle rendering is unreliable */
+.app-boolean-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex: 0 0 auto;
+  min-width: 7rem;
+  color: #0f172a;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.app-boolean-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-boolean-switch input:checked + .app-boolean-switch__track {
+  border-color: #2563eb;
+  background: #2563eb;
+}
+
+.app-boolean-switch input:checked + .app-boolean-switch__track .app-boolean-switch__thumb {
+  transform: translateX(1.35rem);
+}
+
+.app-boolean-switch input:focus-visible + .app-boolean-switch__track {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22);
+}
+
+.app-boolean-switch input:disabled + .app-boolean-switch__track {
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+}
+
+.app-boolean-switch:has(input:disabled) {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.app-boolean-switch__track {
+  position: relative;
+  display: inline-flex;
+  width: 3rem;
+  height: 1.65rem;
+  flex: 0 0 auto;
+  border: 1px solid #94a3b8;
+  border-radius: 999px;
+  background: #cbd5e1;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.app-boolean-switch__thumb {
+  position: absolute;
+  top: 50%;
+  left: 0.2rem;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.28);
+  transform: translateY(-50%);
+  transition: transform 0.16s ease;
+}
+
+.app-boolean-switch__state {
+  min-width: 4rem;
+  color: #1e293b;
+  font-size: 0.88rem;
+}
+
 .p-dialog {
   background: var(--app-surface) !important;
   color: var(--app-text) !important;
