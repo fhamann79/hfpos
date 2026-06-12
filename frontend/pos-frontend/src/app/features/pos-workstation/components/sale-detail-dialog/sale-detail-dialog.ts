@@ -49,6 +49,7 @@ export class SaleDetailDialog {
   @Output() downloadSriAuthorizedXml = new EventEmitter<number>();
   @Output() viewSriRide = new EventEmitter<number>();
   @Output() downloadSriRidePdf = new EventEmitter<number>();
+  @Output() sendInvoiceEmail = new EventEmitter<number>();
   @Output() submitSriInvoice = new EventEmitter<number>();
   @Output() checkSriAuthorization = new EventEmitter<number>();
   @Output() viewSriAttempts = new EventEmitter<number>();
@@ -153,6 +154,13 @@ export class SaleDetailDialog {
 
   canDownloadSriRidePdf(sale: Sale): boolean {
     return this.canViewSriRide(sale);
+  }
+
+  canSendInvoiceEmail(sale: Sale): boolean {
+    return this.canSubmitSriDocuments
+      && sale.documentType === SaleDocumentType.Invoice
+      && this.isAuthorized(sale)
+      && !sale.isVoided;
   }
 
   canViewSriAttempts(sale: Sale): boolean {

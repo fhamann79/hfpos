@@ -179,7 +179,16 @@
     (downloadSriAuthorizedXml)="downloadSriAuthorizedXml($event)"
     (viewSriRide)="openSriRide($event)"
     (downloadSriRidePdf)="downloadSriRidePdf($event)"
+    (sendInvoiceEmail)="openInvoiceEmailDialog($event)"
   ></app-sale-detail-dialog>
+
+  <app-sale-invoice-email-dialog
+    [visible]="invoiceEmailVisible()"
+    [sale]="invoiceEmailSale()"
+    [loading]="invoiceEmailSending()"
+    (visibleChange)="onInvoiceEmailVisibleChange($event)"
+    (sendEmail)="sendInvoiceEmail($event)"
+  ></app-sale-invoice-email-dialog>
 
   <app-sri-ride-dialog
     [visible]="sriRideVisible()"

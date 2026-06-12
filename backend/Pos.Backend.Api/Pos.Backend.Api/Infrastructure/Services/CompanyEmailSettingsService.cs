@@ -182,6 +182,29 @@ public class CompanyEmailSettingsService : ICompanyEmailSettingsService
         }
     }
 
+    public async Task<CompanyEmailSenderSettings> GetConfiguredSenderSettingsAsync()
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        await EnsureCompanyExistsAsync(operationalContext.CompanyId);
+
+        var settings = await _context.CompanyEmailSettings
+            .Include(s => s.Company)
+            .FirstOrDefaultAsync(s => s.CompanyId == operationalContext.CompanyId);
+
+        if (settings is null)
+        {
+            throw new InvalidOperationException("COMPANY_EMAIL_SETTINGS_NOT_CONFIGURED");
+        }
+
+        ValidateSettingsForSending(settings);
+
+        return new CompanyEmailSenderSettings
+        {
+            Settings = settings,
+            SmtpPassword = UnprotectPassword(settings)
+        };
+    }
+
     private async Task EnsureCompanyExistsAsync(int companyId)
     {
         var exists = await _context.Companies
@@ -267,6 +290,16 @@ public class CompanyEmailSettingsService : ICompanyEmailSettingsService
         {
             throw new InvalidOperationException("COMPANY_EMAIL_PASSWORD_REQUIRED");
         }
+    }
+
+    private static void ValidateSettingsForSending(CompanyEmailSettings settings)
+    {
+        if (!settings.IsEnabled)
+        {
+            throw new InvalidOperationException("COMPANY_EMAIL_DISABLED");
+        }
+
+        ValidateSettingsForTest(settings);
     }
 
     private string UnprotectPassword(CompanyEmailSettings settings)

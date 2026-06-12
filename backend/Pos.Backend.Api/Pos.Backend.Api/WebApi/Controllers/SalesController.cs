@@ -19,17 +19,20 @@ public class SalesController : ControllerBase
     private readonly ISriInvoiceSigningService _sriInvoiceSigningService;
     private readonly ISriSubmissionService _sriSubmissionService;
     private readonly ISriRidePdfService _sriRidePdfService;
+    private readonly ISaleInvoiceEmailService _saleInvoiceEmailService;
 
     public SalesController(
         ISalesService salesService,
         ISriInvoiceSigningService sriInvoiceSigningService,
         ISriSubmissionService sriSubmissionService,
-        ISriRidePdfService sriRidePdfService)
+        ISriRidePdfService sriRidePdfService,
+        ISaleInvoiceEmailService saleInvoiceEmailService)
     {
         _salesService = salesService;
         _sriInvoiceSigningService = sriInvoiceSigningService;
         _sriSubmissionService = sriSubmissionService;
         _sriRidePdfService = sriRidePdfService;
+        _saleInvoiceEmailService = saleInvoiceEmailService;
     }
 
     [HttpGet]
@@ -174,6 +177,31 @@ public class SalesController : ControllerBase
         }
     }
 
+    [HttpPost("{id:int}/sri/email")]
+    [Authorize(Policy = AppPermissions.SriDocumentsSubmit)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<SendSaleInvoiceEmailResultDto>> SendSriInvoiceEmail(
+        int id,
+        [FromBody] SendSaleInvoiceEmailRequestDto dto)
+    {
+        try
+        {
+            return Ok(await _saleInvoiceEmailService.SendAuthorizedInvoiceEmailAsync(
+                id,
+                dto ?? new SendSaleInvoiceEmailRequestDto()));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
     [HttpPost("{id:int}/sri/submit")]
     [Authorize(Policy = AppPermissions.SriDocumentsSubmit)]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -279,6 +307,15 @@ public class SalesController : ControllerBase
             "SRI_XML_DRAFT_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "SRI_SIGNED_XML_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "SALE_ITEMS_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "SALE_NOT_INVOICE" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_SETTINGS_NOT_CONFIGURED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_DISABLED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_SMTP_HOST_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_FROM_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_PASSWORD_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_INVALID_ADDRESS" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_OPERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "SALE_INVOICE_EMAIL_OPERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
             "PRODUCT_INACTIVE" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_QUANTITY" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_UNIT_PRICE" => BadRequest(new ApiErrorResponse { Error = code }),
@@ -318,6 +355,10 @@ public class SalesController : ControllerBase
             "SRI_RECEPTION_REJECTED" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_AUTHORIZATION_REJECTED" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_ALREADY_AUTHORIZED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SALE_VOIDED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SALE_NOT_AUTHORIZED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_AUTHORIZED_XML_NOT_AVAILABLE" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_RIDE_PDF_NOT_AVAILABLE" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_AUTHORIZED_XML_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "SRI_AUTHORIZED_XML_SALE_NOT_AUTHORIZED" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_AUTHORIZED_XML_INVALID_RESPONSE" => Conflict(new ApiErrorResponse { Error = code }),
@@ -338,6 +379,7 @@ public class SalesController : ControllerBase
             "SRI_AUTHORIZATION_ENDPOINT_NOT_CONFIGURED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "SRI_RECEPTION_COMMUNICATION_FAILED" => StatusCode(StatusCodes.Status502BadGateway, new ApiErrorResponse { Error = code }),
             "SRI_AUTHORIZATION_COMMUNICATION_FAILED" => StatusCode(StatusCodes.Status502BadGateway, new ApiErrorResponse { Error = code }),
+            "SALE_INVOICE_EMAIL_SEND_FAILED" => StatusCode(StatusCodes.Status502BadGateway, new ApiErrorResponse { Error = code }),
             _ => BadRequest(new ApiErrorResponse { Error = "SALE_OPERATION_FAILED" })
         };
     }

@@ -6,6 +6,10 @@ import { hasHttpBusinessError, resolveHttpErrorMessage } from '../../../core/uti
 import { normalizeVatCategory } from '../../../core/utils/vat-category';
 import { CheckoutRequest } from '../models/checkout-request.model';
 import { normalizeSaleDocumentStatus, normalizeSaleDocumentType } from '../models/sale-document.model';
+import {
+  SendSaleInvoiceEmailRequest,
+  SendSaleInvoiceEmailResult,
+} from '../models/sale-invoice-email.model';
 import { Sale } from '../models/sale.model';
 import { SaleItem } from '../models/sale-item.model';
 import { SaleListItem } from '../models/sale-list-item.model';
@@ -62,6 +66,10 @@ export class PosWorkstationService {
     return this.http.get(`${this.salesUrl}/${id}/sri/ride-pdf`, { responseType: 'blob' }).pipe(
       catchError((error) => this.normalizeBlobHttpError(error))
     );
+  }
+
+  sendSaleInvoiceEmail(id: number, payload: SendSaleInvoiceEmailRequest): Observable<SendSaleInvoiceEmailResult> {
+    return this.http.post<SendSaleInvoiceEmailResult>(`${this.salesUrl}/${id}/sri/email`, payload);
   }
 
   submitSriInvoice(id: number): Observable<Sale> {
