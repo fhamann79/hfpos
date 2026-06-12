@@ -1,0 +1,99 @@
+<p-dialog
+  header="Enviar factura por email"
+  [visible]="visible"
+  [modal]="true"
+  [style]="{ width: '34rem', maxWidth: '94vw' }"
+  [closable]="!loading"
+  (visibleChange)="visibleChange.emit($event)"
+>
+  <form class="invoice-email-form" (ngSubmit)="submit()">
+    <p-message
+      severity="info"
+      text="Se enviara el XML autorizado y el RIDE PDF usando la configuracion SMTP guardada en Configuracion Fiscal."
+    ></p-message>
+
+    @if (sale) {
+      <div class="invoice-email-summary">
+        <span>Factura</span>
+        <strong>{{ sale.number || ('#' + sale.id) }}</strong>
+        <span>Autorizacion</span>
+        <strong>{{ sale.authorizationNumber || '-' }}</strong>
+      </div>
+    }
+
+    <label class="field">
+      <span>Email destinatario</span>
+      <input
+        pInputText
+        type="email"
+        name="toEmail"
+        [(ngModel)]="toEmail"
+        autocomplete="email"
+        placeholder="cliente@correo.com"
+        [disabled]="loading"
+      />
+      @if (toEmailInvalid()) {
+        <small class="p-error">Ingresa un email destinatario valido.</small>
+      }
+    </label>
+
+    <label class="field">
+      <span>CC opcional</span>
+      <input
+        pInputText
+        type="email"
+        name="ccEmail"
+        [(ngModel)]="ccEmail"
+        autocomplete="email"
+        placeholder="copia@correo.com"
+        [disabled]="loading"
+      />
+      @if (ccEmailInvalid()) {
+        <small class="p-error">Ingresa un email CC valido.</small>
+      }
+    </label>
+
+    <label class="field">
+      <span>Asunto opcional</span>
+      <input
+        pInputText
+        type="text"
+        name="subject"
+        [(ngModel)]="subject"
+        maxlength="180"
+        placeholder="Usar asunto por defecto"
+        [disabled]="loading"
+      />
+    </label>
+
+    <label class="field">
+      <span>Mensaje opcional</span>
+      <textarea
+        pTextarea
+        name="message"
+        rows="4"
+        [(ngModel)]="message"
+        maxlength="2000"
+        placeholder="Mensaje adicional para el cliente"
+        [disabled]="loading"
+      ></textarea>
+    </label>
+
+    <footer class="invoice-email-actions">
+      <p-button
+        type="button"
+        label="Cancelar"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="loading"
+        (onClick)="close()"
+      ></p-button>
+      <p-button
+        type="submit"
+        label="Enviar email"
+        icon="pi pi-send"
+        [loading]="loading"
+      ></p-button>
+    </footer>
+  </form>
+</p-dialog>

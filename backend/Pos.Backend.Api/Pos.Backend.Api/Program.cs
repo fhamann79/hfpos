@@ -98,6 +98,7 @@ builder.Services.AddSingleton<ISriXadesBesSigner, SriXadesBesSigner>();
 builder.Services.AddScoped<ISriInvoiceSigningService, SriInvoiceSigningService>();
 builder.Services.AddScoped<ISriSubmissionService, SriSubmissionService>();
 builder.Services.AddScoped<ISriRidePdfService, SriRidePdfService>();
+builder.Services.AddScoped<ISaleInvoiceEmailService, SaleInvoiceEmailService>();
 builder.Services.AddScoped<ISalesService, SalesService>();
 builder.Services.AddScoped<Pos.Backend.Api.WebApi.Filters.OperationalContextFilter>();
 builder.Services.AddHttpClient<ISriWebServiceClient, SriWebServiceClient>((serviceProvider, client) =>

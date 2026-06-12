@@ -9,6 +9,7 @@ import { ToastModule } from 'primeng/toast';
 import { EMPTY, Observable, Subscription, finalize, fromEvent, of, switchMap, tap } from 'rxjs';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
+import { readErrorCode } from '../../../../core/utils/http-error-normalizer';
 import { calculateTaxSummary, roundMoney } from '../../../../core/utils/vat-category';
 import { CartWorkstation } from '../../components/cart-workstation/cart-workstation';
 import { CheckoutConfirmDialog } from '../../components/checkout-confirm-dialog/checkout-confirm-dialog';
@@ -17,6 +18,7 @@ import { ProductSearchPanel } from '../../components/product-search-panel/produc
 import { QuickProductSearchDialog } from '../../components/quick-product-search-dialog/quick-product-search-dialog';
 import { RecentSalesPanel } from '../../components/recent-sales-panel/recent-sales-panel';
 import { SaleDetailDialog } from '../../components/sale-detail-dialog/sale-detail-dialog';
+import { SaleInvoiceEmailDialog } from '../../components/sale-invoice-email-dialog/sale-invoice-email-dialog';
 import { SriRideDialog } from '../../components/sri-ride-dialog/sri-ride-dialog';
 import { SriSubmissionAttemptsDialog } from '../../components/sri-submission-attempts-dialog/sri-submission-attempts-dialog';
 import { VoidSaleDialog } from '../../components/void-sale-dialog/void-sale-dialog';
@@ -25,6 +27,7 @@ import { CheckoutRequest } from '../../models/checkout-request.model';
 import { PosCustomer } from '../../models/pos-customer.model';
 import { PosProduct } from '../../models/pos-product.model';
 import { SaleDocumentStatus, SaleDocumentType } from '../../models/sale-document.model';
+import { SendSaleInvoiceEmailRequest } from '../../models/sale-invoice-email.model';
 import { Sale } from '../../models/sale.model';
 import { SaleListItem } from '../../models/sale-list-item.model';
 import { SriRide } from '../../models/sri-ride.model';
@@ -49,6 +52,7 @@ import { PosWorkstationService } from '../../services/pos-workstation.service';
     CustomerSelectorDialog,
     RecentSalesPanel,
     SaleDetailDialog,
+    SaleInvoiceEmailDialog,
     SriRideDialog,
     SriSubmissionAttemptsDialog,
     VoidSaleDialog,
@@ -110,6 +114,9 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly sriRideError = signal('');
   readonly sriRide = signal<SriRide | null>(null);
   readonly sriRidePdfDownloadingSaleId = signal<number | null>(null);
+  readonly invoiceEmailVisible = signal(false);
+  readonly invoiceEmailSale = signal<Sale | null>(null);
+  readonly invoiceEmailSending = signal(false);
 
   readonly voidVisible = signal(false);
   readonly voidLoading = signal(false);
@@ -801,6 +808,65 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     });
   }
 
+  openInvoiceEmailDialog(saleId: number): void {
+    const sale = this.selectedSale()?.id === saleId ? this.selectedSale() : null;
+
+    if (!sale || sale.documentType !== SaleDocumentType.Invoice || sale.isVoided || !this.isSriAuthorized(sale)) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Envio de factura',
+        detail: 'Solo puedes enviar por email una factura autorizada y no anulada.',
+      });
+      return;
+    }
+
+    this.invoiceEmailSale.set(sale);
+    this.invoiceEmailVisible.set(true);
+  }
+
+  onInvoiceEmailVisibleChange(visible: boolean): void {
+    if (this.invoiceEmailSending()) {
+      return;
+    }
+
+    this.invoiceEmailVisible.set(visible);
+
+    if (!visible) {
+      this.invoiceEmailSale.set(null);
+    }
+  }
+
+  sendInvoiceEmail(payload: SendSaleInvoiceEmailRequest): void {
+    const sale = this.invoiceEmailSale();
+
+    if (!sale || this.invoiceEmailSending()) {
+      return;
+    }
+
+    this.invoiceEmailSending.set(true);
+
+    this.workstationService.sendSaleInvoiceEmail(sale.id, payload).pipe(
+      finalize(() => this.invoiceEmailSending.set(false))
+    ).subscribe({
+      next: () => {
+        this.invoiceEmailVisible.set(false);
+        this.invoiceEmailSale.set(null);
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Factura enviada',
+          detail: 'Factura enviada por email correctamente.',
+        });
+      },
+      error: (error: HttpErrorResponse) => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'No se pudo enviar la factura por email',
+          detail: this.resolveInvoiceEmailError(error),
+        });
+      },
+    });
+  }
+
   openSaleDetail(saleId: number): void {
     this.saleDetailVisible.set(true);
     this.selectedSale.set(null);
@@ -1443,6 +1509,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
 
     if (this.saleDetailVisible()) {
+      if (this.invoiceEmailVisible()) {
+        this.onInvoiceEmailVisibleChange(false);
+        return;
+      }
+
       if (this.sriAttemptsVisible()) {
         this.sriAttemptsVisible.set(false);
         return;
@@ -1456,6 +1527,35 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     if (this.voidVisible()) {
       this.voidVisible.set(false);
       this.focusMainSearch();
+    }
+  }
+
+  private resolveInvoiceEmailError(error: HttpErrorResponse): string {
+    switch (readErrorCode(error)) {
+      case 'COMPANY_EMAIL_DISABLED':
+        return 'Habilita el envio de correos en Configuracion Fiscal.';
+      case 'COMPANY_EMAIL_NOT_TESTED':
+        return 'Primero envia un correo de prueba exitoso en Configuracion Fiscal.';
+      case 'COMPANY_EMAIL_SETTINGS_NOT_CONFIGURED':
+        return 'Configura el correo SMTP en Configuracion Fiscal.';
+      case 'COMPANY_EMAIL_PASSWORD_REQUIRED':
+        return 'Guarda la contrasena/API Key SMTP antes de enviar correos.';
+      case 'COMPANY_EMAIL_SMTP_HOST_REQUIRED':
+        return 'Ingresa el servidor SMTP en Configuracion Fiscal.';
+      case 'COMPANY_EMAIL_FROM_REQUIRED':
+        return 'Ingresa el correo remitente en Configuracion Fiscal.';
+      case 'COMPANY_EMAIL_INVALID_ADDRESS':
+        return 'El email ingresado no es valido.';
+      case 'SALE_NOT_AUTHORIZED':
+        return 'Solo se pueden enviar facturas autorizadas por el SRI.';
+      case 'SRI_AUTHORIZED_XML_NOT_AVAILABLE':
+        return 'No esta disponible el XML autorizado de la factura.';
+      case 'SRI_RIDE_PDF_NOT_AVAILABLE':
+        return 'No esta disponible el RIDE PDF de la factura.';
+      case 'SALE_INVOICE_EMAIL_SEND_FAILED':
+        return 'No se pudo enviar la factura por email. Revisa la configuracion SMTP.';
+      default:
+        return this.workstationService.resolveBusinessError(error) || 'No se pudo enviar la factura por email.';
     }
   }
 }

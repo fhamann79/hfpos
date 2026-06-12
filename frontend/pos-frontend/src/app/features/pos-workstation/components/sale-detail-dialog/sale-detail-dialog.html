@@ -282,6 +282,16 @@
             (onClick)="downloadSriRidePdf.emit(sale.id)"
           ></p-button>
         }
+
+        @if (canSendInvoiceEmail(sale)) {
+          <p-button
+            label="Enviar por email"
+            icon="pi pi-envelope"
+            severity="success"
+            [disabled]="isProcessingSriWorkflow(sale)"
+            (onClick)="sendInvoiceEmail.emit(sale.id)"
+          ></p-button>
+        }
       </div>
     </section>
 

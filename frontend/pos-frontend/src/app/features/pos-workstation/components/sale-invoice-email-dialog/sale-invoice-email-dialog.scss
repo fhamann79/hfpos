@@ -1,0 +1,43 @@
+.invoice-email-form {
+  display: grid;
+  gap: .85rem;
+}
+
+.invoice-email-summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .25rem .65rem;
+  padding: .7rem;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.invoice-email-summary span,
+.field span {
+  color: #64748b;
+  font-size: .78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.invoice-email-summary strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.field {
+  display: grid;
+  gap: .3rem;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+}
+
+.invoice-email-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .5rem;
+}

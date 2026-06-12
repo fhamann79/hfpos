@@ -46,6 +46,12 @@ public class SmtpEmailSenderService : IEmailSenderService
         var mimeMessage = new MimeMessage();
         mimeMessage.From.Add(new MailboxAddress(settings.FromDisplayName ?? string.Empty, settings.FromEmail!));
         mimeMessage.To.Add(MailboxAddress.Parse(message.To));
+
+        if (!string.IsNullOrWhiteSpace(message.Cc))
+        {
+            mimeMessage.Cc.Add(MailboxAddress.Parse(message.Cc));
+        }
+
         mimeMessage.Subject = message.Subject;
 
         if (!string.IsNullOrWhiteSpace(settings.ReplyToEmail))
