@@ -22,6 +22,7 @@
     <p-tabs value="company">
       <p-tablist>
         <p-tab value="company">Empresa</p-tab>
+        <p-tab value="email">Correo electrónico</p-tab>
         <p-tab value="sri">SRI</p-tab>
         <p-tab value="sequences">Secuenciales</p-tab>
       </p-tablist>
@@ -281,6 +282,199 @@
                 }
               </form>
             </div>
+          </section>
+        </p-tabpanel>
+
+        <p-tabpanel value="email">
+          <section class="settings-card email-settings-card">
+            <div class="section-heading">
+              <div>
+                <h3>Correo electrónico</h3>
+                <p>Configura SMTP genérico por compañía para futuras notificaciones y envío de facturas autorizadas.</p>
+              </div>
+              <div class="email-status-tags">
+                <p-tag [severity]="emailPasswordSeverity()" [value]="emailPasswordStatusLabel()"></p-tag>
+                @if (emailSettings()?.lastTestedAt) {
+                  <p-tag
+                    [severity]="emailLastTestSeverity()"
+                    [value]="emailSettings()?.lastTestSucceeded ? 'Última prueba correcta' : 'Última prueba fallida'"
+                  ></p-tag>
+                }
+              </div>
+            </div>
+
+            @if (emailError()) {
+              <p-message severity="error" [text]="emailError()"></p-message>
+            }
+
+            <div class="email-helper">
+              <i class="pi pi-info-circle"></i>
+              <div>
+                <strong>Proveedor recomendado para pruebas: SendGrid SMTP.</strong>
+                <span>Host: smtp.sendgrid.net · Puerto: 587 · Seguridad: STARTTLS · Usuario: apikey · Contraseña: API Key de SendGrid · El remitente debe estar verificado en SendGrid.</span>
+              </div>
+            </div>
+
+            <form class="fiscal-form" [formGroup]="emailForm" (ngSubmit)="saveEmailSettings()">
+              <div class="form-section">
+                <div class="form-section__title">
+                  <i class="pi pi-server"></i>
+                  <span>Servidor SMTP</span>
+                </div>
+
+                <div class="form-grid">
+                  <div class="switch-field field-wide">
+                    <div>
+                      <strong>Habilitar envío de correos</strong>
+                      <span>Permite usar esta configuración SMTP para próximos flujos de correo.</span>
+                    </div>
+                    <p-toggleswitch formControlName="isEnabled"></p-toggleswitch>
+                  </div>
+
+                  <label class="field">
+                    <span>Servidor SMTP</span>
+                    <input pInputText type="text" formControlName="smtpHost" placeholder="smtp.sendgrid.net" />
+                    @if (emailForm.controls.smtpHost.touched && emailForm.controls.smtpHost.invalid) {
+                      <small class="p-error">El servidor no puede superar 255 caracteres.</small>
+                    }
+                  </label>
+
+                  <label class="field">
+                    <span>Puerto</span>
+                    <p-inputnumber formControlName="smtpPort" [min]="1" [max]="65535" [useGrouping]="false"></p-inputnumber>
+                    @if (emailForm.controls.smtpPort.touched && emailForm.controls.smtpPort.invalid) {
+                      <small class="p-error">El puerto debe estar entre 1 y 65535.</small>
+                    }
+                  </label>
+
+                  <label class="field">
+                    <span>Seguridad / cifrado</span>
+                    <p-select
+                      [options]="emailEncryptionOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      formControlName="encryptionMode"
+                    ></p-select>
+                  </label>
+
+                  <label class="field">
+                    <span>Usuario SMTP</span>
+                    <input pInputText type="text" formControlName="smtpUsername" placeholder="apikey" autocomplete="username" />
+                  </label>
+
+                  <label class="field field-wide">
+                    <span>Contraseña / API Key</span>
+                    <input
+                      pInputText
+                      type="password"
+                      formControlName="smtpPassword"
+                      autocomplete="new-password"
+                      placeholder="Dejar vacío para conservar la contraseña actual"
+                    />
+                    <small>
+                      {{ emailSettings()?.passwordConfigured ? 'Hay una contraseña/API Key guardada. Ingresa una nueva solo si deseas reemplazarla.' : 'No hay contraseña/API Key configurada.' }}
+                    </small>
+                  </label>
+                </div>
+              </div>
+
+              <div class="form-section">
+                <div class="form-section__title">
+                  <i class="pi pi-send"></i>
+                  <span>Remitente</span>
+                </div>
+
+                <div class="form-grid">
+                  <label class="field">
+                    <span>Remitente email</span>
+                    <input pInputText type="email" formControlName="fromEmail" placeholder="facturacion@empresa.com" />
+                    @if (emailForm.controls.fromEmail.touched && emailForm.controls.fromEmail.invalid) {
+                      <small class="p-error">Ingresa un correo remitente válido.</small>
+                    }
+                  </label>
+
+                  <label class="field">
+                    <span>Nombre remitente</span>
+                    <input pInputText type="text" formControlName="fromDisplayName" placeholder="Nombre comercial" />
+                  </label>
+
+                  <label class="field">
+                    <span>Responder a</span>
+                    <input pInputText type="email" formControlName="replyToEmail" placeholder="Opcional" />
+                    @if (emailForm.controls.replyToEmail.touched && emailForm.controls.replyToEmail.invalid) {
+                      <small class="p-error">Ingresa un correo de respuesta válido.</small>
+                    }
+                  </label>
+
+                  <label class="field">
+                    <span>Email destino prueba</span>
+                    <input pInputText type="email" formControlName="testToEmail" placeholder="destino@correo.com" />
+                    @if (emailForm.controls.testToEmail.touched && emailForm.controls.testToEmail.invalid) {
+                      <small class="p-error">Ingresa un correo destino válido.</small>
+                    }
+                  </label>
+                </div>
+              </div>
+
+              @if (emailSettings()?.lastTestedAt) {
+                <div class="email-test-status">
+                  <div>
+                    <span>Última prueba</span>
+                    <strong>{{ emailSettings()?.lastTestedAt | date: 'medium' }}</strong>
+                  </div>
+                  <div>
+                    <span>Resultado</span>
+                    <strong>{{ emailSettings()?.lastTestMessage || '-' }}</strong>
+                  </div>
+                </div>
+              }
+
+              @if (emailTestMessage()) {
+                <p-message [severity]="emailSettings()?.lastTestSucceeded ? 'success' : 'error'" [text]="emailTestMessage()"></p-message>
+              }
+
+              @if (canWrite()) {
+                <footer class="section-actions">
+                  <p-button
+                    type="button"
+                    label="Recargar"
+                    icon="pi pi-refresh"
+                    severity="secondary"
+                    [outlined]="true"
+                    [disabled]="emailLoading() || emailSaving() || emailTesting()"
+                    (onClick)="loadEmailSettings()"
+                  ></p-button>
+                  @if (emailSettings()?.passwordConfigured) {
+                    <p-button
+                      type="button"
+                      label="Limpiar contraseña"
+                      icon="pi pi-trash"
+                      severity="danger"
+                      [outlined]="true"
+                      [disabled]="emailLoading() || emailSaving() || emailTesting()"
+                      (onClick)="confirmClearEmailPassword()"
+                    ></p-button>
+                  }
+                  <p-button
+                    type="button"
+                    label="Enviar correo de prueba"
+                    icon="pi pi-send"
+                    severity="secondary"
+                    [outlined]="true"
+                    [loading]="emailTesting()"
+                    [disabled]="emailLoading() || emailSaving()"
+                    (onClick)="testEmailSettings()"
+                  ></p-button>
+                  <p-button
+                    type="submit"
+                    label="Guardar configuración"
+                    icon="pi pi-check"
+                    [loading]="emailSaving()"
+                    [disabled]="emailLoading() || emailTesting()"
+                  ></p-button>
+                </footer>
+              }
+            </form>
           </section>
         </p-tabpanel>
 

@@ -17,6 +17,7 @@ public class PosDbContext : DbContext
     public DbSet<RolePermission> RolePermissions { get; set; }
     public DbSet<Company> Companies { get; set; }
     public DbSet<CompanyBranding> CompanyBrandings { get; set; }
+    public DbSet<CompanyEmailSettings> CompanyEmailSettings { get; set; }
     public DbSet<CompanySriSettings> CompanySriSettings { get; set; }
     public DbSet<CompanySriCertificate> CompanySriCertificates { get; set; }
     public DbSet<Establishment> Establishments { get; set; }
@@ -102,6 +103,48 @@ public class PosDbContext : DbContext
             entity.HasOne(b => b.UpdatedByUser)
                 .WithMany()
                 .HasForeignKey(b => b.UpdatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CompanyEmailSettings>(entity =>
+        {
+            entity.Property(s => s.SmtpHost)
+                .HasMaxLength(255);
+
+            entity.Property(s => s.EncryptionMode)
+                .IsRequired()
+                .HasMaxLength(30)
+                .HasDefaultValue("StartTls");
+
+            entity.Property(s => s.SmtpUsername)
+                .HasMaxLength(255);
+
+            entity.Property(s => s.SmtpPasswordProtected)
+                .HasColumnType("text");
+
+            entity.Property(s => s.FromEmail)
+                .HasMaxLength(320);
+
+            entity.Property(s => s.FromDisplayName)
+                .HasMaxLength(150);
+
+            entity.Property(s => s.ReplyToEmail)
+                .HasMaxLength(320);
+
+            entity.Property(s => s.LastTestMessage)
+                .HasMaxLength(500);
+
+            entity.HasIndex(s => s.CompanyId)
+                .IsUnique();
+
+            entity.HasOne(s => s.Company)
+                .WithOne(c => c.EmailSettings)
+                .HasForeignKey<CompanyEmailSettings>(s => s.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.UpdatedByUser)
+                .WithMany()
+                .HasForeignKey(s => s.UpdatedByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

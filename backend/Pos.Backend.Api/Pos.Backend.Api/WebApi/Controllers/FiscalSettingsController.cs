@@ -20,15 +20,18 @@ public class FiscalSettingsController : ControllerBase
     private const int MaxCertificateUploadRequestBytes = 3 * 1024 * 1024;
 
     private readonly IFiscalSettingsService _fiscalSettingsService;
+    private readonly ICompanyEmailSettingsService _companyEmailSettingsService;
     private readonly ISriCertificateService _sriCertificateService;
     private readonly ISriFiscalReadinessService _sriFiscalReadinessService;
 
     public FiscalSettingsController(
         IFiscalSettingsService fiscalSettingsService,
+        ICompanyEmailSettingsService companyEmailSettingsService,
         ISriCertificateService sriCertificateService,
         ISriFiscalReadinessService sriFiscalReadinessService)
     {
         _fiscalSettingsService = fiscalSettingsService;
+        _companyEmailSettingsService = companyEmailSettingsService;
         _sriCertificateService = sriCertificateService;
         _sriFiscalReadinessService = sriFiscalReadinessService;
     }
@@ -129,6 +132,48 @@ public class FiscalSettingsController : ControllerBase
         {
             await _fiscalSettingsService.DeleteCompanyLogoAsync();
             return NoContent();
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpGet("email")]
+    [Authorize(Policy = AppPermissions.FiscalSettingsRead)]
+    public async Task<ActionResult<CompanyEmailSettingsDto>> GetEmail()
+    {
+        try
+        {
+            return Ok(await _companyEmailSettingsService.GetAsync());
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpPut("email")]
+    [Authorize(Policy = AppPermissions.FiscalSettingsWrite)]
+    public async Task<ActionResult<CompanyEmailSettingsDto>> UpdateEmail([FromBody] UpdateCompanyEmailSettingsDto dto)
+    {
+        try
+        {
+            return Ok(await _companyEmailSettingsService.UpdateAsync(dto));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpPost("email/test")]
+    [Authorize(Policy = AppPermissions.FiscalSettingsWrite)]
+    public async Task<ActionResult<CompanyEmailTestResultDto>> TestEmail([FromBody] TestCompanyEmailSettingsDto dto)
+    {
+        try
+        {
+            return Ok(await _companyEmailSettingsService.SendTestAsync(dto));
         }
         catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
         {
@@ -306,6 +351,12 @@ public class FiscalSettingsController : ControllerBase
             "COMPANY_LOGO_INVALID" => BadRequest(new ApiErrorResponse { Error = code }),
             "COMPANY_LOGO_UNSUPPORTED_TYPE" => BadRequest(new ApiErrorResponse { Error = code }),
             "COMPANY_LOGO_TOO_LARGE" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_SETTINGS_NOT_CONFIGURED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_SMTP_HOST_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_FROM_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_PASSWORD_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_INVALID_ADDRESS" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_OPERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_SRI_ENVIRONMENT" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_SRI_EMISSION_TYPE" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_DOCUMENT_SEQUENCE" => BadRequest(new ApiErrorResponse { Error = code }),
@@ -321,6 +372,9 @@ public class FiscalSettingsController : ControllerBase
             "CERTIFICATE_NOT_VALID_YET" => Conflict(new ApiErrorResponse { Error = code }),
             "CERTIFICATE_PROTECTION_FAILED" => StatusCode(
                 StatusCodes.Status500InternalServerError,
+                new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_TEST_FAILED" => StatusCode(
+                StatusCodes.Status502BadGateway,
                 new ApiErrorResponse { Error = code }),
             _ => BadRequest(new ApiErrorResponse { Error = "FISCAL_SETTINGS_OPERATION_FAILED" })
         };

@@ -15,5 +15,6 @@ public class Company
     public DateTime CreatedAt { get; set; }
     public bool IsActive { get; set; }
     public CompanyBranding? Branding { get; set; }
+    public CompanyEmailSettings? EmailSettings { get; set; }
     public ICollection<Establishment> Establishments { get; set; } = new List<Establishment>();
 }
