@@ -54,6 +54,7 @@ const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
   COMPANY_EMAIL_SMTP_HOST_REQUIRED: 'Debes ingresar el servidor SMTP.',
   COMPANY_EMAIL_FROM_REQUIRED: 'Debes ingresar el correo remitente.',
   COMPANY_EMAIL_PASSWORD_REQUIRED: 'Debes configurar la contraseña o API Key SMTP antes de enviar la prueba.',
+  COMPANY_EMAIL_NOT_TESTED: 'Primero envía un correo de prueba exitoso en Configuración Fiscal.',
   COMPANY_EMAIL_INVALID_ADDRESS: 'Ingresa un correo electrónico válido.',
   COMPANY_EMAIL_TEST_FAILED: 'No se pudo enviar el correo de prueba. Revisa host, puerto, seguridad, usuario, password/API key y remitente.',
   COMPANY_EMAIL_OPERATION_FAILED: 'No se pudo guardar la configuración de correo.',

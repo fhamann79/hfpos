@@ -9,6 +9,7 @@ import { ToastModule } from 'primeng/toast';
 import { EMPTY, Observable, Subscription, finalize, fromEvent, of, switchMap, tap } from 'rxjs';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
+import { readErrorCode } from '../../../../core/utils/http-error-normalizer';
 import { calculateTaxSummary, roundMoney } from '../../../../core/utils/vat-category';
 import { CartWorkstation } from '../../components/cart-workstation/cart-workstation';
 import { CheckoutConfirmDialog } from '../../components/checkout-confirm-dialog/checkout-confirm-dialog';
@@ -857,14 +858,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         });
       },
       error: (error: HttpErrorResponse) => {
-        const detail = this.isEmailSettingsError(error)
-          ? 'Configura y prueba el correo SMTP en Configuracion Fiscal antes de enviar facturas.'
-          : this.workstationService.resolveBusinessError(error) || 'No se pudo enviar la factura por email.';
-
         this.messageService.add({
           severity: 'error',
           summary: 'No se pudo enviar la factura por email',
-          detail,
+          detail: this.resolveInvoiceEmailError(error),
         });
       },
     });
@@ -1533,11 +1530,32 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
   }
 
-  private isEmailSettingsError(error: HttpErrorResponse): boolean {
-    return this.workstationService.isBusinessError(error, 'COMPANY_EMAIL_SETTINGS_NOT_CONFIGURED')
-      || this.workstationService.isBusinessError(error, 'COMPANY_EMAIL_DISABLED')
-      || this.workstationService.isBusinessError(error, 'COMPANY_EMAIL_PASSWORD_REQUIRED')
-      || this.workstationService.isBusinessError(error, 'COMPANY_EMAIL_SMTP_HOST_REQUIRED')
-      || this.workstationService.isBusinessError(error, 'COMPANY_EMAIL_FROM_REQUIRED');
+  private resolveInvoiceEmailError(error: HttpErrorResponse): string {
+    switch (readErrorCode(error)) {
+      case 'COMPANY_EMAIL_DISABLED':
+        return 'Habilita el envio de correos en Configuracion Fiscal.';
+      case 'COMPANY_EMAIL_NOT_TESTED':
+        return 'Primero envia un correo de prueba exitoso en Configuracion Fiscal.';
+      case 'COMPANY_EMAIL_SETTINGS_NOT_CONFIGURED':
+        return 'Configura el correo SMTP en Configuracion Fiscal.';
+      case 'COMPANY_EMAIL_PASSWORD_REQUIRED':
+        return 'Guarda la contrasena/API Key SMTP antes de enviar correos.';
+      case 'COMPANY_EMAIL_SMTP_HOST_REQUIRED':
+        return 'Ingresa el servidor SMTP en Configuracion Fiscal.';
+      case 'COMPANY_EMAIL_FROM_REQUIRED':
+        return 'Ingresa el correo remitente en Configuracion Fiscal.';
+      case 'COMPANY_EMAIL_INVALID_ADDRESS':
+        return 'El email ingresado no es valido.';
+      case 'SALE_NOT_AUTHORIZED':
+        return 'Solo se pueden enviar facturas autorizadas por el SRI.';
+      case 'SRI_AUTHORIZED_XML_NOT_AVAILABLE':
+        return 'No esta disponible el XML autorizado de la factura.';
+      case 'SRI_RIDE_PDF_NOT_AVAILABLE':
+        return 'No esta disponible el RIDE PDF de la factura.';
+      case 'SALE_INVOICE_EMAIL_SEND_FAILED':
+        return 'No se pudo enviar la factura por email. Revisa la configuracion SMTP.';
+      default:
+        return this.workstationService.resolveBusinessError(error) || 'No se pudo enviar la factura por email.';
+    }
   }
 }

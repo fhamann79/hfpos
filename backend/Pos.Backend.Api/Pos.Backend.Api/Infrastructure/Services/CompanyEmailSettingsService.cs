@@ -65,6 +65,15 @@ public class CompanyEmailSettingsService : ICompanyEmailSettingsService
         var settings = await _context.CompanyEmailSettings
             .FirstOrDefaultAsync(s => s.CompanyId == operationalContext.CompanyId);
         var now = DateTime.UtcNow;
+        var previous = settings is null
+            ? null
+            : new EmailSenderConfigurationSnapshot(
+                settings.SmtpHost,
+                settings.SmtpPort,
+                settings.EncryptionMode,
+                settings.SmtpUsername,
+                settings.FromEmail,
+                !string.IsNullOrWhiteSpace(settings.SmtpPasswordProtected));
 
         if (settings is null)
         {
@@ -94,6 +103,7 @@ public class CompanyEmailSettingsService : ICompanyEmailSettingsService
         }
 
         var smtpPassword = NormalizeOptional(dto.SmtpPassword);
+        var passwordChanged = dto.ClearPassword || smtpPassword is not null;
         if (smtpPassword is not null)
         {
             try
@@ -105,6 +115,13 @@ public class CompanyEmailSettingsService : ICompanyEmailSettingsService
                 _logger.LogError(ex, "Failed to protect SMTP password for company {CompanyId}", operationalContext.CompanyId);
                 throw new InvalidOperationException("COMPANY_EMAIL_OPERATION_FAILED", ex);
             }
+        }
+
+        if (HasSenderConfigurationChanged(previous, normalized, dto.SmtpPort, settings, passwordChanged))
+        {
+            settings.LastTestedAt = null;
+            settings.LastTestSucceeded = null;
+            settings.LastTestMessage = null;
         }
 
         await _context.SaveChangesAsync();
@@ -300,6 +317,32 @@ public class CompanyEmailSettingsService : ICompanyEmailSettingsService
         }
 
         ValidateSettingsForTest(settings);
+
+        if (settings.LastTestSucceeded != true)
+        {
+            throw new InvalidOperationException("COMPANY_EMAIL_NOT_TESTED");
+        }
+    }
+
+    private static bool HasSenderConfigurationChanged(
+        EmailSenderConfigurationSnapshot? previous,
+        NormalizedEmailSettings normalized,
+        int smtpPort,
+        CompanyEmailSettings current,
+        bool passwordChanged)
+    {
+        if (previous is null)
+        {
+            return true;
+        }
+
+        return !string.Equals(previous.SmtpHost, normalized.SmtpHost, StringComparison.Ordinal)
+            || previous.SmtpPort != smtpPort
+            || !string.Equals(previous.EncryptionMode, normalized.EncryptionMode, StringComparison.Ordinal)
+            || !string.Equals(previous.SmtpUsername, normalized.SmtpUsername, StringComparison.Ordinal)
+            || !string.Equals(previous.FromEmail, normalized.FromEmail, StringComparison.Ordinal)
+            || previous.PasswordConfigured != (!string.IsNullOrWhiteSpace(current.SmtpPasswordProtected))
+            || passwordChanged;
     }
 
     private string UnprotectPassword(CompanyEmailSettings settings)
@@ -408,4 +451,12 @@ public class CompanyEmailSettingsService : ICompanyEmailSettingsService
         string? FromEmail,
         string? FromDisplayName,
         string? ReplyToEmail);
+
+    private sealed record EmailSenderConfigurationSnapshot(
+        string? SmtpHost,
+        int SmtpPort,
+        string EncryptionMode,
+        string? SmtpUsername,
+        string? FromEmail,
+        bool PasswordConfigured);
 }

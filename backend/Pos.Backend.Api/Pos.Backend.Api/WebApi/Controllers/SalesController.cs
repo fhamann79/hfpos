@@ -313,6 +313,7 @@ public class SalesController : ControllerBase
             "COMPANY_EMAIL_SMTP_HOST_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "COMPANY_EMAIL_FROM_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "COMPANY_EMAIL_PASSWORD_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_NOT_TESTED" => BadRequest(new ApiErrorResponse { Error = code }),
             "COMPANY_EMAIL_INVALID_ADDRESS" => BadRequest(new ApiErrorResponse { Error = code }),
             "COMPANY_EMAIL_OPERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
             "SALE_INVOICE_EMAIL_OPERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
