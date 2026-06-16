@@ -3,6 +3,7 @@ export interface PosCustomer {
   name: string;
   identification?: string | null;
   phone?: string | null;
+  email?: string | null;
   isActive: boolean;
 }
 
@@ -10,4 +11,5 @@ export interface CreatePosCustomerRequest {
   name: string;
   identification?: string | null;
   phone?: string | null;
+  email?: string | null;
 }

@@ -133,6 +133,7 @@ public class SalesService : ISalesService
                 Status = s.Status,
                 CustomerId = s.CustomerId,
                 CustomerName = s.Customer != null ? s.Customer.Name : null,
+                CustomerEmail = s.Customer != null ? s.Customer.Email : null,
                 PaymentMethod = s.PaymentMethod,
                 DocumentType = s.DocumentType,
                 DocumentStatus = s.DocumentStatus,

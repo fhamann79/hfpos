@@ -26,6 +26,7 @@ export class PosCustomerService {
       name: this.readString(row, ['name', 'customerName'], 'Cliente'),
       identification: this.readString(row, ['identification', 'document', 'ruc', 'ci'], null),
       phone: this.readString(row, ['phone', 'mobile'], null),
+      email: this.readString(row, ['email', 'customerEmail'], null),
       isActive: this.readBoolean(row, ['isActive', 'active'], true),
     };
   }

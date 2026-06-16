@@ -68,7 +68,7 @@ export class SaleInvoiceEmailDialog implements OnChanges {
   }
 
   private reset(): void {
-    this.toEmail = '';
+    this.toEmail = this.sale?.customerEmail?.trim() ?? '';
     this.ccEmail = '';
     this.subject = '';
     this.message = '';

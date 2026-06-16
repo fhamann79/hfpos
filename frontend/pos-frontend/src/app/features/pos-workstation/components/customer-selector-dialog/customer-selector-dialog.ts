@@ -18,6 +18,8 @@ import { PosCustomerService } from '../../services/pos-customer.service';
   styleUrl: './customer-selector-dialog.scss',
 })
 export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
+  readonly maxEmailLength = 320;
+
   private readonly customerService = inject(PosCustomerService);
 
   @Input({ required: true }) visible = false;
@@ -41,6 +43,7 @@ export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
   name = '';
   identification = '';
   phone = '';
+  email = '';
 
   ngAfterViewInit(): void {
     if (this.visible) {
@@ -128,10 +131,16 @@ export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
       name: this.name.trim(),
       identification: this.normalizeOptional(this.identification),
       phone: this.normalizeOptional(this.phone),
+      email: this.normalizeOptional(this.email),
     };
 
     if (!payload.name) {
       this.createErrorMessage.set('El nombre es obligatorio.');
+      return;
+    }
+
+    if (payload.email && (payload.email.length > this.maxEmailLength || !this.isValidEmail(payload.email))) {
+      this.createErrorMessage.set('Ingresa un email de cliente válido.');
       return;
     }
 
@@ -161,6 +170,7 @@ export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
     this.name = '';
     this.identification = '';
     this.phone = '';
+    this.email = '';
     this.errorMessage.set('');
     this.createErrorMessage.set('');
     this.loadCustomers();
@@ -192,5 +202,9 @@ export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
   private normalizeOptional(value: string): string | null {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private isValidEmail(value: string): boolean {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
   }
 }

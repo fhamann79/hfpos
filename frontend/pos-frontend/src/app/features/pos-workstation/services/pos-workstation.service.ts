@@ -175,6 +175,7 @@ export class PosWorkstationService {
       sriLastSubmissionError: this.readString(row, ['sriLastSubmissionError'], null),
       sriLastCheckedAt: this.readString(row, ['sriLastCheckedAt'], null),
       customerName: this.readString(row, ['customerName'], null),
+      customerEmail: this.readString(row, ['customerEmail'], null),
       notes: this.readString(row, ['notes'], null),
       grossSubtotal: this.readNumber(row, ['grossSubtotal', 'subtotal'], 0),
       discountAmount: this.readNumber(row, ['discountAmount'], 0),
