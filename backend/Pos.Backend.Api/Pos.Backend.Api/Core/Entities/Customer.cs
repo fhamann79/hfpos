@@ -19,6 +19,9 @@ public class Customer
     [MaxLength(30)]
     public string? Phone { get; set; }
 
+    [MaxLength(320)]
+    public string? Email { get; set; }
+
     public bool IsActive { get; set; }
 
     public DateTime CreatedAt { get; set; }

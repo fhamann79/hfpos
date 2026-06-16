@@ -32,6 +32,7 @@ export interface Sale {
   sriLastSubmissionError: string | null;
   sriLastCheckedAt: string | null;
   customerName: string | null;
+  customerEmail: string | null;
   notes: string | null;
   grossSubtotal: number;
   discountAmount: number;

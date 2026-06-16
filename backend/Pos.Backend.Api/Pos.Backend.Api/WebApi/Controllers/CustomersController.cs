@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Models;
@@ -17,6 +18,8 @@ namespace Pos.Backend.Api.WebApi.Controllers;
 [RequireOperationalContext]
 public class CustomersController : ControllerBase
 {
+    private static readonly Regex EmailRegex = new(@"^[^\s@]+@[^\s@]+\.[^\s@]+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
 
@@ -43,7 +46,8 @@ public class CustomersController : ControllerBase
             var term = search.Trim().ToLower();
             query = query.Where(c =>
                 c.Name.ToLower().Contains(term)
-                || (c.Identification != null && c.Identification.ToLower().Contains(term)));
+                || (c.Identification != null && c.Identification.ToLower().Contains(term))
+                || (c.Email != null && c.Email.ToLower().Contains(term)));
         }
 
         var customers = await query
@@ -55,6 +59,7 @@ public class CustomersController : ControllerBase
                 Name = c.Name,
                 Identification = c.Identification,
                 Phone = c.Phone,
+                Email = c.Email,
                 IsActive = c.IsActive
             })
             .ToListAsync();
@@ -74,6 +79,12 @@ public class CustomersController : ControllerBase
         }
 
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var email = NormalizeOptionalText(dto.Email);
+
+        if (email is not null && !IsValidEmail(email))
+        {
+            return BadRequest(new ApiErrorResponse { Error = "CUSTOMER_EMAIL_INVALID" });
+        }
 
         var customer = new Customer
         {
@@ -81,6 +92,7 @@ public class CustomersController : ControllerBase
             Name = dto.Name.Trim(),
             Identification = NormalizeOptionalText(dto.Identification),
             Phone = NormalizeOptionalText(dto.Phone),
+            Email = email,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -94,6 +106,7 @@ public class CustomersController : ControllerBase
             Name = customer.Name,
             Identification = customer.Identification,
             Phone = customer.Phone,
+            Email = customer.Email,
             IsActive = customer.IsActive
         };
 
@@ -102,4 +115,7 @@ public class CustomersController : ControllerBase
 
     private static string? NormalizeOptionalText(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static bool IsValidEmail(string value)
+        => EmailRegex.IsMatch(value);
 }

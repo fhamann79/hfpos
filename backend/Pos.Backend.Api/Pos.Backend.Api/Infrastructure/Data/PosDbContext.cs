@@ -253,6 +253,9 @@ public class PosDbContext : DbContext
             entity.Property(c => c.Phone)
                 .HasMaxLength(30);
 
+            entity.Property(c => c.Email)
+                .HasMaxLength(320);
+
             entity.HasOne(c => c.Company)
                 .WithMany()
                 .HasForeignKey(c => c.CompanyId);
