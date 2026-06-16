@@ -18,6 +18,8 @@ namespace Pos.Backend.Api.WebApi.Controllers;
 [RequireOperationalContext]
 public class CustomersController : ControllerBase
 {
+    private const int MaxEmailLength = 320;
+
     private static readonly Regex EmailRegex = new(@"^[^\s@]+@[^\s@]+\.[^\s@]+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly PosDbContext _context;
@@ -81,7 +83,7 @@ public class CustomersController : ControllerBase
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
         var email = NormalizeOptionalText(dto.Email);
 
-        if (email is not null && !IsValidEmail(email))
+        if (email is not null && (email.Length > MaxEmailLength || !IsValidEmail(email)))
         {
             return BadRequest(new ApiErrorResponse { Error = "CUSTOMER_EMAIL_INVALID" });
         }

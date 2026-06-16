@@ -18,6 +18,8 @@ import { PosCustomerService } from '../../services/pos-customer.service';
   styleUrl: './customer-selector-dialog.scss',
 })
 export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
+  readonly maxEmailLength = 320;
+
   private readonly customerService = inject(PosCustomerService);
 
   @Input({ required: true }) visible = false;
@@ -137,7 +139,7 @@ export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
       return;
     }
 
-    if (payload.email && !this.isValidEmail(payload.email)) {
+    if (payload.email && (payload.email.length > this.maxEmailLength || !this.isValidEmail(payload.email))) {
       this.createErrorMessage.set('Ingresa un email de cliente válido.');
       return;
     }
