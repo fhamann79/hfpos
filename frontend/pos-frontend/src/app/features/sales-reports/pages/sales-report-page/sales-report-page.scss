@@ -183,9 +183,37 @@
   vertical-align:middle;
 }
 
+:host ::ng-deep .sales-table .p-datatable-thead>tr>th,
+:host ::ng-deep .sales-table .p-datatable-tbody>tr>td {
+  padding:.72rem .85rem;
+}
+
 .numeric-column {
   text-align:right;
   font-variant-numeric:tabular-nums;
+}
+
+.total-column {
+  width:9rem;
+  min-width:9rem;
+  padding-left:1.2rem;
+  padding-right:1.2rem;
+  white-space:nowrap;
+}
+
+.user-column {
+  width:10rem;
+  min-width:9rem;
+  padding-left:1.2rem;
+  overflow-wrap:anywhere;
+}
+
+.action-column {
+  width:8.25rem;
+  min-width:8.25rem;
+  padding-left:1.1rem;
+  text-align:right;
+  white-space:nowrap;
 }
 
 .date-stack,

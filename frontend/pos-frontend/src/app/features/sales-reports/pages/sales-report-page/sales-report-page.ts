@@ -204,8 +204,9 @@ export class SalesReportPage implements OnInit {
       sale.notes ?? '',
     ]);
 
+    const csvSeparator = ';';
     const csv = [headers, ...csvRows]
-      .map((row) => row.map((value) => this.csvValue(value)).join(','))
+      .map((row) => row.map((value) => this.csvValue(value)).join(csvSeparator))
       .join('\r\n');
 
     this.downloadCsv(csv);
@@ -291,11 +292,12 @@ export class SalesReportPage implements OnInit {
     const text = String(value);
     const escaped = text.replace(/"/g, '""');
 
-    return /[",\r\n]/.test(escaped) ? `"${escaped}"` : escaped;
+    return /[";\r\n]/.test(escaped) ? `"${escaped}"` : escaped;
   }
 
   private downloadCsv(csv: string): void {
-    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const utf8Bom = '\uFEFF';
+    const blob = new Blob([`${utf8Bom}${csv}`], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     const today = new Date().toISOString().slice(0, 10);

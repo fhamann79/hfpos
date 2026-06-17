@@ -156,7 +156,7 @@
       [showCurrentPageReport]="true"
       currentPageReportTemplate="{first} - {last} de {totalRecords}"
       responsiveLayout="scroll"
-      [tableStyle]="{ 'min-width': '86rem' }"
+      [tableStyle]="{ 'min-width': '78rem' }"
     >
       <ng-template pTemplate="header">
         <tr>
@@ -166,9 +166,9 @@
           <th pSortableColumn="documentType">Tipo <p-sortIcon field="documentType"></p-sortIcon></th>
           <th pSortableColumn="status">Estado venta <p-sortIcon field="status"></p-sortIcon></th>
           <th pSortableColumn="documentStatus">Estado SRI <p-sortIcon field="documentStatus"></p-sortIcon></th>
-          <th pSortableColumn="total" class="numeric-column">Total <p-sortIcon field="total"></p-sortIcon></th>
-          <th pSortableColumn="username">Usuario <p-sortIcon field="username"></p-sortIcon></th>
-          <th>Accion</th>
+          <th pSortableColumn="total" class="numeric-column total-column">Total <p-sortIcon field="total"></p-sortIcon></th>
+          <th pSortableColumn="username" class="user-column">Usuario <p-sortIcon field="username"></p-sortIcon></th>
+          <th class="action-column">Accion</th>
         </tr>
       </ng-template>
 
@@ -199,11 +199,11 @@
           <td>
             <p-tag [value]="fiscalStatusLabel(sale)" [severity]="fiscalStatusSeverity(sale)"></p-tag>
           </td>
-          <td class="numeric-column">
+          <td class="numeric-column total-column">
             <strong [class.voided-total]="sale.status === 2">{{ sale.total | currency: 'USD' }}</strong>
           </td>
-          <td>{{ sale.username || ('userId ' + sale.userId) }}</td>
-          <td>
+          <td class="user-column">{{ sale.username || ('userId ' + sale.userId) }}</td>
+          <td class="action-column">
             <p-button
               label="Detalle"
               icon="pi pi-search"
