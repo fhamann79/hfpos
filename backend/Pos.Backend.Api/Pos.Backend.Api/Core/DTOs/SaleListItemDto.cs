@@ -10,6 +10,10 @@ public class SaleListItemDto
 
     public string? Number { get; set; }
 
+    public string? CustomerName { get; set; }
+
+    public string? CustomerIdentification { get; set; }
+
     public SaleDocumentType DocumentType { get; set; }
 
     public SaleDocumentStatus DocumentStatus { get; set; }

@@ -39,9 +39,23 @@ public class SalesController : ControllerBase
     [Authorize(Policy = AppPermissions.ReportsSalesRead)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<IEnumerable<SaleListItemDto>>> Get([FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] SaleStatus? status, [FromQuery] string? search, [FromQuery] int? userId)
+    public async Task<ActionResult<IEnumerable<SaleListItemDto>>> Get(
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] SaleStatus? status,
+        [FromQuery] string? search,
+        [FromQuery] int? userId,
+        [FromQuery] SaleDocumentType? documentType,
+        [FromQuery] SaleDocumentStatus? documentStatus)
     {
-        var sales = await _salesService.GetSalesAsync(from, to, status, search, userId);
+        var sales = await _salesService.GetSalesAsync(
+            from,
+            to,
+            status,
+            search,
+            userId,
+            documentType,
+            documentStatus);
         return Ok(sales);
     }
 

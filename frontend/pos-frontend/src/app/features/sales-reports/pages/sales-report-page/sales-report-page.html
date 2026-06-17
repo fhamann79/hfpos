@@ -1,0 +1,330 @@
+<div class="sales-report-page">
+  <header class="report-header">
+    <div>
+      <span class="eyebrow">Reportes</span>
+      <h2>Reporte de ventas</h2>
+    </div>
+
+    <div class="header-actions">
+      <p-button
+        label="Refrescar"
+        icon="pi pi-refresh"
+        severity="secondary"
+        [outlined]="true"
+        [loading]="loading()"
+        (onClick)="loadSales()"
+      ></p-button>
+      <p-button
+        label="Exportar CSV"
+        icon="pi pi-download"
+        [disabled]="sales().length === 0"
+        (onClick)="exportCsv()"
+      ></p-button>
+    </div>
+  </header>
+
+  <section class="summary-grid" aria-label="Resumen de ventas">
+    <article class="metric-card metric-card--count">
+      <span><i class="pi pi-list"></i></span>
+      <div>
+        <small>Ventas</small>
+        <strong>{{ salesCount() }}</strong>
+      </div>
+    </article>
+
+    <article class="metric-card metric-card--money">
+      <span><i class="pi pi-dollar"></i></span>
+      <div>
+        <small>Total vendido</small>
+        <strong>{{ totalSold() | currency: 'USD' }}</strong>
+      </div>
+    </article>
+
+    <article class="metric-card">
+      <span><i class="pi pi-file"></i></span>
+      <div>
+        <small>Facturas</small>
+        <strong>{{ invoiceCount() }}</strong>
+      </div>
+    </article>
+
+    <article class="metric-card">
+      <span><i class="pi pi-ticket"></i></span>
+      <div>
+        <small>Tickets</small>
+        <strong>{{ ticketCount() }}</strong>
+      </div>
+    </article>
+
+    <article class="metric-card metric-card--voided">
+      <span><i class="pi pi-ban"></i></span>
+      <div>
+        <small>Anuladas</small>
+        <strong>{{ voidedCount() }}</strong>
+      </div>
+    </article>
+
+    <article class="metric-card metric-card--authorized">
+      <span><i class="pi pi-verified"></i></span>
+      <div>
+        <small>Autorizadas SRI</small>
+        <strong>{{ authorizedCount() }}</strong>
+      </div>
+    </article>
+  </section>
+
+  <section class="report-section">
+    <div class="filter-panel">
+      <label class="filter-field">
+        <span>Desde</span>
+        <input pInputText type="date" [(ngModel)]="from" />
+      </label>
+
+      <label class="filter-field">
+        <span>Hasta</span>
+        <input pInputText type="date" [(ngModel)]="to" />
+      </label>
+
+      <label class="filter-field filter-field--search">
+        <span>Busqueda</span>
+        <span class="input-shell">
+          <i class="pi pi-search"></i>
+          <input pInputText type="text" [(ngModel)]="search" placeholder="Documento, cliente, ID o notas" />
+        </span>
+      </label>
+
+      <label class="filter-field">
+        <span>Estado venta</span>
+        <p-select
+          [options]="statusOptions"
+          [(ngModel)]="status"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Todos"
+          [showClear]="true"
+        ></p-select>
+      </label>
+
+      <label class="filter-field">
+        <span>Documento</span>
+        <p-select
+          [options]="documentTypeOptions"
+          [(ngModel)]="documentType"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Todos"
+          [showClear]="true"
+        ></p-select>
+      </label>
+
+      <label class="filter-field">
+        <span>Estado fiscal</span>
+        <p-select
+          [options]="documentStatusOptions"
+          [(ngModel)]="documentStatus"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Todos"
+          [showClear]="true"
+        ></p-select>
+      </label>
+
+      <div class="filter-actions">
+        <p-button label="Buscar" icon="pi pi-search" [loading]="loading()" (onClick)="loadSales()"></p-button>
+        <p-button
+          label="Limpiar"
+          icon="pi pi-filter-slash"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="clearFilters()"
+        ></p-button>
+      </div>
+    </div>
+
+    @if (errorMessage()) {
+      <p-message severity="error" [text]="errorMessage()"></p-message>
+    }
+
+    <p-table
+      styleClass="professional-table sales-table"
+      [value]="sales()"
+      [loading]="loading()"
+      [paginator]="true"
+      [rows]="15"
+      [rowsPerPageOptions]="[15, 30, 50, 100]"
+      [sortMode]="'multiple'"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="{first} - {last} de {totalRecords}"
+      responsiveLayout="scroll"
+      [tableStyle]="{ 'min-width': '86rem' }"
+    >
+      <ng-template pTemplate="header">
+        <tr>
+          <th pSortableColumn="createdAt">Fecha <p-sortIcon field="createdAt"></p-sortIcon></th>
+          <th pSortableColumn="number">Documento <p-sortIcon field="number"></p-sortIcon></th>
+          <th pSortableColumn="customerName">Cliente <p-sortIcon field="customerName"></p-sortIcon></th>
+          <th pSortableColumn="documentType">Tipo <p-sortIcon field="documentType"></p-sortIcon></th>
+          <th pSortableColumn="status">Estado venta <p-sortIcon field="status"></p-sortIcon></th>
+          <th pSortableColumn="documentStatus">Estado SRI <p-sortIcon field="documentStatus"></p-sortIcon></th>
+          <th pSortableColumn="total" class="numeric-column">Total <p-sortIcon field="total"></p-sortIcon></th>
+          <th pSortableColumn="username">Usuario <p-sortIcon field="username"></p-sortIcon></th>
+          <th>Accion</th>
+        </tr>
+      </ng-template>
+
+      <ng-template pTemplate="body" let-sale>
+        <tr>
+          <td>
+            <span class="date-stack">
+              <strong>{{ sale.createdAt | date: 'dd/MM/yyyy' }}</strong>
+              <small>{{ sale.createdAt | date: 'HH:mm' }}</small>
+            </span>
+          </td>
+          <td>
+            <span class="document-stack">
+              <strong>{{ sale.number || ('#' + sale.id) }}</strong>
+              <small>ID {{ sale.id }}</small>
+            </span>
+          </td>
+          <td>
+            <span class="customer-stack">
+              <strong>{{ customerLabel(sale) }}</strong>
+              <small>{{ sale.customerIdentification || 'Sin identificacion' }}</small>
+            </span>
+          </td>
+          <td>{{ documentTypeLabel(sale) }}</td>
+          <td>
+            <p-tag [value]="saleStatusLabel(sale)" [severity]="saleStatusSeverity(sale)"></p-tag>
+          </td>
+          <td>
+            <p-tag [value]="fiscalStatusLabel(sale)" [severity]="fiscalStatusSeverity(sale)"></p-tag>
+          </td>
+          <td class="numeric-column">
+            <strong [class.voided-total]="sale.status === 2">{{ sale.total | currency: 'USD' }}</strong>
+          </td>
+          <td>{{ sale.username || ('userId ' + sale.userId) }}</td>
+          <td>
+            <p-button
+              label="Detalle"
+              icon="pi pi-search"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="openDetail(sale)"
+            ></p-button>
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template pTemplate="emptymessage">
+        <tr>
+          <td colspan="9">
+            <div class="empty-state">
+              <i class="pi pi-inbox"></i>
+              <strong>No hay ventas para los filtros aplicados.</strong>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </section>
+</div>
+
+<p-dialog
+  header="Detalle de venta"
+  [visible]="detailVisible()"
+  [modal]="true"
+  [draggable]="false"
+  [style]="{ width: '58rem', maxWidth: '96vw' }"
+  (visibleChange)="onDetailVisibleChange($event)"
+>
+  @if (detailLoading()) {
+    <div class="empty-state">Cargando detalle...</div>
+  } @else if (detailErrorMessage()) {
+    <p-message severity="error" [text]="detailErrorMessage()"></p-message>
+  } @else if (selectedSale(); as sale) {
+    <section class="detail-summary">
+      <div>
+        <span>Documento</span>
+        <strong>{{ sale.number || ('#' + sale.id) }}</strong>
+      </div>
+      <div>
+        <span>Fecha</span>
+        <strong>{{ sale.createdAt | date: 'medium' }}</strong>
+      </div>
+      <div>
+        <span>Cliente</span>
+        <strong>{{ customerLabel(sale) }}</strong>
+        <small>{{ sale.customerIdentification || sale.customerEmail || 'Sin identificacion' }}</small>
+      </div>
+      <div>
+        <span>Usuario</span>
+        <strong>{{ sale.username || ('userId ' + sale.userId) }}</strong>
+      </div>
+      <div>
+        <span>Tipo</span>
+        <p-tag [value]="documentTypeLabel(sale)" severity="info"></p-tag>
+      </div>
+      <div>
+        <span>Estado venta</span>
+        <p-tag [value]="saleStatusLabel(sale)" [severity]="saleStatusSeverity(sale)"></p-tag>
+      </div>
+      <div>
+        <span>Estado fiscal</span>
+        <p-tag [value]="fiscalStatusLabel(sale)" [severity]="fiscalStatusSeverity(sale)"></p-tag>
+      </div>
+      <div>
+        <span>Autorizacion</span>
+        <code>{{ sale.authorizationNumber || '-' }}</code>
+      </div>
+    </section>
+
+    <p-table
+      styleClass="professional-table detail-items-table"
+      [value]="sale.items"
+      responsiveLayout="scroll"
+      [tableStyle]="{ 'min-width': '46rem' }"
+    >
+      <ng-template pTemplate="header">
+        <tr>
+          <th>Producto</th>
+          <th class="numeric-column">Cantidad</th>
+          <th class="numeric-column">P. unitario</th>
+          <th>IVA</th>
+          <th class="numeric-column">Total</th>
+        </tr>
+      </ng-template>
+
+      <ng-template pTemplate="body" let-item>
+        <tr>
+          <td>
+            <strong>{{ item.productName }}</strong>
+            @if (item.discountAmount > 0) {
+              <small class="row-hint">Descuento {{ item.discountAmount | currency: 'USD' }}</small>
+            }
+          </td>
+          <td class="numeric-column">{{ item.quantity }}</td>
+          <td class="numeric-column">{{ item.unitPrice | currency: 'USD' }}</td>
+          <td>{{ getVatLabel(item) }}</td>
+          <td class="numeric-column">
+            <strong>{{ item.lineTotal | currency: 'USD' }}</strong>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+
+    <section class="totals-grid">
+      <div><span>Subtotal bruto</span><strong>{{ sale.grossSubtotal | currency: 'USD' }}</strong></div>
+      <div><span>Descuentos</span><strong>-{{ sale.discountAmount | currency: 'USD' }}</strong></div>
+      <div><span>Subtotal neto</span><strong>{{ sale.subtotal | currency: 'USD' }}</strong></div>
+      <div><span>IVA</span><strong>{{ sale.taxAmount | currency: 'USD' }}</strong></div>
+      <div class="totals-grid__total"><span>Total</span><strong>{{ sale.total | currency: 'USD' }}</strong></div>
+    </section>
+
+    @if (sale.notes) {
+      <section class="notes-box">
+        <span>Notas</span>
+        <p>{{ sale.notes }}</p>
+      </section>
+    }
+  }
+</p-dialog>

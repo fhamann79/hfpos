@@ -34,6 +34,11 @@ export const POS_ACCESS_REQUIREMENT: PermissionRequirement = {
   matchMode: 'any',
 };
 
+export const SALES_REPORTS_ACCESS_REQUIREMENT: PermissionRequirement = {
+  requiredPermissions: [PERMISSIONS.reportsSalesRead],
+  matchMode: 'all',
+};
+
 export const INVENTORY_ACCESS_REQUIREMENT: PermissionRequirement = {
   requiredPermissions: [PERMISSIONS.inventoryRead],
   matchMode: 'all',
@@ -79,6 +84,12 @@ export const NAVIGATION_ITEMS: NavigationItemConfig[] = [
     icon: 'pi pi-shopping-cart',
     route: '/pos',
     ...POS_ACCESS_REQUIREMENT,
+  },
+  {
+    label: 'Reporte de ventas',
+    icon: 'pi pi-chart-bar',
+    route: '/sales-reports',
+    ...SALES_REPORTS_ACCESS_REQUIREMENT,
   },
   {
     label: 'Inventario',

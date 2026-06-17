@@ -45,7 +45,14 @@ public class SalesService : ISalesService
         _sriOptions = sriOptions.Value;
     }
 
-    public async Task<IReadOnlyList<SaleListItemDto>> GetSalesAsync(DateTime? from, DateTime? to, SaleStatus? status, string? search, int? userId)
+    public async Task<IReadOnlyList<SaleListItemDto>> GetSalesAsync(
+        DateTime? from,
+        DateTime? to,
+        SaleStatus? status,
+        string? search,
+        int? userId,
+        SaleDocumentType? documentType,
+        SaleDocumentStatus? documentStatus)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
@@ -72,6 +79,16 @@ public class SalesService : ISalesService
             query = query.Where(s => s.Status == status.Value);
         }
 
+        if (documentType.HasValue)
+        {
+            query = query.Where(s => s.DocumentType == documentType.Value);
+        }
+
+        if (documentStatus.HasValue)
+        {
+            query = query.Where(s => s.DocumentStatus == documentStatus.Value);
+        }
+
         if (userId.HasValue)
         {
             query = query.Where(s => s.UserId == userId.Value);
@@ -85,6 +102,9 @@ public class SalesService : ISalesService
                 || (s.Number != null && s.Number.ToLower().Contains(term))
                 || (s.EstablishmentCodeSnapshot != null && s.EstablishmentCodeSnapshot.Contains(term))
                 || (s.EmissionPointCodeSnapshot != null && s.EmissionPointCodeSnapshot.Contains(term))
+                || (s.Customer != null && s.Customer.Name.ToLower().Contains(term))
+                || (s.Customer != null && s.Customer.Identification != null && s.Customer.Identification.ToLower().Contains(term))
+                || (s.Customer != null && s.Customer.Email != null && s.Customer.Email.ToLower().Contains(term))
                 || s.Id.ToString().Contains(term));
         }
 
@@ -96,6 +116,8 @@ public class SalesService : ISalesService
                 Id = s.Id,
                 Status = s.Status,
                 Number = s.Number,
+                CustomerName = s.Customer != null ? s.Customer.Name : null,
+                CustomerIdentification = s.Customer != null ? s.Customer.Identification : null,
                 DocumentType = s.DocumentType,
                 DocumentStatus = s.DocumentStatus,
                 AccessKey = s.AccessKey,
