@@ -55,27 +55,27 @@ code.long-code {
 
 .date-column,
 .date-cell {
-  width:11rem;
+  width:15%;
 }
 
 .email-column,
 .email-cell {
-  width:16rem;
+  width:18%;
 }
 
 .subject-column,
 .subject-cell {
-  width:18rem;
+  width:24%;
 }
 
 .status-column,
 .status-cell {
-  width:8.5rem;
+  width:11%;
 }
 
 .error-column,
 .error-cell {
-  width:18rem;
+  width:14%;
 }
 
 .date-cell,
@@ -89,10 +89,20 @@ code.long-code {
 .date-cell,
 .email-cell,
 .subject-cell,
+.status-cell,
 .error-cell {
   overflow-wrap:anywhere;
   white-space:normal;
   word-break:break-word;
+}
+
+.status-cell {
+  min-width:6.5rem;
+}
+
+:host ::ng-deep .status-cell .p-tag {
+  max-width:100%;
+  white-space:nowrap;
 }
 
 .date-cell strong,
