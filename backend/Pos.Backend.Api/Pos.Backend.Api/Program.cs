@@ -83,6 +83,7 @@ builder.Services.AddDbContext<PosDbContext>(options =>
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<IOperationalContextAccessor, OperationalContextAccessor>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddSingleton<ISriFiscalClock, SriFiscalClock>();
 builder.Services.AddScoped<ISriAccessKeyService, SriAccessKeyService>();
@@ -108,6 +109,14 @@ builder.Services.AddHttpClient<ISriWebServiceClient, SriWebServiceClient>((servi
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
 });
 
+var operationalDashboardReadPermissions = new[]
+{
+    AppPermissions.ReportsSalesRead,
+    AppPermissions.InventoryRead,
+    AppPermissions.CatalogProductsRead,
+    AppPermissions.FiscalSettingsRead
+};
+
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(AppPolicies.AdminOnly, policy =>
@@ -118,6 +127,11 @@ builder.Services.AddAuthorization(options =>
 
     options.AddPolicy(AppPolicies.CashierOrAbove, policy =>
         policy.RequireRole(AppRoles.Cashier, AppRoles.Supervisor, AppRoles.Admin));
+
+    options.AddPolicy(AppPolicies.OperationalDashboardRead, policy =>
+        policy.RequireAssertion(context =>
+            operationalDashboardReadPermissions.Any(permission =>
+                context.User.HasClaim(AppClaims.Permission, permission))));
 
     options.AddPermissionPolicies(new[]
     {
