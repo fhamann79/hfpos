@@ -1,45 +1,226 @@
 <section class="dashboard-page">
   <header class="dashboard-header">
     <div>
+      <span class="eyebrow">Operacion</span>
       <h1>Dashboard</h1>
-      <p class="text-muted">Estado inicial del tenant para validación.</p>
+      <p>Resumen comercial del punto de venta, inventario y estado fiscal.</p>
     </div>
-    <p-tag value="Foundation FE-400" severity="info"></p-tag>
-  </header>
 
+    <p-button
+      label="Refrescar"
+      icon="pi pi-refresh"
+      severity="secondary"
+      [outlined]="true"
+      [loading]="loading()"
+      (onClick)="loadSummary()"
+    ></p-button>
+  </header>
 
   @if (accessWarning()) {
     <p-message severity="warn" [text]="accessWarning()"></p-message>
   }
 
-  @if (!loaded()) {
-    <p-card>
-      <p>Cargando contexto del usuario...</p>
-    </p-card>
+  @if (loading()) {
+    <section class="loading-panel">
+      <i class="pi pi-spin pi-spinner"></i>
+      <strong>Cargando dashboard operativo...</strong>
+    </section>
   }
 
-  @if (loaded() && me()) {
-    <p-card>
-      <ng-template #title>Contexto autenticado</ng-template>
-      <ul>
-        <li><strong>Usuario:</strong> {{ me()!.username }}</li>
-        <li><strong>CompanyId:</strong> {{ me()!.companyId }}</li>
-        <li><strong>EstablishmentId:</strong> {{ me()!.establishmentId }}</li>
-        <li><strong>EmissionPointId:</strong> {{ me()!.emissionPointId }}</li>
-      </ul>
-      <p-button
-        label="Cerrar sesión"
-        icon="pi pi-sign-out"
-        severity="danger"
-        [outlined]="true"
-        (onClick)="logout()"
-      ></p-button>
-    </p-card>
+  @if (errorMessage()) {
+    <section class="empty-panel">
+      <i class="pi pi-exclamation-circle"></i>
+      <strong>{{ errorMessage() }}</strong>
+      <p-button label="Reintentar" icon="pi pi-refresh" (onClick)="loadSummary()"></p-button>
+    </section>
   }
 
-  @if (loaded() && !me()) {
-    <p-card>
-      <p>No autenticado (sin contexto).</p>
-    </p-card>
+  @if (!loading() && !errorMessage() && summary(); as data) {
+    <section class="summary-grid" aria-label="Resumen operativo">
+      <article class="metric-card metric-card--sales">
+        <span><i class="pi pi-shopping-bag"></i></span>
+        <div>
+          <small>Ventas hoy</small>
+          <strong>{{ data.salesToday.count }}</strong>
+          <em>{{ data.salesToday.invoiceCount }} facturas / {{ data.salesToday.ticketCount }} tickets</em>
+        </div>
+      </article>
+
+      <article class="metric-card metric-card--money">
+        <span><i class="pi pi-dollar"></i></span>
+        <div>
+          <small>Total vendido hoy</small>
+          <strong>{{ data.salesToday.totalSold | currency: 'USD' }}</strong>
+          <em>{{ data.salesToday.voidedCount }} anuladas</em>
+        </div>
+      </article>
+
+      <article class="metric-card metric-card--sri">
+        <span><i class="pi pi-verified"></i></span>
+        <div>
+          <small>Facturas autorizadas SRI</small>
+          <strong>{{ data.salesToday.authorizedSriInvoiceCount }}</strong>
+          <em>{{ fiscalStatusLabel(data) }}</em>
+        </div>
+      </article>
+
+      <article class="metric-card metric-card--stock">
+        <span><i class="pi pi-box"></i></span>
+        <div>
+          <small>Productos sin stock</small>
+          <strong>{{ data.inventory.zeroStockProducts }}</strong>
+          <em>{{ data.inventory.lowStockProducts }} con stock bajo</em>
+        </div>
+      </article>
+
+      <article class="metric-card metric-card--alerts">
+        <span><i class="pi pi-bell"></i></span>
+        <div>
+          <small>Alertas fiscales</small>
+          <strong>{{ fiscalAlertCount() }}</strong>
+          <em>{{ inventoryAlertCount() }} alertas de inventario</em>
+        </div>
+      </article>
+    </section>
+
+    <section class="dashboard-grid">
+      <article class="panel panel--wide">
+        <div class="panel-header">
+          <div>
+            <h2>Ultimos 7 dias</h2>
+            <p>{{ data.salesLastSevenDays.count }} ventas por {{ data.salesLastSevenDays.totalSold | currency: 'USD' }}</p>
+          </div>
+          <p-tag value="Ventas" severity="info"></p-tag>
+        </div>
+
+        <div class="sales-trend">
+          @for (day of data.salesLastSevenDays.days; track day.date) {
+            <div class="trend-row">
+              <time>{{ day.date | date: 'dd/MM' }}</time>
+              <div class="trend-bar">
+                <span [style.width]="dayBarWidth(day.totalSold)"></span>
+              </div>
+              <strong>{{ day.totalSold | currency: 'USD' }}</strong>
+              <small>{{ day.count }} ventas</small>
+            </div>
+          }
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Alertas</h2>
+            <p>Riesgos operativos que conviene revisar.</p>
+          </div>
+          <p-tag [value]="data.alerts.length.toString()" [severity]="data.alerts.length > 0 ? 'warn' : 'success'"></p-tag>
+        </div>
+
+        @if (data.alerts.length > 0) {
+          <div class="alert-list">
+            @for (alert of data.alerts; track alert.title) {
+              <article class="alert-item" [ngClass]="'alert-item--' + alert.severity">
+                <i [class]="alertIcon(alert)"></i>
+                <div>
+                  <strong>{{ alert.title }}</strong>
+                  <span>{{ alert.message }}</span>
+                </div>
+                @if (alert.count !== null) {
+                  <b>{{ alert.count }}</b>
+                }
+              </article>
+            }
+          </div>
+        } @else {
+          <div class="clear-state">
+            <i class="pi pi-check-circle"></i>
+            <strong>Sin alertas criticas</strong>
+            <span>Ventas, inventario y configuracion fiscal no reportan bloqueos.</span>
+          </div>
+        }
+      </article>
+    </section>
+
+    <section class="dashboard-grid dashboard-grid--bottom">
+      <article class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Inventario sensible</h2>
+            <p>{{ data.inventory.activeProducts }} productos activos.</p>
+          </div>
+          <p-tag value="Stock" severity="secondary"></p-tag>
+        </div>
+
+        @if (data.inventory.lowestStockProducts.length > 0) {
+          <div class="stock-list">
+            @for (product of data.inventory.lowestStockProducts; track product.productId) {
+              <div class="stock-row">
+                <div>
+                  <strong>{{ product.productName }}</strong>
+                  <small>{{ product.categoryName }}</small>
+                </div>
+                <p-tag [value]="product.quantity.toString()" [severity]="stockSeverity(product)"></p-tag>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="clear-state clear-state--compact">
+            <i class="pi pi-box"></i>
+            <strong>No hay productos activos.</strong>
+          </div>
+        }
+      </article>
+
+      <article class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Fiscal y email</h2>
+            <p>Estado de emision y comunicacion empresarial.</p>
+          </div>
+          <p-tag [value]="fiscalStatusLabel(data)" [severity]="fiscalStatusSeverity(data)"></p-tag>
+        </div>
+
+        <div class="status-list">
+          <div>
+            <span>SRI</span>
+            <strong>{{ data.fiscal.sriEnabled ? 'Habilitado' : 'No habilitado' }}</strong>
+          </div>
+          <div>
+            <span>Certificado</span>
+            <strong>{{ data.fiscal.certificateConfigured ? 'Configurado' : 'Pendiente' }}</strong>
+            @if (data.fiscal.certificateExpiresAt) {
+              <small>Vence {{ data.fiscal.certificateExpiresAt | date: 'dd/MM/yyyy' }}</small>
+            }
+          </div>
+          <div>
+            <span>Email</span>
+            <strong>{{ data.fiscal.emailEnabled ? 'Habilitado' : 'No habilitado' }}</strong>
+            <small>{{ data.fiscal.emailLastTestSucceeded ? 'Prueba exitosa' : 'Sin prueba exitosa' }}</small>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Accesos rapidos</h2>
+            <p>Atajos segun tus permisos.</p>
+          </div>
+        </div>
+
+        <div class="quick-actions">
+          @for (action of quickActions(); track action.route) {
+            <button type="button" class="quick-action" (click)="goTo(action.route)">
+              <i [class]="action.icon"></i>
+              <span>
+                <strong>{{ action.label }}</strong>
+                <small>{{ action.description }}</small>
+              </span>
+              <i class="pi pi-arrow-right"></i>
+            </button>
+          }
+        </div>
+      </article>
+    </section>
   }
 </section>
