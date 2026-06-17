@@ -7,6 +7,7 @@ import { normalizeVatCategory } from '../../../core/utils/vat-category';
 import { CheckoutRequest } from '../models/checkout-request.model';
 import { normalizeSaleDocumentStatus, normalizeSaleDocumentType } from '../models/sale-document.model';
 import {
+  SaleInvoiceEmailDelivery,
   SendSaleInvoiceEmailRequest,
   SendSaleInvoiceEmailResult,
 } from '../models/sale-invoice-email.model';
@@ -70,6 +71,12 @@ export class PosWorkstationService {
 
   sendSaleInvoiceEmail(id: number, payload: SendSaleInvoiceEmailRequest): Observable<SendSaleInvoiceEmailResult> {
     return this.http.post<SendSaleInvoiceEmailResult>(`${this.salesUrl}/${id}/sri/email`, payload);
+  }
+
+  getSaleInvoiceEmailDeliveries(id: number): Observable<SaleInvoiceEmailDelivery[]> {
+    return this.http.get<unknown>(`${this.salesUrl}/${id}/sri/email-deliveries`).pipe(
+      map((rows) => Array.isArray(rows) ? rows.map((row) => this.toSaleInvoiceEmailDelivery(row)) : [])
+    );
   }
 
   submitSriInvoice(id: number): Observable<Sale> {
@@ -215,6 +222,26 @@ export class PosWorkstationService {
       sriAdditionalInfo: this.readString(row, ['sriAdditionalInfo'], null),
       createdAt: this.readString(row, ['createdAt'], ''),
       createdByUserId: this.readNumber(row, ['createdByUserId'], 0),
+    };
+  }
+
+  private toSaleInvoiceEmailDelivery(source: unknown): SaleInvoiceEmailDelivery {
+    const row = this.asRecord(source);
+
+    return {
+      id: this.readNumber(row, ['id'], 0),
+      saleId: this.readNumber(row, ['saleId'], 0),
+      toEmail: this.readString(row, ['toEmail'], ''),
+      ccEmail: this.readString(row, ['ccEmail'], null),
+      subject: this.readString(row, ['subject'], ''),
+      status: this.readString(row, ['status'], ''),
+      sentAt: this.readString(row, ['sentAt'], null),
+      createdAt: this.readString(row, ['createdAt'], ''),
+      createdByUserId: this.readNumber(row, ['createdByUserId'], 0),
+      documentNumberSnapshot: this.readString(row, ['documentNumberSnapshot'], null),
+      authorizationNumberSnapshot: this.readString(row, ['authorizationNumberSnapshot'], null),
+      errorCode: this.readString(row, ['errorCode'], null),
+      errorMessage: this.readString(row, ['errorMessage'], null),
     };
   }
 

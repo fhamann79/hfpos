@@ -32,6 +32,7 @@ public class PosDbContext : DbContext
     public DbSet<Sale> Sales { get; set; }
     public DbSet<SaleItem> SaleItems { get; set; }
     public DbSet<SriSubmissionAttempt> SriSubmissionAttempts { get; set; }
+    public DbSet<SaleInvoiceEmailDelivery> SaleInvoiceEmailDeliveries { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -618,6 +619,64 @@ public class PosDbContext : DbContext
             entity.HasOne(a => a.CreatedByUser)
                 .WithMany()
                 .HasForeignKey(a => a.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<SaleInvoiceEmailDelivery>(entity =>
+        {
+            entity.Property(d => d.ToEmail)
+                .IsRequired()
+                .HasMaxLength(320);
+
+            entity.Property(d => d.CcEmail)
+                .HasMaxLength(320);
+
+            entity.Property(d => d.Subject)
+                .IsRequired()
+                .HasMaxLength(180);
+
+            entity.Property(d => d.Status)
+                .IsRequired()
+                .HasMaxLength(30);
+
+            entity.Property(d => d.DocumentNumberSnapshot)
+                .HasMaxLength(50);
+
+            entity.Property(d => d.AuthorizationNumberSnapshot)
+                .HasMaxLength(50);
+
+            entity.Property(d => d.ErrorCode)
+                .HasMaxLength(100);
+
+            entity.Property(d => d.ErrorMessage)
+                .HasMaxLength(500);
+
+            entity.HasIndex(d => new { d.SaleId, d.CreatedAt });
+            entity.HasIndex(d => new { d.CompanyId, d.CreatedAt });
+
+            entity.HasOne(d => d.Sale)
+                .WithMany(s => s.InvoiceEmailDeliveries)
+                .HasForeignKey(d => d.SaleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(d => d.Company)
+                .WithMany()
+                .HasForeignKey(d => d.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(d => d.Establishment)
+                .WithMany()
+                .HasForeignKey(d => d.EstablishmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(d => d.EmissionPoint)
+                .WithMany()
+                .HasForeignKey(d => d.EmissionPointId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(d => d.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(d => d.CreatedByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

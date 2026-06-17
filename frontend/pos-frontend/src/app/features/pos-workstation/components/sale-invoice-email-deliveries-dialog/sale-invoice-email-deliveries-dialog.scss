@@ -1,0 +1,120 @@
+.delivery-context {
+  display:grid;
+  grid-template-columns:180px 1fr auto;
+  align-items:end;
+  gap:.75rem;
+  margin-bottom:1rem;
+  padding:.85rem;
+  border-radius:.9rem;
+  border:1px solid #bbf7d0;
+  background:linear-gradient(135deg,#f0fdf4 0%,#ecfdf5 100%);
+}
+
+.delivery-context div {
+  min-width:0;
+  display:grid;
+  gap:.15rem;
+}
+
+.delivery-context span,
+.delivery-context small {
+  color:#166534;
+  font-size:.72rem;
+  font-weight:900;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+
+.delivery-context strong {
+  color:#0f172a;
+}
+
+code {
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#0f172a;
+  font-family:"Courier New", monospace;
+  font-size:.78rem;
+}
+
+code.long-code {
+  display:block;
+  max-width:100%;
+  overflow:visible;
+  overflow-wrap:anywhere;
+  text-overflow:clip;
+  white-space:normal;
+  word-break:break-word;
+  line-height:1.35;
+}
+
+:host ::ng-deep .invoice-email-deliveries-table .p-datatable-wrapper {
+  overflow-x:auto;
+}
+
+.date-column,
+.date-cell {
+  width:11rem;
+}
+
+.email-column,
+.email-cell {
+  width:16rem;
+}
+
+.subject-column,
+.subject-cell {
+  width:18rem;
+}
+
+.status-column,
+.status-cell {
+  width:8.5rem;
+}
+
+.error-column,
+.error-cell {
+  width:18rem;
+}
+
+.date-cell,
+.email-cell,
+.subject-cell,
+.status-cell,
+.error-cell {
+  vertical-align:top;
+}
+
+.date-cell,
+.email-cell,
+.subject-cell,
+.error-cell {
+  overflow-wrap:anywhere;
+  white-space:normal;
+  word-break:break-word;
+}
+
+.date-cell strong,
+.date-cell small,
+.error-cell span {
+  display:block;
+  line-height:1.35;
+}
+
+.date-cell small {
+  color:#64748b;
+  font-weight:700;
+}
+
+.empty-state {
+  padding:1rem;
+  text-align:center;
+  color:#64748b;
+}
+
+@media (max-width: 720px) {
+  .delivery-context {
+    grid-template-columns:1fr;
+  }
+}

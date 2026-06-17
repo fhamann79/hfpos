@@ -98,6 +98,12 @@
   justify-content:space-between;
   gap:.75rem;
 }
+.sri-status-panel__actions {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  gap:.45rem;
+}
 .sri-status-panel h4 {
   margin:.1rem 0 0;
   color:#0f172a;
@@ -189,6 +195,7 @@ footer strong { font-size:1.35rem; }
   }
 
   .document-tags,
+  .sri-status-panel__actions,
   .sri-actions {
     justify-content:flex-start;
   }

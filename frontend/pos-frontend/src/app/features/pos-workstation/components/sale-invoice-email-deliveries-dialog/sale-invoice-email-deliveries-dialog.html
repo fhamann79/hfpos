@@ -1,0 +1,82 @@
+<p-dialog
+  header="Historial email"
+  [visible]="visible"
+  [modal]="true"
+  [draggable]="false"
+  [style]="{ width: '66rem', maxWidth: '96vw' }"
+  (visibleChange)="visibleChange.emit($event)"
+>
+  @if (sale) {
+    <section class="delivery-context">
+      <div>
+        <span>Documento</span>
+        <strong>{{ sale.number || ('#' + sale.id) }}</strong>
+      </div>
+      <div>
+        <span>Autorizacion</span>
+        <code class="long-code">{{ sale.authorizationNumber || '-' }}</code>
+      </div>
+      <p-button
+        label="Refrescar"
+        icon="pi pi-refresh"
+        severity="secondary"
+        [outlined]="true"
+        [loading]="loading"
+        (onClick)="refresh.emit()"
+      ></p-button>
+    </section>
+  }
+
+  @if (errorMessage) {
+    <p-message severity="error" [text]="errorMessage"></p-message>
+  }
+
+  <p-table
+    [value]="deliveries"
+    [loading]="loading"
+    [paginator]="true"
+    [rows]="6"
+    responsiveLayout="scroll"
+    styleClass="invoice-email-deliveries-table"
+    [tableStyle]="{ 'min-width': '76rem', 'table-layout': 'fixed' }"
+  >
+    <ng-template pTemplate="header">
+      <tr>
+        <th class="date-column">Fecha</th>
+        <th class="email-column">Destinatario</th>
+        <th class="email-column">Copia</th>
+        <th class="subject-column">Asunto</th>
+        <th class="status-column">Estado</th>
+        <th class="error-column">Error</th>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="body" let-delivery>
+      <tr>
+        <td class="date-cell">
+          <strong>{{ deliveryDate(delivery) | date: 'medium' }}</strong>
+          @if (delivery.sentAt && delivery.createdAt !== delivery.sentAt) {
+            <small>Creado {{ delivery.createdAt | date: 'short' }}</small>
+          }
+        </td>
+        <td class="email-cell">{{ delivery.toEmail }}</td>
+        <td class="email-cell">{{ delivery.ccEmail || '-' }}</td>
+        <td class="subject-cell">{{ delivery.subject || '-' }}</td>
+        <td class="status-cell">
+          <p-tag [value]="statusLabel(delivery)" [severity]="statusSeverity(delivery)"></p-tag>
+        </td>
+        <td class="error-cell">
+          <span>{{ errorDetail(delivery) }}</span>
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="emptymessage">
+      <tr>
+        <td colspan="6">
+          <div class="empty-state">No hay envios de email registrados.</div>
+        </td>
+      </tr>
+    </ng-template>
+  </p-table>
+</p-dialog>

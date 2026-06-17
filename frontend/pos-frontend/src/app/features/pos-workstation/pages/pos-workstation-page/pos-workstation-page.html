@@ -180,6 +180,7 @@
     (viewSriRide)="openSriRide($event)"
     (downloadSriRidePdf)="downloadSriRidePdf($event)"
     (sendInvoiceEmail)="openInvoiceEmailDialog($event)"
+    (viewInvoiceEmailDeliveries)="openInvoiceEmailDeliveries($event)"
   ></app-sale-detail-dialog>
 
   <app-sale-invoice-email-dialog
@@ -207,6 +208,16 @@
     (visibleChange)="sriAttemptsVisible.set($event)"
     (refresh)="loadSriAttempts()"
   ></app-sri-submission-attempts-dialog>
+
+  <app-sale-invoice-email-deliveries-dialog
+    [visible]="invoiceEmailDeliveriesVisible()"
+    [sale]="invoiceEmailDeliveriesSale()"
+    [deliveries]="invoiceEmailDeliveries()"
+    [loading]="invoiceEmailDeliveriesLoading()"
+    [errorMessage]="invoiceEmailDeliveriesError()"
+    (visibleChange)="invoiceEmailDeliveriesVisible.set($event)"
+    (refresh)="loadInvoiceEmailDeliveries()"
+  ></app-sale-invoice-email-deliveries-dialog>
 
   <app-void-sale-dialog
     [visible]="voidVisible()"

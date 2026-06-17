@@ -108,4 +108,6 @@ public class Sale
     public ICollection<SaleItem> Items { get; set; } = new List<SaleItem>();
 
     public ICollection<SriSubmissionAttempt> SriSubmissionAttempts { get; set; } = new List<SriSubmissionAttempt>();
+
+    public ICollection<SaleInvoiceEmailDelivery> InvoiceEmailDeliveries { get; set; } = new List<SaleInvoiceEmailDelivery>();
 }

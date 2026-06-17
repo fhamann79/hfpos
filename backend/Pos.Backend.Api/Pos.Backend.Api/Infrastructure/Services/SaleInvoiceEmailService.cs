@@ -16,6 +16,9 @@ public class SaleInvoiceEmailService : ISaleInvoiceEmailService
 {
     private const string SuccessMessage = "Factura enviada por email correctamente.";
     private const string XmlContentType = "application/xml";
+    private const string DeliveryStatusSucceeded = "Succeeded";
+    private const string DeliveryStatusFailed = "Failed";
+    private const string DeliverySendFailedCode = "SALE_INVOICE_EMAIL_SEND_FAILED";
 
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
@@ -58,7 +61,6 @@ public class SaleInvoiceEmailService : ISaleInvoiceEmailService
         var authorizedXml = await GetAuthorizedXmlAsync(sale.Id);
         var ridePdf = await GetRidePdfAsync(sale.Id);
         var senderSettings = await _companyEmailSettingsService.GetConfiguredSenderSettingsAsync();
-        var sentAt = DateTime.UtcNow;
 
         var emailMessage = BuildEmailMessage(
             sale,
@@ -86,8 +88,32 @@ public class SaleInvoiceEmailService : ISaleInvoiceEmailService
                 toEmail,
                 sale.Number);
 
-            throw new InvalidOperationException("SALE_INVOICE_EMAIL_SEND_FAILED", ex);
+            await TryPersistDeliveryAsync(
+                sale,
+                operationalContext.UserId,
+                toEmail!,
+                ccEmail,
+                subject,
+                DeliveryStatusFailed,
+                sentAt: null,
+                DeliverySendFailedCode,
+                ex.InnerException?.Message ?? ex.Message);
+
+            throw new InvalidOperationException(DeliverySendFailedCode, ex);
         }
+
+        var sentAt = DateTime.UtcNow;
+
+        await TryPersistDeliveryAsync(
+            sale,
+            operationalContext.UserId,
+            toEmail!,
+            ccEmail,
+            subject,
+            DeliveryStatusSucceeded,
+            sentAt,
+            errorCode: null,
+            errorMessage: null);
 
         _logger.LogInformation(
             "Authorized invoice email sent. SaleId {SaleId}, CompanyId {CompanyId}, ToEmail {ToEmail}, DocumentNumber {DocumentNumber}",
@@ -106,6 +132,49 @@ public class SaleInvoiceEmailService : ISaleInvoiceEmailService
             DocumentNumber = sale.Number,
             AuthorizationNumber = sale.AuthorizationNumber
         };
+    }
+
+    public async Task<IReadOnlyList<SaleInvoiceEmailDeliveryDto>> GetDeliveriesAsync(int saleId)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+
+        var saleExists = await _context.Sales
+            .AsNoTracking()
+            .AnyAsync(s => s.Id == saleId
+                && s.CompanyId == operationalContext.CompanyId
+                && s.EstablishmentId == operationalContext.EstablishmentId
+                && s.EmissionPointId == operationalContext.EmissionPointId);
+
+        if (!saleExists)
+        {
+            throw new KeyNotFoundException("SALE_NOT_FOUND");
+        }
+
+        return await _context.SaleInvoiceEmailDeliveries
+            .AsNoTracking()
+            .Where(d => d.SaleId == saleId
+                && d.CompanyId == operationalContext.CompanyId
+                && d.EstablishmentId == operationalContext.EstablishmentId
+                && d.EmissionPointId == operationalContext.EmissionPointId)
+            .OrderByDescending(d => d.CreatedAt)
+            .ThenByDescending(d => d.Id)
+            .Select(d => new SaleInvoiceEmailDeliveryDto
+            {
+                Id = d.Id,
+                SaleId = d.SaleId,
+                ToEmail = d.ToEmail,
+                CcEmail = d.CcEmail,
+                Subject = d.Subject,
+                Status = d.Status,
+                SentAt = d.SentAt,
+                CreatedAt = d.CreatedAt,
+                CreatedByUserId = d.CreatedByUserId,
+                DocumentNumberSnapshot = d.DocumentNumberSnapshot,
+                AuthorizationNumberSnapshot = d.AuthorizationNumberSnapshot,
+                ErrorCode = d.ErrorCode,
+                ErrorMessage = d.ErrorMessage
+            })
+            .ToListAsync();
     }
 
     private async Task<Sale> LoadSaleAsync(int saleId, OperationalContext operationalContext)
@@ -184,6 +253,51 @@ public class SaleInvoiceEmailService : ISaleInvoiceEmailService
         {
             _logger.LogWarning(ex, "RIDE PDF is not available for invoice email. SaleId {SaleId}", saleId);
             throw new InvalidOperationException("SRI_RIDE_PDF_NOT_AVAILABLE", ex);
+        }
+    }
+
+    private async Task TryPersistDeliveryAsync(
+        Sale sale,
+        int userId,
+        string toEmail,
+        string? ccEmail,
+        string subject,
+        string status,
+        DateTime? sentAt,
+        string? errorCode,
+        string? errorMessage)
+    {
+        try
+        {
+            _context.SaleInvoiceEmailDeliveries.Add(new SaleInvoiceEmailDelivery
+            {
+                SaleId = sale.Id,
+                CompanyId = sale.CompanyId,
+                EstablishmentId = sale.EstablishmentId,
+                EmissionPointId = sale.EmissionPointId,
+                ToEmail = toEmail,
+                CcEmail = ccEmail,
+                Subject = subject,
+                Status = status,
+                SentAt = sentAt,
+                CreatedAt = DateTime.UtcNow,
+                CreatedByUserId = userId,
+                DocumentNumberSnapshot = sale.Number,
+                AuthorizationNumberSnapshot = sale.AuthorizationNumber,
+                ErrorCode = errorCode,
+                ErrorMessage = Truncate(errorMessage, 500)
+            });
+
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Could not persist sale invoice email delivery audit. SaleId {SaleId}, CompanyId {CompanyId}, Status {Status}",
+                sale.Id,
+                sale.CompanyId,
+                status);
         }
     }
 
@@ -370,6 +484,15 @@ public class SaleInvoiceEmailService : ISaleInvoiceEmailService
 
     private static string HtmlEncode(string value)
         => HtmlEncoder.Default.Encode(value);
+
+    private static string? Truncate(string? value, int maxLength)
+    {
+        var normalized = NormalizeOptional(value);
+
+        return normalized is null || normalized.Length <= maxLength
+            ? normalized
+            : normalized[..maxLength];
+    }
 
     private static string? NormalizeOptional(string? value)
     {
