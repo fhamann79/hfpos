@@ -139,13 +139,24 @@
               <span class="section-kicker">Estado SRI</span>
               <h4>{{ isAuthorized(sale) ? 'Autorización confirmada' : 'Recepción y autorización' }}</h4>
             </div>
-            <p-button
-              label="Ver historial SRI"
-              icon="pi pi-list"
-              severity="secondary"
-              [outlined]="true"
-              (onClick)="viewSriAttempts.emit(sale.id)"
-            ></p-button>
+            <div class="sri-status-panel__actions">
+              <p-button
+                label="Ver historial SRI"
+                icon="pi pi-list"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="viewSriAttempts.emit(sale.id)"
+              ></p-button>
+              @if (canViewInvoiceEmailDeliveries(sale)) {
+                <p-button
+                  label="Historial email"
+                  icon="pi pi-envelope"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="viewInvoiceEmailDeliveries.emit(sale.id)"
+                ></p-button>
+              }
+            </div>
           </div>
 
           <div class="sri-status-grid">

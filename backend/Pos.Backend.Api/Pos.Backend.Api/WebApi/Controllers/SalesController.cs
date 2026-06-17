@@ -202,6 +202,24 @@ public class SalesController : ControllerBase
         }
     }
 
+    [HttpGet("{id:int}/sri/email-deliveries")]
+    [Authorize(Policy = AppPermissions.ReportsSalesRead)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<SaleInvoiceEmailDeliveryDto>>> GetSriInvoiceEmailDeliveries(int id)
+    {
+        try
+        {
+            return Ok(await _saleInvoiceEmailService.GetDeliveriesAsync(id));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
     [HttpPost("{id:int}/sri/submit")]
     [Authorize(Policy = AppPermissions.SriDocumentsSubmit)]
     [ProducesResponseType(StatusCodes.Status200OK)]

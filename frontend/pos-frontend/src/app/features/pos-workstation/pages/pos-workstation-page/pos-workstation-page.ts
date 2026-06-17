@@ -18,6 +18,7 @@ import { ProductSearchPanel } from '../../components/product-search-panel/produc
 import { QuickProductSearchDialog } from '../../components/quick-product-search-dialog/quick-product-search-dialog';
 import { RecentSalesPanel } from '../../components/recent-sales-panel/recent-sales-panel';
 import { SaleDetailDialog } from '../../components/sale-detail-dialog/sale-detail-dialog';
+import { SaleInvoiceEmailDeliveriesDialog } from '../../components/sale-invoice-email-deliveries-dialog/sale-invoice-email-deliveries-dialog';
 import { SaleInvoiceEmailDialog } from '../../components/sale-invoice-email-dialog/sale-invoice-email-dialog';
 import { SriRideDialog } from '../../components/sri-ride-dialog/sri-ride-dialog';
 import { SriSubmissionAttemptsDialog } from '../../components/sri-submission-attempts-dialog/sri-submission-attempts-dialog';
@@ -27,7 +28,7 @@ import { CheckoutRequest } from '../../models/checkout-request.model';
 import { PosCustomer } from '../../models/pos-customer.model';
 import { PosProduct } from '../../models/pos-product.model';
 import { SaleDocumentStatus, SaleDocumentType } from '../../models/sale-document.model';
-import { SendSaleInvoiceEmailRequest } from '../../models/sale-invoice-email.model';
+import { SaleInvoiceEmailDelivery, SendSaleInvoiceEmailRequest } from '../../models/sale-invoice-email.model';
 import { Sale } from '../../models/sale.model';
 import { SaleListItem } from '../../models/sale-list-item.model';
 import { SriRide } from '../../models/sri-ride.model';
@@ -52,6 +53,7 @@ import { PosWorkstationService } from '../../services/pos-workstation.service';
     CustomerSelectorDialog,
     RecentSalesPanel,
     SaleDetailDialog,
+    SaleInvoiceEmailDeliveriesDialog,
     SaleInvoiceEmailDialog,
     SriRideDialog,
     SriSubmissionAttemptsDialog,
@@ -117,6 +119,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly invoiceEmailVisible = signal(false);
   readonly invoiceEmailSale = signal<Sale | null>(null);
   readonly invoiceEmailSending = signal(false);
+  readonly invoiceEmailDeliveriesVisible = signal(false);
+  readonly invoiceEmailDeliveriesLoading = signal(false);
+  readonly invoiceEmailDeliveriesError = signal('');
+  readonly invoiceEmailDeliveries = signal<SaleInvoiceEmailDelivery[]>([]);
+  readonly invoiceEmailDeliveriesSale = signal<Sale | null>(null);
 
   readonly voidVisible = signal(false);
   readonly voidLoading = signal(false);
@@ -723,6 +730,35 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     });
   }
 
+  openInvoiceEmailDeliveries(saleId: number): void {
+    const sale = this.selectedSale()?.id === saleId ? this.selectedSale() : null;
+    this.invoiceEmailDeliveriesSale.set(sale);
+    this.invoiceEmailDeliveriesVisible.set(true);
+    this.loadInvoiceEmailDeliveries(saleId);
+  }
+
+  loadInvoiceEmailDeliveries(saleId = this.invoiceEmailDeliveriesSale()?.id): void {
+    if (!saleId) {
+      return;
+    }
+
+    this.invoiceEmailDeliveriesLoading.set(true);
+    this.invoiceEmailDeliveriesError.set('');
+
+    this.workstationService.getSaleInvoiceEmailDeliveries(saleId).subscribe({
+      next: (deliveries) => {
+        this.invoiceEmailDeliveries.set(deliveries);
+        this.invoiceEmailDeliveriesLoading.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        this.invoiceEmailDeliveriesLoading.set(false);
+        this.invoiceEmailDeliveriesError.set(
+          this.workstationService.resolveBusinessError(error) || 'No se pudo cargar el historial de emails.'
+        );
+      },
+    });
+  }
+
   openSriRide(saleId: number): void {
     this.sriRide.set(null);
     this.sriRideError.set('');
@@ -851,6 +887,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       next: () => {
         this.invoiceEmailVisible.set(false);
         this.invoiceEmailSale.set(null);
+        this.reloadInvoiceEmailDeliveriesIfOpen(sale.id);
         this.messageService.add({
           severity: 'success',
           summary: 'Factura enviada',
@@ -1189,6 +1226,12 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
   }
 
+  private reloadInvoiceEmailDeliveriesIfOpen(saleId: number): void {
+    if (this.invoiceEmailDeliveriesVisible() && this.invoiceEmailDeliveriesSale()?.id === saleId) {
+      this.loadInvoiceEmailDeliveries(saleId);
+    }
+  }
+
   private reconcileCartWithCatalog(): void {
     const stockMap = new Map(this.allProducts().map((product) => [product.id, product]));
 
@@ -1516,6 +1559,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
       if (this.sriAttemptsVisible()) {
         this.sriAttemptsVisible.set(false);
+        return;
+      }
+
+      if (this.invoiceEmailDeliveriesVisible()) {
+        this.invoiceEmailDeliveriesVisible.set(false);
         return;
       }
 

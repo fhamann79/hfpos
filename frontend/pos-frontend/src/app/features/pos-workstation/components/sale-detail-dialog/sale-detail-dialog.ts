@@ -53,6 +53,7 @@ export class SaleDetailDialog {
   @Output() submitSriInvoice = new EventEmitter<number>();
   @Output() checkSriAuthorization = new EventEmitter<number>();
   @Output() viewSriAttempts = new EventEmitter<number>();
+  @Output() viewInvoiceEmailDeliveries = new EventEmitter<number>();
   @Output() processSriWorkflow = new EventEmitter<number>();
 
   getVatLabel(item: SaleItem): string {
@@ -164,6 +165,10 @@ export class SaleDetailDialog {
   }
 
   canViewSriAttempts(sale: Sale): boolean {
+    return sale.documentType === SaleDocumentType.Invoice;
+  }
+
+  canViewInvoiceEmailDeliveries(sale: Sale): boolean {
     return sale.documentType === SaleDocumentType.Invoice;
   }
 
