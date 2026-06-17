@@ -5,7 +5,15 @@ namespace Pos.Backend.Api.Core.Services;
 
 public interface ISalesService
 {
-    Task<IReadOnlyList<SaleListItemDto>> GetSalesAsync(DateTime? from, DateTime? to, SaleStatus? status, string? search, int? userId);
+    Task<IReadOnlyList<SaleListItemDto>> GetSalesAsync(
+        DateTime? from,
+        DateTime? to,
+        SaleStatus? status,
+        string? search,
+        int? userId,
+        SaleDocumentType? documentType,
+        SaleDocumentStatus? documentStatus);
+
     Task<SaleDto?> GetByIdAsync(int id);
     Task<string?> GetSriXmlDraftAsync(int id);
     Task<SaleDto> CreateAsync(SaleCreateDto dto);

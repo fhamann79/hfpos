@@ -6,6 +6,7 @@ import { inventoryAccessGuard } from './core/guards/inventory-access.guard';
 import { fiscalSettingsAccessGuard } from './core/guards/fiscal-settings-access.guard';
 import { operationalStructureAccessGuard } from './core/guards/operational-structure-access.guard';
 import { posAccessGuard } from './core/guards/pos-access.guard';
+import { salesReportsAccessGuard } from './core/guards/sales-reports-access.guard';
 
 export const routes: Routes = [
   {
@@ -46,6 +47,12 @@ export const routes: Routes = [
     path: 'pos',
     canActivate: [AuthGuard, posAccessGuard],
     loadComponent: () => import('./features/pos-workstation/pages/pos-workstation-page/pos-workstation-page').then((m) => m.PosWorkstationPage),
+  },
+  {
+    path: 'sales-reports',
+    canActivate: [AuthGuard, salesReportsAccessGuard],
+    loadComponent: () =>
+      import('./features/sales-reports/pages/sales-report-page/sales-report-page').then((m) => m.SalesReportPage),
   },
   {
     path: 'inventory',
