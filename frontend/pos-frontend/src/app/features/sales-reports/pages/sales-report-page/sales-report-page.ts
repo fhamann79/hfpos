@@ -199,7 +199,7 @@ export class SalesReportPage implements OnInit {
       this.documentTypeLabel(sale),
       this.saleStatusLabel(sale),
       this.fiscalStatusLabel(sale),
-      sale.total.toFixed(2),
+      this.csvMoneyValue(sale.total),
       sale.username ?? '',
       sale.notes ?? '',
     ]);
@@ -293,6 +293,10 @@ export class SalesReportPage implements OnInit {
     const escaped = text.replace(/"/g, '""');
 
     return /[";\r\n]/.test(escaped) ? `"${escaped}"` : escaped;
+  }
+
+  private csvMoneyValue(value: number): string {
+    return value.toFixed(2).replace('.', ',');
   }
 
   private downloadCsv(csv: string): void {
