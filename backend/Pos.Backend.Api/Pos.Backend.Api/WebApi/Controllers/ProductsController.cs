@@ -45,6 +45,7 @@ public class ProductsController : ControllerBase
                 Barcode = p.Barcode,
                 InternalCode = p.InternalCode,
                 Price = p.Price,
+                MinimumStock = p.MinimumStock,
                 VatCategory = p.VatCategory,
                 IsActive = p.IsActive
             })
@@ -62,6 +63,11 @@ public class ProductsController : ControllerBase
         if (string.IsNullOrWhiteSpace(dto?.Name))
         {
             return BadRequest(new ApiErrorResponse { Error = "NAME_REQUIRED" });
+        }
+
+        if (dto.MinimumStock < 0m)
+        {
+            return BadRequest(new ApiErrorResponse { Error = "PRODUCT_MINIMUM_STOCK_INVALID" });
         }
 
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
@@ -101,6 +107,7 @@ public class ProductsController : ControllerBase
             Barcode = barcode,
             InternalCode = internalCode,
             Price = dto.Price,
+            MinimumStock = dto.MinimumStock,
             VatCategory = vatCategory,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
@@ -117,6 +124,7 @@ public class ProductsController : ControllerBase
             Barcode = product.Barcode,
             InternalCode = product.InternalCode,
             Price = product.Price,
+            MinimumStock = product.MinimumStock,
             VatCategory = product.VatCategory,
             IsActive = product.IsActive
         };
@@ -142,6 +150,7 @@ public class ProductsController : ControllerBase
                 Barcode = p.Barcode,
                 InternalCode = p.InternalCode,
                 Price = p.Price,
+                MinimumStock = p.MinimumStock,
                 VatCategory = p.VatCategory,
                 IsActive = p.IsActive
             })
@@ -164,6 +173,11 @@ public class ProductsController : ControllerBase
         if (string.IsNullOrWhiteSpace(dto?.Name))
         {
             return BadRequest(new ApiErrorResponse { Error = "NAME_REQUIRED" });
+        }
+
+        if (dto.MinimumStock < 0m)
+        {
+            return BadRequest(new ApiErrorResponse { Error = "PRODUCT_MINIMUM_STOCK_INVALID" });
         }
 
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
@@ -208,6 +222,7 @@ public class ProductsController : ControllerBase
         product.Barcode = barcode;
         product.InternalCode = internalCode;
         product.Price = dto.Price;
+        product.MinimumStock = dto.MinimumStock;
         product.VatCategory = dto.VatCategory ?? product.VatCategory;
         product.IsActive = dto.IsActive;
 

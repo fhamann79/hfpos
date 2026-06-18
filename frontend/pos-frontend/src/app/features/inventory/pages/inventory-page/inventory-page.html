@@ -71,7 +71,7 @@
                 <div>
                   <small>Stock bajo</small>
                   <strong>{{ lowStockProducts() }}</strong>
-                  <span>Umbral visual: 1 a {{ lowStockThreshold }} unidades</span>
+                  <span>Segun stock minimo configurado por producto</span>
                 </div>
               </div>
             </p-card>
@@ -190,6 +190,7 @@
                   <th pSortableColumn="productName">Producto <p-sortIcon field="productName"></p-sortIcon></th>
                   <th pSortableColumn="categoryName">Categoría <p-sortIcon field="categoryName"></p-sortIcon></th>
                   <th pSortableColumn="quantity" class="numeric-column">Cantidad <p-sortIcon field="quantity"></p-sortIcon></th>
+                  <th pSortableColumn="minimumStock" class="numeric-column">Minimo <p-sortIcon field="minimumStock"></p-sortIcon></th>
                   <th>Riesgo</th>
                   <th pSortableColumn="isActive">Estado <p-sortIcon field="isActive"></p-sortIcon></th>
                   <th>Acción</th>
@@ -211,15 +212,12 @@
                   <td class="numeric-column">
                     <strong class="quantity-value" [class.quantity-empty]="stock.quantity <= 0">{{ stock.quantity }}</strong>
                   </td>
+                  <td class="numeric-column">
+                    <span class="minimum-stock-value">{{ stock.minimumStock }}</span>
+                  </td>
                   <td>
                     <span [class]="stockRiskClass(stock)">
-                      @if (stock.quantity <= 0) {
-                        <i class="pi pi-times-circle"></i>
-                      } @else if (stock.quantity <= lowStockThreshold) {
-                        <i class="pi pi-exclamation-triangle"></i>
-                      } @else {
-                        <i class="pi pi-check-circle"></i>
-                      }
+                      <i [class]="stockRiskIcon(stock)"></i>
                       {{ stockRiskLabel(stock) }}
                     </span>
                   </td>
@@ -243,7 +241,7 @@
 
               <ng-template pTemplate="emptymessage">
                 <tr>
-                  <td colspan="6">
+                  <td colspan="7">
                     <div class="empty-state">
                       <i class="pi pi-inbox"></i>
                       <strong>No hay productos que coincidan con los filtros aplicados.</strong>

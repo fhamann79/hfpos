@@ -8,7 +8,6 @@ namespace Pos.Backend.Api.Infrastructure.Services;
 
 public class DashboardService : IDashboardService
 {
-    private const decimal LowStockThreshold = 3m;
     private const int CertificateExpiringSoonDays = 30;
 
     private readonly PosDbContext _context;
@@ -107,6 +106,7 @@ public class DashboardService : IDashboardService
                 ProductId = p.Id,
                 ProductName = p.Name,
                 CategoryName = p.Category.Name,
+                MinimumStock = p.MinimumStock,
                 Quantity = _context.ProductStocks
                     .Where(s => s.ProductId == p.Id
                         && s.CompanyId == companyId
@@ -120,8 +120,7 @@ public class DashboardService : IDashboardService
         {
             ActiveProducts = stocks.Count,
             ZeroStockProducts = stocks.Count(s => s.Quantity <= 0m),
-            LowStockProducts = stocks.Count(s => s.Quantity > 0m && s.Quantity <= LowStockThreshold),
-            LowStockThreshold = LowStockThreshold,
+            LowStockProducts = stocks.Count(s => IsLowStock(s.Quantity, s.MinimumStock)),
             LowestStockProducts = stocks
                 .OrderBy(s => s.Quantity)
                 .ThenBy(s => s.ProductName)
@@ -131,7 +130,8 @@ public class DashboardService : IDashboardService
                     ProductId = s.ProductId,
                     ProductName = s.ProductName,
                     CategoryName = s.CategoryName,
-                    Quantity = s.Quantity
+                    Quantity = s.Quantity,
+                    MinimumStock = s.MinimumStock
                 })
                 .ToList()
         };
@@ -322,7 +322,7 @@ public class DashboardService : IDashboardService
                 Category = "Inventario",
                 Severity = "warn",
                 Title = "Stock bajo",
-                Message = $"Hay productos activos con stock entre 1 y {LowStockThreshold}.",
+                Message = "Hay productos activos en o por debajo de su stock minimo configurado.",
                 Count = inventory.LowStockProducts
             });
         }
@@ -335,6 +335,11 @@ public class DashboardService : IDashboardService
         return sale.DocumentType == SaleDocumentType.Invoice
             && (sale.DocumentStatus == SaleDocumentStatus.Authorized
                 || string.Equals(sale.SriAuthorizationStatus, "AUTORIZADO", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsLowStock(decimal quantity, decimal minimumStock)
+    {
+        return minimumStock > 0m && quantity > 0m && quantity <= minimumStock;
     }
 
     private static DateTime EcuadorDateStartUtc(DateOnly date)

@@ -28,7 +28,7 @@ import {
 } from '../../models/inventory-movement.model';
 import { InventoryMovementFilters } from '../../models/inventory-filters.model';
 import { InventoryOperationRequest } from '../../models/inventory-operation.model';
-import { InventoryStock } from '../../models/inventory-stock.model';
+import { InventoryStock, StockStatus } from '../../models/inventory-stock.model';
 import { InventoryService } from '../../services/inventory.service';
 
 interface SelectOption<T> {
@@ -83,8 +83,6 @@ export class InventoryPage implements OnInit {
   private readonly permissionService = inject(PermissionService);
   private readonly authStore = inject(AuthStore);
   private readonly messageService = inject(MessageService);
-  readonly lowStockThreshold = 5;
-
   readonly canReadInventory = computed(() => this.permissionService.hasPermission(PERMISSIONS.inventoryRead));
   readonly canWriteInventory = computed(() => this.permissionService.hasPermission(PERMISSIONS.inventoryWrite));
   readonly contextItems = computed<ContextItem[]>(() => [
@@ -99,7 +97,7 @@ export class InventoryPage implements OnInit {
   readonly totalProducts = computed(() => this.stocks().length);
   readonly outOfStockProducts = computed(() => this.stocks().filter((stock) => stock.quantity <= 0).length);
   readonly lowStockProducts = computed(() =>
-    this.stocks().filter((stock) => stock.quantity > 0 && stock.quantity <= this.lowStockThreshold).length
+    this.stocks().filter((stock) => this.resolveStockStatus(stock) === StockStatus.LowStock).length
   );
   readonly inactiveProducts = computed(() => this.stocks().filter((stock) => !stock.isActive).length);
   readonly totalInventoryUnits = computed(() =>
@@ -362,20 +360,22 @@ export class InventoryPage implements OnInit {
     return isActive ? 'success' : 'danger';
   }
 
-  stockStatusLabel(quantity: number): string {
-    return quantity > 0 ? 'Disponible' : 'Sin stock';
+  stockStatusLabel(stock: InventoryStock): string {
+    return this.resolveStockStatus(stock) === StockStatus.OutOfStock ? 'Sin stock' : 'Disponible';
   }
 
-  stockStatusSeverity(quantity: number): 'success' | 'danger' {
-    return quantity > 0 ? 'success' : 'danger';
+  stockStatusSeverity(stock: InventoryStock): 'success' | 'danger' {
+    return this.resolveStockStatus(stock) === StockStatus.OutOfStock ? 'danger' : 'success';
   }
 
   stockRiskLabel(stock: InventoryStock): string {
-    if (stock.quantity <= 0) {
+    const status = this.resolveStockStatus(stock);
+
+    if (status === StockStatus.OutOfStock) {
       return 'Crítico';
     }
 
-    if (stock.quantity <= this.lowStockThreshold) {
+    if (status === StockStatus.LowStock) {
       return 'Bajo';
     }
 
@@ -384,10 +384,11 @@ export class InventoryPage implements OnInit {
 
   stockRiskClass(stock: InventoryStock): string {
     const classes = ['stock-risk'];
+    const status = this.resolveStockStatus(stock);
 
-    if (stock.quantity <= 0) {
+    if (status === StockStatus.OutOfStock) {
       classes.push('stock-risk--critical');
-    } else if (stock.quantity <= this.lowStockThreshold) {
+    } else if (status === StockStatus.LowStock) {
       classes.push('stock-risk--warning');
     }
 
@@ -400,10 +401,11 @@ export class InventoryPage implements OnInit {
 
   stockRowClass(stock: InventoryStock): string {
     const classes: string[] = [];
+    const status = this.resolveStockStatus(stock);
 
-    if (stock.quantity <= 0) {
+    if (status === StockStatus.OutOfStock) {
       classes.push('row-critical');
-    } else if (stock.quantity <= this.lowStockThreshold) {
+    } else if (status === StockStatus.LowStock) {
       classes.push('row-warning');
     }
 
@@ -412,6 +414,20 @@ export class InventoryPage implements OnInit {
     }
 
     return classes.join(' ');
+  }
+
+  stockRiskIcon(stock: InventoryStock): string {
+    const status = this.resolveStockStatus(stock);
+
+    if (status === StockStatus.OutOfStock) {
+      return 'pi pi-times-circle';
+    }
+
+    if (status === StockStatus.LowStock) {
+      return 'pi pi-exclamation-triangle';
+    }
+
+    return 'pi pi-check-circle';
   }
 
   movementSeverity(type: InventoryMovementType): 'success' | 'secondary' | 'info' | 'warn' | 'danger' | 'contrast' | undefined {
@@ -641,5 +657,25 @@ export class InventoryPage implements OnInit {
     }
 
     return this.inventoryService.resolveError(error, 'No se pudo registrar la operación de inventario.');
+  }
+
+  private resolveStockStatus(stock: InventoryStock): StockStatus {
+    if (stock.stockStatus === StockStatus.OutOfStock || stock.stockStatus === 'OutOfStock') {
+      return StockStatus.OutOfStock;
+    }
+
+    if (stock.stockStatus === StockStatus.LowStock || stock.stockStatus === 'LowStock') {
+      return StockStatus.LowStock;
+    }
+
+    if (stock.stockStatus === StockStatus.Ok || stock.stockStatus === 'Ok') {
+      return StockStatus.Ok;
+    }
+
+    if (stock.quantity <= 0) {
+      return StockStatus.OutOfStock;
+    }
+
+    return stock.minimumStock > 0 && stock.quantity <= stock.minimumStock ? StockStatus.LowStock : StockStatus.Ok;
   }
 }

@@ -91,6 +91,21 @@
       </div>
 
       <div class="field">
+        <label for="product-minimum-stock">Stock minimo</label>
+        <p-inputnumber
+          inputId="product-minimum-stock"
+          formControlName="minimumStock"
+          [min]="0"
+          [minFractionDigits]="0"
+          [maxFractionDigits]="4"
+        ></p-inputnumber>
+        @if (form.controls.minimumStock.touched && form.controls.minimumStock.invalid) {
+          <small class="p-error">El stock minimo debe ser mayor o igual a 0.</small>
+        }
+        <small class="field-help">Usa 0 para desactivar la alerta de stock bajo.</small>
+      </div>
+
+      <div class="field">
         <label for="product-vat-category">Categoría IVA</label>
         <p-select
           inputId="product-vat-category"

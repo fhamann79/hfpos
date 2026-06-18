@@ -50,6 +50,7 @@ export class ProductDialog implements OnChanges {
     barcode: [''],
     internalCode: [''],
     price: [0, [Validators.required, Validators.min(0)]],
+    minimumStock: [3, [Validators.required, Validators.min(0)]],
     vatCategory: [DEFAULT_VAT_CATEGORY, [Validators.required]],
     isActive: [true],
   });
@@ -91,6 +92,7 @@ export class ProductDialog implements OnChanges {
           barcode: this.normalizeOptionalIdentifier(values.barcode),
           internalCode: this.normalizeOptionalIdentifier(values.internalCode),
           price: values.price,
+          minimumStock: values.minimumStock,
           vatCategory: values.vatCategory,
           isActive: values.isActive,
         },
@@ -106,6 +108,7 @@ export class ProductDialog implements OnChanges {
         barcode: this.normalizeOptionalIdentifier(values.barcode),
         internalCode: this.normalizeOptionalIdentifier(values.internalCode),
         price: values.price,
+        minimumStock: values.minimumStock,
         vatCategory: values.vatCategory,
       },
     });
@@ -130,6 +133,7 @@ export class ProductDialog implements OnChanges {
         barcode: this.product.barcode ?? '',
         internalCode: this.product.internalCode ?? '',
         price: this.product.price,
+        minimumStock: this.product.minimumStock,
         vatCategory: normalizeVatCategory(this.product.vatCategory),
         isActive: this.product.isActive,
       });
@@ -142,6 +146,7 @@ export class ProductDialog implements OnChanges {
       barcode: '',
       internalCode: '',
       price: 0,
+      minimumStock: 3,
       vatCategory: DEFAULT_VAT_CATEGORY,
       isActive: true,
     });

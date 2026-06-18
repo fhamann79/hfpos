@@ -60,7 +60,7 @@ public class InventoryService : IInventoryService
             query = query.Where(x => x.Quantity > 0m);
         }
 
-        return await query
+        var stocks = await query
             .OrderBy(x => x.Product.Name)
             .Select(x => new InventoryStockListItemDto
             {
@@ -69,9 +69,17 @@ public class InventoryService : IInventoryService
                 CategoryId = x.Product.CategoryId,
                 CategoryName = x.CategoryName,
                 Quantity = x.Quantity,
+                MinimumStock = x.Product.MinimumStock,
                 IsActive = x.Product.IsActive
             })
             .ToListAsync();
+
+        foreach (var stock in stocks)
+        {
+            stock.StockStatus = ResolveStockStatus(stock.Quantity, stock.MinimumStock);
+        }
+
+        return stocks;
     }
 
     public async Task<InventoryStockDto?> GetProductStockAsync(int productId)
@@ -579,5 +587,17 @@ public class InventoryService : IInventoryService
                 || postgresException.SqlState == PostgresErrorCodes.LockNotAvailable => true,
             _ => false
         };
+    }
+
+    private static StockStatus ResolveStockStatus(decimal quantity, decimal minimumStock)
+    {
+        if (quantity <= 0m)
+        {
+            return StockStatus.OutOfStock;
+        }
+
+        return minimumStock > 0m && quantity <= minimumStock
+            ? StockStatus.LowStock
+            : StockStatus.Ok;
     }
 }

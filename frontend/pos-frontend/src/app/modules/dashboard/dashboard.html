@@ -69,7 +69,7 @@
         <div>
           <small>Productos sin stock</small>
           <strong>{{ data.inventory.zeroStockProducts }}</strong>
-          <em>{{ data.inventory.lowStockProducts }} con stock bajo</em>
+          <em>{{ data.inventory.lowStockProducts }} bajo minimo</em>
         </div>
       </article>
 
@@ -146,7 +146,7 @@
         <div class="panel-header">
           <div>
             <h2>Inventario sensible</h2>
-            <p>{{ data.inventory.activeProducts }} productos activos.</p>
+            <p>{{ data.inventory.activeProducts }} productos activos. Alertas segun stock minimo por producto.</p>
           </div>
           <p-tag value="Stock" severity="secondary"></p-tag>
         </div>
@@ -159,7 +159,10 @@
                   <strong>{{ product.productName }}</strong>
                   <small>{{ product.categoryName }}</small>
                 </div>
-                <p-tag [value]="product.quantity.toString()" [severity]="stockSeverity(product)"></p-tag>
+                <p-tag
+                  [value]="product.quantity + ' / min ' + product.minimumStock"
+                  [severity]="stockSeverity(product)"
+                ></p-tag>
               </div>
             }
           </div>

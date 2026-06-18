@@ -56,8 +56,6 @@ public class DashboardInventorySummaryDto
 
     public int LowStockProducts { get; set; }
 
-    public decimal LowStockThreshold { get; set; }
-
     public List<DashboardLowStockProductDto> LowestStockProducts { get; set; } = new();
 }
 
@@ -70,6 +68,8 @@ public class DashboardLowStockProductDto
     public string CategoryName { get; set; } = string.Empty;
 
     public decimal Quantity { get; set; }
+
+    public decimal MinimumStock { get; set; }
 }
 
 public class DashboardFiscalSummaryDto

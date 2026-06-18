@@ -37,6 +37,7 @@ const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
   PRODUCT_BARCODE_ALREADY_EXISTS: 'Ya existe un producto con ese código de barras.',
   PRODUCT_INTERNAL_CODE_ALREADY_EXISTS: 'Ya existe un producto con ese código interno.',
   INVALID_PRODUCT_VAT_CATEGORY: 'La categoría de IVA del producto no es válida.',
+  PRODUCT_MINIMUM_STOCK_INVALID: 'El stock mínimo debe ser mayor o igual a 0.',
   CUSTOMER_NAME_REQUIRED: 'El nombre del cliente es obligatorio.',
   CUSTOMER_EMAIL_INVALID: 'Ingresa un email de cliente válido.',
   CUSTOMER_NOT_FOUND: 'El cliente no existe o no pertenece a esta compañía.',
