@@ -73,6 +73,9 @@ export class SalesReportService {
       documentStatus: normalizeSaleDocumentStatus(row?.['documentStatus']),
       sriAuthorizationStatus: this.readString(row, ['sriAuthorizationStatus'], null),
       total: this.readNumber(row, ['total', 'grandTotal'], 0),
+      totalCost: this.readNumber(row, ['totalCost'], 0),
+      grossProfit: this.readNumber(row, ['grossProfit'], 0),
+      grossMarginPercent: this.readNumber(row, ['grossMarginPercent'], 0),
       itemsCount: this.readNumber(row, ['itemsCount'], 0),
       userId: this.readNumber(row, ['userId'], 0),
       username: this.readString(row, ['username', 'createdBy', 'userName'], null),
@@ -114,6 +117,10 @@ export class SalesReportService {
       taxableSubtotal: this.readNumber(row, ['taxableSubtotal', 'subtotal', 'lineSubtotal'], 0),
       taxAmount: this.readNumber(row, ['taxAmount'], 0),
       lineTotal: this.readNumber(row, ['lineTotal', 'subtotal', 'lineSubtotal'], 0),
+      unitCost: this.readNumber(row, ['unitCost'], 0),
+      lineCost: this.readNumber(row, ['lineCost'], 0),
+      grossProfit: this.readNumber(row, ['grossProfit'], 0),
+      grossMarginPercent: this.readNumber(row, ['grossMarginPercent'], 0),
       vatCategory: normalizeVatCategory(row?.['vatCategory']),
     };
   }

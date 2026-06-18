@@ -14,6 +14,8 @@ public class SaleItemDto
 
     public decimal UnitPrice { get; set; }
 
+    public decimal UnitCost { get; set; }
+
     public decimal GrossSubtotal { get; set; }
 
     public decimal DiscountAmount { get; set; }
@@ -31,4 +33,10 @@ public class SaleItemDto
     public decimal TaxAmount { get; set; }
 
     public decimal LineTotal { get; set; }
+
+    public decimal LineCost { get; set; }
+
+    public decimal GrossProfit { get; set; }
+
+    public decimal GrossMarginPercent { get; set; }
 }

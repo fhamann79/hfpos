@@ -36,6 +36,9 @@ export interface SalesReportRow {
   documentStatus: SaleDocumentStatus;
   sriAuthorizationStatus: string | null;
   total: number;
+  totalCost: number;
+  grossProfit: number;
+  grossMarginPercent: number;
   itemsCount: number;
   userId: number;
   username: string | null;
@@ -52,6 +55,10 @@ export interface SalesReportDetailItem {
   taxableSubtotal: number;
   taxAmount: number;
   lineTotal: number;
+  unitCost: number;
+  lineCost: number;
+  grossProfit: number;
+  grossMarginPercent: number;
   vatCategory: number;
 }
 

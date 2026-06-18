@@ -130,6 +130,9 @@ public class SalesService : ISalesService
                 SriLastSubmissionError = s.SriLastSubmissionError,
                 SriLastCheckedAt = s.SriLastCheckedAt,
                 Total = s.Total,
+                TotalCost = s.TotalCost,
+                GrossProfit = s.GrossProfit,
+                GrossMarginPercent = s.GrossMarginPercent,
                 ItemsCount = s.Items.Count,
                 CreatedAt = s.CreatedAt,
                 UserId = s.UserId,
@@ -193,6 +196,9 @@ public class SalesService : ISalesService
                 VatExemptSubtotal = s.VatExemptSubtotal,
                 VatNotSubjectSubtotal = s.VatNotSubjectSubtotal,
                 Total = s.Total,
+                TotalCost = s.TotalCost,
+                GrossProfit = s.GrossProfit,
+                GrossMarginPercent = s.GrossMarginPercent,
                 Notes = s.Notes,
                 CompanyId = s.CompanyId,
                 EstablishmentId = s.EstablishmentId,
@@ -208,6 +214,7 @@ public class SalesService : ISalesService
                         ProductName = i.Product.Name,
                         Quantity = i.Quantity,
                         UnitPrice = i.UnitPrice,
+                        UnitCost = i.UnitCost,
                         GrossSubtotal = i.GrossSubtotal,
                         DiscountAmount = i.DiscountAmount,
                         NetSubtotal = i.NetSubtotal,
@@ -216,7 +223,10 @@ public class SalesService : ISalesService
                         VatRate = i.VatRate,
                         TaxableSubtotal = i.TaxableSubtotal,
                         TaxAmount = i.TaxAmount,
-                        LineTotal = i.LineTotal
+                        LineTotal = i.LineTotal,
+                        LineCost = i.LineCost,
+                        GrossProfit = i.GrossProfit,
+                        GrossMarginPercent = i.GrossMarginPercent
                     })
                     .ToList()
             })
@@ -336,8 +346,10 @@ public class SalesService : ISalesService
                 }
 
                 var product = products[itemDto.ProductId];
+                var unitCost = product.Cost;
                 var grossSubtotal = RoundMoney(itemDto.Quantity * itemDto.UnitPrice);
                 var lineDiscount = RoundMoney(itemDto.DiscountAmount ?? 0m);
+                var lineCost = RoundMoney(itemDto.Quantity * unitCost);
 
                 if (lineDiscount < 0m || lineDiscount > grossSubtotal)
                 {
@@ -351,6 +363,7 @@ public class SalesService : ISalesService
                     ProductId = itemDto.ProductId,
                     Quantity = itemDto.Quantity,
                     UnitPrice = itemDto.UnitPrice,
+                    UnitCost = unitCost,
                     GrossSubtotal = grossSubtotal,
                     DiscountAmount = lineDiscount,
                     NetSubtotal = taxSnapshot.TaxableSubtotal,
@@ -359,7 +372,8 @@ public class SalesService : ISalesService
                     VatRate = taxSnapshot.VatRate,
                     TaxableSubtotal = taxSnapshot.TaxableSubtotal,
                     TaxAmount = taxSnapshot.TaxAmount,
-                    LineTotal = taxSnapshot.LineTotal
+                    LineTotal = taxSnapshot.LineTotal,
+                    LineCost = lineCost
                 });
             }
 
@@ -553,6 +567,8 @@ public class SalesService : ISalesService
             ApplyGlobalDiscountToLines(sale.Items, lineNetSubtotal, globalDiscount);
         }
 
+        ApplyCostMarginToLines(sale.Items);
+
         sale.Subtotal = sale.Items.Sum(i => i.TaxableSubtotal);
         sale.TaxAmount = sale.Items.Sum(i => i.TaxAmount);
         sale.Vat15Subtotal = sale.Items
@@ -571,6 +587,11 @@ public class SalesService : ISalesService
             .Where(i => i.VatCategory == ProductVatCategory.VatNotSubject)
             .Sum(i => i.TaxableSubtotal);
         sale.Total = sale.Items.Sum(i => i.LineTotal);
+        sale.TotalCost = RoundMoney(sale.Items.Sum(i => i.LineCost));
+        sale.GrossProfit = RoundMoney(sale.Items.Sum(i => i.GrossProfit));
+        sale.GrossMarginPercent = sale.Subtotal > 0m
+            ? RoundPercent(sale.GrossProfit / sale.Subtotal * 100m)
+            : 0m;
     }
 
     private async Task AssignDocumentNumberAsync(
@@ -819,6 +840,18 @@ public class SalesService : ISalesService
         }
     }
 
+    private static void ApplyCostMarginToLines(ICollection<SaleItem> items)
+    {
+        foreach (var item in items)
+        {
+            item.LineCost = RoundMoney(item.Quantity * item.UnitCost);
+            item.GrossProfit = RoundMoney(item.TaxableSubtotal - item.LineCost);
+            item.GrossMarginPercent = item.TaxableSubtotal > 0m
+                ? RoundPercent(item.GrossProfit / item.TaxableSubtotal * 100m)
+                : 0m;
+        }
+    }
+
     private async Task<(int Environment, int EmissionType)> ResolveSriSettingsAsync(int companyId)
     {
         var settings = await _context.CompanySriSettings
@@ -858,6 +891,9 @@ public class SalesService : ISalesService
 
     private static decimal RoundMoney(decimal value)
         => Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    private static decimal RoundPercent(decimal value)
+        => Math.Round(value, 4, MidpointRounding.AwayFromZero);
 
     private static bool IsNumeric(string? value, int expectedLength)
     {

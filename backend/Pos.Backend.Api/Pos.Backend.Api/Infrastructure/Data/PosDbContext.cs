@@ -472,6 +472,18 @@ public class PosDbContext : DbContext
             entity.Property(s => s.Total)
                 .HasPrecision(18, 2);
 
+            entity.Property(s => s.TotalCost)
+                .HasPrecision(18, 4)
+                .HasDefaultValue(0m);
+
+            entity.Property(s => s.GrossProfit)
+                .HasPrecision(18, 4)
+                .HasDefaultValue(0m);
+
+            entity.Property(s => s.GrossMarginPercent)
+                .HasPrecision(18, 4)
+                .HasDefaultValue(0m);
+
             entity.Property(s => s.Number)
                 .HasMaxLength(50);
 
@@ -696,6 +708,10 @@ public class PosDbContext : DbContext
             entity.Property(si => si.UnitPrice)
                 .HasPrecision(18, 2);
 
+            entity.Property(si => si.UnitCost)
+                .HasPrecision(18, 4)
+                .HasDefaultValue(0m);
+
             entity.Property(si => si.GrossSubtotal)
                 .HasPrecision(18, 2);
 
@@ -723,6 +739,18 @@ public class PosDbContext : DbContext
 
             entity.Property(si => si.LineTotal)
                 .HasPrecision(18, 2);
+
+            entity.Property(si => si.LineCost)
+                .HasPrecision(18, 4)
+                .HasDefaultValue(0m);
+
+            entity.Property(si => si.GrossProfit)
+                .HasPrecision(18, 4)
+                .HasDefaultValue(0m);
+
+            entity.Property(si => si.GrossMarginPercent)
+                .HasPrecision(18, 4)
+                .HasDefaultValue(0m);
 
             entity.HasOne(si => si.Sale)
                 .WithMany(s => s.Items)

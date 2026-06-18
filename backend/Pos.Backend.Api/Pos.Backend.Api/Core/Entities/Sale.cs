@@ -99,6 +99,12 @@ public class Sale
 
     public decimal Total { get; set; }
 
+    public decimal TotalCost { get; set; }
+
+    public decimal GrossProfit { get; set; }
+
+    public decimal GrossMarginPercent { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }

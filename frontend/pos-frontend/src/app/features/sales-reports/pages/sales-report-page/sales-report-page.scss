@@ -47,7 +47,7 @@
 
 .summary-grid {
   display:grid;
-  grid-template-columns:repeat(6,minmax(0,1fr));
+  grid-template-columns:repeat(auto-fit,minmax(10.5rem,1fr));
   gap:.75rem;
 }
 
@@ -98,6 +98,21 @@
 .metric-card--authorized > span {
   background:#dcfce7;
   color:#15803d;
+}
+
+.metric-card--cost > span {
+  background:#fef3c7;
+  color:#b45309;
+}
+
+.metric-card--profit > span {
+  background:#ecfdf5;
+  color:#047857;
+}
+
+.metric-card--margin > span {
+  background:#eef2ff;
+  color:#4338ca;
 }
 
 .metric-card--voided > span {
@@ -198,6 +213,22 @@
   min-width:9rem;
   padding-left:1.2rem;
   padding-right:1.2rem;
+  white-space:nowrap;
+}
+
+.profit-column {
+  width:9rem;
+  min-width:9rem;
+  padding-left:1.2rem;
+  padding-right:1.2rem;
+  white-space:nowrap;
+}
+
+.margin-column {
+  width:7rem;
+  min-width:7rem;
+  padding-left:1rem;
+  padding-right:1rem;
   white-space:nowrap;
 }
 
@@ -307,7 +338,7 @@
 
 .totals-grid {
   display:grid;
-  grid-template-columns:repeat(5,minmax(0,1fr));
+  grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));
   gap:.6rem;
   margin-top:1rem;
 }
@@ -320,6 +351,15 @@
 .totals-grid__total strong {
   color:#15803d;
   font-size:1.15rem;
+}
+
+.totals-grid__profit {
+  border-color:#bbf7d0;
+  background:#f0fdf4;
+}
+
+.totals-grid__profit strong {
+  color:#047857;
 }
 
 .notes-box {
