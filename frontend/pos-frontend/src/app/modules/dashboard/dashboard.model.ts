@@ -34,7 +34,6 @@ export interface DashboardInventorySummary {
   activeProducts: number;
   zeroStockProducts: number;
   lowStockProducts: number;
-  lowStockThreshold: number;
   lowestStockProducts: DashboardLowStockProduct[];
 }
 
@@ -43,6 +42,7 @@ export interface DashboardLowStockProduct {
   productName: string;
   categoryName: string;
   quantity: number;
+  minimumStock: number;
 }
 
 export interface DashboardFiscalSummary {

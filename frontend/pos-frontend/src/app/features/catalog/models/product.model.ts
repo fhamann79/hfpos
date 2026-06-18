@@ -7,6 +7,7 @@ export interface Product {
   barcode?: string | null;
   internalCode?: string | null;
   price: number;
+  minimumStock: number;
   vatCategory: ProductVatCategory;
   isActive: boolean;
 }
@@ -17,6 +18,7 @@ export interface CreateProductRequest {
   barcode?: string | null;
   internalCode?: string | null;
   price: number;
+  minimumStock: number;
   vatCategory: ProductVatCategory;
 }
 
@@ -26,6 +28,7 @@ export interface UpdateProductRequest {
   barcode?: string | null;
   internalCode?: string | null;
   price: number;
+  minimumStock: number;
   vatCategory: ProductVatCategory;
   isActive: boolean;
 }

@@ -120,13 +120,11 @@ export class Dashboard implements OnInit {
   }
 
   stockSeverity(product: DashboardLowStockProduct): 'danger' | 'warn' | 'success' {
-    const threshold = this.summary()?.inventory.lowStockThreshold ?? 3;
-
     if (product.quantity <= 0) {
       return 'danger';
     }
 
-    return product.quantity <= threshold ? 'warn' : 'success';
+    return product.minimumStock > 0 && product.quantity <= product.minimumStock ? 'warn' : 'success';
   }
 
   fiscalStatusLabel(summary: DashboardSummary): string {

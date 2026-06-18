@@ -342,6 +342,10 @@ public class PosDbContext : DbContext
             entity.Property(p => p.Price)
                 .HasPrecision(18, 2);
 
+            entity.Property(p => p.MinimumStock)
+                .HasPrecision(18, 4)
+                .HasDefaultValue(3m);
+
             entity.Property(p => p.VatCategory)
                 .HasConversion<int>()
                 .HasDefaultValue(ProductVatCategory.Vat15);
