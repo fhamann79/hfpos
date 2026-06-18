@@ -40,6 +40,30 @@
       </div>
     </article>
 
+    <article class="metric-card metric-card--cost">
+      <span><i class="pi pi-calculator"></i></span>
+      <div>
+        <small>Costo total</small>
+        <strong>{{ totalCost() | currency: 'USD' }}</strong>
+      </div>
+    </article>
+
+    <article class="metric-card metric-card--profit">
+      <span><i class="pi pi-chart-line"></i></span>
+      <div>
+        <small>Utilidad bruta</small>
+        <strong>{{ totalGrossProfit() | currency: 'USD' }}</strong>
+      </div>
+    </article>
+
+    <article class="metric-card metric-card--margin">
+      <span><i class="pi pi-percentage"></i></span>
+      <div>
+        <small>Margen bruto</small>
+        <strong>{{ grossMarginPercent() | number: '1.2-2' }}%</strong>
+      </div>
+    </article>
+
     <article class="metric-card">
       <span><i class="pi pi-file"></i></span>
       <div>
@@ -156,7 +180,7 @@
       [showCurrentPageReport]="true"
       currentPageReportTemplate="{first} - {last} de {totalRecords}"
       responsiveLayout="scroll"
-      [tableStyle]="{ 'min-width': '78rem' }"
+      [tableStyle]="{ 'min-width': '94rem' }"
     >
       <ng-template pTemplate="header">
         <tr>
@@ -167,6 +191,8 @@
           <th pSortableColumn="status">Estado venta <p-sortIcon field="status"></p-sortIcon></th>
           <th pSortableColumn="documentStatus">Estado SRI <p-sortIcon field="documentStatus"></p-sortIcon></th>
           <th pSortableColumn="total" class="numeric-column total-column">Total <p-sortIcon field="total"></p-sortIcon></th>
+          <th pSortableColumn="grossProfit" class="numeric-column profit-column">Utilidad <p-sortIcon field="grossProfit"></p-sortIcon></th>
+          <th pSortableColumn="grossMarginPercent" class="numeric-column margin-column">Margen <p-sortIcon field="grossMarginPercent"></p-sortIcon></th>
           <th pSortableColumn="username" class="user-column">Usuario <p-sortIcon field="username"></p-sortIcon></th>
           <th class="action-column">Accion</th>
         </tr>
@@ -202,6 +228,8 @@
           <td class="numeric-column total-column">
             <strong [class.voided-total]="sale.status === 2">{{ sale.total | currency: 'USD' }}</strong>
           </td>
+          <td class="numeric-column profit-column">{{ sale.grossProfit | currency: 'USD' }}</td>
+          <td class="numeric-column margin-column">{{ sale.grossMarginPercent | number: '1.2-2' }}%</td>
           <td class="user-column">{{ sale.username || ('userId ' + sale.userId) }}</td>
           <td class="action-column">
             <p-button
@@ -217,7 +245,7 @@
 
       <ng-template pTemplate="emptymessage">
         <tr>
-          <td colspan="9">
+          <td colspan="11">
             <div class="empty-state">
               <i class="pi pi-inbox"></i>
               <strong>No hay ventas para los filtros aplicados.</strong>
@@ -282,13 +310,17 @@
       styleClass="professional-table detail-items-table"
       [value]="sale.items"
       responsiveLayout="scroll"
-      [tableStyle]="{ 'min-width': '46rem' }"
+      [tableStyle]="{ 'min-width': '74rem' }"
     >
       <ng-template pTemplate="header">
         <tr>
           <th>Producto</th>
           <th class="numeric-column">Cantidad</th>
           <th class="numeric-column">P. unitario</th>
+          <th class="numeric-column">Costo unit.</th>
+          <th class="numeric-column">Costo total</th>
+          <th class="numeric-column">Utilidad</th>
+          <th class="numeric-column">Margen</th>
           <th>IVA</th>
           <th class="numeric-column">Total</th>
         </tr>
@@ -304,6 +336,10 @@
           </td>
           <td class="numeric-column">{{ item.quantity }}</td>
           <td class="numeric-column">{{ item.unitPrice | currency: 'USD' }}</td>
+          <td class="numeric-column">{{ item.unitCost | currency: 'USD' }}</td>
+          <td class="numeric-column">{{ item.lineCost | currency: 'USD' }}</td>
+          <td class="numeric-column">{{ item.grossProfit | currency: 'USD' }}</td>
+          <td class="numeric-column">{{ item.grossMarginPercent | number: '1.2-2' }}%</td>
           <td>{{ getVatLabel(item) }}</td>
           <td class="numeric-column">
             <strong>{{ item.lineTotal | currency: 'USD' }}</strong>
@@ -318,6 +354,9 @@
       <div><span>Subtotal neto</span><strong>{{ sale.subtotal | currency: 'USD' }}</strong></div>
       <div><span>IVA</span><strong>{{ sale.taxAmount | currency: 'USD' }}</strong></div>
       <div class="totals-grid__total"><span>Total</span><strong>{{ sale.total | currency: 'USD' }}</strong></div>
+      <div><span>Costo total</span><strong>{{ sale.totalCost | currency: 'USD' }}</strong></div>
+      <div class="totals-grid__profit"><span>Utilidad bruta</span><strong>{{ sale.grossProfit | currency: 'USD' }}</strong></div>
+      <div><span>Margen bruto</span><strong>{{ sale.grossMarginPercent | number: '1.2-2' }}%</strong></div>
     </section>
 
     @if (sale.notes) {

@@ -38,6 +38,12 @@ public class SaleListItemDto
 
     public decimal Total { get; set; }
 
+    public decimal TotalCost { get; set; }
+
+    public decimal GrossProfit { get; set; }
+
+    public decimal GrossMarginPercent { get; set; }
+
     public int ItemsCount { get; set; }
 
     public DateTime CreatedAt { get; set; }

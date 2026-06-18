@@ -91,11 +91,21 @@ export class SalesReportPage implements OnInit {
   ];
 
   readonly salesCount = computed(() => this.sales().length);
+  readonly reportableSales = computed(() => this.sales().filter((sale) => sale.status !== SaleStatus.Voided));
   readonly totalSold = computed(() =>
-    this.sales()
-      .filter((sale) => sale.status !== SaleStatus.Voided)
-      .reduce((total, sale) => total + sale.total, 0)
+    this.reportableSales().reduce((total, sale) => total + sale.total, 0)
   );
+  readonly totalCost = computed(() =>
+    this.reportableSales().reduce((total, sale) => total + sale.totalCost, 0)
+  );
+  readonly totalGrossProfit = computed(() =>
+    this.reportableSales().reduce((total, sale) => total + sale.grossProfit, 0)
+  );
+  readonly grossMarginPercent = computed(() => {
+    const marginBase = this.totalCost() + this.totalGrossProfit();
+
+    return marginBase > 0 ? (this.totalGrossProfit() / marginBase) * 100 : 0;
+  });
   readonly invoiceCount = computed(() => this.sales().filter((sale) => sale.documentType === SaleDocumentType.Invoice).length);
   readonly ticketCount = computed(() => this.sales().filter((sale) => sale.documentType === SaleDocumentType.Ticket).length);
   readonly voidedCount = computed(() => this.sales().filter((sale) => sale.status === SaleStatus.Voided).length);
@@ -186,6 +196,9 @@ export class SalesReportPage implements OnInit {
       'Estado venta',
       'Estado fiscal',
       'Total',
+      'Costo total',
+      'Utilidad bruta',
+      'Margen bruto %',
       'Usuario',
       'Notas',
     ];
@@ -200,6 +213,9 @@ export class SalesReportPage implements OnInit {
       this.saleStatusLabel(sale),
       this.fiscalStatusLabel(sale),
       this.csvMoneyValue(sale.total),
+      this.csvMoneyValue(sale.totalCost),
+      this.csvMoneyValue(sale.grossProfit),
+      this.csvPercentValue(sale.grossMarginPercent),
       sale.username ?? '',
       sale.notes ?? '',
     ]);
@@ -296,6 +312,10 @@ export class SalesReportPage implements OnInit {
   }
 
   private csvMoneyValue(value: number): string {
+    return value.toFixed(2).replace('.', ',');
+  }
+
+  private csvPercentValue(value: number): string {
     return value.toFixed(2).replace('.', ',');
   }
 
