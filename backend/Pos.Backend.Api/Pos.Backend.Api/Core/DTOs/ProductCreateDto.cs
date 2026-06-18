@@ -9,6 +9,7 @@ public class ProductCreateDto
     public string? Barcode { get; set; }
     public string? InternalCode { get; set; }
     public decimal Price { get; set; }
+    public decimal Cost { get; set; }
     public decimal MinimumStock { get; set; } = 3m;
     public ProductVatCategory? VatCategory { get; set; }
 }

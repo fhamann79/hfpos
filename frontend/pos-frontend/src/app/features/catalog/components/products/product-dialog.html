@@ -91,6 +91,24 @@
       </div>
 
       <div class="field">
+        <label for="product-cost">Costo</label>
+        <p-inputnumber
+          inputId="product-cost"
+          formControlName="cost"
+          mode="currency"
+          currency="USD"
+          locale="en-US"
+          [min]="0"
+          [minFractionDigits]="2"
+          [maxFractionDigits]="4"
+        ></p-inputnumber>
+        @if (form.controls.cost.touched && form.controls.cost.invalid) {
+          <small class="p-error">El costo debe ser mayor o igual a 0.</small>
+        }
+        <small class="field-help">Costo referencial para valorizar inventario.</small>
+      </div>
+
+      <div class="field">
         <label for="product-minimum-stock">Stock minimo</label>
         <p-inputnumber
           inputId="product-minimum-stock"

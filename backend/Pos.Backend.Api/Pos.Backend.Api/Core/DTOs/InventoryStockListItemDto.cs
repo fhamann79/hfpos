@@ -10,6 +10,8 @@ public class InventoryStockListItemDto
     public string CategoryName { get; set; }
     public decimal Quantity { get; set; }
     public decimal MinimumStock { get; set; }
+    public decimal UnitCost { get; set; }
+    public decimal InventoryValue { get; set; }
     public StockStatus StockStatus { get; set; }
     public bool IsActive { get; set; }
 }

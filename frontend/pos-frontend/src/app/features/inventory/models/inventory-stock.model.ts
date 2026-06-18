@@ -11,6 +11,8 @@ export interface InventoryStock {
   categoryName: string;
   quantity: number;
   minimumStock: number;
+  unitCost: number;
+  inventoryValue: number;
   stockStatus: StockStatus | keyof typeof StockStatus;
   isActive: boolean;
 }

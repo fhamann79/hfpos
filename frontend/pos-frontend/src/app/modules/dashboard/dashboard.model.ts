@@ -34,6 +34,7 @@ export interface DashboardInventorySummary {
   activeProducts: number;
   zeroStockProducts: number;
   lowStockProducts: number;
+  totalInventoryValue: number;
   lowestStockProducts: DashboardLowStockProduct[];
 }
 

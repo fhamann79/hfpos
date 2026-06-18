@@ -10,6 +10,7 @@ public class ProductDto
     public string? Barcode { get; set; }
     public string? InternalCode { get; set; }
     public decimal Price { get; set; }
+    public decimal Cost { get; set; }
     public decimal MinimumStock { get; set; }
     public ProductVatCategory VatCategory { get; set; }
     public bool IsActive { get; set; }

@@ -70,6 +70,8 @@ public class InventoryService : IInventoryService
                 CategoryName = x.CategoryName,
                 Quantity = x.Quantity,
                 MinimumStock = x.Product.MinimumStock,
+                UnitCost = x.Product.Cost,
+                InventoryValue = x.Quantity * x.Product.Cost,
                 IsActive = x.Product.IsActive
             })
             .ToListAsync();

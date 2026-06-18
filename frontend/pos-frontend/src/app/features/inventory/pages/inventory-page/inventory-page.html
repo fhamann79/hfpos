@@ -55,6 +55,17 @@
               </div>
             </p-card>
 
+            <p-card styleClass="health-card health-card--value">
+              <div class="health-card__content">
+                <span class="health-icon"><i class="pi pi-dollar"></i></span>
+                <div>
+                  <small>Valor inventario</small>
+                  <strong>{{ totalInventoryValue() | currency: 'USD' }}</strong>
+                  <span>Costo referencial por producto</span>
+                </div>
+              </div>
+            </p-card>
+
             <p-card styleClass="health-card health-card--critical">
               <div class="health-card__content">
                 <span class="health-icon"><i class="pi pi-times-circle"></i></span>
@@ -183,7 +194,7 @@
               [rowsPerPageOptions]="[10, 25, 50]"
               [sortMode]="'multiple'"
               responsiveLayout="scroll"
-              [tableStyle]="{ 'min-width': '72rem' }"
+              [tableStyle]="{ 'min-width': '92rem' }"
             >
               <ng-template pTemplate="header">
                 <tr>
@@ -191,6 +202,8 @@
                   <th pSortableColumn="categoryName">Categoría <p-sortIcon field="categoryName"></p-sortIcon></th>
                   <th pSortableColumn="quantity" class="numeric-column">Cantidad <p-sortIcon field="quantity"></p-sortIcon></th>
                   <th pSortableColumn="minimumStock" class="numeric-column">Minimo <p-sortIcon field="minimumStock"></p-sortIcon></th>
+                  <th pSortableColumn="unitCost" class="numeric-column">Costo unitario <p-sortIcon field="unitCost"></p-sortIcon></th>
+                  <th pSortableColumn="inventoryValue" class="numeric-column">Valor inventario <p-sortIcon field="inventoryValue"></p-sortIcon></th>
                   <th>Riesgo</th>
                   <th pSortableColumn="isActive">Estado <p-sortIcon field="isActive"></p-sortIcon></th>
                   <th>Acción</th>
@@ -214,6 +227,12 @@
                   </td>
                   <td class="numeric-column">
                     <span class="minimum-stock-value">{{ stock.minimumStock }}</span>
+                  </td>
+                  <td class="numeric-column">
+                    <span class="money-value">{{ stock.unitCost | currency: 'USD' }}</span>
+                  </td>
+                  <td class="numeric-column">
+                    <span class="money-value">{{ stock.inventoryValue | currency: 'USD' }}</span>
                   </td>
                   <td>
                     <span [class]="stockRiskClass(stock)">
@@ -241,7 +260,7 @@
 
               <ng-template pTemplate="emptymessage">
                 <tr>
-                  <td colspan="7">
+                  <td colspan="9">
                     <div class="empty-state">
                       <i class="pi pi-inbox"></i>
                       <strong>No hay productos que coincidan con los filtros aplicados.</strong>

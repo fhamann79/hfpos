@@ -56,6 +56,8 @@ public class DashboardInventorySummaryDto
 
     public int LowStockProducts { get; set; }
 
+    public decimal TotalInventoryValue { get; set; }
+
     public List<DashboardLowStockProductDto> LowestStockProducts { get; set; } = new();
 }
 

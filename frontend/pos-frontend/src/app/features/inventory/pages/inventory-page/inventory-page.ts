@@ -103,6 +103,9 @@ export class InventoryPage implements OnInit {
   readonly totalInventoryUnits = computed(() =>
     this.stocks().reduce((total, stock) => total + stock.quantity, 0)
   );
+  readonly totalInventoryValue = computed(() =>
+    this.stocks().reduce((total, stock) => total + stock.inventoryValue, 0)
+  );
 
   readonly movements = signal<InventoryMovement[]>([]);
   readonly movementsLoading = signal(false);

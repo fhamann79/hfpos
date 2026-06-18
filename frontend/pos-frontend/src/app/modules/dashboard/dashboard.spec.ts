@@ -25,6 +25,7 @@ const summary: DashboardSummary = {
     activeProducts: 0,
     zeroStockProducts: 0,
     lowStockProducts: 0,
+    totalInventoryValue: 0,
     lowestStockProducts: [],
   },
   fiscal: {
