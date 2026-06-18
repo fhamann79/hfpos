@@ -31,10 +31,10 @@
     [paginator]="true"
     [rows]="10"
     [rowsPerPageOptions]="[10, 25, 50]"
-    [globalFilterFields]="['id', 'name', 'barcode', 'internalCode', 'categoryId', 'price', 'minimumStock', 'vatCategory', 'isActive']"
+    [globalFilterFields]="['id', 'name', 'barcode', 'internalCode', 'categoryId', 'price', 'cost', 'minimumStock', 'vatCategory', 'isActive']"
     [sortMode]="'multiple'"
     responsiveLayout="scroll"
-    [tableStyle]="{ 'min-width': '60rem' }"
+    [tableStyle]="{ 'min-width': '68rem' }"
   >
     <ng-template pTemplate="caption">
       <div class="caption-actions">
@@ -54,6 +54,7 @@
         <th pSortableColumn="name">Nombre <p-sortIcon field="name"></p-sortIcon></th>
         <th>Categoría</th>
         <th pSortableColumn="price">Precio <p-sortIcon field="price"></p-sortIcon></th>
+        <th pSortableColumn="cost">Costo <p-sortIcon field="cost"></p-sortIcon></th>
         <th pSortableColumn="minimumStock">Stock minimo <p-sortIcon field="minimumStock"></p-sortIcon></th>
         <th pSortableColumn="isActive">Estado <p-sortIcon field="isActive"></p-sortIcon></th>
         @if (canWrite) {
@@ -95,6 +96,9 @@
           </div>
         </td>
         <td>
+          <span class="cost-cell">{{ product.cost | currency: 'USD' }}</span>
+        </td>
+        <td>
           <span class="minimum-stock-cell">{{ product.minimumStock }}</span>
         </td>
         <td>
@@ -113,7 +117,7 @@
 
     <ng-template pTemplate="emptymessage">
       <tr>
-        <td [attr.colspan]="canWrite ? 7 : 6">
+        <td [attr.colspan]="canWrite ? 8 : 7">
           <div class="empty-state">
             <span>No hay registros</span>
             @if (canWrite) {

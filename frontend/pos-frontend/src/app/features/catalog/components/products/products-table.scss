@@ -109,6 +109,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+.cost-cell {
+  color: var(--app-text);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
 .empty-state {
   min-height: 10rem;
   display: flex;

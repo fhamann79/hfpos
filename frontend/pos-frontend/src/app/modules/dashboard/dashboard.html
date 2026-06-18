@@ -67,9 +67,9 @@
       <article class="metric-card metric-card--stock">
         <span><i class="pi pi-box"></i></span>
         <div>
-          <small>Productos sin stock</small>
-          <strong>{{ data.inventory.zeroStockProducts }}</strong>
-          <em>{{ data.inventory.lowStockProducts }} bajo minimo</em>
+          <small>Valor inventario</small>
+          <strong>{{ data.inventory.totalInventoryValue | currency: 'USD' }}</strong>
+          <em>{{ data.inventory.zeroStockProducts }} sin stock / {{ data.inventory.lowStockProducts }} bajo minimo</em>
         </div>
       </article>
 
@@ -146,7 +146,10 @@
         <div class="panel-header">
           <div>
             <h2>Inventario sensible</h2>
-            <p>{{ data.inventory.activeProducts }} productos activos. Alertas segun stock minimo por producto.</p>
+            <p>
+              {{ data.inventory.activeProducts }} productos activos.
+              Valor referencial {{ data.inventory.totalInventoryValue | currency: 'USD' }}.
+            </p>
           </div>
           <p-tag value="Stock" severity="secondary"></p-tag>
         </div>

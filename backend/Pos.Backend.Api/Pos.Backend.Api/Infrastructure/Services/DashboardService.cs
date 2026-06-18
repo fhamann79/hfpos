@@ -107,6 +107,7 @@ public class DashboardService : IDashboardService
                 ProductName = p.Name,
                 CategoryName = p.Category.Name,
                 MinimumStock = p.MinimumStock,
+                Cost = p.Cost,
                 Quantity = _context.ProductStocks
                     .Where(s => s.ProductId == p.Id
                         && s.CompanyId == companyId
@@ -121,6 +122,7 @@ public class DashboardService : IDashboardService
             ActiveProducts = stocks.Count,
             ZeroStockProducts = stocks.Count(s => s.Quantity <= 0m),
             LowStockProducts = stocks.Count(s => IsLowStock(s.Quantity, s.MinimumStock)),
+            TotalInventoryValue = stocks.Sum(s => s.Quantity * s.Cost),
             LowestStockProducts = stocks
                 .OrderBy(s => s.Quantity)
                 .ThenBy(s => s.ProductName)
