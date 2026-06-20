@@ -5,6 +5,8 @@ export const PERMISSIONS = {
   catalogProductsWrite: 'CATALOG_PRODUCTS_WRITE',
   suppliersRead: 'SUPPLIERS_READ',
   suppliersWrite: 'SUPPLIERS_WRITE',
+  purchasesRead: 'PURCHASES_READ',
+  purchasesWrite: 'PURCHASES_WRITE',
   operationalStructureRead: 'OP_STRUCTURE_READ',
   operationalStructureWrite: 'OP_STRUCTURE_WRITE',
   adminUsersRead: 'ADMIN_USERS_READ',

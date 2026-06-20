@@ -13,6 +13,7 @@ export enum InventoryMovementSourceType {
   ManualAdjustment = 3,
   Sale = 4,
   SaleVoid = 5,
+  PurchaseReceipt = 6,
 }
 
 export interface InventoryMovement {

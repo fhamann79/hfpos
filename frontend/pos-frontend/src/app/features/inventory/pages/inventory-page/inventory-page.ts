@@ -144,6 +144,7 @@ export class InventoryPage implements OnInit {
     { label: 'Ajuste manual', value: InventoryMovementSourceType.ManualAdjustment },
     { label: 'Venta', value: InventoryMovementSourceType.Sale },
     { label: 'Anulación de venta', value: InventoryMovementSourceType.SaleVoid },
+    { label: 'Recepción de compra', value: InventoryMovementSourceType.PurchaseReceipt },
   ];
 
   readonly operationOptions: SelectOption<InventoryOperationKind>[] = [
@@ -460,6 +461,10 @@ export class InventoryPage implements OnInit {
 
     if (sourceType === InventoryMovementSourceType.SaleVoid) {
       return 'source-badge source-badge--sale-void';
+    }
+
+    if (sourceType === InventoryMovementSourceType.PurchaseReceipt) {
+      return 'source-badge source-badge--purchase';
     }
 
     if (sourceType === InventoryMovementSourceType.ManualAdjustment) {
