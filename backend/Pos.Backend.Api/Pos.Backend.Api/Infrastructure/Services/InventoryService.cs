@@ -348,6 +348,29 @@ public class InventoryService : IInventoryService
             saleItemId);
     }
 
+    public Task<InventoryMovementDto> RegisterPurchaseReceiptAsync(
+        int productId,
+        decimal quantity,
+        int purchaseReceiptId,
+        int purchaseReceiptItemId,
+        string? notes)
+    {
+        if (quantity <= 0m)
+        {
+            throw new InvalidOperationException("INVALID_QUANTITY");
+        }
+
+        return RegisterMovementAsync(
+            productId,
+            InventoryMovementType.Entry,
+            InventoryMovementSourceType.PurchaseReceipt,
+            quantity,
+            $"PURCHASE-RECEIPT-{purchaseReceiptId}",
+            notes,
+            purchaseReceiptId,
+            purchaseReceiptItemId);
+    }
+
     private async Task<InventoryMovementDto> RegisterMovementAsync(
         int productId,
         InventoryMovementType type,

@@ -26,6 +26,8 @@ public class PosDbContext : DbContext
     public DbSet<Product> Products { get; set; }
     public DbSet<Customer> Customers { get; set; }
     public DbSet<Supplier> Suppliers { get; set; }
+    public DbSet<PurchaseReceipt> PurchaseReceipts { get; set; }
+    public DbSet<PurchaseReceiptItem> PurchaseReceiptItems { get; set; }
     public DbSet<ProductStock> ProductStocks { get; set; }
     public DbSet<InventoryMovement> InventoryMovements { get; set; }
     public DbSet<DocumentSequence> DocumentSequences { get; set; }
@@ -297,6 +299,83 @@ public class PosDbContext : DbContext
                 .HasFilter(@"""Identification"" IS NOT NULL");
         });
 
+        modelBuilder.Entity<PurchaseReceipt>(entity =>
+        {
+            entity.Property(r => r.ReceiptNumber)
+                .HasMaxLength(50);
+
+            entity.Property(r => r.SupplierDocumentNumber)
+                .HasMaxLength(50);
+
+            entity.Property(r => r.Status)
+                .HasConversion<int>();
+
+            entity.Property(r => r.Subtotal)
+                .HasPrecision(18, 4);
+
+            entity.Property(r => r.Notes)
+                .HasMaxLength(500);
+
+            entity.HasIndex(r => new { r.CompanyId, r.EstablishmentId, r.ReceiptDate });
+            entity.HasIndex(r => new { r.CompanyId, r.SupplierId, r.ReceiptDate });
+            entity.HasIndex(r => new { r.CompanyId, r.ReceiptNumber });
+            entity.HasIndex(r => new { r.CompanyId, r.SupplierDocumentNumber });
+
+            entity.HasOne(r => r.Company)
+                .WithMany()
+                .HasForeignKey(r => r.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.Establishment)
+                .WithMany()
+                .HasForeignKey(r => r.EstablishmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.Supplier)
+                .WithMany()
+                .HasForeignKey(r => r.SupplierId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(r => r.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<PurchaseReceiptItem>(entity =>
+        {
+            entity.Property(i => i.Quantity)
+                .HasPrecision(18, 4);
+
+            entity.Property(i => i.UnitCost)
+                .HasPrecision(18, 4);
+
+            entity.Property(i => i.LineTotal)
+                .HasPrecision(18, 4);
+
+            entity.Property(i => i.PreviousProductCost)
+                .HasPrecision(18, 4);
+
+            entity.Property(i => i.AppliedProductCost)
+                .HasPrecision(18, 4);
+
+            entity.Property(i => i.Notes)
+                .HasMaxLength(300);
+
+            entity.HasIndex(i => i.PurchaseReceiptId);
+            entity.HasIndex(i => i.ProductId);
+
+            entity.HasOne(i => i.PurchaseReceipt)
+                .WithMany(r => r.Items)
+                .HasForeignKey(i => i.PurchaseReceiptId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(i => i.Product)
+                .WithMany()
+                .HasForeignKey(i => i.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
 
 
         modelBuilder.Entity<ProductStock>(entity =>
@@ -340,7 +419,7 @@ public class PosDbContext : DbContext
             entity.HasIndex(im => new { im.SourceType, im.SourceId });
             entity.HasIndex(im => new { im.SourceType, im.SourceId, im.SourceLineId })
                 .IsUnique()
-                .HasFilter(@"""SourceId"" IS NOT NULL AND ""SourceLineId"" IS NOT NULL AND ""SourceType"" IN (4, 5)");
+                .HasFilter(@"""SourceId"" IS NOT NULL AND ""SourceLineId"" IS NOT NULL AND ""SourceType"" IN (4, 5, 6)");
 
             entity.HasOne(im => im.Product)
                 .WithMany()

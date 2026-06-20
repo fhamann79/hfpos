@@ -144,6 +144,8 @@ builder.Services.AddAuthorization(options =>
         AppPermissions.CatalogProductsWrite,
         AppPermissions.SuppliersRead,
         AppPermissions.SuppliersWrite,
+        AppPermissions.PurchasesRead,
+        AppPermissions.PurchasesWrite,
         AppPermissions.OpStructureRead,
         AppPermissions.OpStructureWrite,
         AppPermissions.PosSalesCreate,

@@ -6,5 +6,6 @@ public enum InventoryMovementSourceType
     ManualExit = 2,
     ManualAdjustment = 3,
     Sale = 4,
-    SaleVoid = 5
+    SaleVoid = 5,
+    PurchaseReceipt = 6
 }

@@ -11,6 +11,8 @@ public static class AppPermissions
     public const string CatalogProductsWrite = "CATALOG_PRODUCTS_WRITE";
     public const string SuppliersRead = "SUPPLIERS_READ";
     public const string SuppliersWrite = "SUPPLIERS_WRITE";
+    public const string PurchasesRead = "PURCHASES_READ";
+    public const string PurchasesWrite = "PURCHASES_WRITE";
     public const string OpStructureRead = "OP_STRUCTURE_READ";
     public const string OpStructureWrite = "OP_STRUCTURE_WRITE";
     public const string PosSalesCreate = "POS_SALES_CREATE";
