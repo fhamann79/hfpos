@@ -17,5 +17,9 @@ public class PurchaseReceiptDto
     public int CreatedByUserId { get; set; }
     public string CreatedByUsername { get; set; } = string.Empty;
     public DateTime? PostedAt { get; set; }
+    public DateTime? CanceledAt { get; set; }
+    public int? CanceledByUserId { get; set; }
+    public string? CanceledByUsername { get; set; }
+    public string? CancelReason { get; set; }
     public List<PurchaseReceiptItemDto> Items { get; set; } = new();
 }

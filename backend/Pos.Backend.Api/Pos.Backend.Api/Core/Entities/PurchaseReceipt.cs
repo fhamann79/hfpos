@@ -34,5 +34,12 @@ public class PurchaseReceipt
 
     public DateTime? PostedAt { get; set; }
 
+    public DateTime? CanceledAt { get; set; }
+
+    public int? CanceledByUserId { get; set; }
+    public User? CanceledByUser { get; set; }
+
+    public string? CancelReason { get; set; }
+
     public List<PurchaseReceiptItem> Items { get; set; } = new();
 }

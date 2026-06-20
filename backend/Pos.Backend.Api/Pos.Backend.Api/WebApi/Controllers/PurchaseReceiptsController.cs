@@ -39,6 +39,7 @@ public class PurchaseReceiptsController : ControllerBase
     public async Task<ActionResult<IEnumerable<PurchaseReceiptListItemDto>>> Get(
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to,
+        [FromQuery] PurchaseReceiptStatus? status,
         [FromQuery] string? search)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
@@ -58,6 +59,11 @@ public class PurchaseReceiptsController : ControllerBase
         {
             var toUtc = DateTime.SpecifyKind(to.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
             query = query.Where(r => r.ReceiptDate <= toUtc);
+        }
+
+        if (status.HasValue)
+        {
+            query = query.Where(r => r.Status == status.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -87,7 +93,11 @@ public class PurchaseReceiptsController : ControllerBase
                 CreatedAt = r.CreatedAt,
                 CreatedByUserId = r.CreatedByUserId,
                 CreatedByUsername = r.CreatedByUser.Username,
-                PostedAt = r.PostedAt
+                PostedAt = r.PostedAt,
+                CanceledAt = r.CanceledAt,
+                CanceledByUserId = r.CanceledByUserId,
+                CanceledByUsername = r.CanceledByUser != null ? r.CanceledByUser.Username : null,
+                CancelReason = r.CancelReason
             })
             .ToListAsync();
 
@@ -122,6 +132,10 @@ public class PurchaseReceiptsController : ControllerBase
                 CreatedByUserId = r.CreatedByUserId,
                 CreatedByUsername = r.CreatedByUser.Username,
                 PostedAt = r.PostedAt,
+                CanceledAt = r.CanceledAt,
+                CanceledByUserId = r.CanceledByUserId,
+                CanceledByUsername = r.CanceledByUser != null ? r.CanceledByUser.Username : null,
+                CancelReason = r.CancelReason,
                 Items = r.Items
                     .OrderBy(i => i.Id)
                     .Select(i => new PurchaseReceiptItemDto
@@ -280,6 +294,75 @@ public class PurchaseReceiptsController : ControllerBase
         }
     }
 
+    [HttpPost("{id:int}/cancel")]
+    [Authorize(Policy = AppPermissions.PurchasesWrite)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<PurchaseReceiptDto>> Cancel(int id, [FromBody] CancelPurchaseReceiptDto dto)
+    {
+        var reason = NormalizeOptionalText(dto?.Reason);
+
+        if (reason is null)
+        {
+            return BadRequest(new ApiErrorResponse { Error = "PURCHASE_RECEIPT_CANCEL_REASON_REQUIRED" });
+        }
+
+        if (reason.Length > 500)
+        {
+            return BadRequest(new ApiErrorResponse { Error = "PURCHASE_RECEIPT_CANCEL_REASON_REQUIRED" });
+        }
+
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+
+        try
+        {
+            var receipt = await _context.PurchaseReceipts
+                .Include(r => r.Items)
+                .FirstOrDefaultAsync(r => r.Id == id
+                    && r.CompanyId == operationalContext.CompanyId
+                    && r.EstablishmentId == operationalContext.EstablishmentId);
+
+            if (receipt is null)
+            {
+                return NotFound(new ApiErrorResponse { Error = "PURCHASE_RECEIPT_NOT_FOUND" });
+            }
+
+            if (receipt.Status == PurchaseReceiptStatus.Canceled)
+            {
+                return Conflict(new ApiErrorResponse { Error = "PURCHASE_RECEIPT_ALREADY_CANCELED" });
+            }
+
+            foreach (var item in receipt.Items.OrderBy(i => i.Id))
+            {
+                await _inventoryService.RegisterPurchaseReceiptCancelAsync(
+                    item.ProductId,
+                    item.Quantity,
+                    receipt.Id,
+                    item.Id,
+                    reason);
+            }
+
+            var now = DateTime.UtcNow;
+            receipt.Status = PurchaseReceiptStatus.Canceled;
+            receipt.CanceledAt = now;
+            receipt.CanceledByUserId = operationalContext.UserId;
+            receipt.CancelReason = reason;
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            var response = await LoadReceiptDtoAsync(receipt.Id, operationalContext.CompanyId, operationalContext.EstablishmentId);
+            return Ok(response);
+        }
+        catch (InvalidOperationException ex) when (TryMapPurchaseReceiptCancelError(ex.Message, out var result))
+        {
+            await transaction.RollbackAsync();
+            return result;
+        }
+    }
+
     private async Task<PurchaseReceiptDto> LoadReceiptDtoAsync(int id, int companyId, int establishmentId)
     {
         return await _context.PurchaseReceipts
@@ -300,6 +383,10 @@ public class PurchaseReceiptsController : ControllerBase
                 CreatedByUserId = r.CreatedByUserId,
                 CreatedByUsername = r.CreatedByUser.Username,
                 PostedAt = r.PostedAt,
+                CanceledAt = r.CanceledAt,
+                CanceledByUserId = r.CanceledByUserId,
+                CanceledByUsername = r.CanceledByUser != null ? r.CanceledByUser.Username : null,
+                CancelReason = r.CancelReason,
                 Items = r.Items
                     .OrderBy(i => i.Id)
                     .Select(i => new PurchaseReceiptItemDto
@@ -347,6 +434,20 @@ public class PurchaseReceiptsController : ControllerBase
             "PRODUCT_NOT_FOUND" => new NotFoundObjectResult(new ApiErrorResponse { Error = "PRODUCT_NOT_FOUND" }),
             "PRODUCT_INACTIVE" => new BadRequestObjectResult(new ApiErrorResponse { Error = "PRODUCT_INACTIVE" }),
             "INVALID_QUANTITY" => new BadRequestObjectResult(new ApiErrorResponse { Error = "PURCHASE_RECEIPT_QUANTITY_INVALID" }),
+            "INVENTORY_CONCURRENCY_CONFLICT" => new ConflictObjectResult(new ApiErrorResponse { Error = "INVENTORY_CONCURRENCY_CONFLICT" }),
+            _ => new EmptyResult()
+        };
+
+        return result is not EmptyResult;
+    }
+
+    private static bool TryMapPurchaseReceiptCancelError(string error, out ActionResult result)
+    {
+        result = error switch
+        {
+            "PRODUCT_NOT_FOUND" => new NotFoundObjectResult(new ApiErrorResponse { Error = "PRODUCT_NOT_FOUND" }),
+            "INVALID_QUANTITY" => new BadRequestObjectResult(new ApiErrorResponse { Error = "PURCHASE_RECEIPT_QUANTITY_INVALID" }),
+            "INSUFFICIENT_STOCK" => new ConflictObjectResult(new ApiErrorResponse { Error = "PURCHASE_RECEIPT_CANCEL_INSUFFICIENT_STOCK" }),
             "INVENTORY_CONCURRENCY_CONFLICT" => new ConflictObjectResult(new ApiErrorResponse { Error = "INVENTORY_CONCURRENCY_CONFLICT" }),
             _ => new EmptyResult()
         };

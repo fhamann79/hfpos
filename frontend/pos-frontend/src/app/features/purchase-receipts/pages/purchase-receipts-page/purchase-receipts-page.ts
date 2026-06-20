@@ -80,15 +80,22 @@ export class PurchaseReceiptsPage implements OnInit {
   readonly catalogLoading = signal(false);
   readonly saving = signal(false);
   readonly detailLoading = signal(false);
+  readonly canceling = signal(false);
   readonly errorMessage = signal('');
   readonly formError = signal('');
   readonly detailError = signal('');
+  readonly cancelError = signal('');
 
   readonly canWrite = computed(() => this.permissionService.hasPermission(PERMISSIONS.purchasesWrite));
   readonly activeSuppliers = computed(() => this.suppliers().filter((supplier) => supplier.isActive));
   readonly activeProducts = computed(() => this.products().filter((product) => product.isActive));
-  readonly totalReceived = computed(() => this.receipts().reduce((sum, receipt) => sum + receipt.subtotal, 0));
+  readonly totalReceived = computed(() =>
+    this.receipts()
+      .filter((receipt) => receipt.status === PurchaseReceiptStatus.Posted)
+      .reduce((sum, receipt) => sum + receipt.subtotal, 0)
+  );
   readonly postedCount = computed(() => this.receipts().filter((receipt) => receipt.status === PurchaseReceiptStatus.Posted).length);
+  readonly canceledCount = computed(() => this.receipts().filter((receipt) => receipt.status === PurchaseReceiptStatus.Canceled).length);
   readonly subtotal = computed(() => this.draftItems().reduce((sum, item) => sum + this.lineTotal(item), 0));
 
   readonly supplierOptions = computed<SelectOption<number>[]>(() =>
@@ -105,16 +112,24 @@ export class PurchaseReceiptsPage implements OnInit {
     }))
   );
 
+  readonly statusOptions: SelectOption<PurchaseReceiptStatus>[] = [
+    { label: 'Publicadas', value: PurchaseReceiptStatus.Posted },
+    { label: 'Canceladas', value: PurchaseReceiptStatus.Canceled },
+  ];
+
   search = '';
   from = '';
   to = '';
+  status: PurchaseReceiptStatus | null = null;
   createDialogVisible = false;
   detailDialogVisible = false;
+  cancelDialogVisible = false;
   supplierId: number | null = null;
   receiptNumber = '';
   supplierDocumentNumber = '';
   receiptDate = this.formatDateInput(new Date());
   notes = '';
+  cancelReason = '';
 
   ngOnInit(): void {
     this.loadReferenceData();
@@ -160,6 +175,7 @@ export class PurchaseReceiptsPage implements OnInit {
         search: this.search,
         from: this.from,
         to: this.to,
+        status: this.status,
       })
       .subscribe({
         next: (receipts) => {
@@ -177,6 +193,7 @@ export class PurchaseReceiptsPage implements OnInit {
     this.search = '';
     this.from = '';
     this.to = '';
+    this.status = null;
     this.loadReceipts();
   }
 
@@ -295,6 +312,58 @@ export class PurchaseReceiptsPage implements OnInit {
     this.detailError.set('');
   }
 
+  openCancelDialog(): void {
+    const receipt = this.selectedReceipt();
+    if (!this.canWrite() || !receipt || receipt.status !== PurchaseReceiptStatus.Posted) {
+      return;
+    }
+
+    this.cancelReason = '';
+    this.cancelError.set('');
+    this.cancelDialogVisible = true;
+  }
+
+  closeCancelDialog(): void {
+    this.cancelDialogVisible = false;
+    this.cancelReason = '';
+    this.cancelError.set('');
+    this.canceling.set(false);
+  }
+
+  confirmCancelReceipt(): void {
+    const receipt = this.selectedReceipt();
+    if (!this.canWrite() || !receipt || receipt.status !== PurchaseReceiptStatus.Posted) {
+      return;
+    }
+
+    const reason = this.cancelReason.trim();
+    if (!reason || reason.length > 500) {
+      this.cancelError.set('Ingresa una razón de cancelación válida.');
+      return;
+    }
+
+    this.canceling.set(true);
+    this.cancelError.set('');
+
+    this.purchaseReceiptService.cancel(receipt.id, { reason }).subscribe({
+      next: (updatedReceipt) => {
+        this.canceling.set(false);
+        this.selectedReceipt.set(updatedReceipt);
+        this.closeCancelDialog();
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Recepción cancelada',
+          detail: 'El stock ingresado fue revertido con movimientos auditables.',
+        });
+        this.loadReceipts();
+      },
+      error: (error: HttpErrorResponse) => {
+        this.canceling.set(false);
+        this.cancelError.set(resolveHttpErrorMessage(error, 'No se pudo cancelar la recepción.'));
+      },
+    });
+  }
+
   lineTotal(item: ReceiptDraftItem): number {
     const quantity = item.quantity ?? 0;
     const unitCost = item.unitCost ?? 0;
@@ -302,11 +371,39 @@ export class PurchaseReceiptsPage implements OnInit {
   }
 
   statusLabel(status: PurchaseReceiptStatus): string {
-    return status === PurchaseReceiptStatus.Posted ? 'Registrada' : String(status);
+    if (status === PurchaseReceiptStatus.Posted) {
+      return 'Publicada';
+    }
+
+    if (status === PurchaseReceiptStatus.Canceled) {
+      return 'Cancelada';
+    }
+
+    return String(status);
   }
 
-  statusSeverity(status: PurchaseReceiptStatus): 'success' | 'secondary' {
-    return status === PurchaseReceiptStatus.Posted ? 'success' : 'secondary';
+  statusSeverity(status: PurchaseReceiptStatus): 'success' | 'danger' | 'secondary' {
+    if (status === PurchaseReceiptStatus.Posted) {
+      return 'success';
+    }
+
+    if (status === PurchaseReceiptStatus.Canceled) {
+      return 'danger';
+    }
+
+    return 'secondary';
+  }
+
+  isPosted(receipt: PurchaseReceipt | PurchaseReceiptListItem): boolean {
+    return receipt.status === PurchaseReceiptStatus.Posted;
+  }
+
+  isCanceled(receipt: PurchaseReceipt | PurchaseReceiptListItem): boolean {
+    return receipt.status === PurchaseReceiptStatus.Canceled;
+  }
+
+  rowClass(receipt: PurchaseReceiptListItem): string {
+    return receipt.status === PurchaseReceiptStatus.Canceled ? 'row-canceled' : '';
   }
 
   productCost(productId: number | null): number | null {

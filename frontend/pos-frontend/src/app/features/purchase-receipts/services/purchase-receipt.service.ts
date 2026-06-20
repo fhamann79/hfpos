@@ -2,6 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { environment } from '../../../../environments/environment';
 import {
+  CancelPurchaseReceiptRequest,
   CreatePurchaseReceiptRequest,
   PurchaseReceipt,
   PurchaseReceiptFilters,
@@ -29,6 +30,10 @@ export class PurchaseReceiptService {
       params = params.set('to', filters.to);
     }
 
+    if (filters.status !== null && filters.status !== undefined) {
+      params = params.set('status', filters.status);
+    }
+
     return this.http.get<PurchaseReceiptListItem[]>(this.baseUrl, { params });
   }
 
@@ -38,5 +43,9 @@ export class PurchaseReceiptService {
 
   create(payload: CreatePurchaseReceiptRequest) {
     return this.http.post<PurchaseReceipt>(this.baseUrl, payload);
+  }
+
+  cancel(id: number, payload: CancelPurchaseReceiptRequest) {
+    return this.http.post<PurchaseReceipt>(`${this.baseUrl}/${id}/cancel`, payload);
   }
 }

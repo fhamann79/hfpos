@@ -7,11 +7,15 @@
 
     <div class="header-actions">
       <div class="summary-chip">
-        <small>Recepciones</small>
+        <small>Publicadas</small>
         <strong>{{ postedCount() }}</strong>
       </div>
+      <div class="summary-chip summary-chip--danger">
+        <small>Canceladas</small>
+        <strong>{{ canceledCount() }}</strong>
+      </div>
       <div class="summary-chip summary-chip--value">
-        <small>Total</small>
+        <small>Total vigente</small>
         <strong>{{ totalReceived() | currency: 'USD' : 'symbol' : '1.2-2' }}</strong>
       </div>
       <p-button
@@ -52,6 +56,17 @@
           <label class="filter-field">
             <span>Hasta</span>
             <input pInputText type="date" [(ngModel)]="to" />
+          </label>
+          <label class="filter-field">
+            <span>Estado</span>
+            <p-select
+              [options]="statusOptions"
+              [(ngModel)]="status"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Todos"
+              [showClear]="true"
+            ></p-select>
           </label>
         </div>
       </ng-template>
@@ -98,7 +113,7 @@
       </ng-template>
 
       <ng-template pTemplate="body" let-receipt>
-        <tr>
+        <tr [class]="rowClass(receipt)">
           <td>
             <span class="date-stack">
               <strong>{{ receipt.receiptDate | date: 'dd/MM/yyyy' }}</strong>
@@ -117,6 +132,9 @@
           <td>{{ receipt.createdByUsername }}</td>
           <td>
             <p-tag [severity]="statusSeverity(receipt.status)" [value]="statusLabel(receipt.status)"></p-tag>
+            @if (receipt.canceledAt) {
+              <small class="row-hint">Cancelada {{ receipt.canceledAt | date: 'dd/MM/yyyy' }}</small>
+            }
           </td>
           <td class="action-column">
             <p-button
@@ -328,6 +346,22 @@
         </div>
       </div>
 
+      @if (isCanceled(receipt)) {
+        <div class="cancellation-panel">
+          <i class="pi pi-ban"></i>
+          <div>
+            <strong>Recepción cancelada</strong>
+            <span>
+              {{ receipt.canceledAt | date: 'dd/MM/yyyy HH:mm' }}
+              @if (receipt.canceledByUsername) {
+                · {{ receipt.canceledByUsername }}
+              }
+            </span>
+            <p>{{ receipt.cancelReason }}</p>
+          </div>
+        </div>
+      }
+
       <p-table
         styleClass="professional-table detail-table"
         [value]="receipt.items"
@@ -365,8 +399,57 @@
         <span>Subtotal</span>
         <strong>{{ receipt.subtotal | currency: 'USD' : 'symbol' : '1.2-2' }}</strong>
       </div>
+
+      @if (canWrite() && isPosted(receipt)) {
+        <div class="detail-actions">
+          <p-button
+            label="Cancelar recepcion"
+            icon="pi pi-ban"
+            severity="danger"
+            [outlined]="true"
+            (onClick)="openCancelDialog()"
+          ></p-button>
+        </div>
+      }
     </section>
   }
+</p-dialog>
+
+<p-dialog
+  [visible]="cancelDialogVisible"
+  [modal]="true"
+  [closable]="true"
+  [draggable]="false"
+  [style]="{ width: '34rem', maxWidth: '94vw' }"
+  header="Cancelar recepcion"
+  (onHide)="closeCancelDialog()"
+>
+  <div class="cancel-dialog">
+    <div class="warning-callout">
+      <i class="pi pi-exclamation-triangle"></i>
+      <span>La cancelacion revertira el stock ingresado. No se eliminara el historial.</span>
+    </div>
+
+    <label class="field">
+      <span>Razon de cancelacion</span>
+      <textarea pTextarea rows="4" [(ngModel)]="cancelReason" maxlength="500"></textarea>
+    </label>
+
+    @if (cancelError()) {
+      <p-message severity="error" [text]="cancelError()"></p-message>
+    }
+
+    <div class="dialog-actions">
+      <p-button label="Volver" severity="secondary" [outlined]="true" (onClick)="closeCancelDialog()"></p-button>
+      <p-button
+        label="Confirmar cancelacion"
+        icon="pi pi-check"
+        severity="danger"
+        [loading]="canceling()"
+        (onClick)="confirmCancelReceipt()"
+      ></p-button>
+    </div>
+  </div>
 </p-dialog>
 
 <p-toast></p-toast>
