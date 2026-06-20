@@ -25,6 +25,7 @@ public class PosDbContext : DbContext
     public DbSet<Category> Categories { get; set; }
     public DbSet<Product> Products { get; set; }
     public DbSet<Customer> Customers { get; set; }
+    public DbSet<Supplier> Suppliers { get; set; }
     public DbSet<ProductStock> ProductStocks { get; set; }
     public DbSet<InventoryMovement> InventoryMovements { get; set; }
     public DbSet<DocumentSequence> DocumentSequences { get; set; }
@@ -263,6 +264,37 @@ public class PosDbContext : DbContext
 
             entity.HasIndex(c => c.CompanyId);
             entity.HasIndex(c => new { c.CompanyId, c.Name });
+        });
+
+        modelBuilder.Entity<Supplier>(entity =>
+        {
+            entity.Property(s => s.Name)
+                .IsRequired()
+                .HasMaxLength(150);
+
+            entity.Property(s => s.Identification)
+                .HasMaxLength(20);
+
+            entity.Property(s => s.Email)
+                .HasMaxLength(320);
+
+            entity.Property(s => s.Phone)
+                .HasMaxLength(30);
+
+            entity.Property(s => s.Address)
+                .HasMaxLength(250);
+
+            entity.Property(s => s.Notes)
+                .HasMaxLength(500);
+
+            entity.HasOne(s => s.Company)
+                .WithMany()
+                .HasForeignKey(s => s.CompanyId);
+
+            entity.HasIndex(s => s.CompanyId);
+            entity.HasIndex(s => new { s.CompanyId, s.Identification })
+                .IsUnique()
+                .HasFilter(@"""Identification"" IS NOT NULL");
         });
 
 

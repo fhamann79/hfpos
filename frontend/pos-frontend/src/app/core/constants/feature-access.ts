@@ -44,6 +44,11 @@ export const INVENTORY_ACCESS_REQUIREMENT: PermissionRequirement = {
   matchMode: 'all',
 };
 
+export const SUPPLIERS_ACCESS_REQUIREMENT: PermissionRequirement = {
+  requiredPermissions: [PERMISSIONS.suppliersRead],
+  matchMode: 'all',
+};
+
 export const FISCAL_SETTINGS_ACCESS_REQUIREMENT: PermissionRequirement = {
   requiredPermissions: [PERMISSIONS.fiscalSettingsRead],
   matchMode: 'all',
@@ -96,5 +101,11 @@ export const NAVIGATION_ITEMS: NavigationItemConfig[] = [
     icon: 'pi pi-warehouse',
     route: '/inventory',
     ...INVENTORY_ACCESS_REQUIREMENT,
+  },
+  {
+    label: 'Proveedores',
+    icon: 'pi pi-truck',
+    route: '/suppliers',
+    ...SUPPLIERS_ACCESS_REQUIREMENT,
   },
 ];
