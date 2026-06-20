@@ -371,6 +371,30 @@ public class InventoryService : IInventoryService
             purchaseReceiptItemId);
     }
 
+    public Task<InventoryMovementDto> RegisterPurchaseReceiptCancelAsync(
+        int productId,
+        decimal quantity,
+        int purchaseReceiptId,
+        int purchaseReceiptItemId,
+        string? notes)
+    {
+        if (quantity <= 0m)
+        {
+            throw new InvalidOperationException("INVALID_QUANTITY");
+        }
+
+        return RegisterMovementAsync(
+            productId,
+            InventoryMovementType.Exit,
+            InventoryMovementSourceType.PurchaseReceiptCancel,
+            quantity,
+            $"CANCEL-PURCHASE-RECEIPT-{purchaseReceiptId}",
+            notes,
+            purchaseReceiptId,
+            purchaseReceiptItemId,
+            requireActiveProduct: false);
+    }
+
     private async Task<InventoryMovementDto> RegisterMovementAsync(
         int productId,
         InventoryMovementType type,
@@ -379,10 +403,13 @@ public class InventoryService : IInventoryService
         string? reference,
         string? notes,
         int? sourceId,
-        int? sourceLineId)
+        int? sourceLineId,
+        bool requireActiveProduct = true)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-        var product = await GetValidProductAsync(productId, operationalContext.CompanyId);
+        var product = requireActiveProduct
+            ? await GetValidProductAsync(productId, operationalContext.CompanyId)
+            : await GetProductInCompanyAsync(productId, operationalContext.CompanyId);
 
         try
         {

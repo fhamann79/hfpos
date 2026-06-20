@@ -316,8 +316,12 @@ public class PosDbContext : DbContext
             entity.Property(r => r.Notes)
                 .HasMaxLength(500);
 
+            entity.Property(r => r.CancelReason)
+                .HasMaxLength(500);
+
             entity.HasIndex(r => new { r.CompanyId, r.EstablishmentId, r.ReceiptDate });
             entity.HasIndex(r => new { r.CompanyId, r.SupplierId, r.ReceiptDate });
+            entity.HasIndex(r => new { r.CompanyId, r.Status, r.ReceiptDate });
             entity.HasIndex(r => new { r.CompanyId, r.ReceiptNumber });
             entity.HasIndex(r => new { r.CompanyId, r.SupplierDocumentNumber });
 
@@ -339,6 +343,11 @@ public class PosDbContext : DbContext
             entity.HasOne(r => r.CreatedByUser)
                 .WithMany()
                 .HasForeignKey(r => r.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.CanceledByUser)
+                .WithMany()
+                .HasForeignKey(r => r.CanceledByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -419,7 +428,7 @@ public class PosDbContext : DbContext
             entity.HasIndex(im => new { im.SourceType, im.SourceId });
             entity.HasIndex(im => new { im.SourceType, im.SourceId, im.SourceLineId })
                 .IsUnique()
-                .HasFilter(@"""SourceId"" IS NOT NULL AND ""SourceLineId"" IS NOT NULL AND ""SourceType"" IN (4, 5, 6)");
+                .HasFilter(@"""SourceId"" IS NOT NULL AND ""SourceLineId"" IS NOT NULL AND ""SourceType"" IN (4, 5, 6, 7)");
 
             entity.HasOne(im => im.Product)
                 .WithMany()

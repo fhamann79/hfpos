@@ -145,6 +145,7 @@ export class InventoryPage implements OnInit {
     { label: 'Venta', value: InventoryMovementSourceType.Sale },
     { label: 'Anulación de venta', value: InventoryMovementSourceType.SaleVoid },
     { label: 'Recepción de compra', value: InventoryMovementSourceType.PurchaseReceipt },
+    { label: 'Cancelación recepción de compra', value: InventoryMovementSourceType.PurchaseReceiptCancel },
   ];
 
   readonly operationOptions: SelectOption<InventoryOperationKind>[] = [
@@ -467,6 +468,10 @@ export class InventoryPage implements OnInit {
       return 'source-badge source-badge--purchase';
     }
 
+    if (sourceType === InventoryMovementSourceType.PurchaseReceiptCancel) {
+      return 'source-badge source-badge--purchase-cancel';
+    }
+
     if (sourceType === InventoryMovementSourceType.ManualAdjustment) {
       return 'source-badge source-badge--adjustment';
     }
@@ -475,7 +480,9 @@ export class InventoryPage implements OnInit {
   }
 
   isReversalMovement(movement: InventoryMovement): boolean {
-    return movement.type === InventoryMovementType.Void || movement.sourceType === InventoryMovementSourceType.SaleVoid;
+    return movement.type === InventoryMovementType.Void
+      || movement.sourceType === InventoryMovementSourceType.SaleVoid
+      || movement.sourceType === InventoryMovementSourceType.PurchaseReceiptCancel;
   }
 
   currentOperationForm(): InventoryOperationForm {

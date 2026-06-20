@@ -1,5 +1,6 @@
 export enum PurchaseReceiptStatus {
   Posted = 1,
+  Canceled = 2,
 }
 
 export interface PurchaseReceiptListItem {
@@ -16,6 +17,10 @@ export interface PurchaseReceiptListItem {
   createdByUserId: number;
   createdByUsername: string;
   postedAt: string | null;
+  canceledAt: string | null;
+  canceledByUserId: number | null;
+  canceledByUsername: string | null;
+  cancelReason: string | null;
 }
 
 export interface PurchaseReceiptItem {
@@ -50,8 +55,13 @@ export interface CreatePurchaseReceiptRequest {
   items: CreatePurchaseReceiptItemRequest[];
 }
 
+export interface CancelPurchaseReceiptRequest {
+  reason: string;
+}
+
 export interface PurchaseReceiptFilters {
   search?: string | null;
   from?: string | null;
   to?: string | null;
+  status?: PurchaseReceiptStatus | null;
 }

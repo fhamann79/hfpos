@@ -7,5 +7,6 @@ public enum InventoryMovementSourceType
     ManualAdjustment = 3,
     Sale = 4,
     SaleVoid = 5,
-    PurchaseReceipt = 6
+    PurchaseReceipt = 6,
+    PurchaseReceiptCancel = 7
 }
