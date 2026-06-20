@@ -1,0 +1,233 @@
+<div class="suppliers-page">
+  <header class="suppliers-header">
+    <div>
+      <span class="eyebrow">Catalogo</span>
+      <h2>Proveedores</h2>
+    </div>
+
+    <div class="header-actions">
+      <div class="summary-chip">
+        <small>Activos</small>
+        <strong>{{ activeCount() }}</strong>
+      </div>
+      <div class="summary-chip summary-chip--muted">
+        <small>Inactivos</small>
+        <strong>{{ inactiveCount() }}</strong>
+      </div>
+      <p-button
+        label="Refrescar"
+        icon="pi pi-refresh"
+        severity="secondary"
+        [outlined]="true"
+        [loading]="loading()"
+        (onClick)="loadSuppliers()"
+      ></p-button>
+      @if (canWrite()) {
+        <p-button label="Nuevo proveedor" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
+      }
+    </div>
+  </header>
+
+  <section class="suppliers-section">
+    <p-toolbar styleClass="suppliers-toolbar">
+      <ng-template #start>
+        <div class="table-search">
+          <i class="pi pi-search"></i>
+          <input
+            pInputText
+            type="text"
+            [(ngModel)]="search"
+            placeholder="Nombre, identificacion, email o telefono"
+            aria-label="Buscar proveedores"
+            (keyup.enter)="loadSuppliers()"
+          />
+        </div>
+      </ng-template>
+      <ng-template #end>
+        <div class="toolbar-actions">
+          <p-button label="Buscar" icon="pi pi-search" [loading]="loading()" (onClick)="loadSuppliers()"></p-button>
+          <p-button
+            label="Limpiar"
+            icon="pi pi-filter-slash"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="clearSearch()"
+          ></p-button>
+        </div>
+      </ng-template>
+    </p-toolbar>
+
+    @if (errorMessage()) {
+      <p-message severity="error" [text]="errorMessage()"></p-message>
+    }
+
+    <p-table
+      styleClass="professional-table suppliers-table"
+      [value]="suppliers()"
+      [loading]="loading()"
+      [paginator]="true"
+      [rows]="15"
+      [rowsPerPageOptions]="[15, 30, 50]"
+      [sortMode]="'multiple'"
+      responsiveLayout="scroll"
+      [tableStyle]="{ 'min-width': '78rem' }"
+    >
+      <ng-template pTemplate="header">
+        <tr>
+          <th pSortableColumn="name">Proveedor <p-sortIcon field="name"></p-sortIcon></th>
+          <th pSortableColumn="identification">Identificacion <p-sortIcon field="identification"></p-sortIcon></th>
+          <th>Contacto</th>
+          <th>Direccion</th>
+          <th pSortableColumn="isActive">Estado <p-sortIcon field="isActive"></p-sortIcon></th>
+          <th pSortableColumn="updatedAt">Actualizado <p-sortIcon field="updatedAt"></p-sortIcon></th>
+          @if (canWrite()) {
+            <th class="action-column">Acciones</th>
+          }
+        </tr>
+      </ng-template>
+
+      <ng-template pTemplate="body" let-supplier>
+        <tr [class.row-inactive]="!supplier.isActive">
+          <td>
+            <span class="supplier-main">
+              <strong>{{ supplier.name }}</strong>
+              @if (supplier.notes) {
+                <small>{{ supplier.notes }}</small>
+              }
+            </span>
+          </td>
+          <td>
+            <span class="identity-pill">{{ supplier.identification || 'Sin identificacion' }}</span>
+          </td>
+          <td>
+            <span class="contact-stack">
+              @if (supplier.email) {
+                <span><i class="pi pi-at"></i>{{ supplier.email }}</span>
+              }
+              @if (supplier.phone) {
+                <span><i class="pi pi-phone"></i>{{ supplier.phone }}</span>
+              }
+              @if (!supplier.email && !supplier.phone) {
+                <small>Sin contacto</small>
+              }
+            </span>
+          </td>
+          <td class="address-cell">{{ supplier.address || '-' }}</td>
+          <td>
+            <p-tag
+              [severity]="supplier.isActive ? 'success' : 'danger'"
+              [value]="supplier.isActive ? 'Activo' : 'Inactivo'"
+            ></p-tag>
+          </td>
+          <td>
+            <span class="date-stack">
+              <strong>{{ (supplier.updatedAt || supplier.createdAt) | date: 'dd/MM/yyyy' }}</strong>
+              <small>{{ (supplier.updatedAt || supplier.createdAt) | date: 'HH:mm' }}</small>
+            </span>
+          </td>
+          @if (canWrite()) {
+            <td class="action-column">
+              <div class="actions">
+                <p-button
+                  icon="pi pi-pencil"
+                  [rounded]="true"
+                  [text]="true"
+                  aria-label="Editar proveedor"
+                  (onClick)="openEditDialog(supplier)"
+                ></p-button>
+                <p-button
+                  icon="pi pi-ban"
+                  severity="danger"
+                  [rounded]="true"
+                  [text]="true"
+                  [disabled]="!supplier.isActive"
+                  aria-label="Desactivar proveedor"
+                  (onClick)="confirmDeactivate(supplier)"
+                ></p-button>
+              </div>
+            </td>
+          }
+        </tr>
+      </ng-template>
+
+      <ng-template pTemplate="emptymessage">
+        <tr>
+          <td [attr.colspan]="canWrite() ? 7 : 6">
+            <div class="empty-state">
+              <i class="pi pi-inbox"></i>
+              <strong>No hay proveedores registrados.</strong>
+              @if (canWrite()) {
+                <p-button label="Crear proveedor" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
+              }
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </section>
+</div>
+
+<p-dialog
+  [visible]="dialogVisible"
+  [modal]="true"
+  [closable]="true"
+  [draggable]="false"
+  [style]="{ width: '42rem', maxWidth: '96vw' }"
+  [header]="isEditMode ? 'Editar proveedor' : 'Nuevo proveedor'"
+  (onHide)="closeDialog()"
+>
+  <form class="supplier-form" [formGroup]="form" (ngSubmit)="save()">
+    <div class="form-grid">
+      <label class="field field-wide">
+        <span>Nombre</span>
+        <input pInputText type="text" formControlName="name" maxlength="150" />
+        @if (form.controls.name.touched && form.controls.name.invalid) {
+          <small class="p-error">El nombre es obligatorio.</small>
+        }
+      </label>
+
+      <label class="field">
+        <span>Identificacion</span>
+        <input pInputText type="text" formControlName="identification" maxlength="20" autocomplete="off" />
+      </label>
+
+      <label class="field">
+        <span>Email</span>
+        <input pInputText type="email" formControlName="email" maxlength="320" autocomplete="off" />
+        @if (form.controls.email.touched && form.controls.email.invalid) {
+          <small class="p-error">Ingresa un email valido.</small>
+        }
+      </label>
+
+      <label class="field">
+        <span>Telefono</span>
+        <input pInputText type="text" formControlName="phone" maxlength="30" autocomplete="off" />
+      </label>
+
+      <label class="field field-wide">
+        <span>Direccion</span>
+        <textarea pTextarea rows="2" formControlName="address" maxlength="250"></textarea>
+      </label>
+
+      <label class="field field-wide">
+        <span>Notas</span>
+        <textarea pTextarea rows="3" formControlName="notes" maxlength="500"></textarea>
+      </label>
+    </div>
+
+    @if (isEditMode) {
+      <label class="field-inline">
+        <p-checkbox inputId="supplier-active" binary="true" formControlName="isActive"></p-checkbox>
+        <span>Proveedor activo</span>
+      </label>
+    }
+
+    <div class="dialog-actions">
+      <p-button label="Cancelar" severity="secondary" [outlined]="true" (onClick)="closeDialog()"></p-button>
+      <p-button label="Guardar" icon="pi pi-check" type="submit" [loading]="saving()"></p-button>
+    </div>
+  </form>
+</p-dialog>
+
+<p-toast></p-toast>
+<p-confirmdialog></p-confirmdialog>
