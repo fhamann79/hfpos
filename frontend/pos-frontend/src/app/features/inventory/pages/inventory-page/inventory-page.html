@@ -449,7 +449,7 @@
                 <tr [class.row-reversal]="isReversalMovement(movement)">
                   <td>
                     <span class="date-stack">
-                      <strong>{{ formatBusinessDate(movement.createdAt) }}</strong>
+                      <strong>{{ movementBusinessDateLabel(movement) }}</strong>
                       <small>{{ formatBusinessTime(movement.createdAt) }}</small>
                     </span>
                   </td>

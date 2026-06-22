@@ -105,6 +105,10 @@ public class Sale
 
     public decimal GrossMarginPercent { get; set; }
 
+    public DateOnly BusinessDate { get; set; }
+
+    public string TimeZoneIdSnapshot { get; set; } = "America/Guayaquil";
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }

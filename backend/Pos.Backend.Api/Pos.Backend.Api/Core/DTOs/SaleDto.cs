@@ -104,6 +104,10 @@ public class SaleDto
 
     public int UserId { get; set; }
 
+    public DateOnly BusinessDate { get; set; }
+
+    public string TimeZoneIdSnapshot { get; set; } = string.Empty;
+
     public DateTime CreatedAt { get; set; }
 
     public List<SaleItemDto> Items { get; set; } = new();

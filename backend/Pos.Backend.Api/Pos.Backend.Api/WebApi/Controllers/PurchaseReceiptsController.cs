@@ -54,18 +54,14 @@ public class PurchaseReceiptsController : ControllerBase
 
         if (from.HasValue)
         {
-            var fromUtc = _businessClock.GetBusinessDateStartUtc(
-                DateOnly.FromDateTime(from.Value),
-                operationalContext.CompanyTimeZoneId);
-            query = query.Where(r => r.ReceiptDate >= fromUtc);
+            var fromDate = DateOnly.FromDateTime(from.Value);
+            query = query.Where(r => r.ReceiptBusinessDate >= fromDate);
         }
 
         if (to.HasValue)
         {
-            var toExclusiveUtc = _businessClock.GetBusinessDateEndExclusiveUtc(
-                DateOnly.FromDateTime(to.Value),
-                operationalContext.CompanyTimeZoneId);
-            query = query.Where(r => r.ReceiptDate < toExclusiveUtc);
+            var toDate = DateOnly.FromDateTime(to.Value);
+            query = query.Where(r => r.ReceiptBusinessDate <= toDate);
         }
 
         if (status.HasValue)
@@ -84,7 +80,8 @@ public class PurchaseReceiptsController : ControllerBase
         }
 
         var receipts = await query
-            .OrderByDescending(r => r.ReceiptDate)
+            .OrderByDescending(r => r.ReceiptBusinessDate)
+            .ThenByDescending(r => r.ReceiptDate)
             .ThenByDescending(r => r.Id)
             .Select(r => new PurchaseReceiptListItemDto
             {
@@ -94,6 +91,8 @@ public class PurchaseReceiptsController : ControllerBase
                 ReceiptNumber = r.ReceiptNumber,
                 SupplierDocumentNumber = r.SupplierDocumentNumber,
                 ReceiptDate = r.ReceiptDate,
+                ReceiptBusinessDate = r.ReceiptBusinessDate,
+                ReceiptTimeZoneIdSnapshot = r.ReceiptTimeZoneIdSnapshot,
                 Status = r.Status,
                 Subtotal = r.Subtotal,
                 Notes = r.Notes,
@@ -102,6 +101,8 @@ public class PurchaseReceiptsController : ControllerBase
                 CreatedByUsername = r.CreatedByUser.Username,
                 PostedAt = r.PostedAt,
                 CanceledAt = r.CanceledAt,
+                CanceledBusinessDate = r.CanceledBusinessDate,
+                CanceledTimeZoneIdSnapshot = r.CanceledTimeZoneIdSnapshot,
                 CanceledByUserId = r.CanceledByUserId,
                 CanceledByUsername = r.CanceledByUser != null ? r.CanceledByUser.Username : null,
                 CancelReason = r.CancelReason
@@ -132,6 +133,8 @@ public class PurchaseReceiptsController : ControllerBase
                 ReceiptNumber = r.ReceiptNumber,
                 SupplierDocumentNumber = r.SupplierDocumentNumber,
                 ReceiptDate = r.ReceiptDate,
+                ReceiptBusinessDate = r.ReceiptBusinessDate,
+                ReceiptTimeZoneIdSnapshot = r.ReceiptTimeZoneIdSnapshot,
                 Status = r.Status,
                 Subtotal = r.Subtotal,
                 Notes = r.Notes,
@@ -140,6 +143,8 @@ public class PurchaseReceiptsController : ControllerBase
                 CreatedByUsername = r.CreatedByUser.Username,
                 PostedAt = r.PostedAt,
                 CanceledAt = r.CanceledAt,
+                CanceledBusinessDate = r.CanceledBusinessDate,
+                CanceledTimeZoneIdSnapshot = r.CanceledTimeZoneIdSnapshot,
                 CanceledByUserId = r.CanceledByUserId,
                 CanceledByUsername = r.CanceledByUser != null ? r.CanceledByUser.Username : null,
                 CancelReason = r.CancelReason,
@@ -229,7 +234,7 @@ public class PurchaseReceiptsController : ControllerBase
             return BadRequest(new ApiErrorResponse { Error = "PRODUCT_INACTIVE" });
         }
 
-        var now = DateTime.UtcNow;
+        var now = _businessClock.UtcNow;
         var businessDate = dto.ReceiptDate == default
             ? _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId)
             : DateOnly.FromDateTime(dto.ReceiptDate);
@@ -270,6 +275,8 @@ public class PurchaseReceiptsController : ControllerBase
                 ReceiptNumber = NormalizeOptionalText(dto.ReceiptNumber),
                 SupplierDocumentNumber = NormalizeOptionalText(dto.SupplierDocumentNumber),
                 ReceiptDate = receiptDate,
+                ReceiptBusinessDate = businessDate,
+                ReceiptTimeZoneIdSnapshot = operationalContext.CompanyTimeZoneId,
                 Status = PurchaseReceiptStatus.Posted,
                 Subtotal = RoundMoney(receiptItems.Sum(i => i.LineTotal)),
                 Notes = NormalizeOptionalText(dto.Notes),
@@ -354,9 +361,11 @@ public class PurchaseReceiptsController : ControllerBase
                     reason);
             }
 
-            var now = DateTime.UtcNow;
+            var now = _businessClock.UtcNow;
             receipt.Status = PurchaseReceiptStatus.Canceled;
             receipt.CanceledAt = now;
+            receipt.CanceledBusinessDate = _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId);
+            receipt.CanceledTimeZoneIdSnapshot = operationalContext.CompanyTimeZoneId;
             receipt.CanceledByUserId = operationalContext.UserId;
             receipt.CancelReason = reason;
 
@@ -386,6 +395,8 @@ public class PurchaseReceiptsController : ControllerBase
                 ReceiptNumber = r.ReceiptNumber,
                 SupplierDocumentNumber = r.SupplierDocumentNumber,
                 ReceiptDate = r.ReceiptDate,
+                ReceiptBusinessDate = r.ReceiptBusinessDate,
+                ReceiptTimeZoneIdSnapshot = r.ReceiptTimeZoneIdSnapshot,
                 Status = r.Status,
                 Subtotal = r.Subtotal,
                 Notes = r.Notes,
@@ -394,6 +405,8 @@ public class PurchaseReceiptsController : ControllerBase
                 CreatedByUsername = r.CreatedByUser.Username,
                 PostedAt = r.PostedAt,
                 CanceledAt = r.CanceledAt,
+                CanceledBusinessDate = r.CanceledBusinessDate,
+                CanceledTimeZoneIdSnapshot = r.CanceledTimeZoneIdSnapshot,
                 CanceledByUserId = r.CanceledByUserId,
                 CanceledByUsername = r.CanceledByUser != null ? r.CanceledByUser.Username : null,
                 CancelReason = r.CancelReason,

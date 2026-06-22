@@ -10,6 +10,8 @@ public class PurchaseReceiptDto
     public string? ReceiptNumber { get; set; }
     public string? SupplierDocumentNumber { get; set; }
     public DateTime ReceiptDate { get; set; }
+    public DateOnly ReceiptBusinessDate { get; set; }
+    public string ReceiptTimeZoneIdSnapshot { get; set; } = string.Empty;
     public PurchaseReceiptStatus Status { get; set; }
     public decimal Subtotal { get; set; }
     public string? Notes { get; set; }
@@ -18,6 +20,8 @@ public class PurchaseReceiptDto
     public string CreatedByUsername { get; set; } = string.Empty;
     public DateTime? PostedAt { get; set; }
     public DateTime? CanceledAt { get; set; }
+    public DateOnly? CanceledBusinessDate { get; set; }
+    public string? CanceledTimeZoneIdSnapshot { get; set; }
     public int? CanceledByUserId { get; set; }
     public string? CanceledByUsername { get; set; }
     public string? CancelReason { get; set; }

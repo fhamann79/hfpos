@@ -1,4 +1,4 @@
-import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
+import { CommonModule, CurrencyPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -17,7 +17,6 @@ import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { AuthStore } from '../../../../core/stores/auth.store';
 import {
-  formatBusinessDate as formatBusinessDateValue,
   formatBusinessDateInput,
   formatBusinessDateTime as formatBusinessDateTimeValue,
   formatBusinessTime as formatBusinessTimeValue,
@@ -54,7 +53,6 @@ interface ReceiptDraftItem {
   imports: [
     CommonModule,
     CurrencyPipe,
-    DatePipe,
     FormsModule,
     TableModule,
     ButtonModule,
@@ -423,8 +421,12 @@ export class PurchaseReceiptsPage implements OnInit {
     return this.products().find((product) => product.id === productId)?.cost ?? null;
   }
 
-  formatBusinessDate(value: string | Date | null | undefined): string {
-    return formatBusinessDateValue(value, this.companyTimeZoneId());
+  receiptBusinessDateLabel(receipt: PurchaseReceipt | PurchaseReceiptListItem): string {
+    return this.formatDateOnly(receipt.receiptBusinessDate ?? receipt.receiptDate);
+  }
+
+  receiptCanceledBusinessDateLabel(receipt: PurchaseReceipt | PurchaseReceiptListItem): string {
+    return this.formatDateOnly(receipt.canceledBusinessDate ?? receipt.canceledAt);
   }
 
   formatBusinessTime(value: string | Date | null | undefined): string {
@@ -508,5 +510,18 @@ export class PurchaseReceiptsPage implements OnInit {
 
   private formatCompactMoney(value: number): string {
     return `$${value.toFixed(4)}`;
+  }
+
+  private formatDateOnly(value: string | null | undefined): string {
+    if (!value) {
+      return '-';
+    }
+
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (!match) {
+      return '-';
+    }
+
+    return `${match[3]}/${match[2]}/${match[1]}`;
   }
 }

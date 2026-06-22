@@ -64,6 +64,8 @@ export class SalesReportService {
 
     return {
       id: this.readNumber(row, ['id', 'saleId'], 0),
+      businessDate: this.readString(row, ['businessDate'], null),
+      timeZoneIdSnapshot: this.readString(row, ['timeZoneIdSnapshot'], null),
       createdAt: this.readString(row, ['createdAt', 'createdOn', 'date'], ''),
       status: normalizeSaleStatus(row?.['status']),
       number: this.readString(row, ['number'], null),

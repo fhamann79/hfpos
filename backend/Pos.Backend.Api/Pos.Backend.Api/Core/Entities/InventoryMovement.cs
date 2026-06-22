@@ -36,5 +36,9 @@ public class InventoryMovement
     public int UserId { get; set; }
     public User User { get; set; }
 
+    public DateOnly BusinessDate { get; set; }
+
+    public string TimeZoneIdSnapshot { get; set; } = "America/Guayaquil";
+
     public DateTime CreatedAt { get; set; }
 }

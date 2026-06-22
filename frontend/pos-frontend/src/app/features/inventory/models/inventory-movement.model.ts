@@ -31,5 +31,7 @@ export interface InventoryMovement {
   reference: string | null;
   notes: string | null;
   userId: number;
+  businessDate: string | null;
+  timeZoneIdSnapshot: string | null;
   createdAt: string;
 }

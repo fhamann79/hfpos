@@ -31,23 +31,19 @@ public class DashboardService : IDashboardService
         var now = _businessClock.UtcNow;
         var today = _businessClock.GetBusinessDate(now, timeZoneId);
         var firstDay = today.AddDays(-6);
-        var rangeStartUtc = _businessClock.GetBusinessDateStartUtc(firstDay, timeZoneId);
-        var rangeEndUtc = _businessClock.GetBusinessDateStartUtc(today.AddDays(1), timeZoneId);
 
         var sales = await LoadSalesAsync(
             operationalContext.CompanyId,
             operationalContext.EstablishmentId,
             operationalContext.EmissionPointId,
-            rangeStartUtc,
-            rangeEndUtc,
-            timeZoneId);
+            firstDay,
+            today);
 
         var purchaseReceipts = await LoadPurchaseReceiptsAsync(
             operationalContext.CompanyId,
             operationalContext.EstablishmentId,
-            rangeStartUtc,
-            rangeEndUtc,
-            timeZoneId);
+            firstDay,
+            today);
 
         var inventory = await BuildInventorySummaryAsync(
             operationalContext.CompanyId,
@@ -77,20 +73,19 @@ public class DashboardService : IDashboardService
         int companyId,
         int establishmentId,
         int emissionPointId,
-        DateTime rangeStartUtc,
-        DateTime rangeEndUtc,
-        string timeZoneId)
+        DateOnly firstDay,
+        DateOnly today)
     {
-        var rawSales = await _context.Sales
+        return await _context.Sales
             .AsNoTracking()
             .Where(s => s.CompanyId == companyId
                 && s.EstablishmentId == establishmentId
                 && s.EmissionPointId == emissionPointId
-                && s.CreatedAt >= rangeStartUtc
-                && s.CreatedAt < rangeEndUtc)
+                && s.BusinessDate >= firstDay
+                && s.BusinessDate <= today)
             .Select(s => new
             {
-                s.CreatedAt,
+                s.BusinessDate,
                 s.Status,
                 s.DocumentType,
                 s.DocumentStatus,
@@ -100,11 +95,8 @@ public class DashboardService : IDashboardService
                 s.TotalCost,
                 s.GrossProfit
             })
-            .ToListAsync();
-
-        return rawSales
             .Select(s => new SaleSnapshot(
-                _businessClock.GetBusinessDate(s.CreatedAt, timeZoneId),
+                s.BusinessDate,
                 s.Status,
                 s.DocumentType,
                 s.DocumentStatus,
@@ -113,46 +105,40 @@ public class DashboardService : IDashboardService
                 s.Subtotal,
                 s.TotalCost,
                 s.GrossProfit))
-            .ToList();
+            .ToListAsync();
     }
 
     private async Task<IReadOnlyList<PurchaseReceiptSnapshot>> LoadPurchaseReceiptsAsync(
         int companyId,
         int establishmentId,
-        DateTime rangeStartUtc,
-        DateTime rangeEndUtc,
-        string timeZoneId)
+        DateOnly firstDay,
+        DateOnly today)
     {
-        var rawReceipts = await _context.PurchaseReceipts
+        return await _context.PurchaseReceipts
             .AsNoTracking()
             .Where(r => r.CompanyId == companyId
                 && r.EstablishmentId == establishmentId
                 && ((r.Status == PurchaseReceiptStatus.Posted
-                        && r.ReceiptDate >= rangeStartUtc
-                        && r.ReceiptDate < rangeEndUtc)
+                        && r.ReceiptBusinessDate >= firstDay
+                        && r.ReceiptBusinessDate <= today)
                     || (r.Status == PurchaseReceiptStatus.Canceled
-                        && r.CanceledAt.HasValue
-                        && r.CanceledAt.Value >= rangeStartUtc
-                        && r.CanceledAt.Value < rangeEndUtc)))
+                        && r.CanceledBusinessDate.HasValue
+                        && r.CanceledBusinessDate.Value >= firstDay
+                        && r.CanceledBusinessDate.Value <= today)))
             .Select(r => new
             {
                 r.Status,
-                r.ReceiptDate,
-                r.CanceledAt,
+                r.ReceiptBusinessDate,
+                r.CanceledBusinessDate,
                 r.Subtotal
             })
-            .ToListAsync();
-
-        return rawReceipts
             .Select(r => new PurchaseReceiptSnapshot(
-                _businessClock.GetBusinessDate(
-                    r.Status == PurchaseReceiptStatus.Canceled && r.CanceledAt.HasValue
-                        ? r.CanceledAt.Value
-                        : r.ReceiptDate,
-                    timeZoneId),
+                r.Status == PurchaseReceiptStatus.Canceled && r.CanceledBusinessDate.HasValue
+                    ? r.CanceledBusinessDate.Value
+                    : r.ReceiptBusinessDate,
                 r.Status,
                 r.Subtotal))
-            .ToList();
+            .ToListAsync();
     }
 
     private async Task<DashboardInventorySummaryDto> BuildInventorySummaryAsync(int companyId, int establishmentId)

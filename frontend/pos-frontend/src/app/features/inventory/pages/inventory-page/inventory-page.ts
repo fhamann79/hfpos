@@ -21,7 +21,6 @@ import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { AuthStore } from '../../../../core/stores/auth.store';
 import {
-  formatBusinessDate as formatBusinessDateValue,
   formatBusinessDateTime as formatBusinessDateTimeValue,
   formatBusinessTime as formatBusinessTimeValue,
 } from '../../../../core/utils/business-date-format';
@@ -484,8 +483,8 @@ export class InventoryPage implements OnInit {
     return 'source-badge';
   }
 
-  formatBusinessDate(value: string | Date | null | undefined): string {
-    return formatBusinessDateValue(value, this.companyTimeZoneId());
+  movementBusinessDateLabel(movement: InventoryMovement): string {
+    return this.formatDateOnly(movement.businessDate ?? movement.createdAt);
   }
 
   formatBusinessTime(value: string | Date | null | undefined): string {
@@ -615,6 +614,19 @@ export class InventoryPage implements OnInit {
       reference: '',
       notes: '',
     };
+  }
+
+  private formatDateOnly(value: string | null | undefined): string {
+    if (!value) {
+      return '-';
+    }
+
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (!match) {
+      return '-';
+    }
+
+    return `${match[3]}/${match[2]}/${match[1]}`;
   }
 
   resetCurrentOperationForm(): void {

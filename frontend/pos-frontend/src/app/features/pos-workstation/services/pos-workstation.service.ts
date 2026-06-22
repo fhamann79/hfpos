@@ -123,6 +123,8 @@ export class PosWorkstationService {
 
     return {
       id: this.readNumber(row, ['id', 'saleId'], 0),
+      businessDate: this.readString(row, ['businessDate'], null),
+      timeZoneIdSnapshot: this.readString(row, ['timeZoneIdSnapshot'], null),
       createdAt: this.readString(row, ['createdAt', 'createdOn', 'date'], ''),
       status: isVoided ? 'Anulada' : status,
       documentType: normalizeSaleDocumentType(row?.['documentType']),
@@ -153,6 +155,8 @@ export class PosWorkstationService {
 
     return {
       id: this.readNumber(row, ['id', 'saleId'], 0),
+      businessDate: this.readString(row, ['businessDate'], null),
+      timeZoneIdSnapshot: this.readString(row, ['timeZoneIdSnapshot'], null),
       createdAt: this.readString(row, ['createdAt', 'createdOn', 'date'], ''),
       status: isVoided ? 'Anulada' : status,
       documentType: normalizeSaleDocumentType(row?.['documentType']),
