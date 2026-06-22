@@ -1,4 +1,4 @@
-import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
+import { CommonModule, CurrencyPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -25,6 +25,12 @@ import {
   saleStatusSeverity,
 } from '../../models/sales-report.model';
 import { SalesReportService } from '../../services/sales-report.service';
+import { AuthStore } from '../../../../core/stores/auth.store';
+import {
+  formatBusinessDate as formatBusinessDateValue,
+  formatBusinessDateTime as formatBusinessDateTimeValue,
+  formatBusinessTime as formatBusinessTimeValue,
+} from '../../../../core/utils/business-date-format';
 
 interface SelectOption<T> {
   label: string;
@@ -37,7 +43,6 @@ interface SelectOption<T> {
   imports: [
     CommonModule,
     CurrencyPipe,
-    DatePipe,
     FormsModule,
     ButtonModule,
     DialogModule,
@@ -52,6 +57,7 @@ interface SelectOption<T> {
 })
 export class SalesReportPage implements OnInit {
   private readonly salesReportService = inject(SalesReportService);
+  private readonly authStore = inject(AuthStore);
 
   readonly sales = signal<SalesReportRow[]>([]);
   readonly loading = signal(false);
@@ -115,6 +121,7 @@ export class SalesReportPage implements OnInit {
       && (sale.documentStatus === SaleDocumentStatus.Authorized || this.normalizeSriStatus(sale.sriAuthorizationStatus) === 'AUTORIZADO')
     ).length
   );
+  readonly companyTimeZoneId = computed(() => this.authStore.companyTimeZoneId());
 
   ngOnInit(): void {
     this.loadSales();
@@ -205,7 +212,7 @@ export class SalesReportPage implements OnInit {
 
     const csvRows = rows.map((sale) => [
       sale.id,
-      sale.createdAt,
+      this.formatBusinessDateTime(sale.createdAt),
       sale.number ?? '',
       sale.customerName ?? '',
       sale.customerIdentification ?? '',
@@ -278,6 +285,18 @@ export class SalesReportPage implements OnInit {
 
   getVatLabel(item: SalesReportDetailItem): string {
     return getVatCategoryOption(item.vatCategory).shortLabel;
+  }
+
+  formatBusinessDate(value: string | Date | null | undefined): string {
+    return formatBusinessDateValue(value, this.companyTimeZoneId());
+  }
+
+  formatBusinessTime(value: string | Date | null | undefined): string {
+    return formatBusinessTimeValue(value, this.companyTimeZoneId());
+  }
+
+  formatBusinessDateTime(value: string | Date | null | undefined): string {
+    return formatBusinessDateTimeValue(value, this.companyTimeZoneId());
   }
 
   private currentFilters(): SalesReportFilters {

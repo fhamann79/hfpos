@@ -19,6 +19,7 @@ export class AuthStore {
   isAuthenticated = computed(() => !!this._token() && !!this._me());
 
   companyId = computed(() => this._me()?.companyId ?? null);
+  companyTimeZoneId = computed(() => this._me()?.companyTimeZoneId ?? 'America/Guayaquil');
   establishmentId = computed(() => this._me()?.establishmentId ?? null);
   emissionPointId = computed(() => this._me()?.emissionPointId ?? null);
   username = computed(() => this._me()?.username ?? null);

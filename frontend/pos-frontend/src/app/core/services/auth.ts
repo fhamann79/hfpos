@@ -29,6 +29,7 @@ export class AuthService {
       userId: me.userId,
       username: me.username,
       companyId: me.companyId,
+      companyTimeZoneId: me.companyTimeZoneId,
       establishmentId: me.establishmentId,
       emissionPointId: me.emissionPointId,
       roleCode: me.roleCode,

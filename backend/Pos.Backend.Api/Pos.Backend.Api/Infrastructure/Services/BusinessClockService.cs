@@ -52,9 +52,13 @@ public class BusinessClockService : IBusinessClockService
 
     public DateOnly GetBusinessDate(DateTime utcInstant, string timeZoneId)
     {
-        var utc = utcInstant.Kind == DateTimeKind.Utc
-            ? utcInstant
-            : DateTime.SpecifyKind(utcInstant, DateTimeKind.Utc);
+        var utc = utcInstant.Kind switch
+        {
+            DateTimeKind.Utc => utcInstant,
+            DateTimeKind.Local => utcInstant.ToUniversalTime(),
+            // DB instants are expected as UTC; Unspecified is normalized as UTC for compatibility.
+            _ => DateTime.SpecifyKind(utcInstant, DateTimeKind.Utc)
+        };
 
         var local = TimeZoneInfo.ConvertTimeFromUtc(utc, ResolveTimeZone(timeZoneId));
         return DateOnly.FromDateTime(local);

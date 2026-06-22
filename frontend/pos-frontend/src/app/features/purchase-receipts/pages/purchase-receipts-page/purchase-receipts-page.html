@@ -117,7 +117,7 @@
           <td>
             <span class="date-stack">
               <strong>{{ receipt.receiptDate | date: 'dd/MM/yyyy' : 'UTC' }}</strong>
-              <small>{{ receipt.createdAt | date: 'HH:mm' }}</small>
+              <small>{{ formatBusinessTime(receipt.createdAt) }}</small>
             </span>
           </td>
           <td>
@@ -133,7 +133,7 @@
           <td>
             <p-tag [severity]="statusSeverity(receipt.status)" [value]="statusLabel(receipt.status)"></p-tag>
             @if (receipt.canceledAt) {
-              <small class="row-hint">Cancelada {{ receipt.canceledAt | date: 'dd/MM/yyyy' }}</small>
+              <small class="row-hint">Cancelada {{ formatBusinessDate(receipt.canceledAt) }}</small>
             }
           </td>
           <td class="action-column">
@@ -352,7 +352,7 @@
           <div>
             <strong>Recepción cancelada</strong>
             <span>
-              {{ receipt.canceledAt | date: 'dd/MM/yyyy HH:mm' }}
+              {{ formatBusinessDateTime(receipt.canceledAt) }}
               @if (receipt.canceledByUsername) {
                 · {{ receipt.canceledByUsername }}
               }

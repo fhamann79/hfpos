@@ -1,4 +1,4 @@
-import { CommonModule, DatePipe } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -20,6 +20,11 @@ import { ToolbarModule } from 'primeng/toolbar';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { AuthStore } from '../../../../core/stores/auth.store';
+import {
+  formatBusinessDate as formatBusinessDateValue,
+  formatBusinessDateTime as formatBusinessDateTimeValue,
+  formatBusinessTime as formatBusinessTimeValue,
+} from '../../../../core/utils/business-date-format';
 import { readErrorCode } from '../../../../core/utils/http-error-normalizer';
 import {
   InventoryMovement,
@@ -56,7 +61,6 @@ interface InventoryOperationForm {
   imports: [
     CommonModule,
     FormsModule,
-    DatePipe,
     TableModule,
     ButtonModule,
     CardModule,
@@ -106,6 +110,7 @@ export class InventoryPage implements OnInit {
   readonly totalInventoryValue = computed(() =>
     this.stocks().reduce((total, stock) => total + stock.inventoryValue, 0)
   );
+  readonly companyTimeZoneId = computed(() => this.authStore.companyTimeZoneId());
 
   readonly movements = signal<InventoryMovement[]>([]);
   readonly movementsLoading = signal(false);
@@ -477,6 +482,18 @@ export class InventoryPage implements OnInit {
     }
 
     return 'source-badge';
+  }
+
+  formatBusinessDate(value: string | Date | null | undefined): string {
+    return formatBusinessDateValue(value, this.companyTimeZoneId());
+  }
+
+  formatBusinessTime(value: string | Date | null | undefined): string {
+    return formatBusinessTimeValue(value, this.companyTimeZoneId());
+  }
+
+  formatBusinessDateTime(value: string | Date | null | undefined): string {
+    return formatBusinessDateTimeValue(value, this.companyTimeZoneId());
   }
 
   isReversalMovement(movement: InventoryMovement): boolean {
