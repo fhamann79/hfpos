@@ -11,6 +11,9 @@ const summary: DashboardSummary = {
   salesToday: {
     count: 0,
     totalSold: 0,
+    totalCost: 0,
+    grossProfit: 0,
+    grossMarginPercent: 0,
     voidedCount: 0,
     invoiceCount: 0,
     ticketCount: 0,
@@ -19,6 +22,24 @@ const summary: DashboardSummary = {
   salesLastSevenDays: {
     count: 0,
     totalSold: 0,
+    totalCost: 0,
+    grossProfit: 0,
+    grossMarginPercent: 0,
+    days: [],
+  },
+  purchasesToday: {
+    postedCount: 0,
+    totalPurchased: 0,
+    canceledCount: 0,
+    canceledAmount: 0,
+    netPurchased: 0,
+  },
+  purchasesLastSevenDays: {
+    postedCount: 0,
+    totalPurchased: 0,
+    canceledCount: 0,
+    canceledAmount: 0,
+    netPurchased: 0,
     days: [],
   },
   inventory: {

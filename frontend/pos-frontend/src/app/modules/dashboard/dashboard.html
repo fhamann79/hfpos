@@ -55,6 +55,33 @@
         </div>
       </article>
 
+      <article class="metric-card metric-card--profit">
+        <span><i class="pi pi-chart-line"></i></span>
+        <div>
+          <small>Utilidad bruta hoy</small>
+          <strong>{{ data.salesToday.grossProfit | currency: 'USD' }}</strong>
+          <em>Costo {{ data.salesToday.totalCost | currency: 'USD' }}</em>
+        </div>
+      </article>
+
+      <article class="metric-card metric-card--margin">
+        <span><i class="pi pi-percentage"></i></span>
+        <div>
+          <small>Margen bruto hoy</small>
+          <strong>{{ marginLabel(data.salesToday.grossMarginPercent) }}</strong>
+          <em>Sobre subtotal vendido</em>
+        </div>
+      </article>
+
+      <article class="metric-card metric-card--purchases">
+        <span><i class="pi pi-shopping-bag"></i></span>
+        <div>
+          <small>Compras netas hoy</small>
+          <strong>{{ data.purchasesToday.netPurchased | currency: 'USD' }}</strong>
+          <em>{{ data.purchasesToday.canceledCount }} canceladas por {{ data.purchasesToday.canceledAmount | currency: 'USD' }}</em>
+        </div>
+      </article>
+
       <article class="metric-card metric-card--sri">
         <span><i class="pi pi-verified"></i></span>
         <div>
@@ -88,20 +115,75 @@
         <div class="panel-header">
           <div>
             <h2>Ultimos 7 dias</h2>
-            <p>{{ data.salesLastSevenDays.count }} ventas por {{ data.salesLastSevenDays.totalSold | currency: 'USD' }}</p>
+            <p>
+              {{ data.salesLastSevenDays.count }} ventas por {{ data.salesLastSevenDays.totalSold | currency: 'USD' }}.
+              Utilidad {{ data.salesLastSevenDays.grossProfit | currency: 'USD' }}.
+            </p>
           </div>
           <p-tag value="Ventas" severity="info"></p-tag>
         </div>
 
         <div class="sales-trend">
           @for (day of data.salesLastSevenDays.days; track day.date) {
-            <div class="trend-row">
+            <div class="trend-row trend-row--sales">
               <time>{{ day.date | date: 'dd/MM' }}</time>
-              <div class="trend-bar">
-                <span [style.width]="dayBarWidth(day.totalSold)"></span>
+              <div class="trend-bars">
+                <div class="trend-bar">
+                  <span [style.width]="dayBarWidth(day.totalSold)"></span>
+                </div>
+                <div class="trend-bar trend-bar--profit">
+                  <span
+                    [class.trend-bar-negative]="day.grossProfit < 0"
+                    [style.width]="profitBarWidth(day.grossProfit)"
+                  ></span>
+                </div>
               </div>
               <strong>{{ day.totalSold | currency: 'USD' }}</strong>
+              <strong class="trend-profit" [class.trend-profit--negative]="day.grossProfit < 0">
+                {{ day.grossProfit | currency: 'USD' }}
+              </strong>
               <small>{{ day.count }} ventas</small>
+            </div>
+          }
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Compras ultimos 7 dias</h2>
+            <p>
+              {{ data.purchasesLastSevenDays.postedCount }} recepciones.
+              Neto {{ data.purchasesLastSevenDays.netPurchased | currency: 'USD' }}.
+            </p>
+          </div>
+          <p-tag value="Compras" severity="secondary"></p-tag>
+        </div>
+
+        <div class="purchase-totals">
+          <div>
+            <span>Comprado</span>
+            <strong>{{ data.purchasesLastSevenDays.totalPurchased | currency: 'USD' }}</strong>
+          </div>
+          <div>
+            <span>Cancelado</span>
+            <strong>{{ data.purchasesLastSevenDays.canceledAmount | currency: 'USD' }}</strong>
+          </div>
+          <div>
+            <span>Neto</span>
+            <strong>{{ data.purchasesLastSevenDays.netPurchased | currency: 'USD' }}</strong>
+          </div>
+        </div>
+
+        <div class="purchase-trend">
+          @for (day of data.purchasesLastSevenDays.days; track day.date) {
+            <div class="purchase-row" [class.purchase-row--negative]="day.netPurchased < 0">
+              <time>{{ day.date | date: 'dd/MM' }}</time>
+              <div class="trend-bar">
+                <span [style.width]="purchaseBarWidth(day.netPurchased)"></span>
+              </div>
+              <strong>{{ day.netPurchased | currency: 'USD' }}</strong>
+              <small>{{ day.postedCount }} rec. / {{ day.canceledCount }} canc.</small>
             </div>
           }
         </div>

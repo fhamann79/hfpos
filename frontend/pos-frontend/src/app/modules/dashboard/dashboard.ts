@@ -9,6 +9,7 @@ import {
   FISCAL_SETTINGS_ACCESS_REQUIREMENT,
   INVENTORY_ACCESS_REQUIREMENT,
   POS_ACCESS_REQUIREMENT,
+  PURCHASES_ACCESS_REQUIREMENT,
   SALES_REPORTS_ACCESS_REQUIREMENT,
 } from '../../core/constants/feature-access';
 import { PermissionRequirement } from '../../core/constants/feature-access';
@@ -69,6 +70,13 @@ export class Dashboard implements OnInit {
         ...INVENTORY_ACCESS_REQUIREMENT,
       },
       {
+        label: 'Compras',
+        description: 'Registrar y revisar recepciones.',
+        icon: 'pi pi-shopping-bag',
+        route: '/purchase-receipts',
+        ...PURCHASES_ACCESS_REQUIREMENT,
+      },
+      {
         label: 'Configuracion fiscal',
         description: 'SRI, certificado y email empresarial.',
         icon: 'pi pi-receipt',
@@ -117,6 +125,35 @@ export class Dashboard implements OnInit {
     }
 
     return `${Math.max((total / max) * 100, 6)}%`;
+  }
+
+  profitBarWidth(grossProfit: number): string {
+    const days = this.summary()?.salesLastSevenDays.days ?? [];
+    const max = Math.max(...days.map((day) => Math.abs(day.grossProfit)), 0);
+
+    if (max <= 0 || grossProfit === 0) {
+      return '0%';
+    }
+
+    return `${Math.max((Math.abs(grossProfit) / max) * 100, 6)}%`;
+  }
+
+  purchaseBarWidth(netPurchased: number): string {
+    const days = this.summary()?.purchasesLastSevenDays.days ?? [];
+    const max = Math.max(...days.map((day) => Math.abs(day.netPurchased)), 0);
+
+    if (max <= 0 || netPurchased === 0) {
+      return '0%';
+    }
+
+    return `${Math.max((Math.abs(netPurchased) / max) * 100, 6)}%`;
+  }
+
+  marginLabel(value: number | null | undefined): string {
+    return `${(value ?? 0).toLocaleString('es-EC', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}%`;
   }
 
   stockSeverity(product: DashboardLowStockProduct): 'danger' | 'warn' | 'success' {
@@ -173,14 +210,16 @@ export class Dashboard implements OnInit {
           ? 'No tienes permisos para acceder al reporte de ventas.'
           : message === 'inventory-denied'
             ? 'No tienes permisos para acceder a Inventario.'
-            : message === 'fiscal-settings-denied'
-              ? 'No tienes permisos para acceder a Configuracion Fiscal.'
-              : message === 'administration-denied'
-                ? 'No tienes permisos para acceder a Administracion.'
-                : message === 'operational-structure-denied'
-                  ? 'No tienes permisos para acceder a Estructura Operativa.'
-                  : message === 'session-expired'
-                    ? 'Tu sesion expiro. Inicia sesion nuevamente.'
-                    : '';
+            : message === 'purchase-receipts-denied'
+              ? 'No tienes permisos para acceder a Compras.'
+              : message === 'fiscal-settings-denied'
+                ? 'No tienes permisos para acceder a Configuracion Fiscal.'
+                : message === 'administration-denied'
+                  ? 'No tienes permisos para acceder a Administracion.'
+                  : message === 'operational-structure-denied'
+                    ? 'No tienes permisos para acceder a Estructura Operativa.'
+                    : message === 'session-expired'
+                      ? 'Tu sesion expiro. Inicia sesion nuevamente.'
+                      : '';
   }
 }
