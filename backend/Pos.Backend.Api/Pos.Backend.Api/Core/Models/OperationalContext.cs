@@ -5,6 +5,7 @@ public class OperationalContext
     public int CompanyId { get; set; }
     public int EstablishmentId { get; set; }
     public int EmissionPointId { get; set; }
+    public string CompanyTimeZoneId { get; set; } = string.Empty;
     public string Username { get; set; } = string.Empty;
     public int UserId { get; set; }
 }

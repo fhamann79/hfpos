@@ -116,7 +116,7 @@
         <tr [class]="rowClass(receipt)">
           <td>
             <span class="date-stack">
-              <strong>{{ receipt.receiptDate | date: 'dd/MM/yyyy' }}</strong>
+              <strong>{{ receipt.receiptDate | date: 'dd/MM/yyyy' : 'UTC' }}</strong>
               <small>{{ receipt.createdAt | date: 'HH:mm' }}</small>
             </span>
           </td>
@@ -326,7 +326,7 @@
         </div>
         <div>
           <span>Fecha</span>
-          <strong>{{ receipt.receiptDate | date: 'dd/MM/yyyy' }}</strong>
+          <strong>{{ receipt.receiptDate | date: 'dd/MM/yyyy' : 'UTC' }}</strong>
         </div>
         <div>
           <span>Documento proveedor</span>

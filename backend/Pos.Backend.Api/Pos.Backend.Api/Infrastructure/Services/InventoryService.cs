@@ -14,15 +14,18 @@ public class InventoryService : IInventoryService
     private readonly PosDbContext _context;
     private readonly ILogger<InventoryService> _logger;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
+    private readonly IBusinessClockService _businessClock;
 
     public InventoryService(
         PosDbContext context,
         ILogger<InventoryService> logger,
-        IOperationalContextAccessor operationalContextAccessor)
+        IOperationalContextAccessor operationalContextAccessor,
+        IBusinessClockService businessClock)
     {
         _context = context;
         _logger = logger;
         _operationalContextAccessor = operationalContextAccessor;
+        _businessClock = businessClock;
     }
 
     public async Task<IReadOnlyList<InventoryStockListItemDto>> GetStocksAsync(string? search, int? productId, bool onlyPositive)
@@ -172,14 +175,18 @@ public class InventoryService : IInventoryService
 
         if (query.From.HasValue)
         {
-            var fromUtc = DateTime.SpecifyKind(query.From.Value, DateTimeKind.Utc);
+            var fromUtc = _businessClock.GetBusinessDateStartUtc(
+                DateOnly.FromDateTime(query.From.Value),
+                operationalContext.CompanyTimeZoneId);
             movements = movements.Where(m => m.CreatedAt >= fromUtc);
         }
 
         if (query.To.HasValue)
         {
-            var toUtc = DateTime.SpecifyKind(query.To.Value, DateTimeKind.Utc);
-            movements = movements.Where(m => m.CreatedAt <= toUtc);
+            var toExclusiveUtc = _businessClock.GetBusinessDateEndExclusiveUtc(
+                DateOnly.FromDateTime(query.To.Value),
+                operationalContext.CompanyTimeZoneId);
+            movements = movements.Where(m => m.CreatedAt < toExclusiveUtc);
         }
 
         if (query.UserId.HasValue)

@@ -456,7 +456,7 @@ export class PurchaseReceiptsPage implements OnInit {
       supplierId: this.supplierId ?? 0,
       receiptNumber: this.normalizeOptionalText(this.receiptNumber),
       supplierDocumentNumber: this.normalizeOptionalText(this.supplierDocumentNumber),
-      receiptDate: `${this.receiptDate}T00:00:00Z`,
+      receiptDate: this.receiptDate,
       notes: this.normalizeOptionalText(this.notes),
       items: this.draftItems().map((item) => ({
         productId: item.productId ?? 0,

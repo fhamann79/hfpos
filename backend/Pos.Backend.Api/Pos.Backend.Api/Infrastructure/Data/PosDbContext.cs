@@ -72,6 +72,11 @@ public class PosDbContext : DbContext
             entity.Property(c => c.Phone)
                 .HasMaxLength(30);
 
+            entity.Property(c => c.TimeZoneId)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasDefaultValue("America/Guayaquil");
+
             entity.Property(c => c.SpecialTaxpayerNumber)
                 .HasMaxLength(50);
 

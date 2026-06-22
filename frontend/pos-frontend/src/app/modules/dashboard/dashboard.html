@@ -126,7 +126,7 @@
         <div class="sales-trend">
           @for (day of data.salesLastSevenDays.days; track day.date) {
             <div class="trend-row trend-row--sales">
-              <time>{{ day.date | date: 'dd/MM' }}</time>
+              <time>{{ day.date | date: 'dd/MM' : 'UTC' }}</time>
               <div class="trend-bars">
                 <div class="trend-bar">
                   <span [style.width]="dayBarWidth(day.totalSold)"></span>
@@ -178,7 +178,7 @@
         <div class="purchase-trend">
           @for (day of data.purchasesLastSevenDays.days; track day.date) {
             <div class="purchase-row" [class.purchase-row--negative]="day.netPurchased < 0">
-              <time>{{ day.date | date: 'dd/MM' }}</time>
+              <time>{{ day.date | date: 'dd/MM' : 'UTC' }}</time>
               <div class="trend-bar">
                 <span [style.width]="purchaseBarWidth(day.netPurchased)"></span>
               </div>

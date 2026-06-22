@@ -255,6 +255,7 @@ public static class SeedData
                 MatrixAddress = "Direccion matriz demo",
                 Email = "demo@example.com",
                 Phone = "0999999999",
+                TimeZoneId = "America/Guayaquil",
                 IsAccountingRequired = false,
                 TaxpayerRegime = "GENERAL",
                 IsActive = true,
@@ -270,6 +271,12 @@ public static class SeedData
             if (string.IsNullOrWhiteSpace(company.MatrixAddress))
             {
                 company.MatrixAddress = "Direccion matriz demo";
+                companyNeedsUpdate = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(company.TimeZoneId))
+            {
+                company.TimeZoneId = "America/Guayaquil";
                 companyNeedsUpdate = true;
             }
 

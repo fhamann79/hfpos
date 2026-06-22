@@ -33,11 +33,11 @@ export class SalesReportService {
     const search = filters.search?.trim();
 
     if (filters.from) {
-      params = params.set('from', `${filters.from}T00:00:00.000Z`);
+      params = params.set('from', filters.from);
     }
 
     if (filters.to) {
-      params = params.set('to', `${filters.to}T23:59:59.999Z`);
+      params = params.set('to', filters.to);
     }
 
     if (filters.status !== null && filters.status !== undefined) {

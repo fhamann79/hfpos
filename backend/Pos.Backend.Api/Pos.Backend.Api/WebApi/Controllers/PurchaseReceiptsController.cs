@@ -21,15 +21,18 @@ public class PurchaseReceiptsController : ControllerBase
     private readonly PosDbContext _context;
     private readonly IInventoryService _inventoryService;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
+    private readonly IBusinessClockService _businessClock;
 
     public PurchaseReceiptsController(
         PosDbContext context,
         IInventoryService inventoryService,
-        IOperationalContextAccessor operationalContextAccessor)
+        IOperationalContextAccessor operationalContextAccessor,
+        IBusinessClockService businessClock)
     {
         _context = context;
         _inventoryService = inventoryService;
         _operationalContextAccessor = operationalContextAccessor;
+        _businessClock = businessClock;
     }
 
     [HttpGet]
@@ -51,14 +54,18 @@ public class PurchaseReceiptsController : ControllerBase
 
         if (from.HasValue)
         {
-            var fromUtc = DateTime.SpecifyKind(from.Value.Date, DateTimeKind.Utc);
+            var fromUtc = _businessClock.GetBusinessDateStartUtc(
+                DateOnly.FromDateTime(from.Value),
+                operationalContext.CompanyTimeZoneId);
             query = query.Where(r => r.ReceiptDate >= fromUtc);
         }
 
         if (to.HasValue)
         {
-            var toUtc = DateTime.SpecifyKind(to.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
-            query = query.Where(r => r.ReceiptDate <= toUtc);
+            var toExclusiveUtc = _businessClock.GetBusinessDateEndExclusiveUtc(
+                DateOnly.FromDateTime(to.Value),
+                operationalContext.CompanyTimeZoneId);
+            query = query.Where(r => r.ReceiptDate < toExclusiveUtc);
         }
 
         if (status.HasValue)
@@ -223,7 +230,10 @@ public class PurchaseReceiptsController : ControllerBase
         }
 
         var now = DateTime.UtcNow;
-        var receiptDate = NormalizeReceiptDate(dto.ReceiptDate, now);
+        var businessDate = dto.ReceiptDate == default
+            ? _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId)
+            : DateOnly.FromDateTime(dto.ReceiptDate);
+        var receiptDate = _businessClock.GetBusinessDateStartUtc(businessDate, operationalContext.CompanyTimeZoneId);
         var receiptItems = new List<PurchaseReceiptItem>();
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
@@ -408,18 +418,6 @@ public class PurchaseReceiptsController : ControllerBase
 
     private static string? NormalizeOptionalText(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-
-    private static DateTime NormalizeReceiptDate(DateTime value, DateTime fallback)
-    {
-        if (value == default)
-        {
-            return fallback;
-        }
-
-        return value.Kind == DateTimeKind.Utc
-            ? value
-            : DateTime.SpecifyKind(value, DateTimeKind.Utc);
-    }
 
     private static decimal RoundMoney(decimal value)
         => decimal.Round(value, 4, MidpointRounding.AwayFromZero);

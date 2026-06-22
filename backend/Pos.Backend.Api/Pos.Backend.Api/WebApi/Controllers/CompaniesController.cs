@@ -5,6 +5,7 @@ using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Security;
+using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.Infrastructure.Data;
 
 namespace Pos.Backend.Api.WebApi.Controllers;
@@ -15,10 +16,12 @@ namespace Pos.Backend.Api.WebApi.Controllers;
 public class CompaniesController : ControllerBase
 {
     private readonly PosDbContext _context;
+    private readonly IBusinessClockService _businessClock;
 
-    public CompaniesController(PosDbContext context)
+    public CompaniesController(PosDbContext context, IBusinessClockService businessClock)
     {
         _context = context;
+        _businessClock = businessClock;
     }
 
     [HttpGet]
@@ -31,6 +34,7 @@ public class CompaniesController : ControllerBase
             {
                 Id = c.Id,
                 Name = c.Name,
+                TimeZoneId = c.TimeZoneId,
                 IsActive = c.IsActive
             })
             .ToListAsync();
@@ -48,6 +52,11 @@ public class CompaniesController : ControllerBase
         }
 
         var normalizedName = dto.Name.Trim();
+        var timeZoneValidation = ValidateTimeZoneId(dto.TimeZoneId);
+        if (timeZoneValidation.Result is not null)
+        {
+            return timeZoneValidation.Result;
+        }
 
         var nameExists = await _context.Companies.AnyAsync(c => c.Name == normalizedName);
         if (nameExists)
@@ -59,6 +68,7 @@ public class CompaniesController : ControllerBase
         {
             Name = normalizedName,
             Ruc = $"AUTO-{Guid.NewGuid():N}"[..17],
+            TimeZoneId = timeZoneValidation.TimeZoneId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -70,6 +80,7 @@ public class CompaniesController : ControllerBase
         {
             Id = company.Id,
             Name = company.Name,
+            TimeZoneId = company.TimeZoneId,
             IsActive = company.IsActive
         });
     }
@@ -84,6 +95,7 @@ public class CompaniesController : ControllerBase
             {
                 Id = c.Id,
                 Name = c.Name,
+                TimeZoneId = c.TimeZoneId,
                 IsActive = c.IsActive
             })
             .FirstOrDefaultAsync();
@@ -112,6 +124,12 @@ public class CompaniesController : ControllerBase
         }
 
         var normalizedName = dto.Name.Trim();
+        var timeZoneValidation = ValidateTimeZoneId(dto.TimeZoneId);
+        if (timeZoneValidation.Result is not null)
+        {
+            return timeZoneValidation.Result;
+        }
+
         var duplicateName = await _context.Companies.AnyAsync(c => c.Id != id && c.Name == normalizedName);
         if (duplicateName)
         {
@@ -119,10 +137,35 @@ public class CompaniesController : ControllerBase
         }
 
         company.Name = normalizedName;
+        company.TimeZoneId = timeZoneValidation.TimeZoneId;
         company.IsActive = dto.IsActive;
 
         await _context.SaveChangesAsync();
         return NoContent();
+    }
+
+    private (string TimeZoneId, ActionResult? Result) ValidateTimeZoneId(string? timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId))
+        {
+            return (string.Empty, BadRequest(new ApiErrorResponse { Error = "COMPANY_TIMEZONE_REQUIRED" }));
+        }
+
+        var normalized = timeZoneId.Trim();
+        if (normalized.Length > 100)
+        {
+            return (string.Empty, BadRequest(new ApiErrorResponse { Error = "COMPANY_TIMEZONE_INVALID" }));
+        }
+
+        try
+        {
+            _businessClock.ResolveTimeZone(normalized);
+            return (normalized, null);
+        }
+        catch (InvalidOperationException)
+        {
+            return (string.Empty, BadRequest(new ApiErrorResponse { Error = "COMPANY_TIMEZONE_INVALID" }));
+        }
     }
 
     [HttpDelete("{id:int}")]

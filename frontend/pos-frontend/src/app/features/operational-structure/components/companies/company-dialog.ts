@@ -5,6 +5,7 @@ import { ButtonModule } from 'primeng/button';
 import { CheckboxModule } from 'primeng/checkbox';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
+import { SelectModule } from 'primeng/select';
 import { Company, CreateCompanyRequest, UpdateCompanyRequest } from '../../models/company.model';
 
 export type CompanyDialogSubmit =
@@ -14,12 +15,23 @@ export type CompanyDialogSubmit =
 @Component({
   selector: 'app-company-dialog',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, DialogModule, InputTextModule, CheckboxModule, ButtonModule],
+  imports: [CommonModule, ReactiveFormsModule, DialogModule, InputTextModule, SelectModule, CheckboxModule, ButtonModule],
   templateUrl: './company-dialog.html',
   styleUrl: './company-dialog.scss',
 })
 export class CompanyDialog implements OnChanges {
   private readonly fb = inject(FormBuilder);
+
+  readonly timeZoneOptions = [
+    { label: 'America/Guayaquil - Ecuador', value: 'America/Guayaquil' },
+    { label: 'America/Bogota - Colombia', value: 'America/Bogota' },
+    { label: 'America/Lima - Peru', value: 'America/Lima' },
+    { label: 'America/Mexico_City - Mexico', value: 'America/Mexico_City' },
+    { label: 'America/New_York - EE.UU. Este', value: 'America/New_York' },
+    { label: 'America/Los_Angeles - EE.UU. Pacifico', value: 'America/Los_Angeles' },
+    { label: 'Europe/Madrid - Espana', value: 'Europe/Madrid' },
+    { label: 'Etc/UTC - UTC', value: 'Etc/UTC' },
+  ];
 
   @Input({ required: true }) visible = false;
   @Input() company: Company | null = null;
@@ -28,6 +40,7 @@ export class CompanyDialog implements OnChanges {
 
   readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.minLength(2)]],
+    timeZoneId: ['America/Guayaquil', [Validators.required]],
     isActive: [true],
   });
 
@@ -59,6 +72,7 @@ export class CompanyDialog implements OnChanges {
         id: this.company.id,
         payload: {
           name: values.name.trim(),
+          timeZoneId: values.timeZoneId,
           isActive: values.isActive,
         },
       });
@@ -69,6 +83,7 @@ export class CompanyDialog implements OnChanges {
       mode: 'create',
       payload: {
         name: values.name.trim(),
+        timeZoneId: values.timeZoneId,
       },
     });
   }
@@ -81,11 +96,12 @@ export class CompanyDialog implements OnChanges {
     if (this.company) {
       this.form.setValue({
         name: this.company.name,
+        timeZoneId: this.company.timeZoneId,
         isActive: this.company.isActive,
       });
       return;
     }
 
-    this.form.reset({ name: '', isActive: true });
+    this.form.reset({ name: '', timeZoneId: 'America/Guayaquil', isActive: true });
   }
 }

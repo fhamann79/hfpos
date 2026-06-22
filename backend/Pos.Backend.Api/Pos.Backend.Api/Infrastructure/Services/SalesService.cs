@@ -20,6 +20,7 @@ public class SalesService : ISalesService
     private readonly ISriAccessKeyService _sriAccessKeyService;
     private readonly ISriXmlDraftService _sriXmlDraftService;
     private readonly ISriFiscalClock _sriFiscalClock;
+    private readonly IBusinessClockService _businessClock;
     private readonly ISriInvoiceXmlValidator _sriInvoiceXmlValidator;
     private readonly SriOptions _sriOptions;
 
@@ -31,6 +32,7 @@ public class SalesService : ISalesService
         ISriAccessKeyService sriAccessKeyService,
         ISriXmlDraftService sriXmlDraftService,
         ISriFiscalClock sriFiscalClock,
+        IBusinessClockService businessClock,
         ISriInvoiceXmlValidator sriInvoiceXmlValidator,
         IOptions<SriOptions> sriOptions)
     {
@@ -41,6 +43,7 @@ public class SalesService : ISalesService
         _sriAccessKeyService = sriAccessKeyService;
         _sriXmlDraftService = sriXmlDraftService;
         _sriFiscalClock = sriFiscalClock;
+        _businessClock = businessClock;
         _sriInvoiceXmlValidator = sriInvoiceXmlValidator;
         _sriOptions = sriOptions.Value;
     }
@@ -64,14 +67,18 @@ public class SalesService : ISalesService
 
         if (from.HasValue)
         {
-            var fromUtc = DateTime.SpecifyKind(from.Value, DateTimeKind.Utc);
+            var fromUtc = _businessClock.GetBusinessDateStartUtc(
+                DateOnly.FromDateTime(from.Value),
+                operationalContext.CompanyTimeZoneId);
             query = query.Where(s => s.CreatedAt >= fromUtc);
         }
 
         if (to.HasValue)
         {
-            var toUtc = DateTime.SpecifyKind(to.Value, DateTimeKind.Utc);
-            query = query.Where(s => s.CreatedAt <= toUtc);
+            var toExclusiveUtc = _businessClock.GetBusinessDateEndExclusiveUtc(
+                DateOnly.FromDateTime(to.Value),
+                operationalContext.CompanyTimeZoneId);
+            query = query.Where(s => s.CreatedAt < toExclusiveUtc);
         }
 
         if (status.HasValue)

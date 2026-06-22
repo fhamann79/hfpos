@@ -12,39 +12,42 @@ public class DashboardService : IDashboardService
 
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
-    private readonly ISriFiscalClock _fiscalClock;
+    private readonly IBusinessClockService _businessClock;
 
     public DashboardService(
         PosDbContext context,
         IOperationalContextAccessor operationalContextAccessor,
-        ISriFiscalClock fiscalClock)
+        IBusinessClockService businessClock)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
-        _fiscalClock = fiscalClock;
+        _businessClock = businessClock;
     }
 
     public async Task<DashboardSummaryDto> GetSummaryAsync()
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-        var now = _fiscalClock.UtcNow;
-        var today = _fiscalClock.GetEcuadorFiscalDate(now);
+        var timeZoneId = operationalContext.CompanyTimeZoneId;
+        var now = _businessClock.UtcNow;
+        var today = _businessClock.GetBusinessDate(now, timeZoneId);
         var firstDay = today.AddDays(-6);
-        var rangeStartUtc = EcuadorDateStartUtc(firstDay);
-        var rangeEndUtc = EcuadorDateStartUtc(today.AddDays(1));
+        var rangeStartUtc = _businessClock.GetBusinessDateStartUtc(firstDay, timeZoneId);
+        var rangeEndUtc = _businessClock.GetBusinessDateStartUtc(today.AddDays(1), timeZoneId);
 
         var sales = await LoadSalesAsync(
             operationalContext.CompanyId,
             operationalContext.EstablishmentId,
             operationalContext.EmissionPointId,
             rangeStartUtc,
-            rangeEndUtc);
+            rangeEndUtc,
+            timeZoneId);
 
         var purchaseReceipts = await LoadPurchaseReceiptsAsync(
             operationalContext.CompanyId,
             operationalContext.EstablishmentId,
             rangeStartUtc,
-            rangeEndUtc);
+            rangeEndUtc,
+            timeZoneId);
 
         var inventory = await BuildInventorySummaryAsync(
             operationalContext.CompanyId,
@@ -75,7 +78,8 @@ public class DashboardService : IDashboardService
         int establishmentId,
         int emissionPointId,
         DateTime rangeStartUtc,
-        DateTime rangeEndUtc)
+        DateTime rangeEndUtc,
+        string timeZoneId)
     {
         var rawSales = await _context.Sales
             .AsNoTracking()
@@ -100,7 +104,7 @@ public class DashboardService : IDashboardService
 
         return rawSales
             .Select(s => new SaleSnapshot(
-                _fiscalClock.GetEcuadorFiscalDate(s.CreatedAt),
+                _businessClock.GetBusinessDate(s.CreatedAt, timeZoneId),
                 s.Status,
                 s.DocumentType,
                 s.DocumentStatus,
@@ -116,7 +120,8 @@ public class DashboardService : IDashboardService
         int companyId,
         int establishmentId,
         DateTime rangeStartUtc,
-        DateTime rangeEndUtc)
+        DateTime rangeEndUtc,
+        string timeZoneId)
     {
         var rawReceipts = await _context.PurchaseReceipts
             .AsNoTracking()
@@ -140,10 +145,11 @@ public class DashboardService : IDashboardService
 
         return rawReceipts
             .Select(r => new PurchaseReceiptSnapshot(
-                _fiscalClock.GetEcuadorFiscalDate(
+                _businessClock.GetBusinessDate(
                     r.Status == PurchaseReceiptStatus.Canceled && r.CanceledAt.HasValue
                         ? r.CanceledAt.Value
-                        : r.ReceiptDate),
+                        : r.ReceiptDate,
+                    timeZoneId),
                 r.Status,
                 r.Subtotal))
             .ToList();
@@ -474,11 +480,6 @@ public class DashboardService : IDashboardService
         return subtotal > 0m
             ? Math.Round(grossProfit / subtotal * 100m, 4, MidpointRounding.AwayFromZero)
             : 0m;
-    }
-
-    private static DateTime EcuadorDateStartUtc(DateOnly date)
-    {
-        return DateTime.SpecifyKind(date.ToDateTime(TimeOnly.MinValue).AddHours(5), DateTimeKind.Utc);
     }
 
     private sealed record SaleSnapshot(
