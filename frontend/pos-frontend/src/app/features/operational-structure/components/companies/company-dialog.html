@@ -16,6 +16,21 @@
       }
     </div>
 
+    <div class="field">
+      <label for="companyTimeZone">Zona horaria operativa</label>
+      <p-select
+        inputId="companyTimeZone"
+        formControlName="timeZoneId"
+        [options]="timeZoneOptions"
+        optionLabel="label"
+        optionValue="value"
+        appendTo="body"
+      ></p-select>
+      @if (form.controls.timeZoneId.invalid && form.controls.timeZoneId.touched) {
+        <small class="error">Selecciona una zona horaria valida.</small>
+      }
+    </div>
+
     @if (isEditMode) {
       <div class="field-checkbox">
         <p-checkbox inputId="companyIsActive" formControlName="isActive" [binary]="true"></p-checkbox>

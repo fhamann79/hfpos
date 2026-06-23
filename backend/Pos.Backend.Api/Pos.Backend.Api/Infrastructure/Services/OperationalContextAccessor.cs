@@ -88,7 +88,7 @@ public class OperationalContextAccessor : IOperationalContextAccessor
         var company = await _dbContext.Companies
             .AsNoTracking()
             .Where(c => c.Id == companyId)
-            .Select(c => new { c.Id, c.IsActive })
+            .Select(c => new { c.Id, c.IsActive, c.TimeZoneId })
             .FirstOrDefaultAsync();
 
         if (company is null || !company.IsActive)
@@ -137,7 +137,8 @@ public class OperationalContextAccessor : IOperationalContextAccessor
             Username = username,
             CompanyId = companyId,
             EstablishmentId = establishmentId,
-            EmissionPointId = emissionPointId
+            EmissionPointId = emissionPointId,
+            CompanyTimeZoneId = company.TimeZoneId
         };
 
         httpContext.Items[ContextItemKey] = operationalContext;

@@ -17,5 +17,7 @@ public class InventoryMovementDto
     public string? Reference { get; set; }
     public string? Notes { get; set; }
     public int UserId { get; set; }
+    public DateOnly BusinessDate { get; set; }
+    public string TimeZoneIdSnapshot { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
 }

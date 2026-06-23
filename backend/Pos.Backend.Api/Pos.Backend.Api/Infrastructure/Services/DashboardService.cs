@@ -12,33 +12,38 @@ public class DashboardService : IDashboardService
 
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
-    private readonly ISriFiscalClock _fiscalClock;
+    private readonly IBusinessClockService _businessClock;
 
     public DashboardService(
         PosDbContext context,
         IOperationalContextAccessor operationalContextAccessor,
-        ISriFiscalClock fiscalClock)
+        IBusinessClockService businessClock)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
-        _fiscalClock = fiscalClock;
+        _businessClock = businessClock;
     }
 
     public async Task<DashboardSummaryDto> GetSummaryAsync()
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-        var now = _fiscalClock.UtcNow;
-        var today = _fiscalClock.GetEcuadorFiscalDate(now);
+        var timeZoneId = operationalContext.CompanyTimeZoneId;
+        var now = _businessClock.UtcNow;
+        var today = _businessClock.GetBusinessDate(now, timeZoneId);
         var firstDay = today.AddDays(-6);
-        var rangeStartUtc = EcuadorDateStartUtc(firstDay);
-        var rangeEndUtc = EcuadorDateStartUtc(today.AddDays(1));
 
         var sales = await LoadSalesAsync(
             operationalContext.CompanyId,
             operationalContext.EstablishmentId,
             operationalContext.EmissionPointId,
-            rangeStartUtc,
-            rangeEndUtc);
+            firstDay,
+            today);
+
+        var purchaseReceipts = await LoadPurchaseReceiptsAsync(
+            operationalContext.CompanyId,
+            operationalContext.EstablishmentId,
+            firstDay,
+            today);
 
         var inventory = await BuildInventorySummaryAsync(
             operationalContext.CompanyId,
@@ -47,6 +52,8 @@ public class DashboardService : IDashboardService
         var fiscal = await BuildFiscalSummaryAsync(operationalContext.CompanyId, now);
         var salesToday = BuildSalesToday(sales, today);
         var salesLastSevenDays = BuildSalesLastSevenDays(sales, firstDay);
+        var purchasesToday = BuildPurchasesToday(purchaseReceipts, today);
+        var purchasesLastSevenDays = BuildPurchasesLastSevenDays(purchaseReceipts, firstDay);
         var alerts = BuildAlerts(inventory, fiscal);
 
         return new DashboardSummaryDto
@@ -54,6 +61,8 @@ public class DashboardService : IDashboardService
             GeneratedAt = now,
             SalesToday = salesToday,
             SalesLastSevenDays = salesLastSevenDays,
+            PurchasesToday = purchasesToday,
+            PurchasesLastSevenDays = purchasesLastSevenDays,
             Inventory = inventory,
             Fiscal = fiscal,
             Alerts = alerts
@@ -64,36 +73,72 @@ public class DashboardService : IDashboardService
         int companyId,
         int establishmentId,
         int emissionPointId,
-        DateTime rangeStartUtc,
-        DateTime rangeEndUtc)
+        DateOnly firstDay,
+        DateOnly today)
     {
-        var rawSales = await _context.Sales
+        return await _context.Sales
             .AsNoTracking()
             .Where(s => s.CompanyId == companyId
                 && s.EstablishmentId == establishmentId
                 && s.EmissionPointId == emissionPointId
-                && s.CreatedAt >= rangeStartUtc
-                && s.CreatedAt < rangeEndUtc)
+                && s.BusinessDate >= firstDay
+                && s.BusinessDate <= today)
             .Select(s => new
             {
-                s.CreatedAt,
+                s.BusinessDate,
                 s.Status,
                 s.DocumentType,
                 s.DocumentStatus,
                 s.SriAuthorizationStatus,
-                s.Total
+                s.Total,
+                s.Subtotal,
+                s.TotalCost,
+                s.GrossProfit
             })
-            .ToListAsync();
-
-        return rawSales
             .Select(s => new SaleSnapshot(
-                _fiscalClock.GetEcuadorFiscalDate(s.CreatedAt),
+                s.BusinessDate,
                 s.Status,
                 s.DocumentType,
                 s.DocumentStatus,
                 s.SriAuthorizationStatus,
-                s.Total))
-            .ToList();
+                s.Total,
+                s.Subtotal,
+                s.TotalCost,
+                s.GrossProfit))
+            .ToListAsync();
+    }
+
+    private async Task<IReadOnlyList<PurchaseReceiptSnapshot>> LoadPurchaseReceiptsAsync(
+        int companyId,
+        int establishmentId,
+        DateOnly firstDay,
+        DateOnly today)
+    {
+        return await _context.PurchaseReceipts
+            .AsNoTracking()
+            .Where(r => r.CompanyId == companyId
+                && r.EstablishmentId == establishmentId
+                && ((r.Status == PurchaseReceiptStatus.Posted
+                        && r.ReceiptBusinessDate >= firstDay
+                        && r.ReceiptBusinessDate <= today)
+                    || (r.Status == PurchaseReceiptStatus.Canceled
+                        && r.CanceledBusinessDate.HasValue
+                        && r.CanceledBusinessDate.Value >= firstDay
+                        && r.CanceledBusinessDate.Value <= today)))
+            .Select(r => new
+            {
+                r.Status,
+                r.ReceiptBusinessDate,
+                r.CanceledBusinessDate,
+                r.Subtotal
+            })
+            .Select(r => new PurchaseReceiptSnapshot(
+                r.Status == PurchaseReceiptStatus.Canceled && r.CanceledBusinessDate.HasValue
+                    ? r.CanceledBusinessDate.Value
+                    : r.ReceiptBusinessDate,
+                r.Status,
+                r.Subtotal))
+            .ToListAsync();
     }
 
     private async Task<DashboardInventorySummaryDto> BuildInventorySummaryAsync(int companyId, int establishmentId)
@@ -198,11 +243,16 @@ public class DashboardService : IDashboardService
     {
         var todaySales = sales.Where(s => s.Date == today).ToList();
         var validSales = todaySales.Where(s => s.Status != SaleStatus.Voided).ToList();
+        var subtotal = validSales.Sum(s => s.Subtotal);
+        var grossProfit = validSales.Sum(s => s.GrossProfit);
 
         return new DashboardSalesTodayDto
         {
             Count = validSales.Count,
             TotalSold = validSales.Sum(s => s.Total),
+            TotalCost = validSales.Sum(s => s.TotalCost),
+            GrossProfit = grossProfit,
+            GrossMarginPercent = CalculateGrossMarginPercent(grossProfit, subtotal),
             VoidedCount = todaySales.Count(s => s.Status == SaleStatus.Voided),
             InvoiceCount = validSales.Count(s => s.DocumentType == SaleDocumentType.Invoice),
             TicketCount = validSales.Count(s => s.DocumentType == SaleDocumentType.Ticket),
@@ -223,16 +273,83 @@ public class DashboardService : IDashboardService
                 {
                     Date = day,
                     Count = daySales.Count,
-                    TotalSold = daySales.Sum(s => s.Total)
+                    TotalSold = daySales.Sum(s => s.Total),
+                    GrossProfit = daySales.Sum(s => s.GrossProfit)
                 };
             })
             .ToList();
+
+        var subtotal = validSales.Sum(s => s.Subtotal);
+        var grossProfit = validSales.Sum(s => s.GrossProfit);
 
         return new DashboardSalesLastSevenDaysDto
         {
             Count = validSales.Count,
             TotalSold = validSales.Sum(s => s.Total),
+            TotalCost = validSales.Sum(s => s.TotalCost),
+            GrossProfit = grossProfit,
+            GrossMarginPercent = CalculateGrossMarginPercent(grossProfit, subtotal),
             Days = days
+        };
+    }
+
+    private static DashboardPurchasesTodayDto BuildPurchasesToday(
+        IReadOnlyList<PurchaseReceiptSnapshot> purchaseReceipts,
+        DateOnly today)
+    {
+        var todayReceipts = purchaseReceipts.Where(r => r.Date == today).ToList();
+        var postedReceipts = todayReceipts.Where(r => r.Status == PurchaseReceiptStatus.Posted).ToList();
+        var canceledReceipts = todayReceipts.Where(r => r.Status == PurchaseReceiptStatus.Canceled).ToList();
+        var totalPurchased = postedReceipts.Sum(r => r.Subtotal);
+        var canceledAmount = canceledReceipts.Sum(r => r.Subtotal);
+
+        return new DashboardPurchasesTodayDto
+        {
+            PostedCount = postedReceipts.Count,
+            TotalPurchased = totalPurchased,
+            CanceledCount = canceledReceipts.Count,
+            CanceledAmount = canceledAmount,
+            NetPurchased = totalPurchased - canceledAmount
+        };
+    }
+
+    private static DashboardPurchasesLastSevenDaysDto BuildPurchasesLastSevenDays(
+        IReadOnlyList<PurchaseReceiptSnapshot> purchaseReceipts,
+        DateOnly firstDay)
+    {
+        var days = Enumerable.Range(0, 7)
+            .Select(offset => firstDay.AddDays(offset))
+            .Select(day => BuildDailyPurchases(purchaseReceipts.Where(r => r.Date == day).ToList(), day))
+            .ToList();
+
+        return new DashboardPurchasesLastSevenDaysDto
+        {
+            PostedCount = days.Sum(day => day.PostedCount),
+            TotalPurchased = days.Sum(day => day.TotalPurchased),
+            CanceledCount = days.Sum(day => day.CanceledCount),
+            CanceledAmount = days.Sum(day => day.CanceledAmount),
+            NetPurchased = days.Sum(day => day.NetPurchased),
+            Days = days
+        };
+    }
+
+    private static DashboardDailyPurchasesDto BuildDailyPurchases(
+        IReadOnlyList<PurchaseReceiptSnapshot> purchaseReceipts,
+        DateOnly day)
+    {
+        var postedReceipts = purchaseReceipts.Where(r => r.Status == PurchaseReceiptStatus.Posted).ToList();
+        var canceledReceipts = purchaseReceipts.Where(r => r.Status == PurchaseReceiptStatus.Canceled).ToList();
+        var totalPurchased = postedReceipts.Sum(r => r.Subtotal);
+        var canceledAmount = canceledReceipts.Sum(r => r.Subtotal);
+
+        return new DashboardDailyPurchasesDto
+        {
+            Date = day,
+            PostedCount = postedReceipts.Count,
+            TotalPurchased = totalPurchased,
+            CanceledCount = canceledReceipts.Count,
+            CanceledAmount = canceledAmount,
+            NetPurchased = totalPurchased - canceledAmount
         };
     }
 
@@ -344,9 +461,11 @@ public class DashboardService : IDashboardService
         return minimumStock > 0m && quantity > 0m && quantity <= minimumStock;
     }
 
-    private static DateTime EcuadorDateStartUtc(DateOnly date)
+    private static decimal CalculateGrossMarginPercent(decimal grossProfit, decimal subtotal)
     {
-        return DateTime.SpecifyKind(date.ToDateTime(TimeOnly.MinValue).AddHours(5), DateTimeKind.Utc);
+        return subtotal > 0m
+            ? Math.Round(grossProfit / subtotal * 100m, 4, MidpointRounding.AwayFromZero)
+            : 0m;
     }
 
     private sealed record SaleSnapshot(
@@ -355,5 +474,13 @@ public class DashboardService : IDashboardService
         SaleDocumentType DocumentType,
         SaleDocumentStatus DocumentStatus,
         string? SriAuthorizationStatus,
-        decimal Total);
+        decimal Total,
+        decimal Subtotal,
+        decimal TotalCost,
+        decimal GrossProfit);
+
+    private sealed record PurchaseReceiptSnapshot(
+        DateOnly Date,
+        PurchaseReceiptStatus Status,
+        decimal Subtotal);
 }

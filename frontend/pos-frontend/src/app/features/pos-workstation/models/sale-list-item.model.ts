@@ -2,6 +2,8 @@ import { SaleDocumentStatus, SaleDocumentType } from './sale-document.model';
 
 export interface SaleListItem {
   id: number;
+  businessDate: string | null;
+  timeZoneIdSnapshot: string | null;
   createdAt: string;
   status: string;
   documentType: SaleDocumentType;

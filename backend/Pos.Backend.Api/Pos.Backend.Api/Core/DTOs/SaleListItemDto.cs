@@ -46,6 +46,10 @@ public class SaleListItemDto
 
     public int ItemsCount { get; set; }
 
+    public DateOnly BusinessDate { get; set; }
+
+    public string TimeZoneIdSnapshot { get; set; } = string.Empty;
+
     public DateTime CreatedAt { get; set; }
 
     public int UserId { get; set; }

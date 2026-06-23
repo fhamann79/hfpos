@@ -10,6 +10,8 @@ export interface PurchaseReceiptListItem {
   receiptNumber: string | null;
   supplierDocumentNumber: string | null;
   receiptDate: string;
+  receiptBusinessDate: string | null;
+  receiptTimeZoneIdSnapshot: string | null;
   status: PurchaseReceiptStatus;
   subtotal: number;
   notes: string | null;
@@ -18,6 +20,8 @@ export interface PurchaseReceiptListItem {
   createdByUsername: string;
   postedAt: string | null;
   canceledAt: string | null;
+  canceledBusinessDate: string | null;
+  canceledTimeZoneIdSnapshot: string | null;
   canceledByUserId: number | null;
   canceledByUsername: string | null;
   cancelReason: string | null;

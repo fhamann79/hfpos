@@ -33,7 +33,7 @@
 
 .summary-grid {
   display:grid;
-  grid-template-columns:repeat(5,minmax(0,1fr));
+  grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));
   gap:.75rem;
 }
 
@@ -74,7 +74,9 @@
 .metric-card small,
 .panel-header p,
 .trend-row small,
+.purchase-row small,
 .stock-row small,
+.purchase-totals span,
 .status-list span,
 .status-list small,
 .quick-action small,
@@ -109,6 +111,21 @@
   color:#15803d;
 }
 
+.metric-card--profit > span {
+  background:#ccfbf1;
+  color:#0f766e;
+}
+
+.metric-card--margin > span {
+  background:#e0f2fe;
+  color:#0369a1;
+}
+
+.metric-card--purchases > span {
+  background:#fef9c3;
+  color:#a16207;
+}
+
 .metric-card--sri > span {
   background:#ede9fe;
   color:#6d28d9;
@@ -126,7 +143,8 @@
 
 .dashboard-grid {
   display:grid;
-  grid-template-columns:minmax(0,1.35fr) minmax(20rem,.65fr);
+  grid-template-columns:minmax(0,1.35fr) minmax(21rem,.65fr);
+  align-items:start;
   gap:1rem;
 }
 
@@ -141,6 +159,7 @@
 
 .panel--wide {
   min-width:0;
+  grid-row:span 2;
 }
 
 .panel-header {
@@ -156,6 +175,7 @@
 }
 
 .sales-trend,
+.purchase-trend,
 .alert-list,
 .stock-list,
 .status-list,
@@ -172,17 +192,31 @@
   gap:.75rem;
 }
 
+.trend-row--sales {
+  grid-template-columns:4rem minmax(7rem,1fr) 7.4rem 7.4rem 4.5rem;
+}
+
+.trend-bars {
+  display:flex;
+  flex-direction:column;
+  gap:.28rem;
+}
+
 .trend-row time,
-.trend-row strong {
+.trend-row strong,
+.purchase-row time,
+.purchase-row strong {
   font-variant-numeric:tabular-nums;
 }
 
-.trend-row time {
+.trend-row time,
+.purchase-row time {
   color:#475569;
   font-weight:800;
 }
 
-.trend-row strong {
+.trend-row strong,
+.purchase-row strong {
   text-align:right;
 }
 
@@ -198,6 +232,66 @@
   height:100%;
   border-radius:999px;
   background:#2563eb;
+}
+
+.trend-bar--profit span {
+  background:#14b8a6;
+}
+
+.trend-bar-negative,
+.purchase-row--negative .trend-bar span {
+  background:#dc2626 !important;
+}
+
+.trend-profit {
+  color:#0f766e;
+}
+
+.trend-profit--negative {
+  color:#b91c1c;
+}
+
+.purchase-totals {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:.5rem;
+  margin-bottom:.8rem;
+}
+
+.purchase-totals div,
+.purchase-row {
+  min-width:0;
+  border:1px solid #e5eaf2;
+  border-radius:8px;
+  background:#f8fafc;
+}
+
+.purchase-totals div {
+  padding:.65rem;
+}
+
+.purchase-totals span,
+.purchase-totals strong {
+  display:block;
+}
+
+.purchase-totals strong {
+  margin-top:.15rem;
+  font-size:.95rem;
+  font-variant-numeric:tabular-nums;
+}
+
+.purchase-row {
+  display:grid;
+  grid-template-columns:3.8rem minmax(5rem,1fr) 7.2rem 6.2rem;
+  align-items:center;
+  gap:.65rem;
+  padding:.65rem;
+}
+
+.purchase-row--negative {
+  border-color:#fecaca;
+  background:#fff7f7;
 }
 
 .alert-item,
@@ -379,6 +473,10 @@
   .dashboard-grid--bottom {
     grid-template-columns:1fr;
   }
+
+  .panel--wide {
+    grid-row:auto;
+  }
 }
 
 @media (max-width:720px) {
@@ -392,13 +490,21 @@
     grid-template-columns:1fr;
   }
 
-  .trend-row {
+  .trend-row,
+  .trend-row--sales,
+  .purchase-row {
     grid-template-columns:3.5rem minmax(0,1fr);
   }
 
   .trend-row strong,
-  .trend-row small {
+  .trend-row small,
+  .purchase-row strong,
+  .purchase-row small {
     grid-column:2;
     text-align:left;
+  }
+
+  .purchase-totals {
+    grid-template-columns:1fr;
   }
 }

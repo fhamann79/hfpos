@@ -202,8 +202,8 @@
         <tr>
           <td>
             <span class="date-stack">
-              <strong>{{ sale.createdAt | date: 'dd/MM/yyyy' }}</strong>
-              <small>{{ sale.createdAt | date: 'HH:mm' }}</small>
+              <strong>{{ formatBusinessDate(sale.createdAt) }}</strong>
+              <small>{{ formatBusinessTime(sale.createdAt) }}</small>
             </span>
           </td>
           <td>
@@ -277,7 +277,7 @@
       </div>
       <div>
         <span>Fecha</span>
-        <strong>{{ sale.createdAt | date: 'medium' }}</strong>
+        <strong>{{ formatBusinessDateTime(sale.createdAt) }}</strong>
       </div>
       <div>
         <span>Cliente</span>

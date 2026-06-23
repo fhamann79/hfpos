@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Core.Services;
+using Pos.Backend.Api.Infrastructure.Data;
 using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
 
@@ -15,11 +17,13 @@ public class AuthController : ControllerBase
 {
     private readonly AuthService _auth;
     private readonly JwtService _jwt;
+    private readonly PosDbContext _context;
 
-    public AuthController(AuthService auth, JwtService jwt)
+    public AuthController(AuthService auth, JwtService jwt, PosDbContext context)
     {
         _auth = auth;
         _jwt = jwt;
+        _context = context;
     }
 
     [HttpPost("register")]
@@ -49,7 +53,7 @@ public class AuthController : ControllerBase
 
     [HttpGet("me")]
     [Authorize]
-    public IActionResult Me()
+    public async Task<IActionResult> Me()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
                      ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
@@ -80,11 +84,23 @@ public class AuthController : ControllerBase
             return Unauthorized(Error("INVALID_CLAIMS"));
         }
 
+        var companyTimeZoneId = await _context.Companies
+            .AsNoTracking()
+            .Where(c => c.Id == companyId && c.IsActive)
+            .Select(c => c.TimeZoneId)
+            .FirstOrDefaultAsync();
+
+        if (string.IsNullOrWhiteSpace(companyTimeZoneId))
+        {
+            return Unauthorized(Error("COMPANY_INACTIVE_OR_NOT_FOUND"));
+        }
+
         return Ok(new
         {
             userId,
             username,
             companyId,
+            companyTimeZoneId,
             establishmentId,
             emissionPointId,
             roleCode,

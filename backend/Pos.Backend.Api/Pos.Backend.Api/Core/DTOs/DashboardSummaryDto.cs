@@ -8,6 +8,10 @@ public class DashboardSummaryDto
 
     public DashboardSalesLastSevenDaysDto SalesLastSevenDays { get; set; } = new();
 
+    public DashboardPurchasesTodayDto PurchasesToday { get; set; } = new();
+
+    public DashboardPurchasesLastSevenDaysDto PurchasesLastSevenDays { get; set; } = new();
+
     public DashboardInventorySummaryDto Inventory { get; set; } = new();
 
     public DashboardFiscalSummaryDto Fiscal { get; set; } = new();
@@ -20,6 +24,12 @@ public class DashboardSalesTodayDto
     public int Count { get; set; }
 
     public decimal TotalSold { get; set; }
+
+    public decimal TotalCost { get; set; }
+
+    public decimal GrossProfit { get; set; }
+
+    public decimal GrossMarginPercent { get; set; }
 
     public int VoidedCount { get; set; }
 
@@ -36,6 +46,12 @@ public class DashboardSalesLastSevenDaysDto
 
     public decimal TotalSold { get; set; }
 
+    public decimal TotalCost { get; set; }
+
+    public decimal GrossProfit { get; set; }
+
+    public decimal GrossMarginPercent { get; set; }
+
     public List<DashboardDailySalesDto> Days { get; set; } = new();
 }
 
@@ -46,6 +62,51 @@ public class DashboardDailySalesDto
     public int Count { get; set; }
 
     public decimal TotalSold { get; set; }
+
+    public decimal GrossProfit { get; set; }
+}
+
+public class DashboardPurchasesTodayDto
+{
+    public int PostedCount { get; set; }
+
+    public decimal TotalPurchased { get; set; }
+
+    public int CanceledCount { get; set; }
+
+    public decimal CanceledAmount { get; set; }
+
+    public decimal NetPurchased { get; set; }
+}
+
+public class DashboardPurchasesLastSevenDaysDto
+{
+    public int PostedCount { get; set; }
+
+    public decimal TotalPurchased { get; set; }
+
+    public int CanceledCount { get; set; }
+
+    public decimal CanceledAmount { get; set; }
+
+    public decimal NetPurchased { get; set; }
+
+    public List<DashboardDailyPurchasesDto> Days { get; set; } = new();
+}
+
+public class DashboardDailyPurchasesDto
+{
+    public DateOnly Date { get; set; }
+
+    public int PostedCount { get; set; }
+
+    public decimal TotalPurchased { get; set; }
+
+    public int CanceledCount { get; set; }
+
+    public decimal CanceledAmount { get; set; }
+
+    public decimal NetPurchased { get; set; }
 }
 
 public class DashboardInventorySummaryDto

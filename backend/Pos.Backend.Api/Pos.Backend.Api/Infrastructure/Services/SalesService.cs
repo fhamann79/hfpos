@@ -20,6 +20,7 @@ public class SalesService : ISalesService
     private readonly ISriAccessKeyService _sriAccessKeyService;
     private readonly ISriXmlDraftService _sriXmlDraftService;
     private readonly ISriFiscalClock _sriFiscalClock;
+    private readonly IBusinessClockService _businessClock;
     private readonly ISriInvoiceXmlValidator _sriInvoiceXmlValidator;
     private readonly SriOptions _sriOptions;
 
@@ -31,6 +32,7 @@ public class SalesService : ISalesService
         ISriAccessKeyService sriAccessKeyService,
         ISriXmlDraftService sriXmlDraftService,
         ISriFiscalClock sriFiscalClock,
+        IBusinessClockService businessClock,
         ISriInvoiceXmlValidator sriInvoiceXmlValidator,
         IOptions<SriOptions> sriOptions)
     {
@@ -41,6 +43,7 @@ public class SalesService : ISalesService
         _sriAccessKeyService = sriAccessKeyService;
         _sriXmlDraftService = sriXmlDraftService;
         _sriFiscalClock = sriFiscalClock;
+        _businessClock = businessClock;
         _sriInvoiceXmlValidator = sriInvoiceXmlValidator;
         _sriOptions = sriOptions.Value;
     }
@@ -64,14 +67,14 @@ public class SalesService : ISalesService
 
         if (from.HasValue)
         {
-            var fromUtc = DateTime.SpecifyKind(from.Value, DateTimeKind.Utc);
-            query = query.Where(s => s.CreatedAt >= fromUtc);
+            var fromDate = DateOnly.FromDateTime(from.Value);
+            query = query.Where(s => s.BusinessDate >= fromDate);
         }
 
         if (to.HasValue)
         {
-            var toUtc = DateTime.SpecifyKind(to.Value, DateTimeKind.Utc);
-            query = query.Where(s => s.CreatedAt <= toUtc);
+            var toDate = DateOnly.FromDateTime(to.Value);
+            query = query.Where(s => s.BusinessDate <= toDate);
         }
 
         if (status.HasValue)
@@ -134,6 +137,8 @@ public class SalesService : ISalesService
                 GrossProfit = s.GrossProfit,
                 GrossMarginPercent = s.GrossMarginPercent,
                 ItemsCount = s.Items.Count,
+                BusinessDate = s.BusinessDate,
+                TimeZoneIdSnapshot = s.TimeZoneIdSnapshot,
                 CreatedAt = s.CreatedAt,
                 UserId = s.UserId,
                 Username = s.User.Username,
@@ -204,6 +209,8 @@ public class SalesService : ISalesService
                 EstablishmentId = s.EstablishmentId,
                 EmissionPointId = s.EmissionPointId,
                 UserId = s.UserId,
+                BusinessDate = s.BusinessDate,
+                TimeZoneIdSnapshot = s.TimeZoneIdSnapshot,
                 CreatedAt = s.CreatedAt,
                 Items = s.Items
                     .OrderBy(i => i.Id)
@@ -318,6 +325,8 @@ public class SalesService : ISalesService
                 }
             }
 
+            var now = _businessClock.UtcNow;
+            var businessDate = _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId);
             var sale = new Sale
             {
                 CompanyId = operationalContext.CompanyId,
@@ -329,8 +338,10 @@ public class SalesService : ISalesService
                 PaymentMethod = paymentMethod,
                 DocumentType = documentType,
                 Notes = dto.Notes?.Trim(),
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                BusinessDate = businessDate,
+                TimeZoneIdSnapshot = operationalContext.CompanyTimeZoneId,
+                CreatedAt = now,
+                UpdatedAt = now
             };
 
             foreach (var itemDto in dto.Items.OrderBy(i => i.ProductId))

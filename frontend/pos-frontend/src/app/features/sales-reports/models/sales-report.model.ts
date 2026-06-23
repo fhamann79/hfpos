@@ -27,6 +27,8 @@ export interface SalesReportFilters {
 
 export interface SalesReportRow {
   id: number;
+  businessDate: string | null;
+  timeZoneIdSnapshot: string | null;
   createdAt: string;
   status: SaleStatus;
   number: string | null;

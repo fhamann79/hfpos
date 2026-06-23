@@ -104,7 +104,7 @@
                   <small>Último movimiento</small>
                   @if (lastMovement(); as movement) {
                     <strong>{{ movementTypeName(movement.type) }}</strong>
-                    <span>{{ movement.productName }} · {{ movement.createdAt | date: 'short' }}</span>
+                    <span>{{ movement.productName }} · {{ formatBusinessDateTime(movement.createdAt) }}</span>
                   } @else {
                     <strong>Sin movimientos</strong>
                     <span>No hay actividad registrada en la vista actual.</span>
@@ -449,8 +449,8 @@
                 <tr [class.row-reversal]="isReversalMovement(movement)">
                   <td>
                     <span class="date-stack">
-                      <strong>{{ movement.createdAt | date: 'dd/MM/yyyy' }}</strong>
-                      <small>{{ movement.createdAt | date: 'HH:mm' }}</small>
+                      <strong>{{ movementBusinessDateLabel(movement) }}</strong>
+                      <small>{{ formatBusinessTime(movement.createdAt) }}</small>
                     </span>
                   </td>
                   <td>
@@ -732,7 +732,7 @@
       </div>
       <div>
         <dt>Fecha</dt>
-        <dd>{{ detail.createdAt | date: 'medium' }}</dd>
+        <dd>{{ formatBusinessDateTime(detail.createdAt) }}</dd>
       </div>
       <div>
         <dt>Referencia</dt>

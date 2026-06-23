@@ -33,11 +33,11 @@ export class SalesReportService {
     const search = filters.search?.trim();
 
     if (filters.from) {
-      params = params.set('from', `${filters.from}T00:00:00.000Z`);
+      params = params.set('from', filters.from);
     }
 
     if (filters.to) {
-      params = params.set('to', `${filters.to}T23:59:59.999Z`);
+      params = params.set('to', filters.to);
     }
 
     if (filters.status !== null && filters.status !== undefined) {
@@ -64,6 +64,8 @@ export class SalesReportService {
 
     return {
       id: this.readNumber(row, ['id', 'saleId'], 0),
+      businessDate: this.readString(row, ['businessDate'], null),
+      timeZoneIdSnapshot: this.readString(row, ['timeZoneIdSnapshot'], null),
       createdAt: this.readString(row, ['createdAt', 'createdOn', 'date'], ''),
       status: normalizeSaleStatus(row?.['status']),
       number: this.readString(row, ['number'], null),

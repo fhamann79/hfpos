@@ -24,6 +24,8 @@ const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
   INVALID_CREDENTIALS: 'Credenciales inválidas.',
   CONTEXT_MISMATCH: 'El contexto seleccionado no coincide con la operación solicitada.',
   COMPANY_INACTIVE_OR_NOT_FOUND: 'La compañía no existe o está inactiva.',
+  COMPANY_TIMEZONE_REQUIRED: 'Selecciona una zona horaria operativa.',
+  COMPANY_TIMEZONE_INVALID: 'La zona horaria seleccionada no es válida.',
   ESTABLISHMENT_INACTIVE_OR_NOT_FOUND: 'El establecimiento no existe o está inactivo.',
   EMISSION_POINT_INACTIVE_OR_NOT_FOUND: 'El punto de emisión no existe o está inactivo.',
   INTERNAL_SERVER_ERROR: 'Ocurrió un error interno. Intenta nuevamente.',

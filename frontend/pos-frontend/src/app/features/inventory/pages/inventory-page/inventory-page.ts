@@ -1,4 +1,4 @@
-import { CommonModule, DatePipe } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -20,6 +20,10 @@ import { ToolbarModule } from 'primeng/toolbar';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { AuthStore } from '../../../../core/stores/auth.store';
+import {
+  formatBusinessDateTime as formatBusinessDateTimeValue,
+  formatBusinessTime as formatBusinessTimeValue,
+} from '../../../../core/utils/business-date-format';
 import { readErrorCode } from '../../../../core/utils/http-error-normalizer';
 import {
   InventoryMovement,
@@ -56,7 +60,6 @@ interface InventoryOperationForm {
   imports: [
     CommonModule,
     FormsModule,
-    DatePipe,
     TableModule,
     ButtonModule,
     CardModule,
@@ -106,6 +109,7 @@ export class InventoryPage implements OnInit {
   readonly totalInventoryValue = computed(() =>
     this.stocks().reduce((total, stock) => total + stock.inventoryValue, 0)
   );
+  readonly companyTimeZoneId = computed(() => this.authStore.companyTimeZoneId());
 
   readonly movements = signal<InventoryMovement[]>([]);
   readonly movementsLoading = signal(false);
@@ -479,6 +483,18 @@ export class InventoryPage implements OnInit {
     return 'source-badge';
   }
 
+  movementBusinessDateLabel(movement: InventoryMovement): string {
+    return this.formatDateOnly(movement.businessDate ?? movement.createdAt);
+  }
+
+  formatBusinessTime(value: string | Date | null | undefined): string {
+    return formatBusinessTimeValue(value, this.companyTimeZoneId());
+  }
+
+  formatBusinessDateTime(value: string | Date | null | undefined): string {
+    return formatBusinessDateTimeValue(value, this.companyTimeZoneId());
+  }
+
   isReversalMovement(movement: InventoryMovement): boolean {
     return movement.type === InventoryMovementType.Void
       || movement.sourceType === InventoryMovementSourceType.SaleVoid
@@ -598,6 +614,19 @@ export class InventoryPage implements OnInit {
       reference: '',
       notes: '',
     };
+  }
+
+  private formatDateOnly(value: string | null | undefined): string {
+    if (!value) {
+      return '-';
+    }
+
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (!match) {
+      return '-';
+    }
+
+    return `${match[3]}/${match[2]}/${match[1]}`;
   }
 
   resetCurrentOperationForm(): void {

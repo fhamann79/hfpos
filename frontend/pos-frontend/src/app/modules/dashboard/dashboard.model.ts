@@ -4,6 +4,8 @@ export interface DashboardSummary {
   generatedAt: string;
   salesToday: DashboardSalesToday;
   salesLastSevenDays: DashboardSalesLastSevenDays;
+  purchasesToday: DashboardPurchasesToday;
+  purchasesLastSevenDays: DashboardPurchasesLastSevenDays;
   inventory: DashboardInventorySummary;
   fiscal: DashboardFiscalSummary;
   alerts: DashboardAlert[];
@@ -12,6 +14,9 @@ export interface DashboardSummary {
 export interface DashboardSalesToday {
   count: number;
   totalSold: number;
+  totalCost: number;
+  grossProfit: number;
+  grossMarginPercent: number;
   voidedCount: number;
   invoiceCount: number;
   ticketCount: number;
@@ -21,6 +26,9 @@ export interface DashboardSalesToday {
 export interface DashboardSalesLastSevenDays {
   count: number;
   totalSold: number;
+  totalCost: number;
+  grossProfit: number;
+  grossMarginPercent: number;
   days: DashboardDailySales[];
 }
 
@@ -28,6 +36,33 @@ export interface DashboardDailySales {
   date: string;
   count: number;
   totalSold: number;
+  grossProfit: number;
+}
+
+export interface DashboardPurchasesToday {
+  postedCount: number;
+  totalPurchased: number;
+  canceledCount: number;
+  canceledAmount: number;
+  netPurchased: number;
+}
+
+export interface DashboardPurchasesLastSevenDays {
+  postedCount: number;
+  totalPurchased: number;
+  canceledCount: number;
+  canceledAmount: number;
+  netPurchased: number;
+  days: DashboardDailyPurchases[];
+}
+
+export interface DashboardDailyPurchases {
+  date: string;
+  postedCount: number;
+  totalPurchased: number;
+  canceledCount: number;
+  canceledAmount: number;
+  netPurchased: number;
 }
 
 export interface DashboardInventorySummary {

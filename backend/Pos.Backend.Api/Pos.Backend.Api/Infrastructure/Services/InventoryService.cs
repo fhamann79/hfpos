@@ -14,15 +14,18 @@ public class InventoryService : IInventoryService
     private readonly PosDbContext _context;
     private readonly ILogger<InventoryService> _logger;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
+    private readonly IBusinessClockService _businessClock;
 
     public InventoryService(
         PosDbContext context,
         ILogger<InventoryService> logger,
-        IOperationalContextAccessor operationalContextAccessor)
+        IOperationalContextAccessor operationalContextAccessor,
+        IBusinessClockService businessClock)
     {
         _context = context;
         _logger = logger;
         _operationalContextAccessor = operationalContextAccessor;
+        _businessClock = businessClock;
     }
 
     public async Task<IReadOnlyList<InventoryStockListItemDto>> GetStocksAsync(string? search, int? productId, bool onlyPositive)
@@ -134,6 +137,8 @@ public class InventoryService : IInventoryService
                 Reference = m.Reference,
                 Notes = m.Notes,
                 UserId = m.UserId,
+                BusinessDate = m.BusinessDate,
+                TimeZoneIdSnapshot = m.TimeZoneIdSnapshot,
                 CreatedAt = m.CreatedAt
             })
             .ToListAsync();
@@ -172,14 +177,14 @@ public class InventoryService : IInventoryService
 
         if (query.From.HasValue)
         {
-            var fromUtc = DateTime.SpecifyKind(query.From.Value, DateTimeKind.Utc);
-            movements = movements.Where(m => m.CreatedAt >= fromUtc);
+            var fromDate = DateOnly.FromDateTime(query.From.Value);
+            movements = movements.Where(m => m.BusinessDate >= fromDate);
         }
 
         if (query.To.HasValue)
         {
-            var toUtc = DateTime.SpecifyKind(query.To.Value, DateTimeKind.Utc);
-            movements = movements.Where(m => m.CreatedAt <= toUtc);
+            var toDate = DateOnly.FromDateTime(query.To.Value);
+            movements = movements.Where(m => m.BusinessDate <= toDate);
         }
 
         if (query.UserId.HasValue)
@@ -217,6 +222,8 @@ public class InventoryService : IInventoryService
                 Reference = m.Reference,
                 Notes = m.Notes,
                 UserId = m.UserId,
+                BusinessDate = m.BusinessDate,
+                TimeZoneIdSnapshot = m.TimeZoneIdSnapshot,
                 CreatedAt = m.CreatedAt
             })
             .ToListAsync();
@@ -253,6 +260,8 @@ public class InventoryService : IInventoryService
                 Reference = m.Reference,
                 Notes = m.Notes,
                 UserId = m.UserId,
+                BusinessDate = m.BusinessDate,
+                TimeZoneIdSnapshot = m.TimeZoneIdSnapshot,
                 CreatedAt = m.CreatedAt
             })
             .FirstOrDefaultAsync();
@@ -488,8 +497,10 @@ public class InventoryService : IInventoryService
                 throw new InvalidOperationException("INVENTORY_CONCURRENCY_CONFLICT");
             }
 
+            var now = _businessClock.UtcNow;
+            var businessDate = _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId);
             productStock.Quantity = stockAfter;
-            productStock.UpdatedAt = DateTime.UtcNow;
+            productStock.UpdatedAt = now;
 
             var movement = new InventoryMovement
             {
@@ -506,7 +517,9 @@ public class InventoryService : IInventoryService
                 Reference = reference?.Trim(),
                 Notes = notes?.Trim(),
                 UserId = operationalContext.UserId,
-                CreatedAt = DateTime.UtcNow
+                BusinessDate = businessDate,
+                TimeZoneIdSnapshot = operationalContext.CompanyTimeZoneId,
+                CreatedAt = now
             };
 
             _context.InventoryMovements.Add(movement);
@@ -532,6 +545,8 @@ public class InventoryService : IInventoryService
                 Reference = movement.Reference,
                 Notes = movement.Notes,
                 UserId = movement.UserId,
+                BusinessDate = movement.BusinessDate,
+                TimeZoneIdSnapshot = movement.TimeZoneIdSnapshot,
                 CreatedAt = movement.CreatedAt
             };
         }

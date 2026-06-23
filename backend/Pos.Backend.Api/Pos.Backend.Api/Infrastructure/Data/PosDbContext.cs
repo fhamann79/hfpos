@@ -72,6 +72,11 @@ public class PosDbContext : DbContext
             entity.Property(c => c.Phone)
                 .HasMaxLength(30);
 
+            entity.Property(c => c.TimeZoneId)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasDefaultValue("America/Guayaquil");
+
             entity.Property(c => c.SpecialTaxpayerNumber)
                 .HasMaxLength(50);
 
@@ -307,6 +312,21 @@ public class PosDbContext : DbContext
             entity.Property(r => r.SupplierDocumentNumber)
                 .HasMaxLength(50);
 
+            entity.Property(r => r.ReceiptBusinessDate)
+                .HasColumnType("date")
+                .HasDefaultValueSql("CURRENT_DATE");
+
+            entity.Property(r => r.ReceiptTimeZoneIdSnapshot)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasDefaultValue("America/Guayaquil");
+
+            entity.Property(r => r.CanceledBusinessDate)
+                .HasColumnType("date");
+
+            entity.Property(r => r.CanceledTimeZoneIdSnapshot)
+                .HasMaxLength(100);
+
             entity.Property(r => r.Status)
                 .HasConversion<int>();
 
@@ -322,6 +342,9 @@ public class PosDbContext : DbContext
             entity.HasIndex(r => new { r.CompanyId, r.EstablishmentId, r.ReceiptDate });
             entity.HasIndex(r => new { r.CompanyId, r.SupplierId, r.ReceiptDate });
             entity.HasIndex(r => new { r.CompanyId, r.Status, r.ReceiptDate });
+            entity.HasIndex(r => new { r.CompanyId, r.EstablishmentId, r.ReceiptBusinessDate });
+            entity.HasIndex(r => new { r.CompanyId, r.Status, r.ReceiptBusinessDate });
+            entity.HasIndex(r => new { r.CompanyId, r.Status, r.CanceledBusinessDate });
             entity.HasIndex(r => new { r.CompanyId, r.ReceiptNumber });
             entity.HasIndex(r => new { r.CompanyId, r.SupplierDocumentNumber });
 
@@ -422,9 +445,20 @@ public class PosDbContext : DbContext
             entity.Property(im => im.StockAfter)
                 .HasPrecision(18, 4);
 
+            entity.Property(im => im.BusinessDate)
+                .HasColumnType("date")
+                .HasDefaultValueSql("CURRENT_DATE");
+
+            entity.Property(im => im.TimeZoneIdSnapshot)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasDefaultValue("America/Guayaquil");
+
             entity.HasIndex(im => new { im.ProductId, im.CompanyId, im.EstablishmentId, im.CreatedAt });
             entity.HasIndex(im => new { im.CompanyId, im.EstablishmentId, im.CreatedAt });
             entity.HasIndex(im => new { im.CompanyId, im.EstablishmentId, im.ProductId, im.CreatedAt });
+            entity.HasIndex(im => new { im.CompanyId, im.EstablishmentId, im.BusinessDate });
+            entity.HasIndex(im => new { im.CompanyId, im.EstablishmentId, im.ProductId, im.BusinessDate });
             entity.HasIndex(im => new { im.SourceType, im.SourceId });
             entity.HasIndex(im => new { im.SourceType, im.SourceId, im.SourceLineId })
                 .IsUnique()
@@ -604,6 +638,15 @@ public class PosDbContext : DbContext
                 .HasPrecision(18, 4)
                 .HasDefaultValue(0m);
 
+            entity.Property(s => s.BusinessDate)
+                .HasColumnType("date")
+                .HasDefaultValueSql("CURRENT_DATE");
+
+            entity.Property(s => s.TimeZoneIdSnapshot)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasDefaultValue("America/Guayaquil");
+
             entity.Property(s => s.Number)
                 .HasMaxLength(50);
 
@@ -664,6 +707,7 @@ public class PosDbContext : DbContext
                 .IsUnique()
                 .HasFilter(@"""Sequential"" IS NOT NULL");
             entity.HasIndex(s => new { s.CompanyId, s.EstablishmentId, s.EmissionPointId, s.CreatedAt });
+            entity.HasIndex(s => new { s.CompanyId, s.EstablishmentId, s.EmissionPointId, s.BusinessDate });
 
             entity.HasOne(s => s.User)
                 .WithMany()

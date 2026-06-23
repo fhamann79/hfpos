@@ -1,4 +1,4 @@
-import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
+import { CommonModule, CurrencyPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -15,6 +15,12 @@ import { ToastModule } from 'primeng/toast';
 import { ToolbarModule } from 'primeng/toolbar';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
+import { AuthStore } from '../../../../core/stores/auth.store';
+import {
+  formatBusinessDateInput,
+  formatBusinessDateTime as formatBusinessDateTimeValue,
+  formatBusinessTime as formatBusinessTimeValue,
+} from '../../../../core/utils/business-date-format';
 import { resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
 import { Product } from '../../../catalog/models/product.model';
 import { ProductService } from '../../../catalog/services/product.service';
@@ -47,7 +53,6 @@ interface ReceiptDraftItem {
   imports: [
     CommonModule,
     CurrencyPipe,
-    DatePipe,
     FormsModule,
     TableModule,
     ButtonModule,
@@ -69,6 +74,7 @@ export class PurchaseReceiptsPage implements OnInit {
   private readonly supplierService = inject(SupplierService);
   private readonly productService = inject(ProductService);
   private readonly permissionService = inject(PermissionService);
+  private readonly authStore = inject(AuthStore);
   private readonly messageService = inject(MessageService);
 
   readonly receipts = signal<PurchaseReceiptListItem[]>([]);
@@ -97,6 +103,7 @@ export class PurchaseReceiptsPage implements OnInit {
   readonly postedCount = computed(() => this.receipts().filter((receipt) => receipt.status === PurchaseReceiptStatus.Posted).length);
   readonly canceledCount = computed(() => this.receipts().filter((receipt) => receipt.status === PurchaseReceiptStatus.Canceled).length);
   readonly subtotal = computed(() => this.draftItems().reduce((sum, item) => sum + this.lineTotal(item), 0));
+  readonly companyTimeZoneId = computed(() => this.authStore.companyTimeZoneId());
 
   readonly supplierOptions = computed<SelectOption<number>[]>(() =>
     this.activeSuppliers().map((supplier) => ({
@@ -127,7 +134,7 @@ export class PurchaseReceiptsPage implements OnInit {
   supplierId: number | null = null;
   receiptNumber = '';
   supplierDocumentNumber = '';
-  receiptDate = this.formatDateInput(new Date());
+  receiptDate = this.todayBusinessDateInput();
   notes = '';
   cancelReason = '';
 
@@ -414,11 +421,27 @@ export class PurchaseReceiptsPage implements OnInit {
     return this.products().find((product) => product.id === productId)?.cost ?? null;
   }
 
+  receiptBusinessDateLabel(receipt: PurchaseReceipt | PurchaseReceiptListItem): string {
+    return this.formatDateOnly(receipt.receiptBusinessDate ?? receipt.receiptDate);
+  }
+
+  receiptCanceledBusinessDateLabel(receipt: PurchaseReceipt | PurchaseReceiptListItem): string {
+    return this.formatDateOnly(receipt.canceledBusinessDate ?? receipt.canceledAt);
+  }
+
+  formatBusinessTime(value: string | Date | null | undefined): string {
+    return formatBusinessTimeValue(value, this.companyTimeZoneId());
+  }
+
+  formatBusinessDateTime(value: string | Date | null | undefined): string {
+    return formatBusinessDateTimeValue(value, this.companyTimeZoneId());
+  }
+
   private resetForm(): void {
     this.supplierId = null;
     this.receiptNumber = '';
     this.supplierDocumentNumber = '';
-    this.receiptDate = this.formatDateInput(new Date());
+    this.receiptDate = this.todayBusinessDateInput();
     this.notes = '';
     this.formError.set('');
     this.draftItems.set([]);
@@ -456,7 +479,7 @@ export class PurchaseReceiptsPage implements OnInit {
       supplierId: this.supplierId ?? 0,
       receiptNumber: this.normalizeOptionalText(this.receiptNumber),
       supplierDocumentNumber: this.normalizeOptionalText(this.supplierDocumentNumber),
-      receiptDate: `${this.receiptDate}T00:00:00Z`,
+      receiptDate: this.receiptDate,
       notes: this.normalizeOptionalText(this.notes),
       items: this.draftItems().map((item) => ({
         productId: item.productId ?? 0,
@@ -481,14 +504,24 @@ export class PurchaseReceiptsPage implements OnInit {
     return Number.isFinite(parsed) ? parsed : null;
   }
 
-  private formatDateInput(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+  private todayBusinessDateInput(): string {
+    return formatBusinessDateInput(new Date(), this.companyTimeZoneId());
   }
 
   private formatCompactMoney(value: number): string {
     return `$${value.toFixed(4)}`;
+  }
+
+  private formatDateOnly(value: string | null | undefined): string {
+    if (!value) {
+      return '-';
+    }
+
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (!match) {
+      return '-';
+    }
+
+    return `${match[3]}/${match[2]}/${match[1]}`;
   }
 }

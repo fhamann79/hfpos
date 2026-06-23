@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pos.Backend.Api.Infrastructure.Data;
@@ -11,9 +12,11 @@ using Pos.Backend.Api.Infrastructure.Data;
 namespace Pos.Backend.Api.Migrations
 {
     [DbContext(typeof(PosDbContext))]
-    partial class PosDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260622220247_AddCompanyTimeZoneId")]
+    partial class AddCompanyTimeZoneId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -605,11 +608,6 @@ namespace Pos.Backend.Api.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<DateOnly>("BusinessDate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("date")
-                        .HasDefaultValueSql("CURRENT_DATE");
-
                     b.Property<int>("CompanyId")
                         .HasColumnType("integer");
 
@@ -649,13 +647,6 @@ namespace Pos.Backend.Api.Migrations
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)");
 
-                    b.Property<string>("TimeZoneIdSnapshot")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasDefaultValue("America/Guayaquil");
-
                     b.Property<int>("Type")
                         .HasColumnType("integer");
 
@@ -670,15 +661,11 @@ namespace Pos.Backend.Api.Migrations
 
                     b.HasIndex("SourceType", "SourceId");
 
-                    b.HasIndex("CompanyId", "EstablishmentId", "BusinessDate");
-
                     b.HasIndex("CompanyId", "EstablishmentId", "CreatedAt");
 
                     b.HasIndex("SourceType", "SourceId", "SourceLineId")
                         .IsUnique()
                         .HasFilter("\"SourceId\" IS NOT NULL AND \"SourceLineId\" IS NOT NULL AND \"SourceType\" IN (4, 5, 6, 7)");
-
-                    b.HasIndex("CompanyId", "EstablishmentId", "ProductId", "BusinessDate");
 
                     b.HasIndex("CompanyId", "EstablishmentId", "ProductId", "CreatedAt");
 
@@ -841,15 +828,8 @@ namespace Pos.Backend.Api.Migrations
                     b.Property<DateTime?>("CanceledAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateOnly?>("CanceledBusinessDate")
-                        .HasColumnType("date");
-
                     b.Property<int?>("CanceledByUserId")
                         .HasColumnType("integer");
-
-                    b.Property<string>("CanceledTimeZoneIdSnapshot")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
 
                     b.Property<int>("CompanyId")
                         .HasColumnType("integer");
@@ -870,24 +850,12 @@ namespace Pos.Backend.Api.Migrations
                     b.Property<DateTime?>("PostedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateOnly>("ReceiptBusinessDate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("date")
-                        .HasDefaultValueSql("CURRENT_DATE");
-
                     b.Property<DateTime>("ReceiptDate")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("ReceiptNumber")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
-
-                    b.Property<string>("ReceiptTimeZoneIdSnapshot")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasDefaultValue("America/Guayaquil");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -917,13 +885,7 @@ namespace Pos.Backend.Api.Migrations
 
                     b.HasIndex("CompanyId", "SupplierDocumentNumber");
 
-                    b.HasIndex("CompanyId", "EstablishmentId", "ReceiptBusinessDate");
-
                     b.HasIndex("CompanyId", "EstablishmentId", "ReceiptDate");
-
-                    b.HasIndex("CompanyId", "Status", "CanceledBusinessDate");
-
-                    b.HasIndex("CompanyId", "Status", "ReceiptBusinessDate");
 
                     b.HasIndex("CompanyId", "Status", "ReceiptDate");
 
@@ -1044,11 +1006,6 @@ namespace Pos.Backend.Api.Migrations
 
                     b.Property<DateTime?>("AuthorizedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateOnly>("BusinessDate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("date")
-                        .HasDefaultValueSql("CURRENT_DATE");
 
                     b.Property<int>("CompanyId")
                         .HasColumnType("integer");
@@ -1187,13 +1144,6 @@ namespace Pos.Backend.Api.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
-                    b.Property<string>("TimeZoneIdSnapshot")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasDefaultValue("America/Guayaquil");
-
                     b.Property<decimal>("Total")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
@@ -1252,8 +1202,6 @@ namespace Pos.Backend.Api.Migrations
                     b.HasIndex("Status");
 
                     b.HasIndex("UserId");
-
-                    b.HasIndex("CompanyId", "EstablishmentId", "EmissionPointId", "BusinessDate");
 
                     b.HasIndex("CompanyId", "EstablishmentId", "EmissionPointId", "CreatedAt");
 

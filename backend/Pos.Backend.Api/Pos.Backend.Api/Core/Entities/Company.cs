@@ -9,6 +9,7 @@ public class Company
     public string? MatrixAddress { get; set; }
     public string? Email { get; set; }
     public string? Phone { get; set; }
+    public string TimeZoneId { get; set; } = "America/Guayaquil";
     public bool IsAccountingRequired { get; set; }
     public string? SpecialTaxpayerNumber { get; set; }
     public string? TaxpayerRegime { get; set; }
