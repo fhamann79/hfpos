@@ -23,6 +23,43 @@
   @if (!canSell && !canReadReports) {
     <p-message severity="warn" text="No tienes permisos para usar la estación POS."></p-message>
   } @else {
+    @if (canSell) {
+      <section class="cash-context" [class.cash-context--blocked]="!hasOpenCashSession() && !cashSessionLoading()">
+        @if (cashSessionLoading()) {
+          <div class="cash-context__info">
+            <span>Caja</span>
+            <strong>Consultando caja actual...</strong>
+          </div>
+        } @else if (currentCashSession(); as cashSession) {
+          <div class="cash-context__info">
+            <span>Caja abierta</span>
+            <strong>
+              Inicial {{ cashSession.openingAmount | currency: 'USD' : 'symbol' : '1.2-2' }}
+              · Esperado {{ cashSession.expectedCashAmount | currency: 'USD' : 'symbol' : '1.2-2' }}
+            </strong>
+            <small>
+              Apertura {{ cashSessionOpenBusinessDateLabel(cashSession) }}
+              · {{ cashSessionOpenedAtLabel(cashSession) }}
+            </small>
+          </div>
+          <p-button
+            label="Ver caja"
+            icon="pi pi-wallet"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="openCashSessionsPage()"
+          ></p-button>
+        } @else {
+          <div class="cash-context__info">
+            <span>Caja requerida</span>
+            <strong>Debes abrir caja antes de vender.</strong>
+            <small>{{ cashSessionError() || 'El cobro queda bloqueado hasta abrir una caja para este punto de emisión.' }}</small>
+          </div>
+          <p-button label="Abrir caja" icon="pi pi-unlock" (onClick)="openCashSessionsPage()"></p-button>
+        }
+      </section>
+    }
+
     <div class="workstation-shell">
       @if (canSell) {
         <main class="sale-flow">
@@ -83,7 +120,7 @@
             [taxSummary]="taxSummary()"
             [saleDiscountAmount]="effectiveSaleDiscountAmount()"
             [notes]="notes()"
-            [canCheckout]="canSell"
+            [canCheckout]="canSell && hasOpenCashSession()"
             [inventoryAvailable]="inventoryAvailable()"
             [activeProductId]="activeCartProductId()"
             (updateQuantity)="updateQuantity($event)"

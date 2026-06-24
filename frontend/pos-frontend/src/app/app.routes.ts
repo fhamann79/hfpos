@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { AuthGuard } from './core/guards/auth.guard';
 import { administrationAccessGuard } from './core/guards/administration-access.guard';
+import { cashSessionsAccessGuard } from './core/guards/cash-sessions-access.guard';
 import { catalogAccessGuard } from './core/guards/catalog-access.guard';
 import { inventoryAccessGuard } from './core/guards/inventory-access.guard';
 import { fiscalSettingsAccessGuard } from './core/guards/fiscal-settings-access.guard';
@@ -73,6 +74,12 @@ export const routes: Routes = [
       import('./features/purchase-receipts/pages/purchase-receipts-page/purchase-receipts-page').then(
         (m) => m.PurchaseReceiptsPage
       ),
+  },
+  {
+    path: 'cash-sessions',
+    canActivate: [AuthGuard, cashSessionsAccessGuard],
+    loadComponent: () =>
+      import('./features/cash-sessions/pages/cash-sessions-page/cash-sessions-page').then((m) => m.CashSessionsPage),
   },
   {
     path: '',

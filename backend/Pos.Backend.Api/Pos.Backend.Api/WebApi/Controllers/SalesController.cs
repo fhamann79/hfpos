@@ -349,6 +349,7 @@ public class SalesController : ControllerBase
             "COMPANY_EMAIL_INVALID_ADDRESS" => BadRequest(new ApiErrorResponse { Error = code }),
             "COMPANY_EMAIL_OPERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
             "SALE_INVOICE_EMAIL_OPERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CASH_SESSION_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "PRODUCT_INACTIVE" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_QUANTITY" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_UNIT_PRICE" => BadRequest(new ApiErrorResponse { Error = code }),

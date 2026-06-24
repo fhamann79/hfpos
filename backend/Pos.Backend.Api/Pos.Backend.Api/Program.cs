@@ -86,6 +86,7 @@ builder.Services.AddScoped<IOperationalContextAccessor, OperationalContextAccess
 builder.Services.AddSingleton<IBusinessClockService, BusinessClockService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<ICashSessionService, CashSessionService>();
 builder.Services.AddSingleton<ISriFiscalClock, SriFiscalClock>();
 builder.Services.AddScoped<ISriAccessKeyService, SriAccessKeyService>();
 builder.Services.AddScoped<ISriXmlDraftService, SriXmlDraftService>();
@@ -147,6 +148,8 @@ builder.Services.AddAuthorization(options =>
         AppPermissions.SuppliersWrite,
         AppPermissions.PurchasesRead,
         AppPermissions.PurchasesWrite,
+        AppPermissions.CashSessionsRead,
+        AppPermissions.CashSessionsWrite,
         AppPermissions.OpStructureRead,
         AppPermissions.OpStructureWrite,
         AppPermissions.PosSalesCreate,

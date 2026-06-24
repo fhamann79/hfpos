@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
@@ -9,6 +10,8 @@ import { ToastModule } from 'primeng/toast';
 import { EMPTY, Observable, Subscription, finalize, fromEvent, of, switchMap, tap } from 'rxjs';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
+import { AuthStore } from '../../../../core/stores/auth.store';
+import { formatBusinessTime as formatBusinessTimeValue } from '../../../../core/utils/business-date-format';
 import { readErrorCode } from '../../../../core/utils/http-error-normalizer';
 import { calculateTaxSummary, roundMoney } from '../../../../core/utils/vat-category';
 import { CartWorkstation } from '../../components/cart-workstation/cart-workstation';
@@ -23,6 +26,8 @@ import { SaleInvoiceEmailDialog } from '../../components/sale-invoice-email-dial
 import { SriRideDialog } from '../../components/sri-ride-dialog/sri-ride-dialog';
 import { SriSubmissionAttemptsDialog } from '../../components/sri-submission-attempts-dialog/sri-submission-attempts-dialog';
 import { VoidSaleDialog } from '../../components/void-sale-dialog/void-sale-dialog';
+import { CashSession, CashSessionStatus } from '../../../cash-sessions/models/cash-session.model';
+import { CashSessionService } from '../../../cash-sessions/services/cash-session.service';
 import { CartItem } from '../../models/cart-item.model';
 import { CheckoutRequest } from '../../models/checkout-request.model';
 import { PosCustomer } from '../../models/pos-customer.model';
@@ -65,8 +70,11 @@ import { PosWorkstationService } from '../../services/pos-workstation.service';
 })
 export class PosWorkstationPage implements OnInit, OnDestroy {
   private readonly permissionService = inject(PermissionService);
+  private readonly authStore = inject(AuthStore);
+  private readonly router = inject(Router);
   private readonly catalogService = inject(PosProductCatalogService);
   private readonly workstationService = inject(PosWorkstationService);
+  private readonly cashSessionService = inject(CashSessionService);
   private readonly keyboard = inject(PosKeyboardService);
   private readonly messageService = inject(MessageService);
 
@@ -84,6 +92,9 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly productsError = signal('');
   readonly inventoryAvailable = signal(false);
   readonly inventoryError = signal('');
+  readonly cashSessionLoading = signal(false);
+  readonly cashSessionError = signal('');
+  readonly currentCashSession = signal<CashSession | null>(null);
 
   readonly cart = signal<CartItem[]>([]);
   readonly activeCartProductId = signal<number | null>(null);
@@ -158,6 +169,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
   readonly total = computed(() => this.taxSummary().total);
 
+  readonly hasOpenCashSession = computed(() => this.currentCashSession()?.status === CashSessionStatus.Open);
+
   readonly itemCount = computed(() =>
     this.cart().reduce((count, item) => count + item.quantity, 0)
   );
@@ -167,6 +180,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   ngOnInit(): void {
     if (this.canSell) {
       this.loadProducts();
+      this.loadCurrentCashSession();
     }
 
     if (this.canReadReports) {
@@ -245,6 +259,35 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         this.salesError.set('No se pudo cargar el historial de ventas.');
       },
     });
+  }
+
+  loadCurrentCashSession(): void {
+    this.cashSessionLoading.set(true);
+    this.cashSessionError.set('');
+
+    this.cashSessionService.getCurrent().subscribe({
+      next: (session) => {
+        this.currentCashSession.set(session);
+        this.cashSessionLoading.set(false);
+      },
+      error: () => {
+        this.currentCashSession.set(null);
+        this.cashSessionLoading.set(false);
+        this.cashSessionError.set('No se pudo consultar la caja actual.');
+      },
+    });
+  }
+
+  openCashSessionsPage(): void {
+    this.router.navigateByUrl('/cash-sessions');
+  }
+
+  cashSessionOpenedAtLabel(session: CashSession): string {
+    return formatBusinessTimeValue(session.openedAt, this.authStore.companyTimeZoneId());
+  }
+
+  cashSessionOpenBusinessDateLabel(session: CashSession): string {
+    return this.formatDateOnly(session.openBusinessDate);
   }
 
   onSearchTermChange(value: string): void {
@@ -463,6 +506,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       return;
     }
 
+    if (!this.ensureCashSessionReady()) {
+      return;
+    }
+
     if (!this.inventoryAvailable()) {
       this.messageService.add({
         severity: 'error',
@@ -488,6 +535,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
   confirmCheckout(): void {
     if (!this.canSell || !this.cart().length) {
+      return;
+    }
+
+    if (!this.ensureCashSessionReady()) {
+      this.checkoutVisible.set(false);
       return;
     }
 
@@ -544,7 +596,14 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         this.checkoutLoading.set(false);
         this.checkoutVisible.set(false);
 
-        if (this.workstationService.isBusinessError(error, 'INSUFFICIENT_STOCK')) {
+        if (this.workstationService.isBusinessError(error, 'CASH_SESSION_REQUIRED')) {
+          this.currentCashSession.set(null);
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Caja requerida',
+            detail: 'Debes abrir caja antes de vender.',
+          });
+        } else if (this.workstationService.isBusinessError(error, 'INSUFFICIENT_STOCK')) {
           this.messageService.add({
             severity: 'warn',
             summary: 'Stock actualizado',
@@ -1197,9 +1256,23 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.inventoryError.set('No se pudo cargar el stock. Intenta refrescar antes de vender.');
   }
 
+  private ensureCashSessionReady(): boolean {
+    if (this.hasOpenCashSession()) {
+      return true;
+    }
+
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Caja requerida',
+      detail: 'Debes abrir caja antes de vender.',
+    });
+    return false;
+  }
+
   private refreshOperationalData(): void {
     if (this.canSell) {
       this.loadProducts();
+      this.loadCurrentCashSession();
     }
 
     if (this.canReadReports) {
@@ -1524,6 +1597,19 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
   private sanitizeFileNamePart(value: string): string {
     return value.trim().replace(/[^a-zA-Z0-9-]/g, '-') || 'sin-numero';
+  }
+
+  private formatDateOnly(value: string | null | undefined): string {
+    if (!value) {
+      return '-';
+    }
+
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (!match) {
+      return '-';
+    }
+
+    return `${match[3]}/${match[2]}/${match[1]}`;
   }
 
   private closeContextualDialog(): void {
