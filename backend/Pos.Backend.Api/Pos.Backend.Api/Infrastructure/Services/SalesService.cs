@@ -17,6 +17,7 @@ public class SalesService : ISalesService
     private readonly ILogger<SalesService> _logger;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly IInventoryService _inventoryService;
+    private readonly ICashSessionService _cashSessionService;
     private readonly ISriAccessKeyService _sriAccessKeyService;
     private readonly ISriXmlDraftService _sriXmlDraftService;
     private readonly ISriFiscalClock _sriFiscalClock;
@@ -29,6 +30,7 @@ public class SalesService : ISalesService
         ILogger<SalesService> logger,
         IOperationalContextAccessor operationalContextAccessor,
         IInventoryService inventoryService,
+        ICashSessionService cashSessionService,
         ISriAccessKeyService sriAccessKeyService,
         ISriXmlDraftService sriXmlDraftService,
         ISriFiscalClock sriFiscalClock,
@@ -40,6 +42,7 @@ public class SalesService : ISalesService
         _logger = logger;
         _operationalContextAccessor = operationalContextAccessor;
         _inventoryService = inventoryService;
+        _cashSessionService = cashSessionService;
         _sriAccessKeyService = sriAccessKeyService;
         _sriXmlDraftService = sriXmlDraftService;
         _sriFiscalClock = sriFiscalClock;
@@ -268,6 +271,7 @@ public class SalesService : ISalesService
             }
 
             operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+            var cashSession = await _cashSessionService.GetRequiredOpenSessionForCurrentContextAsync();
 
             var paymentMethod = dto.PaymentMethod ?? SalePaymentMethod.Cash;
             var documentType = dto.DocumentType ?? SaleDocumentType.Ticket;
@@ -334,6 +338,7 @@ public class SalesService : ISalesService
                 EmissionPointId = operationalContext.EmissionPointId,
                 UserId = operationalContext.UserId,
                 CustomerId = customer?.Id,
+                CashSessionId = cashSession.Id,
                 Status = SaleStatus.Completed,
                 PaymentMethod = paymentMethod,
                 DocumentType = documentType,

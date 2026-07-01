@@ -21,6 +21,9 @@ public class Sale
     public int? CustomerId { get; set; }
     public Customer? Customer { get; set; }
 
+    public int? CashSessionId { get; set; }
+    public CashSession? CashSession { get; set; }
+
     public SaleStatus Status { get; set; }
 
     public SalePaymentMethod PaymentMethod { get; set; }

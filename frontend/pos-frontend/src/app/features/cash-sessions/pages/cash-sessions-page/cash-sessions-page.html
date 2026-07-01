@@ -1,0 +1,453 @@
+<div class="cash-page">
+  <header class="cash-header">
+    <div>
+      <span class="eyebrow">Caja</span>
+      <h2>Apertura y cierre de turno</h2>
+      <p>Controla efectivo, movimientos manuales e historial de cajas por punto de emisión.</p>
+    </div>
+
+    <div class="header-actions">
+      <div class="summary-chip">
+        <small>Abiertas</small>
+        <strong>{{ totalOpenSessions() }}</strong>
+      </div>
+      <div class="summary-chip summary-chip--neutral">
+        <small>Cerradas</small>
+        <strong>{{ totalClosedSessions() }}</strong>
+      </div>
+      <p-button
+        label="Refrescar"
+        icon="pi pi-refresh"
+        severity="secondary"
+        [outlined]="true"
+        [loading]="loading() || currentLoading()"
+        (onClick)="refreshAll()"
+      ></p-button>
+    </div>
+  </header>
+
+  @if (currentLoading()) {
+    <section class="current-panel current-panel--loading">Consultando caja actual...</section>
+  } @else if (currentSession(); as session) {
+    <section class="current-panel current-panel--open">
+      <div class="current-panel__main">
+        <div>
+          <span class="panel-label">Caja actual</span>
+          <h3>Abierta por {{ session.openedByUsername }}</h3>
+          <p>
+            {{ formatDateOnly(session.openBusinessDate) }}
+            · {{ formatBusinessTime(session.openedAt) }}
+            · {{ session.openTimeZoneIdSnapshot }}
+          </p>
+        </div>
+        <p-tag severity="success" value="Abierta"></p-tag>
+      </div>
+
+      <div class="metric-grid">
+        <div class="metric-card">
+          <span>Monto inicial</span>
+          <strong>{{ session.openingAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong>
+        </div>
+        <div class="metric-card">
+          <span>Efectivo esperado</span>
+          <strong>{{ session.expectedCashAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong>
+        </div>
+        <div class="metric-card">
+          <span>Ventas efectivo</span>
+          <strong>{{ session.cashSalesAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong>
+        </div>
+        <div class="metric-card">
+          <span>Tarjeta / transferencia</span>
+          <strong>
+            {{ session.cardSalesAmount + session.transferSalesAmount | currency: 'USD' : 'symbol' : '1.2-2' }}
+          </strong>
+        </div>
+      </div>
+
+      @if (canWrite()) {
+        <div class="current-actions">
+          <p-button
+            label="Ingreso de efectivo"
+            icon="pi pi-plus"
+            severity="success"
+            [outlined]="true"
+            (onClick)="openMovementDialog(1)"
+          ></p-button>
+          <p-button
+            label="Egreso de efectivo"
+            icon="pi pi-minus"
+            severity="danger"
+            [outlined]="true"
+            (onClick)="openMovementDialog(2)"
+          ></p-button>
+          <p-button label="Cerrar caja" icon="pi pi-lock" (onClick)="openCloseDialog()"></p-button>
+        </div>
+      }
+    </section>
+  } @else {
+    <section class="current-panel current-panel--empty">
+      <div>
+        <span class="panel-label">Caja actual</span>
+        <h3>Debes abrir caja antes de vender.</h3>
+        <p>El POS bloqueará el cobro hasta que exista una caja abierta para tu usuario y punto de emisión.</p>
+      </div>
+      @if (canWrite()) {
+        <p-button label="Abrir caja" icon="pi pi-unlock" (onClick)="openCashDialog()"></p-button>
+      }
+    </section>
+  }
+
+  <section class="cash-section">
+    <p-toolbar styleClass="cash-toolbar">
+      <ng-template #start>
+        <div class="filters">
+          <label class="filter-field">
+            <span>Desde</span>
+            <input pInputText type="date" [(ngModel)]="from" />
+          </label>
+          <label class="filter-field">
+            <span>Hasta</span>
+            <input pInputText type="date" [(ngModel)]="to" />
+          </label>
+          <label class="filter-field">
+            <span>Estado</span>
+            <p-select
+              [options]="statusOptions"
+              [(ngModel)]="status"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Todos"
+              [showClear]="true"
+              appendTo="body"
+            ></p-select>
+          </label>
+          <label class="filter-field filter-field--compact">
+            <span>Usuario ID</span>
+            <input pInputText type="number" min="1" [(ngModel)]="userId" />
+          </label>
+        </div>
+      </ng-template>
+
+      <ng-template #end>
+        <div class="toolbar-actions">
+          <p-button label="Buscar" icon="pi pi-search" [loading]="loading()" (onClick)="loadSessions()"></p-button>
+          <p-button
+            label="Limpiar"
+            icon="pi pi-filter-slash"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="clearFilters()"
+          ></p-button>
+        </div>
+      </ng-template>
+    </p-toolbar>
+
+    @if (errorMessage()) {
+      <p-message severity="error" [text]="errorMessage()"></p-message>
+    }
+
+    <p-table
+      styleClass="professional-table cash-table"
+      [value]="sessions()"
+      [loading]="loading()"
+      [paginator]="true"
+      [rows]="15"
+      [rowsPerPageOptions]="[15, 30, 50]"
+      responsiveLayout="scroll"
+      [tableStyle]="{ 'min-width': '82rem' }"
+    >
+      <ng-template pTemplate="header">
+        <tr>
+          <th>Apertura</th>
+          <th>Usuario</th>
+          <th class="numeric-column">Inicial</th>
+          <th class="numeric-column">Efectivo ventas</th>
+          <th class="numeric-column">Esperado</th>
+          <th class="numeric-column">Contado</th>
+          <th class="numeric-column">Diferencia</th>
+          <th>Estado</th>
+          <th class="action-column">Detalle</th>
+        </tr>
+      </ng-template>
+
+      <ng-template pTemplate="body" let-session>
+        <tr>
+          <td>
+            <span class="date-stack">
+              <strong>{{ formatDateOnly(session.openBusinessDate) }}</strong>
+              <small>{{ formatBusinessTime(session.openedAt) }}</small>
+            </span>
+          </td>
+          <td>
+            <strong>{{ session.openedByUsername }}</strong>
+            @if (session.closedByUsername) {
+              <small class="row-hint">Cerró {{ session.closedByUsername }}</small>
+            }
+          </td>
+          <td class="numeric-column">{{ session.openingAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</td>
+          <td class="numeric-column">{{ session.cashSalesAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</td>
+          <td class="numeric-column">
+            <strong>{{ session.expectedCashAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong>
+          </td>
+          <td class="numeric-column">
+            {{ session.countedCashAmount === null ? '-' : (session.countedCashAmount | currency: 'USD' : 'symbol' : '1.2-2') }}
+          </td>
+          <td class="numeric-column">
+            <strong [class]="differenceClass(session.differenceAmount)">
+              {{ session.differenceAmount === null ? '-' : (session.differenceAmount | currency: 'USD' : 'symbol' : '1.2-2') }}
+            </strong>
+          </td>
+          <td>
+            <p-tag [severity]="statusSeverity(session.status)" [value]="statusLabel(session.status)"></p-tag>
+          </td>
+          <td class="action-column">
+            <p-button
+              icon="pi pi-eye"
+              label="Ver"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="openDetail(session)"
+            ></p-button>
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template pTemplate="emptymessage">
+        <tr>
+          <td colspan="9">
+            <div class="empty-state">
+              <i class="pi pi-wallet"></i>
+              <strong>No hay cajas registradas.</strong>
+              @if (canWrite()) {
+                <p-button label="Abrir caja" icon="pi pi-unlock" (onClick)="openCashDialog()"></p-button>
+              }
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </section>
+</div>
+
+<p-dialog
+  [visible]="openDialogVisible"
+  [modal]="true"
+  [closable]="true"
+  [draggable]="false"
+  [style]="{ width: '34rem', maxWidth: '94vw' }"
+  header="Abrir caja"
+  (onHide)="closeOpenDialog()"
+>
+  <form class="cash-form" (ngSubmit)="confirmOpen()">
+    <label class="field">
+      <span>Monto inicial</span>
+      <input pInputText type="number" min="0" step="0.01" [(ngModel)]="openingAmount" name="openingAmount" />
+    </label>
+    <label class="field">
+      <span>Notas</span>
+      <textarea pTextarea rows="3" maxlength="500" [(ngModel)]="openingNotes" name="openingNotes"></textarea>
+    </label>
+
+    @if (formError()) {
+      <p-message severity="error" [text]="formError()"></p-message>
+    }
+
+    <div class="dialog-actions">
+      <p-button label="Cancelar" severity="secondary" [outlined]="true" type="button" (onClick)="closeOpenDialog()"></p-button>
+      <p-button label="Abrir caja" icon="pi pi-check" type="submit" [loading]="saving()"></p-button>
+    </div>
+  </form>
+</p-dialog>
+
+<p-dialog
+  [visible]="movementDialogVisible"
+  [modal]="true"
+  [closable]="true"
+  [draggable]="false"
+  [style]="{ width: '36rem', maxWidth: '94vw' }"
+  [header]="movementType === 1 ? 'Ingreso de efectivo' : 'Egreso de efectivo'"
+  (onHide)="closeMovementDialog()"
+>
+  <form class="cash-form" (ngSubmit)="confirmMovement()">
+    <label class="field">
+      <span>Tipo</span>
+      <p-select
+        [options]="movementOptions"
+        [(ngModel)]="movementType"
+        name="movementType"
+        optionLabel="label"
+        optionValue="value"
+        appendTo="body"
+      ></p-select>
+    </label>
+    <label class="field">
+      <span>Monto</span>
+      <input pInputText type="number" min="0.01" step="0.01" [(ngModel)]="movementAmount" name="movementAmount" />
+    </label>
+    <label class="field">
+      <span>Razón</span>
+      <textarea pTextarea rows="3" maxlength="300" [(ngModel)]="movementReason" name="movementReason"></textarea>
+    </label>
+
+    @if (formError()) {
+      <p-message severity="error" [text]="formError()"></p-message>
+    }
+
+    <div class="dialog-actions">
+      <p-button label="Cancelar" severity="secondary" [outlined]="true" type="button" (onClick)="closeMovementDialog()"></p-button>
+      <p-button label="Registrar" icon="pi pi-check" type="submit" [loading]="saving()"></p-button>
+    </div>
+  </form>
+</p-dialog>
+
+<p-dialog
+  [visible]="closeDialogVisible"
+  [modal]="true"
+  [closable]="true"
+  [draggable]="false"
+  [style]="{ width: '38rem', maxWidth: '94vw' }"
+  header="Cerrar caja"
+  (onHide)="closeCloseDialog()"
+>
+  @if (currentSession(); as session) {
+    <form class="cash-form" (ngSubmit)="confirmClose()">
+      <div class="closing-summary">
+        <span>Efectivo esperado</span>
+        <strong>{{ session.expectedCashAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong>
+      </div>
+      <label class="field">
+        <span>Efectivo contado</span>
+        <input pInputText type="number" min="0" step="0.01" [(ngModel)]="countedCashAmount" name="countedCashAmount" />
+      </label>
+      <label class="field">
+        <span>Notas de cierre</span>
+        <textarea pTextarea rows="3" maxlength="500" [(ngModel)]="closingNotes" name="closingNotes"></textarea>
+      </label>
+
+      @if (formError()) {
+        <p-message severity="error" [text]="formError()"></p-message>
+      }
+
+      <div class="dialog-actions">
+        <p-button label="Volver" severity="secondary" [outlined]="true" type="button" (onClick)="closeCloseDialog()"></p-button>
+        <p-button label="Confirmar cierre" icon="pi pi-lock" type="submit" [loading]="saving()"></p-button>
+      </div>
+    </form>
+  }
+</p-dialog>
+
+<p-dialog
+  [visible]="detailDialogVisible"
+  [modal]="true"
+  [closable]="true"
+  [draggable]="false"
+  [style]="{ width: '74rem', maxWidth: '96vw' }"
+  header="Detalle de caja"
+  (onHide)="closeDetailDialog()"
+>
+  @if (detailLoading()) {
+    <div class="detail-loading">Cargando detalle...</div>
+  } @else if (detailError()) {
+    <p-message severity="error" [text]="detailError()"></p-message>
+  } @else if (selectedSession(); as session) {
+    <section class="detail-panel">
+      <div class="detail-grid">
+        <div>
+          <span>Apertura</span>
+          <strong>{{ formatDateOnly(session.openBusinessDate) }} {{ formatBusinessTime(session.openedAt) }}</strong>
+        </div>
+        <div>
+          <span>Usuario apertura</span>
+          <strong>{{ session.openedByUsername }}</strong>
+        </div>
+        <div>
+          <span>Estado</span>
+          <p-tag [severity]="statusSeverity(session.status)" [value]="statusLabel(session.status)"></p-tag>
+        </div>
+        <div>
+          <span>Cierre</span>
+          <strong>{{ session.closedAt ? formatBusinessDateTime(session.closedAt) : '-' }}</strong>
+        </div>
+        <div>
+          <span>Usuario cierre</span>
+          <strong>{{ session.closedByUsername || '-' }}</strong>
+        </div>
+        <div>
+          <span>Zona apertura</span>
+          <strong>{{ session.openTimeZoneIdSnapshot }}</strong>
+        </div>
+      </div>
+
+      <div class="totals-grid">
+        <div><span>Inicial</span><strong>{{ session.openingAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+        <div><span>Ventas efectivo</span><strong>{{ session.cashSalesAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+        <div><span>Tarjeta</span><strong>{{ session.cardSalesAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+        <div><span>Transferencia</span><strong>{{ session.transferSalesAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+        <div><span>Otros</span><strong>{{ session.otherSalesAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+        <div><span>Ingresos</span><strong class="positive-amount">{{ session.cashInAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+        <div><span>Egresos</span><strong class="negative-amount">{{ session.cashOutAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+        <div><span>Esperado</span><strong>{{ session.expectedCashAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+        <div><span>Contado</span><strong>{{ session.countedCashAmount === null ? '-' : (session.countedCashAmount | currency: 'USD' : 'symbol' : '1.2-2') }}</strong></div>
+        <div><span>Diferencia</span><strong [class]="differenceClass(session.differenceAmount)">{{ session.differenceAmount === null ? '-' : (session.differenceAmount | currency: 'USD' : 'symbol' : '1.2-2') }}</strong></div>
+      </div>
+
+      @if (session.openingNotes || session.closingNotes) {
+        <div class="notes-grid">
+          @if (session.openingNotes) {
+            <div><span>Notas de apertura</span><p>{{ session.openingNotes }}</p></div>
+          }
+          @if (session.closingNotes) {
+            <div><span>Notas de cierre</span><p>{{ session.closingNotes }}</p></div>
+          }
+        </div>
+      }
+
+      <h3>Movimientos de efectivo</h3>
+      <p-table
+        styleClass="professional-table movements-table"
+        [value]="session.movements"
+        responsiveLayout="scroll"
+        [tableStyle]="{ 'min-width': '60rem' }"
+      >
+        <ng-template pTemplate="header">
+          <tr>
+            <th class="movement-date-column">Fecha</th>
+            <th class="movement-type-column">Tipo</th>
+            <th class="numeric-column movement-amount-column">Monto</th>
+            <th>Razón</th>
+            <th class="movement-user-column">Usuario</th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-movement>
+          <tr>
+            <td class="movement-date-column">
+              <span class="date-stack">
+                <strong>{{ formatDateOnly(movement.businessDate) }}</strong>
+                <small>{{ formatBusinessTime(movement.createdAt) }}</small>
+              </span>
+            </td>
+            <td class="movement-type-column">
+              <p-tag [severity]="movementSeverity(movement.type)" [value]="movementLabel(movement.type)"></p-tag>
+            </td>
+            <td class="numeric-column movement-amount-column">
+              <strong [class]="movementAmountClass(movement)">
+                {{ movement.type === 1 ? '+' : '-' }}{{ movement.amount | currency: 'USD' : 'symbol' : '1.2-2' }}
+              </strong>
+            </td>
+            <td class="movement-reason-column">
+              <span class="movement-reason-text">{{ movement.reason }}</span>
+            </td>
+            <td class="movement-user-column">{{ movement.username }}</td>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="emptymessage">
+          <tr>
+            <td colspan="5">No hay movimientos manuales en esta caja.</td>
+          </tr>
+        </ng-template>
+      </p-table>
+    </section>
+  }
+</p-dialog>
+
+<p-toast></p-toast>

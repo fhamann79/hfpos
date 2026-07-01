@@ -54,6 +54,11 @@ export const PURCHASES_ACCESS_REQUIREMENT: PermissionRequirement = {
   matchMode: 'all',
 };
 
+export const CASH_SESSIONS_ACCESS_REQUIREMENT: PermissionRequirement = {
+  requiredPermissions: [PERMISSIONS.cashSessionsRead],
+  matchMode: 'all',
+};
+
 export const FISCAL_SETTINGS_ACCESS_REQUIREMENT: PermissionRequirement = {
   requiredPermissions: [PERMISSIONS.fiscalSettingsRead],
   matchMode: 'all',
@@ -118,5 +123,11 @@ export const NAVIGATION_ITEMS: NavigationItemConfig[] = [
     icon: 'pi pi-shopping-bag',
     route: '/purchase-receipts',
     ...PURCHASES_ACCESS_REQUIREMENT,
+  },
+  {
+    label: 'Caja',
+    icon: 'pi pi-wallet',
+    route: '/cash-sessions',
+    ...CASH_SESSIONS_ACCESS_REQUIREMENT,
   },
 ];

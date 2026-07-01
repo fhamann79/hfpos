@@ -9,6 +9,11 @@ import {
   SaleDocumentType,
   saleDocumentTypeLabel,
 } from '../../models/sale-document.model';
+import {
+  SALE_PAYMENT_METHOD_OPTIONS,
+  SalePaymentMethod,
+  salePaymentMethodLabel,
+} from '../../models/sale-payment-method.model';
 
 @Component({
   selector: 'app-checkout-confirm-dialog',
@@ -28,16 +33,23 @@ export class CheckoutConfirmDialog {
   @Input() notes = '';
   @Input() loading = false;
   @Input() documentType: SaleDocumentType = SaleDocumentType.Ticket;
+  @Input() paymentMethod: SalePaymentMethod = SalePaymentMethod.Cash;
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() documentTypeChange = new EventEmitter<SaleDocumentType>();
+  @Output() paymentMethodChange = new EventEmitter<SalePaymentMethod>();
   @Output() confirm = new EventEmitter<void>();
 
   readonly documentTypeOptions = SALE_DOCUMENT_TYPE_OPTIONS;
+  readonly paymentMethodOptions = SALE_PAYMENT_METHOD_OPTIONS;
   readonly SaleDocumentType = SaleDocumentType;
 
   documentTypeLabel(type: SaleDocumentType): string {
     return saleDocumentTypeLabel(type);
+  }
+
+  paymentMethodLabel(method: SalePaymentMethod): string {
+    return salePaymentMethodLabel(method);
   }
 
   onKeydown(event: KeyboardEvent): void {

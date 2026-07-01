@@ -11,18 +11,33 @@
   border-radius:.85rem;
   background:#eff6ff;
 }
-.document-choice > div {
+.payment-choice {
+  display:grid;
+  gap:.45rem;
+  padding:.75rem;
+  border:1px solid #bbf7d0;
+  border-radius:.85rem;
+  background:#f0fdf4;
+}
+.document-choice > div,
+.payment-choice > div {
   display:grid;
   gap:.35rem;
 }
-.document-choice label {
+.document-choice label,
+.payment-choice label {
   color:#1e3a8a;
   font-weight:800;
 }
-.document-choice small {
+.payment-choice label {
+  color:#166534;
+}
+.document-choice small,
+.payment-choice small {
   color:#475569;
   line-height:1.35;
 }
-:host ::ng-deep .document-choice .p-select {
+:host ::ng-deep .document-choice .p-select,
+:host ::ng-deep .payment-choice .p-select {
   width:100%;
 }

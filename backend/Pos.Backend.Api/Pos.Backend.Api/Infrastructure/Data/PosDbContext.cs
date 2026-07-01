@@ -32,6 +32,8 @@ public class PosDbContext : DbContext
     public DbSet<InventoryMovement> InventoryMovements { get; set; }
     public DbSet<DocumentSequence> DocumentSequences { get; set; }
     public DbSet<DocumentSequenceAudit> DocumentSequenceAudits { get; set; }
+    public DbSet<CashSession> CashSessions { get; set; }
+    public DbSet<CashMovement> CashMovements { get; set; }
     public DbSet<Sale> Sales { get; set; }
     public DbSet<SaleItem> SaleItems { get; set; }
     public DbSet<SriSubmissionAttempt> SriSubmissionAttempts { get; set; }
@@ -580,6 +582,143 @@ public class PosDbContext : DbContext
                 .HasForeignKey(a => a.UserId);
         });
 
+        modelBuilder.Entity<CashSession>(entity =>
+        {
+            entity.Property(s => s.Status)
+                .HasConversion<int>();
+
+            entity.Property(s => s.OpeningAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.ExpectedCashAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.CountedCashAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.DifferenceAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.CashSalesAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.CardSalesAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.TransferSalesAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.OtherSalesAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.CashInAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.CashOutAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(s => s.OpenBusinessDate)
+                .HasColumnType("date")
+                .HasDefaultValueSql("CURRENT_DATE");
+
+            entity.Property(s => s.OpenTimeZoneIdSnapshot)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasDefaultValue("America/Guayaquil");
+
+            entity.Property(s => s.ClosedBusinessDate)
+                .HasColumnType("date");
+
+            entity.Property(s => s.ClosedTimeZoneIdSnapshot)
+                .HasMaxLength(100);
+
+            entity.Property(s => s.OpeningNotes)
+                .HasMaxLength(500);
+
+            entity.Property(s => s.ClosingNotes)
+                .HasMaxLength(500);
+
+            entity.HasIndex(s => new { s.CompanyId, s.EstablishmentId, s.EmissionPointId, s.Status });
+            entity.HasIndex(s => new { s.CompanyId, s.EstablishmentId, s.EmissionPointId, s.OpenBusinessDate });
+            entity.HasIndex(s => new { s.CompanyId, s.EstablishmentId, s.EmissionPointId, s.OpenedByUserId })
+                .IsUnique()
+                .HasFilter(@"""Status"" = 1");
+
+            entity.HasOne(s => s.Company)
+                .WithMany()
+                .HasForeignKey(s => s.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.Establishment)
+                .WithMany()
+                .HasForeignKey(s => s.EstablishmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.EmissionPoint)
+                .WithMany()
+                .HasForeignKey(s => s.EmissionPointId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.OpenedByUser)
+                .WithMany()
+                .HasForeignKey(s => s.OpenedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.ClosedByUser)
+                .WithMany()
+                .HasForeignKey(s => s.ClosedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CashMovement>(entity =>
+        {
+            entity.Property(m => m.Type)
+                .HasConversion<int>();
+
+            entity.Property(m => m.Amount)
+                .HasPrecision(18, 2);
+
+            entity.Property(m => m.Reason)
+                .IsRequired()
+                .HasMaxLength(300);
+
+            entity.Property(m => m.BusinessDate)
+                .HasColumnType("date")
+                .HasDefaultValueSql("CURRENT_DATE");
+
+            entity.Property(m => m.TimeZoneIdSnapshot)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasDefaultValue("America/Guayaquil");
+
+            entity.HasIndex(m => new { m.CashSessionId, m.BusinessDate });
+
+            entity.HasOne(m => m.CashSession)
+                .WithMany(s => s.Movements)
+                .HasForeignKey(m => m.CashSessionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(m => m.Company)
+                .WithMany()
+                .HasForeignKey(m => m.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(m => m.Establishment)
+                .WithMany()
+                .HasForeignKey(m => m.EstablishmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(m => m.EmissionPoint)
+                .WithMany()
+                .HasForeignKey(m => m.EmissionPointId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(m => m.User)
+                .WithMany()
+                .HasForeignKey(m => m.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
         modelBuilder.Entity<Sale>(entity =>
         {
             entity.Property(s => s.Status)
@@ -699,6 +838,7 @@ public class PosDbContext : DbContext
             entity.HasIndex(s => s.EstablishmentId);
             entity.HasIndex(s => s.EmissionPointId);
             entity.HasIndex(s => s.CustomerId);
+            entity.HasIndex(s => s.CashSessionId);
             entity.HasIndex(s => s.CreatedAt);
             entity.HasIndex(s => s.Status);
             entity.HasIndex(s => s.Number);
@@ -716,6 +856,11 @@ public class PosDbContext : DbContext
             entity.HasOne(s => s.Customer)
                 .WithMany()
                 .HasForeignKey(s => s.CustomerId);
+
+            entity.HasOne(s => s.CashSession)
+                .WithMany(c => c.Sales)
+                .HasForeignKey(s => s.CashSessionId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(s => s.Company)
                 .WithMany()

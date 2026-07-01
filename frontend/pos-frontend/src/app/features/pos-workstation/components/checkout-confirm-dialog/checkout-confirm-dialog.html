@@ -30,6 +30,22 @@
       </small>
     </section>
 
+    <section class="payment-choice">
+      <div>
+        <label for="checkout-payment-method">Método de pago</label>
+        <p-select
+          inputId="checkout-payment-method"
+          [options]="paymentMethodOptions"
+          optionLabel="label"
+          optionValue="value"
+          [ngModel]="paymentMethod"
+          (ngModelChange)="paymentMethodChange.emit($event)"
+          appendTo="body"
+        ></p-select>
+      </div>
+      <small>Se registrará como {{ paymentMethodLabel(paymentMethod) }} para el cierre de caja.</small>
+    </section>
+
     <div class="money-lines">
       <span><strong>Subtotal bruto:</strong> {{ grossSubtotal | currency: 'USD' }}</span>
       <span class="discount-line"><strong>Descuentos:</strong> -{{ discountAmount | currency: 'USD' }}</span>
