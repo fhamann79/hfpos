@@ -407,35 +407,37 @@
         styleClass="professional-table movements-table"
         [value]="session.movements"
         responsiveLayout="scroll"
-        [tableStyle]="{ 'min-width': '52rem' }"
+        [tableStyle]="{ 'min-width': '60rem' }"
       >
         <ng-template pTemplate="header">
           <tr>
-            <th>Fecha</th>
-            <th>Tipo</th>
-            <th class="numeric-column">Monto</th>
+            <th class="movement-date-column">Fecha</th>
+            <th class="movement-type-column">Tipo</th>
+            <th class="numeric-column movement-amount-column">Monto</th>
             <th>Razón</th>
-            <th>Usuario</th>
+            <th class="movement-user-column">Usuario</th>
           </tr>
         </ng-template>
         <ng-template pTemplate="body" let-movement>
           <tr>
-            <td>
+            <td class="movement-date-column">
               <span class="date-stack">
                 <strong>{{ formatDateOnly(movement.businessDate) }}</strong>
                 <small>{{ formatBusinessTime(movement.createdAt) }}</small>
               </span>
             </td>
-            <td>
+            <td class="movement-type-column">
               <p-tag [severity]="movementSeverity(movement.type)" [value]="movementLabel(movement.type)"></p-tag>
             </td>
-            <td class="numeric-column">
+            <td class="numeric-column movement-amount-column">
               <strong [class]="movementAmountClass(movement)">
                 {{ movement.type === 1 ? '+' : '-' }}{{ movement.amount | currency: 'USD' : 'symbol' : '1.2-2' }}
               </strong>
             </td>
-            <td>{{ movement.reason }}</td>
-            <td>{{ movement.username }}</td>
+            <td class="movement-reason-column">
+              <span class="movement-reason-text">{{ movement.reason }}</span>
+            </td>
+            <td class="movement-user-column">{{ movement.username }}</td>
           </tr>
         </ng-template>
         <ng-template pTemplate="emptymessage">

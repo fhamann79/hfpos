@@ -227,6 +227,16 @@
   padding: .72rem .85rem;
 }
 
+:host ::ng-deep .movements-table .p-datatable-thead > tr > th,
+:host ::ng-deep .movements-table .p-datatable-tbody > tr > td {
+  padding: .72rem 1rem;
+}
+
+:host ::ng-deep .movements-table .p-datatable-thead > tr > th:nth-child(4),
+:host ::ng-deep .movements-table .p-datatable-tbody > tr > td:nth-child(4) {
+  padding-left: 1.25rem;
+}
+
 .date-stack {
   display: flex;
   flex-direction: column;
@@ -246,6 +256,37 @@
 .numeric-column {
   text-align: right;
   white-space: nowrap;
+}
+
+.movement-date-column {
+  width: 11rem;
+  min-width: 11rem;
+}
+
+.movement-type-column {
+  width: 8.5rem;
+  min-width: 8.5rem;
+}
+
+.movement-amount-column {
+  width: 9rem;
+  min-width: 9rem;
+  padding-right: 1.25rem !important;
+}
+
+.movement-reason-column {
+  min-width: 16rem;
+  overflow-wrap: anywhere;
+}
+
+.movement-reason-text {
+  display: block;
+  line-height: 1.35;
+}
+
+.movement-user-column {
+  width: 10rem;
+  min-width: 10rem;
 }
 
 .action-column {
