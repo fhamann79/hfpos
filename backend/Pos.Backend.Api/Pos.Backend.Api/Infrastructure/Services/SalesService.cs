@@ -108,6 +108,9 @@ public class SalesService : ISalesService
                 || (s.Number != null && s.Number.ToLower().Contains(term))
                 || (s.EstablishmentCodeSnapshot != null && s.EstablishmentCodeSnapshot.Contains(term))
                 || (s.EmissionPointCodeSnapshot != null && s.EmissionPointCodeSnapshot.Contains(term))
+                || (s.BuyerNameSnapshot != null && s.BuyerNameSnapshot.ToLower().Contains(term))
+                || (s.BuyerIdentificationSnapshot != null && s.BuyerIdentificationSnapshot.ToLower().Contains(term))
+                || (s.BuyerEmailSnapshot != null && s.BuyerEmailSnapshot.ToLower().Contains(term))
                 || (s.Customer != null && s.Customer.Name.ToLower().Contains(term))
                 || (s.Customer != null && s.Customer.Identification != null && s.Customer.Identification.ToLower().Contains(term))
                 || (s.Customer != null && s.Customer.Email != null && s.Customer.Email.ToLower().Contains(term))
@@ -122,8 +125,9 @@ public class SalesService : ISalesService
                 Id = s.Id,
                 Status = s.Status,
                 Number = s.Number,
-                CustomerName = s.Customer != null ? s.Customer.Name : null,
-                CustomerIdentification = s.Customer != null ? s.Customer.Identification : null,
+                CustomerName = s.BuyerNameSnapshot ?? (s.Customer != null ? s.Customer.Name : null),
+                CustomerIdentification = s.BuyerIdentificationSnapshot ?? (s.Customer != null ? s.Customer.Identification : null),
+                CustomerEmail = s.BuyerEmailSnapshot ?? (s.Customer != null ? s.Customer.Email : null),
                 DocumentType = s.DocumentType,
                 DocumentStatus = s.DocumentStatus,
                 AccessKey = s.AccessKey,
@@ -165,8 +169,14 @@ public class SalesService : ISalesService
                 Id = s.Id,
                 Status = s.Status,
                 CustomerId = s.CustomerId,
-                CustomerName = s.Customer != null ? s.Customer.Name : null,
-                CustomerEmail = s.Customer != null ? s.Customer.Email : null,
+                CustomerName = s.BuyerNameSnapshot ?? (s.Customer != null ? s.Customer.Name : null),
+                CustomerIdentification = s.BuyerIdentificationSnapshot ?? (s.Customer != null ? s.Customer.Identification : null),
+                CustomerEmail = s.BuyerEmailSnapshot ?? (s.Customer != null ? s.Customer.Email : null),
+                BuyerNameSnapshot = s.BuyerNameSnapshot,
+                BuyerIdentificationTypeSnapshot = s.BuyerIdentificationTypeSnapshot,
+                BuyerIdentificationSnapshot = s.BuyerIdentificationSnapshot,
+                BuyerAddressSnapshot = s.BuyerAddressSnapshot,
+                BuyerEmailSnapshot = s.BuyerEmailSnapshot,
                 PaymentMethod = s.PaymentMethod,
                 DocumentType = s.DocumentType,
                 DocumentStatus = s.DocumentStatus,
@@ -331,6 +341,7 @@ public class SalesService : ISalesService
 
             var now = _businessClock.UtcNow;
             var businessDate = _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId);
+            var buyerSnapshot = ResolveBuyerSnapshot(customer, documentType);
             var sale = new Sale
             {
                 CompanyId = operationalContext.CompanyId,
@@ -338,6 +349,11 @@ public class SalesService : ISalesService
                 EmissionPointId = operationalContext.EmissionPointId,
                 UserId = operationalContext.UserId,
                 CustomerId = customer?.Id,
+                BuyerNameSnapshot = buyerSnapshot.Name,
+                BuyerIdentificationTypeSnapshot = buyerSnapshot.IdentificationType,
+                BuyerIdentificationSnapshot = buyerSnapshot.Identification,
+                BuyerAddressSnapshot = buyerSnapshot.Address,
+                BuyerEmailSnapshot = buyerSnapshot.Email,
                 CashSessionId = cashSession.Id,
                 Status = SaleStatus.Completed,
                 PaymentMethod = paymentMethod,
@@ -729,11 +745,6 @@ public class SalesService : ISalesService
             throw new InvalidOperationException("INVALID_SRI_DOCUMENT_CONTEXT");
         }
 
-        if (customer is not null && string.IsNullOrWhiteSpace(customer.Identification))
-        {
-            throw new InvalidOperationException("INVALID_SRI_CUSTOMER_IDENTIFICATION");
-        }
-
         var fiscalContext = await _context.Establishments
             .AsNoTracking()
             .Where(e =>
@@ -810,7 +821,7 @@ public class SalesService : ISalesService
 
             _sriInvoiceXmlValidator.ValidateUnsignedInvoiceXml(xmlDraft);
             sale.SriXmlDraft = xmlDraft;
-            sale.SriXmlGeneratedAt = DateTime.UtcNow;
+            sale.SriXmlGeneratedAt = _businessClock.UtcNow;
         }
         catch (InvalidOperationException)
         {
@@ -894,6 +905,64 @@ public class SalesService : ISalesService
         return (vatRate, taxableSubtotal, taxAmount, lineTotal);
     }
 
+    private static BuyerSnapshot ResolveBuyerSnapshot(Customer? customer, SaleDocumentType documentType)
+    {
+        if (customer is null)
+        {
+            return new BuyerSnapshot(
+                "CONSUMIDOR FINAL",
+                "07",
+                "9999999999999",
+                Address: null,
+                Email: null);
+        }
+
+        var name = NormalizeOptionalText(customer.Name) ?? "CONSUMIDOR FINAL";
+        var identificationType = NormalizeOptionalText(customer.IdentificationType);
+        var identification = NormalizeOptionalText(customer.Identification);
+        var address = NormalizeOptionalText(customer.Address);
+        var email = NormalizeOptionalText(customer.Email);
+
+        if (documentType == SaleDocumentType.Invoice)
+        {
+            if (identificationType is null || identification is null)
+            {
+                throw new InvalidOperationException("CUSTOMER_FISCAL_DATA_REQUIRED");
+            }
+
+            var validationError = ValidateSriBuyerIdentification(identificationType, identification);
+            if (validationError is not null)
+            {
+                throw new InvalidOperationException(validationError);
+            }
+        }
+
+        return new BuyerSnapshot(name, identificationType, identification, address, email);
+    }
+
+    private static string? ValidateSriBuyerIdentification(string identificationType, string identification)
+    {
+        return identificationType switch
+        {
+            "04" => identification.Length == 13 && identification.All(char.IsDigit)
+                ? null
+                : "INVALID_SRI_CUSTOMER_IDENTIFICATION",
+            "05" => identification.Length == 10 && identification.All(char.IsDigit)
+                ? null
+                : "INVALID_SRI_CUSTOMER_IDENTIFICATION",
+            "06" => identification.Length <= 20 && identification.All(char.IsLetterOrDigit)
+                ? null
+                : "INVALID_SRI_CUSTOMER_IDENTIFICATION",
+            "07" => identification == "9999999999999"
+                ? null
+                : "INVALID_SRI_CUSTOMER_IDENTIFICATION",
+            _ => "SRI_BUYER_IDENTIFICATION_TYPE_REQUIRED"
+        };
+    }
+
+    private static string? NormalizeOptionalText(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static decimal GetVatRate(ProductVatCategory vatCategory)
         => vatCategory switch
         {
@@ -917,4 +986,11 @@ public class SalesService : ISalesService
             && value.Length == expectedLength
             && value.All(char.IsDigit);
     }
+
+    private sealed record BuyerSnapshot(
+        string Name,
+        string? IdentificationType,
+        string? Identification,
+        string? Address,
+        string? Email);
 }

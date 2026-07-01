@@ -16,13 +16,24 @@ public class Customer
     [MaxLength(50)]
     public string? Identification { get; set; }
 
+    [MaxLength(2)]
+    public string? IdentificationType { get; set; }
+
     [MaxLength(30)]
     public string? Phone { get; set; }
 
     [MaxLength(320)]
     public string? Email { get; set; }
 
+    [MaxLength(300)]
+    public string? Address { get; set; }
+
+    [MaxLength(500)]
+    public string? Notes { get; set; }
+
     public bool IsActive { get; set; }
 
     public DateTime CreatedAt { get; set; }
+
+    public DateTime? UpdatedAt { get; set; }
 }

@@ -1,0 +1,287 @@
+.customers-page {
+  display:flex;
+  flex-direction:column;
+  gap:1rem;
+}
+
+.customers-header,
+.customers-section {
+  background:var(--app-surface);
+  border:1px solid var(--app-border);
+  border-radius:8px;
+  box-shadow:var(--app-shadow-sm);
+}
+
+.customers-header {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:1rem;
+  padding:1.25rem;
+}
+
+.customers-header h2 {
+  margin:.15rem 0 0;
+}
+
+.eyebrow {
+  color:#2563eb;
+  font-size:.78rem;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+
+.header-actions,
+.toolbar-actions,
+.actions,
+.filters {
+  display:flex;
+  align-items:center;
+}
+
+.header-actions {
+  justify-content:flex-end;
+  gap:.6rem;
+  flex-wrap:wrap;
+}
+
+.summary-chip {
+  display:inline-flex;
+  align-items:center;
+  gap:.45rem;
+  padding:.45rem .65rem;
+  border:1px solid #bbf7d0;
+  border-radius:8px;
+  background:#f0fdf4;
+  color:#15803d;
+}
+
+.summary-chip--muted {
+  border-color:#e2e8f0;
+  background:#f8fafc;
+  color:#475569;
+}
+
+.summary-chip small {
+  color:inherit;
+  font-weight:800;
+  text-transform:uppercase;
+  font-size:.72rem;
+}
+
+.summary-chip strong {
+  font-size:1rem;
+}
+
+.customers-section {
+  display:flex;
+  flex-direction:column;
+  gap:1rem;
+  padding:1rem;
+}
+
+:host ::ng-deep .customers-toolbar {
+  border:0;
+  border-bottom:1px solid var(--app-border);
+  border-radius:0;
+  background:transparent;
+  padding:0 0 .9rem;
+}
+
+.filters,
+.toolbar-actions {
+  gap:.75rem;
+  flex-wrap:wrap;
+}
+
+.table-search {
+  position:relative;
+}
+
+.table-search i {
+  position:absolute;
+  left:.75rem;
+  top:50%;
+  transform:translateY(-50%);
+  color:var(--app-text-muted);
+  z-index:1;
+}
+
+.table-search input {
+  min-width:23rem;
+  padding-left:2.15rem;
+}
+
+.filter-field {
+  display:flex;
+  flex-direction:column;
+  gap:.25rem;
+  color:var(--app-text-muted);
+  font-size:.78rem;
+  font-weight:800;
+}
+
+.filter-field p-select {
+  min-width:10rem;
+}
+
+:host ::ng-deep .professional-table .p-datatable-thead>tr>th {
+  background:#f8fafc;
+  color:#475569;
+  font-size:.78rem;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  border-color:var(--app-border);
+}
+
+:host ::ng-deep .professional-table .p-datatable-tbody>tr:hover {
+  background:#f8fafc;
+}
+
+:host ::ng-deep .professional-table .p-datatable-tbody>tr>td {
+  border-color:#edf2f7;
+  vertical-align:middle;
+}
+
+:host ::ng-deep .customers-table .p-datatable-thead>tr>th,
+:host ::ng-deep .customers-table .p-datatable-tbody>tr>td {
+  padding:.72rem .85rem;
+}
+
+.customer-main,
+.identity-stack,
+.contact-stack,
+.date-stack {
+  display:flex;
+  flex-direction:column;
+  gap:.15rem;
+  min-width:0;
+}
+
+.customer-main strong,
+.identity-stack strong {
+  color:var(--app-text);
+}
+
+.identity-stack small,
+.contact-stack small,
+.date-stack small {
+  color:var(--app-text-muted);
+}
+
+.contact-stack span {
+  display:inline-flex;
+  align-items:center;
+  gap:.35rem;
+  overflow-wrap:anywhere;
+}
+
+.contact-stack i {
+  color:#2563eb;
+}
+
+.text-cell {
+  max-width:16rem;
+  overflow-wrap:anywhere;
+}
+
+.action-column {
+  width:8rem;
+  min-width:8rem;
+  text-align:right;
+  white-space:nowrap;
+}
+
+.actions {
+  justify-content:flex-end;
+  gap:.2rem;
+}
+
+.row-inactive {
+  opacity:.72;
+}
+
+.empty-state {
+  min-height:9rem;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:.5rem;
+  color:var(--app-text-muted);
+  text-align:center;
+}
+
+.empty-state i {
+  font-size:1.6rem;
+  color:#94a3b8;
+}
+
+.empty-state strong {
+  color:var(--app-text);
+}
+
+.customer-form {
+  display:flex;
+  flex-direction:column;
+  gap:1rem;
+}
+
+.form-grid {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:1rem;
+}
+
+.field {
+  display:flex;
+  flex-direction:column;
+  gap:.35rem;
+  color:var(--app-text-muted);
+  font-size:.82rem;
+  font-weight:750;
+}
+
+.field input,
+.field textarea,
+.field p-select {
+  width:100%;
+}
+
+.field-wide {
+  grid-column:1 / -1;
+}
+
+.field-inline {
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+  color:var(--app-text);
+  font-weight:650;
+}
+
+.dialog-actions {
+  display:flex;
+  justify-content:flex-end;
+  gap:.75rem;
+}
+
+@media (max-width:760px) {
+  .customers-header,
+  .header-actions,
+  .toolbar-actions,
+  .filters {
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .table-search input,
+  .filter-field p-select {
+    min-width:100%;
+  }
+
+  .form-grid {
+    grid-template-columns:1fr;
+  }
+}

@@ -261,11 +261,20 @@ public class PosDbContext : DbContext
             entity.Property(c => c.Identification)
                 .HasMaxLength(50);
 
+            entity.Property(c => c.IdentificationType)
+                .HasMaxLength(2);
+
             entity.Property(c => c.Phone)
                 .HasMaxLength(30);
 
             entity.Property(c => c.Email)
                 .HasMaxLength(320);
+
+            entity.Property(c => c.Address)
+                .HasMaxLength(300);
+
+            entity.Property(c => c.Notes)
+                .HasMaxLength(500);
 
             entity.HasOne(c => c.Company)
                 .WithMany()
@@ -273,6 +282,7 @@ public class PosDbContext : DbContext
 
             entity.HasIndex(c => c.CompanyId);
             entity.HasIndex(c => new { c.CompanyId, c.Name });
+            entity.HasIndex(c => new { c.CompanyId, c.Identification });
         });
 
         modelBuilder.Entity<Supplier>(entity =>
@@ -785,6 +795,21 @@ public class PosDbContext : DbContext
                 .IsRequired()
                 .HasMaxLength(100)
                 .HasDefaultValue("America/Guayaquil");
+
+            entity.Property(s => s.BuyerNameSnapshot)
+                .HasMaxLength(300);
+
+            entity.Property(s => s.BuyerIdentificationTypeSnapshot)
+                .HasMaxLength(2);
+
+            entity.Property(s => s.BuyerIdentificationSnapshot)
+                .HasMaxLength(20);
+
+            entity.Property(s => s.BuyerAddressSnapshot)
+                .HasMaxLength(300);
+
+            entity.Property(s => s.BuyerEmailSnapshot)
+                .HasMaxLength(320);
 
             entity.Property(s => s.Number)
                 .HasMaxLength(50);

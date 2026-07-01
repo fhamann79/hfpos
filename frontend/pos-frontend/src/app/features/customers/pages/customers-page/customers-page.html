@@ -1,0 +1,274 @@
+<div class="customers-page">
+  <header class="customers-header">
+    <div>
+      <span class="eyebrow">Catalogo</span>
+      <h2>Clientes</h2>
+    </div>
+
+    <div class="header-actions">
+      <div class="summary-chip">
+        <small>Activos</small>
+        <strong>{{ activeCount() }}</strong>
+      </div>
+      <div class="summary-chip summary-chip--muted">
+        <small>Inactivos</small>
+        <strong>{{ inactiveCount() }}</strong>
+      </div>
+      <p-button
+        label="Refrescar"
+        icon="pi pi-refresh"
+        severity="secondary"
+        [outlined]="true"
+        [loading]="loading()"
+        (onClick)="loadCustomers()"
+      ></p-button>
+      @if (canWrite()) {
+        <p-button label="Nuevo cliente" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
+      }
+    </div>
+  </header>
+
+  <section class="customers-section">
+    <p-toolbar styleClass="customers-toolbar">
+      <ng-template #start>
+        <div class="filters">
+          <div class="table-search">
+            <i class="pi pi-search"></i>
+            <input
+              pInputText
+              type="text"
+              [(ngModel)]="search"
+              placeholder="Nombre, identificacion, email o telefono"
+              aria-label="Buscar clientes"
+              (keyup.enter)="loadCustomers()"
+            />
+          </div>
+          <label class="filter-field">
+            <span>Estado</span>
+            <p-select
+              [options]="statusOptions"
+              [(ngModel)]="status"
+              optionLabel="label"
+              optionValue="value"
+              appendTo="body"
+            ></p-select>
+          </label>
+        </div>
+      </ng-template>
+      <ng-template #end>
+        <div class="toolbar-actions">
+          <p-button label="Buscar" icon="pi pi-search" [loading]="loading()" (onClick)="loadCustomers()"></p-button>
+          <p-button
+            label="Limpiar"
+            icon="pi pi-filter-slash"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="clearFilters()"
+          ></p-button>
+        </div>
+      </ng-template>
+    </p-toolbar>
+
+    @if (errorMessage()) {
+      <p-message severity="error" [text]="errorMessage()"></p-message>
+    }
+
+    <p-table
+      styleClass="professional-table customers-table"
+      [value]="customers()"
+      [loading]="loading()"
+      [paginator]="true"
+      [rows]="15"
+      [rowsPerPageOptions]="[15, 30, 50]"
+      [sortMode]="'multiple'"
+      responsiveLayout="scroll"
+      [tableStyle]="{ 'min-width': '92rem' }"
+    >
+      <ng-template pTemplate="header">
+        <tr>
+          <th pSortableColumn="name">Cliente <p-sortIcon field="name"></p-sortIcon></th>
+          <th>Identificacion</th>
+          <th>Contacto</th>
+          <th>Direccion</th>
+          <th>Notas</th>
+          <th pSortableColumn="isActive">Estado <p-sortIcon field="isActive"></p-sortIcon></th>
+          <th pSortableColumn="updatedAt">Actualizado <p-sortIcon field="updatedAt"></p-sortIcon></th>
+          @if (canWrite()) {
+            <th class="action-column">Acciones</th>
+          }
+        </tr>
+      </ng-template>
+
+      <ng-template pTemplate="body" let-customer>
+        <tr [class.row-inactive]="!customer.isActive">
+          <td>
+            <span class="customer-main">
+              <strong>{{ customer.name }}</strong>
+            </span>
+          </td>
+          <td>
+            <span class="identity-stack">
+              <strong>{{ identificationTypeLabel(customer.identificationType) }}</strong>
+              <small>{{ customer.identification || 'Sin identificacion' }}</small>
+            </span>
+          </td>
+          <td>
+            <span class="contact-stack">
+              @if (customer.email) {
+                <span><i class="pi pi-at"></i>{{ customer.email }}</span>
+              }
+              @if (customer.phone) {
+                <span><i class="pi pi-phone"></i>{{ customer.phone }}</span>
+              }
+              @if (!customer.email && !customer.phone) {
+                <small>Sin contacto</small>
+              }
+            </span>
+          </td>
+          <td class="text-cell">{{ customer.address || '-' }}</td>
+          <td class="text-cell">{{ customer.notes || '-' }}</td>
+          <td>
+            <p-tag
+              [severity]="customer.isActive ? 'success' : 'danger'"
+              [value]="customer.isActive ? 'Activo' : 'Inactivo'"
+            ></p-tag>
+          </td>
+          <td>
+            <span class="date-stack">
+              <strong>{{ (customer.updatedAt || customer.createdAt) | date: 'dd/MM/yyyy' }}</strong>
+              <small>{{ (customer.updatedAt || customer.createdAt) | date: 'HH:mm' }}</small>
+            </span>
+          </td>
+          @if (canWrite()) {
+            <td class="action-column">
+              <div class="actions">
+                <p-button
+                  icon="pi pi-pencil"
+                  [rounded]="true"
+                  [text]="true"
+                  aria-label="Editar cliente"
+                  (onClick)="openEditDialog(customer)"
+                ></p-button>
+                @if (customer.isActive) {
+                  <p-button
+                    icon="pi pi-ban"
+                    severity="danger"
+                    [rounded]="true"
+                    [text]="true"
+                    aria-label="Desactivar cliente"
+                    (onClick)="confirmDeactivate(customer)"
+                  ></p-button>
+                } @else {
+                  <p-button
+                    icon="pi pi-check"
+                    severity="success"
+                    [rounded]="true"
+                    [text]="true"
+                    aria-label="Reactivar cliente"
+                    (onClick)="confirmActivate(customer)"
+                  ></p-button>
+                }
+              </div>
+            </td>
+          }
+        </tr>
+      </ng-template>
+
+      <ng-template pTemplate="emptymessage">
+        <tr>
+          <td [attr.colspan]="canWrite() ? 8 : 7">
+            <div class="empty-state">
+              <i class="pi pi-users"></i>
+              <strong>No hay clientes registrados.</strong>
+              @if (canWrite()) {
+                <p-button label="Crear cliente" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
+              }
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </section>
+</div>
+
+<p-dialog
+  [visible]="dialogVisible"
+  [modal]="true"
+  [closable]="true"
+  [draggable]="false"
+  [style]="{ width: '46rem', maxWidth: '96vw' }"
+  [header]="isEditMode ? 'Editar cliente' : 'Nuevo cliente'"
+  (onHide)="closeDialog()"
+>
+  <form class="customer-form" [formGroup]="form" (ngSubmit)="save()">
+    <div class="form-grid">
+      <label class="field field-wide">
+        <span>Nombre / razon social</span>
+        <input pInputText type="text" formControlName="name" maxlength="150" autocomplete="off" />
+        @if (form.controls.name.touched && form.controls.name.invalid) {
+          <small class="p-error">El nombre es obligatorio y maximo 150 caracteres.</small>
+        }
+      </label>
+
+      <label class="field">
+        <span>Tipo identificacion</span>
+        <p-select
+          [options]="identificationTypeOptions"
+          formControlName="identificationType"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Sin tipo"
+          [showClear]="true"
+          appendTo="body"
+        ></p-select>
+      </label>
+
+      <label class="field">
+        <span>Identificacion</span>
+        <input pInputText type="text" formControlName="identification" maxlength="20" autocomplete="off" />
+      </label>
+
+      <label class="field">
+        <span>Email</span>
+        <input pInputText type="email" formControlName="email" maxlength="320" autocomplete="off" />
+        @if (form.controls.email.touched && form.controls.email.invalid) {
+          <small class="p-error">Ingresa un email valido.</small>
+        }
+      </label>
+
+      <label class="field">
+        <span>Telefono</span>
+        <input pInputText type="text" formControlName="phone" maxlength="30" autocomplete="off" />
+      </label>
+
+      <label class="field field-wide">
+        <span>Direccion</span>
+        <textarea pTextarea rows="2" formControlName="address" maxlength="300"></textarea>
+      </label>
+
+      <label class="field field-wide">
+        <span>Notas</span>
+        <textarea pTextarea rows="3" formControlName="notes" maxlength="500"></textarea>
+      </label>
+    </div>
+
+    @if (formError()) {
+      <p-message severity="error" [text]="formError()"></p-message>
+    }
+
+    @if (isEditMode) {
+      <label class="field-inline">
+        <p-checkbox inputId="customer-active" binary="true" formControlName="isActive"></p-checkbox>
+        <span>Cliente activo</span>
+      </label>
+    }
+
+    <div class="dialog-actions">
+      <p-button label="Cancelar" severity="secondary" [outlined]="true" type="button" (onClick)="closeDialog()"></p-button>
+      <p-button label="Guardar" icon="pi pi-check" type="submit" [loading]="saving()"></p-button>
+    </div>
+  </form>
+</p-dialog>
+
+<p-toast></p-toast>
+<p-confirmdialog></p-confirmdialog>

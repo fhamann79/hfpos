@@ -3,6 +3,7 @@ import { AuthGuard } from './core/guards/auth.guard';
 import { administrationAccessGuard } from './core/guards/administration-access.guard';
 import { cashSessionsAccessGuard } from './core/guards/cash-sessions-access.guard';
 import { catalogAccessGuard } from './core/guards/catalog-access.guard';
+import { customersAccessGuard } from './core/guards/customers-access.guard';
 import { inventoryAccessGuard } from './core/guards/inventory-access.guard';
 import { fiscalSettingsAccessGuard } from './core/guards/fiscal-settings-access.guard';
 import { operationalStructureAccessGuard } from './core/guards/operational-structure-access.guard';
@@ -66,6 +67,11 @@ export const routes: Routes = [
     path: 'suppliers',
     canActivate: [AuthGuard, suppliersAccessGuard],
     loadComponent: () => import('./features/suppliers/pages/suppliers-page/suppliers-page').then((m) => m.SuppliersPage),
+  },
+  {
+    path: 'customers',
+    canActivate: [AuthGuard, customersAccessGuard],
+    loadComponent: () => import('./features/customers/pages/customers-page/customers-page').then((m) => m.CustomersPage),
   },
   {
     path: 'purchase-receipts',

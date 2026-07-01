@@ -24,9 +24,11 @@ export class PosCustomerService {
     return {
       id: this.readNumber(row, ['id', 'customerId'], 0),
       name: this.readString(row, ['name', 'customerName'], 'Cliente'),
+      identificationType: this.readString(row, ['identificationType'], null),
       identification: this.readString(row, ['identification', 'document', 'ruc', 'ci'], null),
       phone: this.readString(row, ['phone', 'mobile'], null),
       email: this.readString(row, ['email', 'customerEmail'], null),
+      address: this.readString(row, ['address'], null),
       isActive: this.readBoolean(row, ['isActive', 'active'], true),
     };
   }
