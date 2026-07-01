@@ -1,9 +1,7 @@
 namespace Pos.Backend.Api.Core.DTOs;
 
-public class CustomerDto
+public class CustomerUpdateDto
 {
-    public int Id { get; set; }
-
     public string Name { get; set; }
 
     public string? IdentificationType { get; set; }
@@ -19,8 +17,4 @@ public class CustomerDto
     public string? Notes { get; set; }
 
     public bool IsActive { get; set; }
-
-    public DateTime CreatedAt { get; set; }
-
-    public DateTime? UpdatedAt { get; set; }
 }

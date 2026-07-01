@@ -360,6 +360,7 @@ public class SalesController : ControllerBase
             "INVALID_SALE_DOCUMENT_TYPE" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_DOCUMENT_TYPE" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_ISSUER_RUC" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CUSTOMER_FISCAL_DATA_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_SRI_DOCUMENT_CONTEXT" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_SRI_CUSTOMER_IDENTIFICATION" => BadRequest(new ApiErrorResponse { Error = code }),
             "SRI_COMPANY_MATRIX_ADDRESS_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),

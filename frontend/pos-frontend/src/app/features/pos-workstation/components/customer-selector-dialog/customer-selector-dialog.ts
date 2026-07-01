@@ -6,6 +6,7 @@ import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
+import { SelectModule } from 'primeng/select';
 import { resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
 import { CreatePosCustomerRequest, PosCustomer } from '../../models/pos-customer.model';
 import { PosCustomerService } from '../../services/pos-customer.service';
@@ -13,12 +14,19 @@ import { PosCustomerService } from '../../services/pos-customer.service';
 @Component({
   selector: 'app-customer-selector-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule, DialogModule, InputTextModule, ButtonModule, MessageModule],
+  imports: [CommonModule, FormsModule, DialogModule, InputTextModule, ButtonModule, MessageModule, SelectModule],
   templateUrl: './customer-selector-dialog.html',
   styleUrl: './customer-selector-dialog.scss',
 })
 export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
   readonly maxEmailLength = 320;
+  readonly maxAddressLength = 300;
+  readonly identificationTypeOptions = [
+    { label: 'RUC', value: '04' },
+    { label: 'Cedula', value: '05' },
+    { label: 'Pasaporte', value: '06' },
+    { label: 'Consumidor final', value: '07' },
+  ];
 
   private readonly customerService = inject(PosCustomerService);
 
@@ -41,9 +49,11 @@ export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
   highlightedIndex = 0;
   createMode = false;
   name = '';
+  identificationType = '';
   identification = '';
   phone = '';
   email = '';
+  address = '';
 
   ngAfterViewInit(): void {
     if (this.visible) {
@@ -127,11 +137,15 @@ export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
   }
 
   createCustomer(): void {
+    const identificationType = this.normalizeOptional(this.identificationType);
+    const identification = this.normalizeOptional(this.identification);
     const payload: CreatePosCustomerRequest = {
       name: this.name.trim(),
-      identification: this.normalizeOptional(this.identification),
+      identificationType,
+      identification,
       phone: this.normalizeOptional(this.phone),
       email: this.normalizeOptional(this.email),
+      address: this.normalizeOptional(this.address),
     };
 
     if (!payload.name) {
@@ -141,6 +155,17 @@ export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
 
     if (payload.email && (payload.email.length > this.maxEmailLength || !this.isValidEmail(payload.email))) {
       this.createErrorMessage.set('Ingresa un email de cliente válido.');
+      return;
+    }
+
+    const identificationError = this.validateIdentification(identificationType, identification);
+    if (identificationError) {
+      this.createErrorMessage.set(identificationError);
+      return;
+    }
+
+    if (payload.address && payload.address.length > this.maxAddressLength) {
+      this.createErrorMessage.set('La direccion del cliente no debe superar 300 caracteres.');
       return;
     }
 
@@ -168,9 +193,11 @@ export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
     this.highlightedIndex = 0;
     this.createMode = false;
     this.name = '';
+    this.identificationType = '';
     this.identification = '';
     this.phone = '';
     this.email = '';
+    this.address = '';
     this.errorMessage.set('');
     this.createErrorMessage.set('');
     this.loadCustomers();
@@ -206,5 +233,32 @@ export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
 
   private isValidEmail(value: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+  }
+
+  private validateIdentification(identificationType: string | null, identification: string | null): string {
+    if (identification && !identificationType) {
+      return 'Selecciona el tipo de identificacion del cliente.';
+    }
+
+    if (identificationType && !identification) {
+      return 'Ingresa el numero de identificacion del cliente.';
+    }
+
+    if (!identificationType || !identification) {
+      return '';
+    }
+
+    switch (identificationType) {
+      case '04':
+        return /^\d{13}$/.test(identification) ? '' : 'El RUC debe tener 13 digitos.';
+      case '05':
+        return /^\d{10}$/.test(identification) ? '' : 'La cedula debe tener 10 digitos.';
+      case '06':
+        return /^[A-Za-z0-9]{1,20}$/.test(identification) ? '' : 'El pasaporte debe ser alfanumerico y maximo 20 caracteres.';
+      case '07':
+        return identification === '9999999999999' ? '' : 'Consumidor final debe usar identificacion 9999999999999.';
+      default:
+        return 'Selecciona un tipo de identificacion valido.';
+    }
   }
 }

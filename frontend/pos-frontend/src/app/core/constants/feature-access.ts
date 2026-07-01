@@ -49,6 +49,11 @@ export const SUPPLIERS_ACCESS_REQUIREMENT: PermissionRequirement = {
   matchMode: 'all',
 };
 
+export const CUSTOMERS_ACCESS_REQUIREMENT: PermissionRequirement = {
+  requiredPermissions: [PERMISSIONS.customersRead],
+  matchMode: 'all',
+};
+
 export const PURCHASES_ACCESS_REQUIREMENT: PermissionRequirement = {
   requiredPermissions: [PERMISSIONS.purchasesRead],
   matchMode: 'all',
@@ -117,6 +122,12 @@ export const NAVIGATION_ITEMS: NavigationItemConfig[] = [
     icon: 'pi pi-truck',
     route: '/suppliers',
     ...SUPPLIERS_ACCESS_REQUIREMENT,
+  },
+  {
+    label: 'Clientes',
+    icon: 'pi pi-users',
+    route: '/customers',
+    ...CUSTOMERS_ACCESS_REQUIREMENT,
   },
   {
     label: 'Compras',

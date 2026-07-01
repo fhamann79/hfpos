@@ -566,6 +566,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       return;
     }
 
+    if (!this.ensureInvoiceCustomerFiscalData()) {
+      return;
+    }
+
     const payload: CheckoutRequest = {
       customerId: this.selectedCustomer()?.id ?? null,
       documentType: this.selectedDocumentType(),
@@ -1271,6 +1275,51 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       detail: 'Debes abrir caja antes de vender.',
     });
     return false;
+  }
+
+  private ensureInvoiceCustomerFiscalData(): boolean {
+    if (this.selectedDocumentType() !== SaleDocumentType.Invoice) {
+      return true;
+    }
+
+    const customer = this.selectedCustomer();
+    if (!customer) {
+      return true;
+    }
+
+    const identificationType = customer.identificationType?.trim() ?? '';
+    const identification = customer.identification?.trim() ?? '';
+    const message = this.validateInvoiceCustomerIdentification(identificationType, identification);
+
+    if (!message) {
+      return true;
+    }
+
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Datos fiscales del cliente',
+      detail: message,
+    });
+    return false;
+  }
+
+  private validateInvoiceCustomerIdentification(identificationType: string, identification: string): string {
+    if (!identificationType || !identification) {
+      return 'Completa el tipo y numero de identificacion del cliente para emitir factura.';
+    }
+
+    switch (identificationType) {
+      case '04':
+        return /^\d{13}$/.test(identification) ? '' : 'El RUC debe tener 13 digitos.';
+      case '05':
+        return /^\d{10}$/.test(identification) ? '' : 'La cedula debe tener 10 digitos.';
+      case '06':
+        return /^[A-Za-z0-9]{1,20}$/.test(identification) ? '' : 'El pasaporte debe ser alfanumerico y maximo 20 caracteres.';
+      case '07':
+        return identification === '9999999999999' ? '' : 'Consumidor final debe usar identificacion 9999999999999.';
+      default:
+        return 'Selecciona un tipo de identificacion valido para emitir factura.';
+    }
   }
 
   private refreshOperationalData(): void {

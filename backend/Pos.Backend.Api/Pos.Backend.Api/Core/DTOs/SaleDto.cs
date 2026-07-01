@@ -12,7 +12,19 @@ public class SaleDto
 
     public string? CustomerName { get; set; }
 
+    public string? CustomerIdentification { get; set; }
+
     public string? CustomerEmail { get; set; }
+
+    public string? BuyerNameSnapshot { get; set; }
+
+    public string? BuyerIdentificationTypeSnapshot { get; set; }
+
+    public string? BuyerIdentificationSnapshot { get; set; }
+
+    public string? BuyerAddressSnapshot { get; set; }
+
+    public string? BuyerEmailSnapshot { get; set; }
 
     public SalePaymentMethod PaymentMethod { get; set; }
 

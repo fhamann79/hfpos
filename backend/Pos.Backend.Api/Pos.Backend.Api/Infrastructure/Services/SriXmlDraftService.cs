@@ -19,7 +19,7 @@ public class SriXmlDraftService : ISriXmlDraftService
 
         ValidateInvoiceContext(sale, request.Environment, request.EmissionType);
 
-        var buyer = ResolveBuyer(request.Customer);
+        var buyer = ResolveBuyer(sale, request.Customer);
         var matrixAddress = RequiredText(
             request.Company.MatrixAddress,
             300,
@@ -49,6 +49,7 @@ public class SriXmlDraftService : ISriXmlDraftService
             new XElement("tipoIdentificacionComprador", buyer.IdentificationType),
             new XElement("razonSocialComprador", buyer.Name),
             new XElement("identificacionComprador", buyer.Identification),
+            OptionalElement("direccionComprador", buyer.Address, 300),
             new XElement("totalSinImpuestos", FormatMoney(sale.Subtotal)),
             new XElement("totalDescuento", FormatMoney(sale.DiscountAmount)),
             BuildTaxTotals(sale),
@@ -97,39 +98,89 @@ public class SriXmlDraftService : ISriXmlDraftService
         }
     }
 
-    private static BuyerSnapshot ResolveBuyer(Customer? customer)
+    private static BuyerSnapshot ResolveBuyer(Sale sale, Customer? customer)
     {
+        var snapshotName = NormalizeText(sale.BuyerNameSnapshot);
+        var snapshotIdentificationType = NormalizeText(sale.BuyerIdentificationTypeSnapshot);
+        var snapshotIdentification = NormalizeText(sale.BuyerIdentificationSnapshot);
+
+        if (snapshotName is not null || snapshotIdentificationType is not null || snapshotIdentification is not null)
+        {
+            var snapshotBuyerName = RequiredText(snapshotName, 300, "INVALID_SRI_CUSTOMER_IDENTIFICATION");
+            var snapshotBuyerIdentificationType = RequiredText(snapshotIdentificationType, 2, "SRI_BUYER_IDENTIFICATION_TYPE_REQUIRED");
+            var snapshotBuyerIdentification = RequiredText(snapshotIdentification, 20, "INVALID_SRI_CUSTOMER_IDENTIFICATION");
+            ValidateBuyerIdentification(snapshotBuyerIdentificationType, snapshotBuyerIdentification);
+
+            return new BuyerSnapshot(
+                snapshotBuyerIdentificationType,
+                snapshotBuyerName,
+                snapshotBuyerIdentification,
+                OptionalText(sale.BuyerAddressSnapshot, 300));
+        }
+
         if (customer is null)
         {
-            return new BuyerSnapshot("07", "CONSUMIDOR FINAL", "9999999999999");
+            return new BuyerSnapshot("07", "CONSUMIDOR FINAL", "9999999999999", Address: null);
         }
 
         var name = RequiredText(customer.Name, 300, "INVALID_SRI_CUSTOMER_IDENTIFICATION");
         var identification = RequiredText(customer.Identification, 20, "INVALID_SRI_CUSTOMER_IDENTIFICATION");
+        var configuredIdentificationType = NormalizeText(customer.IdentificationType);
+
+        if (configuredIdentificationType is not null)
+        {
+            ValidateBuyerIdentification(configuredIdentificationType, identification);
+            return new BuyerSnapshot(
+                configuredIdentificationType,
+                name,
+                identification,
+                OptionalText(customer.Address, 300));
+        }
+
         var normalizedIdentification = identification.Trim();
         var digitsOnly = normalizedIdentification.All(char.IsDigit);
 
         if (digitsOnly && normalizedIdentification == "9999999999999")
         {
-            return new BuyerSnapshot("07", name, normalizedIdentification);
+            return new BuyerSnapshot("07", name, normalizedIdentification, OptionalText(customer.Address, 300));
         }
 
         if (digitsOnly && normalizedIdentification.Length == 13)
         {
-            return new BuyerSnapshot("04", name, normalizedIdentification);
+            return new BuyerSnapshot("04", name, normalizedIdentification, OptionalText(customer.Address, 300));
         }
 
         if (digitsOnly && normalizedIdentification.Length == 10)
         {
-            return new BuyerSnapshot("05", name, normalizedIdentification);
+            return new BuyerSnapshot("05", name, normalizedIdentification, OptionalText(customer.Address, 300));
         }
 
         if (normalizedIdentification.Length <= 20 && normalizedIdentification.All(char.IsLetterOrDigit))
         {
-            return new BuyerSnapshot("06", name, normalizedIdentification);
+            return new BuyerSnapshot("06", name, normalizedIdentification, OptionalText(customer.Address, 300));
         }
 
         throw new InvalidOperationException("SRI_BUYER_IDENTIFICATION_TYPE_REQUIRED");
+    }
+
+    private static void ValidateBuyerIdentification(string identificationType, string identification)
+    {
+        var isValid = identificationType switch
+        {
+            "04" => identification.Length == 13 && identification.All(char.IsDigit),
+            "05" => identification.Length == 10 && identification.All(char.IsDigit),
+            "06" => identification.Length <= 20 && identification.All(char.IsLetterOrDigit),
+            "07" => identification == "9999999999999",
+            _ => false
+        };
+
+        if (!isValid)
+        {
+            throw new InvalidOperationException(
+                identificationType is "04" or "05" or "06" or "07"
+                    ? "INVALID_SRI_CUSTOMER_IDENTIFICATION"
+                    : "SRI_BUYER_IDENTIFICATION_TYPE_REQUIRED");
+        }
     }
 
     private static XElement BuildTaxTotals(Sale sale)
@@ -407,7 +458,7 @@ public class SriXmlDraftService : ISriXmlDraftService
             _ => 99
         };
 
-    private sealed record BuyerSnapshot(string IdentificationType, string Name, string Identification);
+    private sealed record BuyerSnapshot(string IdentificationType, string Name, string Identification, string? Address);
 
     private sealed record ProductCodeSnapshot(string MainCode, string? AuxiliaryCode);
 }

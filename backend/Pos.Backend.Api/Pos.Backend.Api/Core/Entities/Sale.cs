@@ -21,6 +21,16 @@ public class Sale
     public int? CustomerId { get; set; }
     public Customer? Customer { get; set; }
 
+    public string? BuyerNameSnapshot { get; set; }
+
+    public string? BuyerIdentificationTypeSnapshot { get; set; }
+
+    public string? BuyerIdentificationSnapshot { get; set; }
+
+    public string? BuyerAddressSnapshot { get; set; }
+
+    public string? BuyerEmailSnapshot { get; set; }
+
     public int? CashSessionId { get; set; }
     public CashSession? CashSession { get; set; }
 

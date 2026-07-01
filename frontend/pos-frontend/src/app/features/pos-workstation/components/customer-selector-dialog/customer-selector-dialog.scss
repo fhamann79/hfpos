@@ -96,6 +96,10 @@
   }
 }
 
+:host ::ng-deep .create-form .p-select {
+  width: 100%;
+}
+
 .form-header {
   display: flex;
   justify-content: space-between;

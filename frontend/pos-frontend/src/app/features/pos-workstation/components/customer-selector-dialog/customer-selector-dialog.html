@@ -86,15 +86,34 @@
 
         <div class="form-grid">
           <label>
+            Tipo identificacion
+            <p-select
+              [options]="identificationTypeOptions"
+              [(ngModel)]="identificationType"
+              name="identificationType"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Sin tipo"
+              [showClear]="true"
+              appendTo="body"
+            ></p-select>
+          </label>
+
+          <label>
             Identificación
-            <input pInputText type="text" [(ngModel)]="identification" name="identification" autocomplete="off" />
+            <input pInputText type="text" [(ngModel)]="identification" name="identification" autocomplete="off" maxlength="20" />
           </label>
 
           <label>
             Teléfono
-            <input pInputText type="text" [(ngModel)]="phone" name="phone" autocomplete="off" />
+            <input pInputText type="text" [(ngModel)]="phone" name="phone" autocomplete="off" maxlength="30" />
           </label>
         </div>
+
+        <label>
+          Direccion
+          <input pInputText type="text" [(ngModel)]="address" name="address" autocomplete="street-address" maxlength="300" />
+        </label>
 
         <div class="dialog-actions">
           <p-button type="button" label="Cancelar" severity="secondary" [outlined]="true" (onClick)="createMode = false; focusLookup()"></p-button>

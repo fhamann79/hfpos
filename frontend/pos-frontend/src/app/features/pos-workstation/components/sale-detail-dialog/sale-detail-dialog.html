@@ -15,6 +15,7 @@
       <span><strong>Fecha:</strong> {{ sale.createdAt | date: 'short' }}</span>
       <span><strong>Usuario:</strong> {{ sale.createdBy || 'N/A' }}</span>
       <span><strong>Cliente:</strong> {{ sale.customerName || 'Sin cliente' }}</span>
+      <span><strong>Identificacion:</strong> {{ sale.customerIdentification || 'Sin identificacion' }}</span>
       <span><strong>Notas:</strong> {{ sale.notes || 'Sin notas' }}</span>
     </div>
 
