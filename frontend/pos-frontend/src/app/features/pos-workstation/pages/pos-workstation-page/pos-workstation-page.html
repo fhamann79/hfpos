@@ -190,8 +190,10 @@
     [total]="total()"
     [notes]="notes()"
     [documentType]="selectedDocumentType()"
+    [paymentMethod]="selectedPaymentMethod()"
     (visibleChange)="checkoutVisible.set($event)"
     (documentTypeChange)="selectedDocumentType.set($event)"
+    (paymentMethodChange)="selectedPaymentMethod.set($event)"
     (confirm)="confirmCheckout()"
   ></app-checkout-confirm-dialog>
 

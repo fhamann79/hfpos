@@ -36,6 +36,7 @@ import { SaleDocumentStatus, SaleDocumentType } from '../../models/sale-document
 import { SaleInvoiceEmailDelivery, SendSaleInvoiceEmailRequest } from '../../models/sale-invoice-email.model';
 import { Sale } from '../../models/sale.model';
 import { SaleListItem } from '../../models/sale-list-item.model';
+import { SalePaymentMethod } from '../../models/sale-payment-method.model';
 import { SriRide } from '../../models/sri-ride.model';
 import { SriSubmissionAttempt } from '../../models/sri-submission-attempt.model';
 import { PosKeyboardService } from '../../services/pos-keyboard.service';
@@ -101,6 +102,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly selectedCustomer = signal<PosCustomer | null>(null);
   readonly saleDiscountAmount = signal(0);
   readonly selectedDocumentType = signal<SaleDocumentType>(SaleDocumentType.Ticket);
+  readonly selectedPaymentMethod = signal<SalePaymentMethod>(SalePaymentMethod.Cash);
   readonly notes = signal('');
   readonly checkoutVisible = signal(false);
   readonly customerSelectorVisible = signal(false);
@@ -567,6 +569,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     const payload: CheckoutRequest = {
       customerId: this.selectedCustomer()?.id ?? null,
       documentType: this.selectedDocumentType(),
+      paymentMethod: this.selectedPaymentMethod(),
       discountAmount: this.effectiveSaleDiscountAmount(),
       notes: this.notes().trim() || undefined,
       items: this.cart().map((item) => ({
@@ -588,6 +591,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         this.selectedCustomer.set(null);
         this.saleDiscountAmount.set(0);
         this.selectedDocumentType.set(SaleDocumentType.Ticket);
+        this.selectedPaymentMethod.set(SalePaymentMethod.Cash);
         this.notes.set('');
         this.messageService.add({ severity: 'success', summary: 'Venta registrada', detail: 'La venta fue creada correctamente.' });
         this.refreshOperationalData();

@@ -1,4 +1,5 @@
 import { SaleDocumentType } from './sale-document.model';
+import { SalePaymentMethod } from './sale-payment-method.model';
 
 export interface CheckoutItemRequest {
   productId: number;
@@ -10,6 +11,7 @@ export interface CheckoutItemRequest {
 export interface CheckoutRequest {
   customerId?: number | null;
   documentType?: SaleDocumentType;
+  paymentMethod?: SalePaymentMethod;
   discountAmount?: number;
   notes?: string;
   items: CheckoutItemRequest[];
