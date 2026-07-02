@@ -35,7 +35,7 @@
           </div>
           <div class="actions">
             <p-button label="Detalle" [text]="true" (onClick)="viewDetail.emit(sale.id)"></p-button>
-            @if (canVoid && !sale.isVoided) {
+            @if (canVoid && canVoidSale(sale)) {
               <p-button label="Anular" severity="danger" [text]="true" (onClick)="startVoid.emit(sale)"></p-button>
             }
           </div>

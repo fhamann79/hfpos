@@ -515,6 +515,8 @@ public class SalesService : ISalesService
                 throw new InvalidOperationException("SALE_NOT_VOIDABLE");
             }
 
+            EnsureSaleCanBeVoidedLocally(sale);
+
             var voidNotes = string.IsNullOrWhiteSpace(dto.Reason)
                 ? "Void sale"
                 : dto.Reason.Trim();
@@ -580,6 +582,42 @@ public class SalesService : ISalesService
             throw;
         }
     }
+
+    private static void EnsureSaleCanBeVoidedLocally(Sale sale)
+    {
+        if (sale.DocumentType != SaleDocumentType.Invoice)
+        {
+            return;
+        }
+
+        if (sale.DocumentStatus == SaleDocumentStatus.Rejected)
+        {
+            return;
+        }
+
+        if (sale.DocumentStatus == SaleDocumentStatus.Authorized)
+        {
+            throw new InvalidOperationException("SALE_INVOICE_AUTHORIZED_REQUIRES_CREDIT_NOTE");
+        }
+
+        if (sale.DocumentStatus == SaleDocumentStatus.PendingAuthorization)
+        {
+            throw new InvalidOperationException("SALE_INVOICE_PENDING_AUTHORIZATION_NOT_VOIDABLE");
+        }
+
+        if (InvoiceHasSriProcess(sale) || sale.DocumentStatus != SaleDocumentStatus.Draft)
+        {
+            throw new InvalidOperationException("SALE_INVOICE_SRI_IN_PROGRESS_NOT_VOIDABLE");
+        }
+    }
+
+    private static bool InvoiceHasSriProcess(Sale sale)
+        => sale.SriSubmittedAt is not null
+           || !string.IsNullOrWhiteSpace(sale.SriReceptionStatus)
+           || !string.IsNullOrWhiteSpace(sale.SriAuthorizationStatus)
+           || sale.SriLastCheckedAt is not null
+           || !string.IsNullOrWhiteSpace(sale.AuthorizationNumber)
+           || sale.AuthorizedAt is not null;
 
     private static void ApplySaleTaxTotals(Sale sale, decimal saleDiscountAmount)
     {
