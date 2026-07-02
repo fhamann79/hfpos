@@ -518,7 +518,8 @@ public class SriSubmissionService : ISriSubmissionService
             {
                 IdentificationType = BuyerIdentificationTypeLabel(ChildValue(infoFactura, "tipoIdentificacionComprador")),
                 Identification = ChildValue(infoFactura, "identificacionComprador"),
-                LegalName = ChildValue(infoFactura, "razonSocialComprador")
+                LegalName = ChildValue(infoFactura, "razonSocialComprador"),
+                Address = ChildValue(infoFactura, "direccionComprador")
             },
             Items = BuildRideItems(invoice),
             Totals = BuildRideTotals(sale, infoFactura),

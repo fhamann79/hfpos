@@ -33,6 +33,7 @@ export interface SriRideBuyer {
   identificationType: string | null;
   identification: string | null;
   legalName: string | null;
+  address: string | null;
 }
 
 export interface SriRideQr {

@@ -63,6 +63,8 @@ public class SriRideBuyerDto
     public string? Identification { get; set; }
 
     public string? LegalName { get; set; }
+
+    public string? Address { get; set; }
 }
 
 public class SriRideQrDto

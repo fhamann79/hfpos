@@ -254,6 +254,14 @@ code {
   background: #fbfdff;
 }
 
+.buyer-address {
+  grid-column: 1 / -1;
+}
+
+.buyer-address strong {
+  line-height: 1.28;
+}
+
 .items-block {
   margin-top: 0.42rem;
   overflow-x: auto;
