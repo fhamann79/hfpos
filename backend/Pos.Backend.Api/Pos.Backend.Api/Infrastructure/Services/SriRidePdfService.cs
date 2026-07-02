@@ -292,7 +292,13 @@ public class SriRidePdfService : ISriRidePdfService
 
         private void DrawBuyerBlock()
         {
-            var height = 42;
+            var buyerAddress = TrimToNull(_ride.Buyer.Address);
+            var addressHeight = buyerAddress is null
+                ? 0
+                : Math.Max(12, EstimateWrappedHeight(buyerAddress, _bodyFont, ContentWidth - 16));
+            var height = buyerAddress is null
+                ? 42
+                : Math.Max(60, 49 + addressHeight);
             EnsureSpace(height + Gap);
             DrawBox(Margin, _y, ContentWidth, height, XBrushes.White, _borderPen);
 
@@ -303,6 +309,11 @@ public class SriRidePdfService : ISriRidePdfService
             DrawField("Razon social / Nombres y apellidos", _ride.Buyer.LegalName, x, _y + 8, col1 - 12);
             DrawField("Identificacion", BuyerIdentification(), x + col1, _y + 8, col2 - 12);
             DrawField("Fecha emision", FormatDate(_ride.IssueDate), x + col1 + col2, _y + 8, col3 - 16);
+
+            if (buyerAddress is not null)
+            {
+                DrawWideField("Direccion comprador", buyerAddress, x, _y + 31, ContentWidth - 16);
+            }
 
             _y += height + Gap;
         }

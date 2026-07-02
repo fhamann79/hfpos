@@ -124,6 +124,12 @@
           <span>Fecha emision</span>
           <strong>{{ ride.issueDate ? (ride.issueDate | date: 'mediumDate') : '-' }}</strong>
         </div>
+        @if (ride.buyer.address) {
+          <div class="buyer-address">
+            <span>Direccion comprador</span>
+            <strong>{{ ride.buyer.address }}</strong>
+          </div>
+        }
       </section>
 
       <section class="items-block">
