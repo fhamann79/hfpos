@@ -86,6 +86,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly canVoid = this.permissionService.hasPermission(PERMISSIONS.posSalesVoid);
   readonly canSignSriDocuments = this.permissionService.hasPermission(PERMISSIONS.sriDocumentsSign);
   readonly canSubmitSriDocuments = this.permissionService.hasPermission(PERMISSIONS.sriDocumentsSubmit);
+  readonly companyTimeZoneId = computed(() => this.authStore.companyTimeZoneId());
 
   readonly allProducts = signal<PosProduct[]>([]);
   readonly searchTerm = signal('');
@@ -285,7 +286,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   cashSessionOpenedAtLabel(session: CashSession): string {
-    return formatBusinessTimeValue(session.openedAt, this.authStore.companyTimeZoneId());
+    return formatBusinessTimeValue(session.openedAt, this.companyTimeZoneId());
   }
 
   cashSessionOpenBusinessDateLabel(session: CashSession): string {

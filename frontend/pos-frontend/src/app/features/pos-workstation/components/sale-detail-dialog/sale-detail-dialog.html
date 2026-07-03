@@ -12,7 +12,7 @@
       <span><strong>ID:</strong> #{{ sale.id }}</span>
       <span><strong>Documento:</strong> {{ sale.number || ('#' + sale.id) }}</span>
       <span><strong>Estado:</strong> <span class="status" [class.status--voided]="sale.isVoided">{{ sale.isVoided ? 'Anulada' : sale.status }}</span></span>
-      <span><strong>Fecha:</strong> {{ sale.createdAt | date: 'short' }}</span>
+      <span><strong>Fecha:</strong> {{ createdAtLabel(sale) }}</span>
       <span><strong>Usuario:</strong> {{ sale.createdBy || 'N/A' }}</span>
       <span><strong>Cliente:</strong> {{ sale.customerName || 'Sin cliente' }}</span>
       <span><strong>Identificacion:</strong> {{ sale.customerIdentification || 'Sin identificacion' }}</span>
@@ -79,7 +79,7 @@
             </div>
             <div>
               <span>Autorizado el</span>
-              <strong>{{ sale.authorizedAt ? (sale.authorizedAt | date: 'short') : '-' }}</strong>
+              <strong>{{ authorizedAtLabel(sale) }}</strong>
             </div>
             <div>
               <span>Clave de acceso</span>
@@ -108,7 +108,7 @@
         </div>
         <div>
           <span>Fecha emisión</span>
-          <strong>{{ sale.documentIssuedAt ? (sale.documentIssuedAt | date: 'short') : '-' }}</strong>
+          <strong>{{ documentIssuedAtLabel(sale) }}</strong>
         </div>
         <div>
           <span>Ambiente SRI</span>
@@ -124,7 +124,7 @@
         </div>
         <div>
           <span>Fecha firma</span>
-          <strong>{{ sale.sriSignedAt ? (sale.sriSignedAt | date: 'short') : '-' }}</strong>
+          <strong>{{ sriSignedAtLabel(sale) }}</strong>
         </div>
       </div>
 
@@ -192,7 +192,7 @@
             </div>
             <div>
               <span>Enviado el</span>
-              <strong>{{ sale.sriSubmittedAt ? (sale.sriSubmittedAt | date: 'short') : '-' }}</strong>
+              <strong>{{ sriSubmittedAtLabel(sale) }}</strong>
             </div>
             <div>
               <span>Autorización</span>
@@ -200,7 +200,7 @@
             </div>
             <div>
               <span>Última consulta</span>
-              <strong>{{ sale.sriLastCheckedAt ? (sale.sriLastCheckedAt | date: 'short') : '-' }}</strong>
+              <strong>{{ sriLastCheckedAtLabel(sale) }}</strong>
             </div>
             <div>
               <span>Número autorización</span>
@@ -208,7 +208,7 @@
             </div>
             <div>
               <span>Autorizado el</span>
-              <strong>{{ sale.authorizedAt ? (sale.authorizedAt | date: 'short') : '-' }}</strong>
+              <strong>{{ authorizedAtLabel(sale) }}</strong>
             </div>
           </div>
 

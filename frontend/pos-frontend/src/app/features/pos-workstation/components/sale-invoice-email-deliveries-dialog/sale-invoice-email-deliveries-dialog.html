@@ -54,9 +54,9 @@
     <ng-template pTemplate="body" let-delivery>
       <tr>
         <td class="date-cell">
-          <strong>{{ deliveryDate(delivery) | date: 'medium' }}</strong>
+          <strong>{{ deliveryDateLabel(delivery) }}</strong>
           @if (delivery.sentAt && delivery.createdAt !== delivery.sentAt) {
-            <small>Creado {{ delivery.createdAt | date: 'short' }}</small>
+            <small>Creado {{ deliveryCreatedAtLabel(delivery) }}</small>
           }
         </td>
         <td class="email-cell">{{ delivery.toEmail }}</td>

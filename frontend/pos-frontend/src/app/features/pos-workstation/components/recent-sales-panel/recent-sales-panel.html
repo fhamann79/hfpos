@@ -26,7 +26,7 @@
                 <p-tag [value]="authorizationStatusLabel(sale)" [severity]="authorizationStatusSeverity(sale)"></p-tag>
               }
             </span>
-            <small>{{ sale.createdAt | date: 'short' }}</small>
+            <small>{{ saleCreatedAtLabel(sale) }}</small>
             <span class="customer-line">
               <small>Cliente</small>
               <strong>{{ customerLabel(sale) }}</strong>

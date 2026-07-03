@@ -1,4 +1,4 @@
-import { CommonModule, DatePipe } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
@@ -6,6 +6,7 @@ import { MessageModule } from 'primeng/message';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { Sale } from '../../models/sale.model';
+import { formatBusinessDateTime } from '../../../../core/utils/business-date-format';
 import {
   SriSubmissionAttempt,
   sriAuthorizationStatusLabel,
@@ -20,7 +21,7 @@ import {
 @Component({
   selector: 'app-sri-submission-attempts-dialog',
   standalone: true,
-  imports: [CommonModule, DatePipe, DialogModule, ButtonModule, MessageModule, TableModule, TagModule],
+  imports: [CommonModule, DialogModule, ButtonModule, MessageModule, TableModule, TagModule],
   templateUrl: './sri-submission-attempts-dialog.html',
   styleUrl: './sri-submission-attempts-dialog.scss',
 })
@@ -30,6 +31,7 @@ export class SriSubmissionAttemptsDialog {
   @Input() attempts: SriSubmissionAttempt[] = [];
   @Input() loading = false;
   @Input() errorMessage = '';
+  @Input() companyTimeZoneId = 'America/Guayaquil';
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() refresh = new EventEmitter<void>();
@@ -64,5 +66,9 @@ export class SriSubmissionAttemptsDialog {
 
   primaryMessage(attempt: SriSubmissionAttempt): string {
     return attempt.sriMessage || attempt.errorMessage || '-';
+  }
+
+  attemptCreatedAtLabel(attempt: SriSubmissionAttempt): string {
+    return formatBusinessDateTime(attempt.createdAt, this.companyTimeZoneId) || '-';
   }
 }
