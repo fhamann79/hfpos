@@ -34,6 +34,7 @@ export interface SalesReportRow {
   number: string | null;
   customerName: string | null;
   customerIdentification: string | null;
+  customerEmail: string | null;
   documentType: SaleDocumentType;
   documentStatus: SaleDocumentStatus;
   sriAuthorizationStatus: string | null;
@@ -65,7 +66,11 @@ export interface SalesReportDetailItem {
 }
 
 export interface SalesReportDetail extends SalesReportRow {
-  customerEmail: string | null;
+  buyerNameSnapshot: string | null;
+  buyerIdentificationTypeSnapshot: string | null;
+  buyerIdentificationSnapshot: string | null;
+  buyerAddressSnapshot: string | null;
+  buyerEmailSnapshot: string | null;
   paymentMethod: number;
   accessKey: string | null;
   authorizationNumber: string | null;

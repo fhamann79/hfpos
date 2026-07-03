@@ -71,6 +71,7 @@ export class SalesReportService {
       number: this.readString(row, ['number'], null),
       customerName: this.readString(row, ['customerName'], null),
       customerIdentification: this.readString(row, ['customerIdentification'], null),
+      customerEmail: this.readString(row, ['customerEmail'], null),
       documentType: normalizeSaleDocumentType(row?.['documentType']),
       documentStatus: normalizeSaleDocumentStatus(row?.['documentStatus']),
       sriAuthorizationStatus: this.readString(row, ['sriAuthorizationStatus'], null),
@@ -93,7 +94,11 @@ export class SalesReportService {
 
     return {
       ...base,
-      customerEmail: this.readString(row, ['customerEmail'], null),
+      buyerNameSnapshot: this.readString(row, ['buyerNameSnapshot'], null),
+      buyerIdentificationTypeSnapshot: this.readString(row, ['buyerIdentificationTypeSnapshot'], null),
+      buyerIdentificationSnapshot: this.readString(row, ['buyerIdentificationSnapshot'], null),
+      buyerAddressSnapshot: this.readString(row, ['buyerAddressSnapshot'], null),
+      buyerEmailSnapshot: this.readString(row, ['buyerEmailSnapshot'], null),
       paymentMethod: this.readNumber(row, ['paymentMethod'], 0),
       accessKey: this.readString(row, ['accessKey'], null),
       authorizationNumber: this.readString(row, ['authorizationNumber'], null),

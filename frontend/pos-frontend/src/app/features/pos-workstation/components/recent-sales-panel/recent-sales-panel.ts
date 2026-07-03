@@ -48,6 +48,18 @@ export class RecentSalesPanel {
     return sale.documentType === SaleDocumentType.Invoice;
   }
 
+  customerLabel(sale: SaleListItem): string {
+    return this.trimToNull(sale.customerName) ?? 'Consumidor final';
+  }
+
+  customerIdentification(sale: SaleListItem): string | null {
+    return this.trimToNull(sale.customerIdentification);
+  }
+
+  customerEmail(sale: SaleListItem): string | null {
+    return this.trimToNull(sale.customerEmail);
+  }
+
   canVoidSale(sale: SaleListItem): boolean {
     if (sale.isVoided) {
       return false;
@@ -137,5 +149,11 @@ export class RecentSalesPanel {
 
   private hasValue(value: string | null | undefined): boolean {
     return typeof value === 'string' && value.trim().length > 0;
+  }
+
+  private trimToNull(value: string | null | undefined): string | null {
+    const trimmed = value?.trim();
+
+    return trimmed ? trimmed : null;
   }
 }
