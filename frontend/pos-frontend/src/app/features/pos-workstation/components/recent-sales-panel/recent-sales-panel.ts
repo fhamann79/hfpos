@@ -48,6 +48,36 @@ export class RecentSalesPanel {
     return sale.documentType === SaleDocumentType.Invoice;
   }
 
+  canVoidSale(sale: SaleListItem): boolean {
+    if (sale.isVoided) {
+      return false;
+    }
+
+    if (!this.isInvoice(sale)) {
+      return true;
+    }
+
+    if (sale.documentStatus === SaleDocumentStatus.Rejected) {
+      return true;
+    }
+
+    if (
+      sale.documentStatus === SaleDocumentStatus.Authorized
+      || sale.documentStatus === SaleDocumentStatus.PendingAuthorization
+    ) {
+      return false;
+    }
+
+    return sale.documentStatus === SaleDocumentStatus.Draft && !this.invoiceHasSriProcess(sale);
+  }
+
+  invoiceHasSriProcess(sale: SaleListItem): boolean {
+    return this.hasValue(sale.sriSubmittedAt)
+      || this.hasValue(sale.sriReceptionStatus)
+      || this.hasValue(sale.sriAuthorizationStatus)
+      || this.hasValue(sale.sriLastCheckedAt);
+  }
+
   signatureStatusLabel(sale: SaleListItem): string {
     if (this.isAuthorized(sale)) {
       return sriSignatureStatusLabel(true);
@@ -103,5 +133,9 @@ export class RecentSalesPanel {
 
   private normalizeSriStatus(status: string | null | undefined): string {
     return status?.trim().toUpperCase() ?? '';
+  }
+
+  private hasValue(value: string | null | undefined): boolean {
+    return typeof value === 'string' && value.trim().length > 0;
   }
 }
