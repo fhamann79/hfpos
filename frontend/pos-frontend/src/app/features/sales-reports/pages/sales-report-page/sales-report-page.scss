@@ -336,6 +336,61 @@
   overflow-wrap:anywhere;
 }
 
+.buyer-fiscal-block {
+  display:grid;
+  gap:.65rem;
+  margin-bottom:1rem;
+  padding:.75rem;
+  border:1px solid #dbeafe;
+  border-radius:8px;
+  background:#f8fafc;
+}
+
+.buyer-fiscal-block__header {
+  display:grid;
+  gap:.15rem;
+}
+
+.buyer-fiscal-block__header span,
+.buyer-fiscal-grid span {
+  color:var(--app-text-muted);
+  font-size:.74rem;
+  font-weight:850;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+
+.buyer-fiscal-block__header strong {
+  color:var(--app-text);
+  overflow-wrap:anywhere;
+}
+
+.buyer-fiscal-grid {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:.6rem;
+}
+
+.buyer-fiscal-grid div {
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:.2rem;
+  padding:.65rem;
+  border:1px solid var(--app-border);
+  border-radius:8px;
+  background:#fff;
+}
+
+.buyer-fiscal-grid__wide {
+  grid-column:1 / -1;
+}
+
+.buyer-fiscal-grid strong {
+  color:var(--app-text);
+  overflow-wrap:anywhere;
+}
+
 .totals-grid {
   display:grid;
   grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));
@@ -387,6 +442,7 @@
 
   .summary-grid,
   .detail-summary,
+  .buyer-fiscal-grid,
   .totals-grid {
     grid-template-columns:1fr;
   }

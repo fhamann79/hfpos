@@ -216,6 +216,9 @@
             <span class="customer-stack">
               <strong>{{ customerLabel(sale) }}</strong>
               <small>{{ sale.customerIdentification || 'Sin identificacion' }}</small>
+              @if (sale.customerEmail) {
+                <small>{{ sale.customerEmail }}</small>
+              }
             </span>
           </td>
           <td>{{ documentTypeLabel(sale) }}</td>
@@ -303,6 +306,31 @@
       <div>
         <span>Autorizacion</span>
         <code>{{ sale.authorizationNumber || '-' }}</code>
+      </div>
+    </section>
+
+    <section class="buyer-fiscal-block">
+      <div class="buyer-fiscal-block__header">
+        <span>Datos fiscales del comprador</span>
+        <strong>{{ buyerName(sale) }}</strong>
+      </div>
+      <div class="buyer-fiscal-grid">
+        <div>
+          <span>Tipo identificación</span>
+          <strong>{{ buyerIdentificationTypeLabel(sale) }}</strong>
+        </div>
+        <div>
+          <span>Identificación</span>
+          <strong>{{ buyerIdentification(sale) }}</strong>
+        </div>
+        <div>
+          <span>Email</span>
+          <strong>{{ buyerEmail(sale) }}</strong>
+        </div>
+        <div class="buyer-fiscal-grid__wide">
+          <span>Dirección</span>
+          <strong>{{ buyerAddress(sale) }}</strong>
+        </div>
       </div>
     </section>
 

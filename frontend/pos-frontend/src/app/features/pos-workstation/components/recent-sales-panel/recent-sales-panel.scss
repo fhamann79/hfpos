@@ -50,6 +50,40 @@ header {
   margin: 0.1rem 0;
 }
 
+.customer-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  color: #64748b;
+}
+
+.customer-line small {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.sales-list .customer-line strong {
+  max-width: 14rem;
+  overflow: hidden;
+  color: #334155;
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sales-list .customer-line em {
+  max-width: 13rem;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sales-list strong {
   color: #0f172a;
   font-size: 1rem;

@@ -165,7 +165,9 @@ export class SalesReportPage implements OnInit {
         this.selectedSale.set({
           ...sale,
           username: sale.username ?? row.username,
+          customerName: sale.customerName ?? row.customerName,
           customerIdentification: sale.customerIdentification ?? row.customerIdentification,
+          customerEmail: sale.customerEmail ?? row.customerEmail,
         });
         this.detailLoading.set(false);
       },
@@ -199,6 +201,7 @@ export class SalesReportPage implements OnInit {
       'Documento',
       'Cliente',
       'Identificacion cliente',
+      'Email cliente',
       'Tipo documento',
       'Estado venta',
       'Estado fiscal',
@@ -216,6 +219,7 @@ export class SalesReportPage implements OnInit {
       sale.number ?? '',
       sale.customerName ?? '',
       sale.customerIdentification ?? '',
+      sale.customerEmail ?? '',
       this.documentTypeLabel(sale),
       this.saleStatusLabel(sale),
       this.fiscalStatusLabel(sale),
@@ -281,6 +285,45 @@ export class SalesReportPage implements OnInit {
 
   customerLabel(sale: SalesReportRow | SalesReportDetail): string {
     return sale.customerName?.trim() || 'Consumidor final';
+  }
+
+  buyerName(sale: SalesReportDetail): string {
+    return this.trimToNull(sale.buyerNameSnapshot)
+      ?? this.trimToNull(sale.customerName)
+      ?? 'Consumidor final';
+  }
+
+  buyerIdentificationTypeLabel(sale: SalesReportDetail): string {
+    const type = this.trimToNull(sale.buyerIdentificationTypeSnapshot);
+
+    switch (type) {
+      case '04':
+        return 'RUC';
+      case '05':
+        return 'Cédula';
+      case '06':
+        return 'Pasaporte';
+      case '07':
+        return 'Consumidor final';
+      default:
+        return '-';
+    }
+  }
+
+  buyerIdentification(sale: SalesReportDetail): string {
+    return this.trimToNull(sale.buyerIdentificationSnapshot)
+      ?? this.trimToNull(sale.customerIdentification)
+      ?? '-';
+  }
+
+  buyerEmail(sale: SalesReportDetail): string {
+    return this.trimToNull(sale.buyerEmailSnapshot)
+      ?? this.trimToNull(sale.customerEmail)
+      ?? '-';
+  }
+
+  buyerAddress(sale: SalesReportDetail): string {
+    return this.trimToNull(sale.buyerAddressSnapshot) ?? '-';
   }
 
   getVatLabel(item: SalesReportDetailItem): string {
@@ -356,5 +399,11 @@ export class SalesReportPage implements OnInit {
 
   private normalizeSriStatus(status: string | null | undefined): string {
     return status?.trim().toUpperCase() ?? '';
+  }
+
+  private trimToNull(value: string | null | undefined): string | null {
+    const trimmed = value?.trim();
+
+    return trimmed ? trimmed : null;
   }
 }

@@ -9,6 +9,9 @@ export interface SaleListItem {
   documentType: SaleDocumentType;
   documentStatus: SaleDocumentStatus;
   number: string | null;
+  customerName: string | null;
+  customerIdentification: string | null;
+  customerEmail: string | null;
   hasSriXmlDraft: boolean;
   hasSriSignedXml: boolean;
   sriSignatureStatusKnown: boolean;

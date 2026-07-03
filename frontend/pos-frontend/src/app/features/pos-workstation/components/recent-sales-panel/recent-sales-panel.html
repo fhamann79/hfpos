@@ -27,6 +27,16 @@
               }
             </span>
             <small>{{ sale.createdAt | date: 'short' }}</small>
+            <span class="customer-line">
+              <small>Cliente</small>
+              <strong>{{ customerLabel(sale) }}</strong>
+              @if (customerIdentification(sale); as identification) {
+                <em>{{ identification }}</em>
+              }
+              @if (customerEmail(sale); as email) {
+                <em>{{ email }}</em>
+              }
+            </span>
             <small>{{ sale.total | currency: 'USD' }}</small>
             <small class="status" [class.status--voided]="sale.isVoided">{{ sale.isVoided ? 'Anulada' : sale.status }}</small>
             @if (sale.createdBy) {

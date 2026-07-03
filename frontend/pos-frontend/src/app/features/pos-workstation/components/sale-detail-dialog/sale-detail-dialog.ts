@@ -72,6 +72,45 @@ export class SaleDetailDialog {
     return saleDocumentStatusSeverity(sale.documentStatus);
   }
 
+  buyerName(sale: Sale): string {
+    return this.trimToNull(sale.buyerNameSnapshot)
+      ?? this.trimToNull(sale.customerName)
+      ?? 'Consumidor final';
+  }
+
+  buyerIdentificationTypeLabel(sale: Sale): string {
+    const type = this.trimToNull(sale.buyerIdentificationTypeSnapshot);
+
+    switch (type) {
+      case '04':
+        return 'RUC';
+      case '05':
+        return 'Cédula';
+      case '06':
+        return 'Pasaporte';
+      case '07':
+        return 'Consumidor final';
+      default:
+        return '-';
+    }
+  }
+
+  buyerIdentification(sale: Sale): string {
+    return this.trimToNull(sale.buyerIdentificationSnapshot)
+      ?? this.trimToNull(sale.customerIdentification)
+      ?? '-';
+  }
+
+  buyerEmail(sale: Sale): string {
+    return this.trimToNull(sale.buyerEmailSnapshot)
+      ?? this.trimToNull(sale.customerEmail)
+      ?? '-';
+  }
+
+  buyerAddress(sale: Sale): string {
+    return this.trimToNull(sale.buyerAddressSnapshot) ?? '-';
+  }
+
   sriEnvironmentLabel(sale: Sale): string {
     return sriEnvironmentLabel(sale.sriEnvironment);
   }
@@ -202,5 +241,11 @@ export class SaleDetailDialog {
 
   private normalizeSriStatus(status: string | null | undefined): string {
     return status?.trim().toUpperCase() ?? '';
+  }
+
+  private trimToNull(value: string | null | undefined): string | null {
+    const trimmed = value?.trim();
+
+    return trimmed ? trimmed : null;
   }
 }
