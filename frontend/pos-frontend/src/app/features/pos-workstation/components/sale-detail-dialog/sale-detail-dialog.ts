@@ -1,9 +1,10 @@
-import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
+import { CommonModule, CurrencyPipe } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { TagModule } from 'primeng/tag';
 import { getVatCategoryOption } from '../../../../core/utils/vat-category';
+import { formatBusinessDateTime } from '../../../../core/utils/business-date-format';
 import {
   DocumentTagSeverity,
   SaleDocumentType,
@@ -27,7 +28,7 @@ import {
 @Component({
   selector: 'app-sale-detail-dialog',
   standalone: true,
-  imports: [CommonModule, CurrencyPipe, DatePipe, DialogModule, ButtonModule, TagModule],
+  imports: [CommonModule, CurrencyPipe, DialogModule, ButtonModule, TagModule],
   templateUrl: './sale-detail-dialog.html',
   styleUrl: './sale-detail-dialog.scss',
 })
@@ -41,6 +42,7 @@ export class SaleDetailDialog {
   @Input() checkingAuthorizationSaleId: number | null = null;
   @Input() processingSriSaleId: number | null = null;
   @Input() downloadingSriRidePdfSaleId: number | null = null;
+  @Input() companyTimeZoneId = 'America/Guayaquil';
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() signSriXml = new EventEmitter<number>();
@@ -109,6 +111,30 @@ export class SaleDetailDialog {
 
   buyerAddress(sale: Sale): string {
     return this.trimToNull(sale.buyerAddressSnapshot) ?? '-';
+  }
+
+  createdAtLabel(sale: Sale): string {
+    return this.formatTechnicalInstant(sale.createdAt);
+  }
+
+  documentIssuedAtLabel(sale: Sale): string {
+    return this.formatTechnicalInstant(sale.documentIssuedAt);
+  }
+
+  authorizedAtLabel(sale: Sale): string {
+    return this.formatTechnicalInstant(sale.authorizedAt);
+  }
+
+  sriSubmittedAtLabel(sale: Sale): string {
+    return this.formatTechnicalInstant(sale.sriSubmittedAt);
+  }
+
+  sriLastCheckedAtLabel(sale: Sale): string {
+    return this.formatTechnicalInstant(sale.sriLastCheckedAt);
+  }
+
+  sriSignedAtLabel(sale: Sale): string {
+    return this.formatTechnicalInstant(sale.sriSignedAt);
   }
 
   sriEnvironmentLabel(sale: Sale): string {
@@ -247,5 +273,9 @@ export class SaleDetailDialog {
     const trimmed = value?.trim();
 
     return trimmed ? trimmed : null;
+  }
+
+  private formatTechnicalInstant(value: string | null | undefined): string {
+    return formatBusinessDateTime(value, this.companyTimeZoneId) || '-';
   }
 }

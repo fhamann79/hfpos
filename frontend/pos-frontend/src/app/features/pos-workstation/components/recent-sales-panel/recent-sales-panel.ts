@@ -1,4 +1,4 @@
-import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
+import { CommonModule, CurrencyPipe } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
@@ -12,6 +12,7 @@ import {
   sriSignatureStatusSeverity,
 } from '../../models/sale-document.model';
 import { SaleListItem } from '../../models/sale-list-item.model';
+import { formatBusinessDateTime } from '../../../../core/utils/business-date-format';
 import {
   sriAuthorizationStatusLabel,
   sriAuthorizationStatusSeverity,
@@ -22,7 +23,7 @@ import {
 @Component({
   selector: 'app-recent-sales-panel',
   standalone: true,
-  imports: [CommonModule, CurrencyPipe, DatePipe, ButtonModule, MessageModule, TagModule],
+  imports: [CommonModule, CurrencyPipe, ButtonModule, MessageModule, TagModule],
   templateUrl: './recent-sales-panel.html',
   styleUrl: './recent-sales-panel.scss',
 })
@@ -31,6 +32,7 @@ export class RecentSalesPanel {
   @Input({ required: true }) loading = false;
   @Input() errorMessage = '';
   @Input() canVoid = false;
+  @Input() companyTimeZoneId = 'America/Guayaquil';
 
   @Output() refresh = new EventEmitter<void>();
   @Output() viewDetail = new EventEmitter<number>();
@@ -58,6 +60,10 @@ export class RecentSalesPanel {
 
   customerEmail(sale: SaleListItem): string | null {
     return this.trimToNull(sale.customerEmail);
+  }
+
+  saleCreatedAtLabel(sale: SaleListItem): string {
+    return formatBusinessDateTime(sale.createdAt, this.companyTimeZoneId) || '-';
   }
 
   canVoidSale(sale: SaleListItem): boolean {

@@ -55,7 +55,7 @@
 
     <ng-template pTemplate="body" let-attempt>
       <tr>
-        <td class="date-cell">{{ attempt.createdAt | date: 'medium' }}</td>
+        <td class="date-cell">{{ attemptCreatedAtLabel(attempt) }}</td>
         <td class="type-cell">{{ attemptTypeLabel(attempt) }}</td>
         <td class="status-cell">
           <p-tag [value]="attemptStatusLabel(attempt)" [severity]="attemptStatusSeverity(attempt)"></p-tag>

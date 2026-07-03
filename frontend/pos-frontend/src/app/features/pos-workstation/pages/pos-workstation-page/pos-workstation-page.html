@@ -164,6 +164,7 @@
       [loading]="salesLoading()"
       [errorMessage]="salesError()"
       [canVoid]="canVoid"
+      [companyTimeZoneId]="companyTimeZoneId()"
       (refresh)="loadSales()"
       (viewDetail)="openSaleDetailFromRecent($event)"
       (startVoid)="openVoidDialogFromRecent($event)"
@@ -207,6 +208,7 @@
     [checkingAuthorizationSaleId]="sriCheckingAuthorizationSaleId()"
     [processingSriSaleId]="sriProcessingSaleId()"
     [downloadingSriRidePdfSaleId]="sriRidePdfDownloadingSaleId()"
+    [companyTimeZoneId]="companyTimeZoneId()"
     (visibleChange)="saleDetailVisible.set($event)"
     (signSriXml)="signSriXml($event)"
     (processSriWorkflow)="processSriWorkflow($event)"
@@ -244,6 +246,7 @@
     [attempts]="sriAttempts()"
     [loading]="sriAttemptsLoading()"
     [errorMessage]="sriAttemptsError()"
+    [companyTimeZoneId]="companyTimeZoneId()"
     (visibleChange)="sriAttemptsVisible.set($event)"
     (refresh)="loadSriAttempts()"
   ></app-sri-submission-attempts-dialog>
@@ -254,6 +257,7 @@
     [deliveries]="invoiceEmailDeliveries()"
     [loading]="invoiceEmailDeliveriesLoading()"
     [errorMessage]="invoiceEmailDeliveriesError()"
+    [companyTimeZoneId]="companyTimeZoneId()"
     (visibleChange)="invoiceEmailDeliveriesVisible.set($event)"
     (refresh)="loadInvoiceEmailDeliveries()"
   ></app-sale-invoice-email-deliveries-dialog>

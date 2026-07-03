@@ -1,4 +1,4 @@
-import { CommonModule, DatePipe } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
@@ -11,11 +11,12 @@ import {
   saleInvoiceEmailDeliveryStatusSeverity,
 } from '../../models/sale-invoice-email.model';
 import { Sale } from '../../models/sale.model';
+import { formatBusinessDateTime } from '../../../../core/utils/business-date-format';
 
 @Component({
   selector: 'app-sale-invoice-email-deliveries-dialog',
   standalone: true,
-  imports: [CommonModule, DatePipe, DialogModule, ButtonModule, MessageModule, TableModule, TagModule],
+  imports: [CommonModule, DialogModule, ButtonModule, MessageModule, TableModule, TagModule],
   templateUrl: './sale-invoice-email-deliveries-dialog.html',
   styleUrl: './sale-invoice-email-deliveries-dialog.scss',
 })
@@ -25,6 +26,7 @@ export class SaleInvoiceEmailDeliveriesDialog {
   @Input() deliveries: SaleInvoiceEmailDelivery[] = [];
   @Input() loading = false;
   @Input() errorMessage = '';
+  @Input() companyTimeZoneId = 'America/Guayaquil';
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() refresh = new EventEmitter<void>();
@@ -37,8 +39,12 @@ export class SaleInvoiceEmailDeliveriesDialog {
     return saleInvoiceEmailDeliveryStatusSeverity(delivery.status);
   }
 
-  deliveryDate(delivery: SaleInvoiceEmailDelivery): string {
-    return delivery.sentAt || delivery.createdAt;
+  deliveryDateLabel(delivery: SaleInvoiceEmailDelivery): string {
+    return this.formatTechnicalInstant(delivery.sentAt || delivery.createdAt);
+  }
+
+  deliveryCreatedAtLabel(delivery: SaleInvoiceEmailDelivery): string {
+    return this.formatTechnicalInstant(delivery.createdAt);
   }
 
   errorDetail(delivery: SaleInvoiceEmailDelivery): string {
@@ -47,5 +53,9 @@ export class SaleInvoiceEmailDeliveriesDialog {
     }
 
     return delivery.errorMessage || delivery.errorCode || '-';
+  }
+
+  private formatTechnicalInstant(value: string | null | undefined): string {
+    return formatBusinessDateTime(value, this.companyTimeZoneId) || '-';
   }
 }
