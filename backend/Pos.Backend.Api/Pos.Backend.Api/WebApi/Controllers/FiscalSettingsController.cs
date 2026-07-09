@@ -274,7 +274,7 @@ public class FiscalSettingsController : ControllerBase
     public async Task<ActionResult<IEnumerable<DocumentSequenceDto>>> GetDocumentSequences(
         [FromQuery] int? establishmentId,
         [FromQuery] int? emissionPointId,
-        [FromQuery] SaleDocumentType? documentType)
+        [FromQuery] FiscalDocumentType? documentType)
     {
         try
         {

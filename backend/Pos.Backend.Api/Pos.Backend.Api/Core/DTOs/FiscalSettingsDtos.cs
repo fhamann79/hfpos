@@ -219,7 +219,7 @@ public class DocumentSequenceDto
     public int EmissionPointId { get; set; }
     public string EmissionPointCode { get; set; } = string.Empty;
     public string EmissionPointName { get; set; } = string.Empty;
-    public SaleDocumentType DocumentType { get; set; }
+    public FiscalDocumentType DocumentType { get; set; }
     public int CurrentNumber { get; set; }
     public int NextNumber { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -231,7 +231,7 @@ public class CreateDocumentSequenceDto
 {
     public int EstablishmentId { get; set; }
     public int EmissionPointId { get; set; }
-    public SaleDocumentType DocumentType { get; set; }
+    public FiscalDocumentType DocumentType { get; set; }
     public int NextNumber { get; set; }
     public string? Reason { get; set; }
 }
@@ -246,7 +246,7 @@ public class DocumentSequenceAuditDto
 {
     public int Id { get; set; }
     public int DocumentSequenceId { get; set; }
-    public SaleDocumentType DocumentType { get; set; }
+    public FiscalDocumentType DocumentType { get; set; }
     public int? PreviousCurrentNumber { get; set; }
     public int NewCurrentNumber { get; set; }
     public int? PreviousNextNumber { get; set; }

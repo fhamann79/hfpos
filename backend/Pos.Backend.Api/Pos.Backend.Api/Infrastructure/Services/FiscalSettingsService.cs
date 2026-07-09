@@ -254,7 +254,7 @@ public class FiscalSettingsService : IFiscalSettingsService
     public async Task<IReadOnlyList<DocumentSequenceDto>> GetDocumentSequencesAsync(
         int? establishmentId,
         int? emissionPointId,
-        SaleDocumentType? documentType)
+        FiscalDocumentType? documentType)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
@@ -562,15 +562,28 @@ public class FiscalSettingsService : IFiscalSettingsService
         int companyId,
         int establishmentId,
         int emissionPointId,
-        SaleDocumentType documentType)
+        FiscalDocumentType documentType)
     {
+        var saleDocumentType = documentType switch
+        {
+            FiscalDocumentType.Ticket => SaleDocumentType.Ticket,
+            FiscalDocumentType.Invoice => SaleDocumentType.Invoice,
+            FiscalDocumentType.CreditNote => (SaleDocumentType?)null,
+            _ => throw new InvalidOperationException("INVALID_DOCUMENT_SEQUENCE")
+        };
+
+        if (!saleDocumentType.HasValue)
+        {
+            return 0;
+        }
+
         return await _context.Sales
             .AsNoTracking()
             .Where(s =>
                 s.CompanyId == companyId
                 && s.EstablishmentId == establishmentId
                 && s.EmissionPointId == emissionPointId
-                && s.DocumentType == documentType
+                && s.DocumentType == saleDocumentType.Value
                 && s.Sequential != null)
             .MaxAsync(s => (int?)s.Sequential) ?? 0;
     }
@@ -689,7 +702,7 @@ public class FiscalSettingsService : IFiscalSettingsService
         }
     }
 
-    private static void ValidateDocumentType(SaleDocumentType documentType)
+    private static void ValidateDocumentType(FiscalDocumentType documentType)
     {
         if (!Enum.IsDefined(documentType))
         {

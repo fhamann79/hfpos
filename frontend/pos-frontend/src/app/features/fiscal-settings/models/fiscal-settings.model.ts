@@ -1,6 +1,7 @@
 export enum FiscalDocumentType {
   Ticket = 0,
   Invoice = 1,
+  CreditNote = 4,
 }
 
 export interface CompanyFiscalSettings {
@@ -214,7 +215,16 @@ export function formatFiscalSequential(value: number | null | undefined): string
 }
 
 export function fiscalDocumentTypeLabel(value: FiscalDocumentType): string {
-  return value === FiscalDocumentType.Invoice ? 'Factura' : 'Ticket';
+  switch (value) {
+    case FiscalDocumentType.Ticket:
+      return 'Ticket';
+    case FiscalDocumentType.Invoice:
+      return 'Factura';
+    case FiscalDocumentType.CreditNote:
+      return 'Nota de crédito';
+    default:
+      return 'Desconocido';
+  }
 }
 
 export function certificateStatusLabel(certificate: CompanySriCertificate | null | undefined): string {

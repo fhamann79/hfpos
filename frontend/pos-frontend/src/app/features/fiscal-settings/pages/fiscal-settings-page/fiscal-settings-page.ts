@@ -186,6 +186,7 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
   readonly documentTypeOptions: SelectOption<FiscalDocumentType>[] = [
     { label: 'Ticket', value: FiscalDocumentType.Ticket },
     { label: 'Factura', value: FiscalDocumentType.Invoice },
+    { label: 'Nota de crédito', value: FiscalDocumentType.CreditNote },
   ];
 
   readonly companyForm = this.fb.nonNullable.group({

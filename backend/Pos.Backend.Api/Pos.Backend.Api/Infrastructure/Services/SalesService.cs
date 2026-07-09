@@ -704,7 +704,8 @@ public class SalesService : ISalesService
         }
 
         var now = _sriFiscalClock.UtcNow;
-        var documentTypeValue = (int)documentType;
+        var fiscalDocumentType = ToFiscalDocumentType(documentType);
+        var documentTypeValue = (int)fiscalDocumentType;
 
         try
         {
@@ -759,6 +760,16 @@ public class SalesService : ISalesService
 
             throw new InvalidOperationException("DOCUMENT_NUMBER_GENERATION_FAILED", ex);
         }
+    }
+
+    private static FiscalDocumentType ToFiscalDocumentType(SaleDocumentType documentType)
+    {
+        return documentType switch
+        {
+            SaleDocumentType.Ticket => FiscalDocumentType.Ticket,
+            SaleDocumentType.Invoice => FiscalDocumentType.Invoice,
+            _ => throw new InvalidOperationException("INVALID_DOCUMENT_TYPE")
+        };
     }
 
     private async Task AssignSriInvoiceDraftAsync(

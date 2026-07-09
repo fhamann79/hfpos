@@ -18,7 +18,7 @@ public class DocumentSequenceAudit
     public int EmissionPointId { get; set; }
     public EmissionPoint EmissionPoint { get; set; } = null!;
 
-    public SaleDocumentType DocumentType { get; set; }
+    public FiscalDocumentType DocumentType { get; set; }
 
     public int? PreviousCurrentNumber { get; set; }
 
