@@ -15,7 +15,7 @@ public class DocumentSequence
     public int EmissionPointId { get; set; }
     public EmissionPoint EmissionPoint { get; set; }
 
-    public SaleDocumentType DocumentType { get; set; }
+    public FiscalDocumentType DocumentType { get; set; }
 
     public int CurrentNumber { get; set; }
 

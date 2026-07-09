@@ -1005,7 +1005,7 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
                 s.CompanyId == companyId
                 && s.EstablishmentId == establishmentId
                 && s.EmissionPointId == emissionPointId
-                && s.DocumentType == SaleDocumentType.Invoice);
+                && s.DocumentType == FiscalDocumentType.Invoice);
 
         if (sequence is null)
         {

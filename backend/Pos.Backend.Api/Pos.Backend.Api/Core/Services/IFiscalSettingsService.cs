@@ -27,7 +27,7 @@ public interface IFiscalSettingsService
     Task<IReadOnlyList<DocumentSequenceDto>> GetDocumentSequencesAsync(
         int? establishmentId,
         int? emissionPointId,
-        SaleDocumentType? documentType);
+        FiscalDocumentType? documentType);
 
     Task<DocumentSequenceDto> CreateDocumentSequenceAsync(CreateDocumentSequenceDto dto);
 
