@@ -85,6 +85,7 @@
   font-weight:700;
 }
 .sri-authorized-card { display:grid; gap:.7rem; padding:.8rem; border-radius:.85rem; border:1px solid #86efac; background:linear-gradient(135deg,#f0fdf4 0%,#ecfdf5 100%); }
+.sri-authorized-card__title { display:flex; align-items:flex-start; justify-content:space-between; gap:.75rem; }
 .sri-authorized-card h4,
 .sri-authorized-card p { margin:0; }
 .sri-authorized-card p { color:#166534; font-size:.88rem; font-weight:700; line-height:1.35; }
@@ -234,6 +235,10 @@ footer strong { font-size:1.35rem; }
 
   .sri-status-panel__header {
     align-items:flex-start;
+    flex-direction:column;
+  }
+
+  .sri-authorized-card__title {
     flex-direction:column;
   }
 

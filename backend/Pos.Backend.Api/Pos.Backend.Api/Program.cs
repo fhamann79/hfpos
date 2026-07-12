@@ -87,6 +87,7 @@ builder.Services.AddSingleton<IBusinessClockService, BusinessClockService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<ICashSessionService, CashSessionService>();
+builder.Services.AddScoped<ICreditNoteService, CreditNoteService>();
 builder.Services.AddSingleton<ISriFiscalClock, SriFiscalClock>();
 builder.Services.AddScoped<ISriAccessKeyService, SriAccessKeyService>();
 builder.Services.AddScoped<ISriXmlDraftService, SriXmlDraftService>();
