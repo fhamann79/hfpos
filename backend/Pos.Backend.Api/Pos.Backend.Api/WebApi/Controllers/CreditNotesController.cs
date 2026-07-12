@@ -34,13 +34,58 @@ public class CreditNotesController : ControllerBase
         {
             return Ok(await _creditNoteService.GetEligibilityAsync(saleId));
         }
-        catch (KeyNotFoundException ex) when (ex.Message == "SALE_NOT_FOUND")
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
         {
-            return NotFound(new ApiErrorResponse { Error = "SALE_NOT_FOUND" });
+            return MapDomainError(ex);
         }
-        catch (InvalidOperationException)
+    }
+
+    [HttpPost("drafts")]
+    [Authorize(Policy = AppPermissions.PosSalesVoid)]
+    [ProducesResponseType(typeof(CreditNoteDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<CreditNoteDto>> CreateDraft([FromBody] CreateCreditNoteDraftDto dto)
+    {
+        try
         {
-            return BadRequest(new ApiErrorResponse { Error = "CREDIT_NOTE_OPERATION_FAILED" });
+            var creditNote = await _creditNoteService.CreateDraftAsync(dto ?? new CreateCreditNoteDraftDto());
+            return StatusCode(StatusCodes.Status201Created, creditNote);
         }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    private ActionResult MapDomainError(Exception exception)
+    {
+        var code = exception.Message;
+
+        return code switch
+        {
+            "SALE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_REASON_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_REASON_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_NOTES_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_ITEMS_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_DUPLICATE_SALE_ITEM" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_ITEM_NOT_FOUND" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_INVALID_QUANTITY" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_ORIGINAL_SALE_NOT_INVOICE" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_ORIGINAL_SALE_NOT_COMPLETED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_ORIGINAL_SALE_NOT_AUTHORIZED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_ORIGINAL_SALE_AUTHORIZATION_DATA_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_ORIGINAL_SALE_WITHOUT_ITEMS" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_ORIGINAL_SALE_VOIDED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_ORIGINAL_SALE_FULLY_CREDITED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_QUANTITY_EXCEEDS_AVAILABLE" => Conflict(new ApiErrorResponse { Error = code }),
+            "DOCUMENT_SEQUENCE_ERROR" => Conflict(new ApiErrorResponse { Error = code }),
+            "DOCUMENT_NUMBER_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
+            _ => BadRequest(new ApiErrorResponse { Error = "CREDIT_NOTE_OPERATION_FAILED" })
+        };
     }
 }

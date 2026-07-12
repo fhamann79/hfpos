@@ -30,6 +30,7 @@ import { VoidSaleDialog } from '../../components/void-sale-dialog/void-sale-dial
 import { CashSession, CashSessionStatus } from '../../../cash-sessions/models/cash-session.model';
 import { CashSessionService } from '../../../cash-sessions/services/cash-session.service';
 import { CreditNoteEligibility } from '../../../credit-notes/models/credit-note-eligibility.model';
+import { CreateCreditNoteDraftRequest } from '../../../credit-notes/models/credit-note.model';
 import { CreditNoteService } from '../../../credit-notes/services/credit-note.service';
 import { CartItem } from '../../models/cart-item.model';
 import { CheckoutRequest } from '../../models/checkout-request.model';
@@ -126,6 +127,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly creditNoteEligibilityError = signal('');
   readonly creditNoteEligibility = signal<CreditNoteEligibility | null>(null);
   readonly creditNoteEligibilitySaleId = signal<number | null>(null);
+  readonly creditNoteCreating = signal(false);
   readonly sriSigningSaleId = signal<number | null>(null);
   readonly sriSubmittingSaleId = signal<number | null>(null);
   readonly sriCheckingAuthorizationSaleId = signal<number | null>(null);
@@ -812,6 +814,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.creditNoteEligibilitySaleId.set(saleId);
     this.creditNoteEligibility.set(null);
     this.creditNoteEligibilityError.set('');
+    this.creditNoteCreating.set(false);
     this.creditNoteEligibilityVisible.set(true);
     this.loadCreditNoteEligibility();
   }
@@ -845,10 +848,66 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     });
   }
 
+  createCreditNoteDraft(payload: CreateCreditNoteDraftRequest): void {
+    if (!this.canVoid) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Permiso requerido',
+        detail: 'No tienes permiso para crear borradores de nota de crédito.',
+      });
+      return;
+    }
+
+    if (this.creditNoteCreating()) {
+      return;
+    }
+
+    this.creditNoteCreating.set(true);
+    this.creditNoteService.createDraft(payload).subscribe({
+      next: (creditNote) => {
+        this.creditNoteCreating.set(false);
+        const documentNumber = creditNote.number || `#${creditNote.id}`;
+        const total = new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+        }).format(creditNote.total);
+
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Borrador creado',
+          detail: `${documentNumber} por ${total}.`,
+        });
+        this.loadCreditNoteEligibility();
+      },
+      error: (error: HttpErrorResponse) => {
+        this.creditNoteCreating.set(false);
+        const code = readErrorCode(error);
+
+        this.messageService.add({
+          severity: 'error',
+          summary: 'No se pudo crear el borrador',
+          detail: this.resolveCreditNoteDraftError(error),
+        });
+
+        if (
+          code === 'CREDIT_NOTE_QUANTITY_EXCEEDS_AVAILABLE'
+          || code === 'CREDIT_NOTE_ORIGINAL_SALE_FULLY_CREDITED'
+        ) {
+          this.loadCreditNoteEligibility();
+        }
+      },
+    });
+  }
+
   onCreditNoteEligibilityVisibleChange(visible: boolean): void {
+    if (!visible && this.creditNoteCreating()) {
+      return;
+    }
+
     this.creditNoteEligibilityVisible.set(visible);
 
     if (!visible) {
+      this.creditNoteCreating.set(false);
       this.creditNoteEligibilityLoading.set(false);
       this.creditNoteEligibilityError.set('');
       this.creditNoteEligibility.set(null);
@@ -1751,6 +1810,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
     if (this.saleDetailVisible()) {
       if (this.creditNoteEligibilityVisible()) {
+        if (this.creditNoteCreating()) {
+          return;
+        }
+
         this.onCreditNoteEligibilityVisibleChange(false);
         return;
       }
@@ -1820,5 +1883,39 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
 
     return 'No se pudo cargar la disponibilidad para nota de crédito. Intenta nuevamente.';
+  }
+
+  private resolveCreditNoteDraftError(error: HttpErrorResponse): string {
+    switch (readErrorCode(error)) {
+      case 'CREDIT_NOTE_REASON_REQUIRED':
+        return 'Ingresa el motivo de la nota de crédito.';
+      case 'CREDIT_NOTE_REASON_TOO_LONG':
+        return 'El motivo no puede superar 300 caracteres.';
+      case 'CREDIT_NOTE_NOTES_TOO_LONG':
+        return 'Las notas no pueden superar 500 caracteres.';
+      case 'CREDIT_NOTE_ITEMS_REQUIRED':
+        return 'Selecciona al menos una cantidad para acreditar.';
+      case 'CREDIT_NOTE_INVALID_QUANTITY':
+        return 'Las cantidades a acreditar deben ser mayores que cero.';
+      case 'CREDIT_NOTE_ITEM_NOT_FOUND':
+        return 'Uno de los productos ya no pertenece a la factura original.';
+      case 'CREDIT_NOTE_QUANTITY_EXCEEDS_AVAILABLE':
+        return 'La disponibilidad cambió. Revisa las cantidades actualizadas e intenta nuevamente.';
+      case 'CREDIT_NOTE_ORIGINAL_SALE_FULLY_CREDITED':
+        return 'La factura ya fue acreditada completamente.';
+      case 'CREDIT_NOTE_ORIGINAL_SALE_NOT_AUTHORIZED':
+        return 'La factura original todavía no está autorizada por el SRI.';
+      case 'DOCUMENT_SEQUENCE_ERROR':
+      case 'DOCUMENT_NUMBER_GENERATION_FAILED':
+        return 'No se pudo asignar el siguiente número de nota de crédito.';
+      case 'SALE_NOT_FOUND':
+        return 'La venta original no existe o no pertenece al contexto operativo actual.';
+      default:
+        if (error.status === 403) {
+          return 'No tienes permiso para crear borradores de nota de crédito.';
+        }
+
+        return 'No se pudo crear el borrador de nota de crédito. Intenta nuevamente.';
+    }
   }
 }
