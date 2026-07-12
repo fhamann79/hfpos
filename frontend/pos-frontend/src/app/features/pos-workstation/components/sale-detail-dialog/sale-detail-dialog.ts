@@ -43,6 +43,7 @@ export class SaleDetailDialog {
   @Input() processingSriSaleId: number | null = null;
   @Input() downloadingSriRidePdfSaleId: number | null = null;
   @Input() companyTimeZoneId = 'America/Guayaquil';
+  @Input() canReviewCreditNote = false;
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() signSriXml = new EventEmitter<number>();
@@ -57,6 +58,7 @@ export class SaleDetailDialog {
   @Output() viewSriAttempts = new EventEmitter<number>();
   @Output() viewInvoiceEmailDeliveries = new EventEmitter<number>();
   @Output() processSriWorkflow = new EventEmitter<number>();
+  @Output() viewCreditNoteEligibility = new EventEmitter<number>();
 
   getVatLabel(item: SaleItem): string {
     return getVatCategoryOption(item.vatCategory).shortLabel;
@@ -226,6 +228,13 @@ export class SaleDetailDialog {
     return this.canSubmitSriDocuments
       && sale.documentType === SaleDocumentType.Invoice
       && this.isAuthorized(sale)
+      && !sale.isVoided;
+  }
+
+  canReviewCreditNoteForSale(sale: Sale): boolean {
+    return this.canReviewCreditNote
+      && sale.documentType === SaleDocumentType.Invoice
+      && sale.documentStatus === SaleDocumentStatus.Authorized
       && !sale.isVoided;
   }
 

@@ -1,0 +1,104 @@
+.document-summary {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:.6rem;
+  margin-bottom:.85rem;
+  padding:.8rem;
+  border:1px solid #cbd5e1;
+  border-radius:6px;
+  background:#f8fafc;
+}
+
+.document-summary > div {
+  min-width:0;
+  display:grid;
+  gap:.18rem;
+}
+
+.document-summary__wide {
+  grid-column:1 / -1;
+}
+
+.document-summary span {
+  color:#64748b;
+  font-size:.72rem;
+  font-weight:800;
+  text-transform:uppercase;
+}
+
+.document-summary strong,
+.document-summary code {
+  color:#0f172a;
+  overflow-wrap:anywhere;
+}
+
+.document-summary code {
+  font-family:"Courier New",monospace;
+  font-size:.82rem;
+}
+
+.loading-state {
+  min-height:8rem;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:.55rem;
+  color:#475569;
+  font-weight:700;
+}
+
+:host ::ng-deep .p-message {
+  width:100%;
+  margin-bottom:.85rem;
+}
+
+:host ::ng-deep .eligibility-items-table .p-datatable-wrapper {
+  overflow-x:auto;
+}
+
+.product-column,
+.product-cell {
+  width:17rem;
+}
+
+.quantity-column,
+.quantity-cell {
+  width:7rem;
+  text-align:right;
+}
+
+.money-column,
+.money-cell {
+  width:8rem;
+  text-align:right;
+}
+
+.product-cell {
+  font-weight:700;
+  overflow-wrap:anywhere;
+}
+
+.quantity-cell--available {
+  color:#166534;
+  font-weight:800;
+}
+
+.dialog-footer {
+  display:flex;
+  justify-content:flex-end;
+  gap:.5rem;
+}
+
+@media (max-width:720px) {
+  .document-summary {
+    grid-template-columns:1fr;
+  }
+
+  .document-summary__wide {
+    grid-column:auto;
+  }
+
+  .dialog-footer {
+    flex-wrap:wrap;
+  }
+}

@@ -209,6 +209,7 @@
     [processingSriSaleId]="sriProcessingSaleId()"
     [downloadingSriRidePdfSaleId]="sriRidePdfDownloadingSaleId()"
     [companyTimeZoneId]="companyTimeZoneId()"
+    [canReviewCreditNote]="canVoid"
     (visibleChange)="saleDetailVisible.set($event)"
     (signSriXml)="signSriXml($event)"
     (processSriWorkflow)="processSriWorkflow($event)"
@@ -222,7 +223,18 @@
     (downloadSriRidePdf)="downloadSriRidePdf($event)"
     (sendInvoiceEmail)="openInvoiceEmailDialog($event)"
     (viewInvoiceEmailDeliveries)="openInvoiceEmailDeliveries($event)"
+    (viewCreditNoteEligibility)="openCreditNoteEligibility($event)"
   ></app-sale-detail-dialog>
+
+  <app-credit-note-eligibility-dialog
+    [visible]="creditNoteEligibilityVisible()"
+    [loading]="creditNoteEligibilityLoading()"
+    [errorMessage]="creditNoteEligibilityError()"
+    [eligibility]="creditNoteEligibility()"
+    [companyTimeZoneId]="companyTimeZoneId()"
+    (visibleChange)="onCreditNoteEligibilityVisibleChange($event)"
+    (refresh)="loadCreditNoteEligibility()"
+  ></app-credit-note-eligibility-dialog>
 
   <app-sale-invoice-email-dialog
     [visible]="invoiceEmailVisible()"

@@ -1,0 +1,111 @@
+<p-dialog
+  header="Disponibilidad para nota de crédito"
+  [visible]="visible"
+  [modal]="true"
+  [draggable]="false"
+  [style]="{ width: '64rem', maxWidth: '96vw' }"
+  (visibleChange)="visibleChange.emit($event)"
+>
+  @if (errorMessage) {
+    <p-message severity="error" [text]="errorMessage"></p-message>
+  }
+
+  @if (loading && !eligibility) {
+    <div class="loading-state" aria-live="polite">
+      <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+      <span>Consultando disponibilidad...</span>
+    </div>
+  }
+
+  @if (eligibility; as result) {
+    <section class="document-summary">
+      <div>
+        <span>Factura original</span>
+        <strong>{{ result.originalSaleNumber || ('#' + result.originalSaleId) }}</strong>
+      </div>
+      <div>
+        <span>Fecha de emisión</span>
+        <strong>{{ emissionDateLabel() }}</strong>
+      </div>
+      <div>
+        <span>Comprador</span>
+        <strong>{{ result.buyerName }}</strong>
+      </div>
+      <div>
+        <span>Tipo identificación</span>
+        <strong>{{ identificationTypeLabel(result.buyerIdentificationType) }}</strong>
+      </div>
+      <div>
+        <span>Identificación</span>
+        <strong>{{ result.buyerIdentification || '-' }}</strong>
+      </div>
+      <div>
+        <span>Total original</span>
+        <strong>{{ result.originalTotal | currency: 'USD' }}</strong>
+      </div>
+      <div class="document-summary__wide">
+        <span>Número de autorización</span>
+        <code>{{ result.originalSaleAuthorizationNumber || '-' }}</code>
+      </div>
+    </section>
+
+    @if (result.isEligible) {
+      <p-message severity="success" text="Factura elegible para nota de crédito"></p-message>
+
+      <p-table
+        [value]="result.items"
+        [loading]="loading"
+        responsiveLayout="scroll"
+        styleClass="eligibility-items-table"
+        [tableStyle]="{ 'min-width': '52rem', 'table-layout': 'fixed' }"
+      >
+        <ng-template pTemplate="header">
+          <tr>
+            <th class="product-column">Producto</th>
+            <th class="quantity-column">Cantidad vendida</th>
+            <th class="quantity-column">Ya acreditada</th>
+            <th class="quantity-column">Disponible</th>
+            <th class="money-column">Precio unitario</th>
+            <th class="money-column">Total original</th>
+          </tr>
+        </ng-template>
+
+        <ng-template pTemplate="body" let-item>
+          <tr>
+            <td class="product-cell">{{ item.productName }}</td>
+            <td class="quantity-cell">{{ item.soldQuantity | number: '1.0-4' }}</td>
+            <td class="quantity-cell">{{ item.creditedQuantity | number: '1.0-4' }}</td>
+            <td class="quantity-cell quantity-cell--available">{{ item.availableQuantity | number: '1.0-4' }}</td>
+            <td class="money-cell">{{ item.unitPrice | currency: 'USD' }}</td>
+            <td class="money-cell">{{ item.lineTotal | currency: 'USD' }}</td>
+          </tr>
+        </ng-template>
+      </p-table>
+    } @else {
+      <p-message
+        severity="warn"
+        [text]="result.blockingMessage || 'La factura no está disponible para nota de crédito.'"
+      ></p-message>
+    }
+  }
+
+  <ng-template pTemplate="footer">
+    <div class="dialog-footer">
+      <p-button
+        label="Cerrar"
+        icon="pi pi-times"
+        severity="secondary"
+        [outlined]="true"
+        (onClick)="visibleChange.emit(false)"
+      ></p-button>
+      <p-button
+        label="Actualizar"
+        icon="pi pi-refresh"
+        severity="secondary"
+        [loading]="loading"
+        [disabled]="!eligibility && !errorMessage"
+        (onClick)="refresh.emit()"
+      ></p-button>
+    </div>
+  </ng-template>
+</p-dialog>

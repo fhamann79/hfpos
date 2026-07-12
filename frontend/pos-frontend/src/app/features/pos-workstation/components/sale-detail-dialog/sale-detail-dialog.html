@@ -70,6 +70,15 @@
               <h4>Factura autorizada por SRI</h4>
               <p>Este comprobante fue autorizado correctamente. No requiere procesarse nuevamente.</p>
             </div>
+            @if (canReviewCreditNoteForSale(sale)) {
+              <p-button
+                label="Revisar nota de crédito"
+                icon="pi pi-receipt"
+                severity="warn"
+                [outlined]="true"
+                (onClick)="viewCreditNoteEligibility.emit(sale.id)"
+              ></p-button>
+            }
           </div>
 
           <div class="sri-status-grid sri-authorized-card__grid">

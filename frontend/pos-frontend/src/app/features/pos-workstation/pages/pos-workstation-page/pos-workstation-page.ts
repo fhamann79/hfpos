@@ -17,6 +17,7 @@ import { calculateTaxSummary, roundMoney } from '../../../../core/utils/vat-cate
 import { CartWorkstation } from '../../components/cart-workstation/cart-workstation';
 import { CheckoutConfirmDialog } from '../../components/checkout-confirm-dialog/checkout-confirm-dialog';
 import { CustomerSelectorDialog } from '../../components/customer-selector-dialog/customer-selector-dialog';
+import { CreditNoteEligibilityDialog } from '../../../credit-notes/components/credit-note-eligibility-dialog/credit-note-eligibility-dialog';
 import { ProductSearchPanel } from '../../components/product-search-panel/product-search-panel';
 import { QuickProductSearchDialog } from '../../components/quick-product-search-dialog/quick-product-search-dialog';
 import { RecentSalesPanel } from '../../components/recent-sales-panel/recent-sales-panel';
@@ -28,6 +29,8 @@ import { SriSubmissionAttemptsDialog } from '../../components/sri-submission-att
 import { VoidSaleDialog } from '../../components/void-sale-dialog/void-sale-dialog';
 import { CashSession, CashSessionStatus } from '../../../cash-sessions/models/cash-session.model';
 import { CashSessionService } from '../../../cash-sessions/services/cash-session.service';
+import { CreditNoteEligibility } from '../../../credit-notes/models/credit-note-eligibility.model';
+import { CreditNoteService } from '../../../credit-notes/services/credit-note.service';
 import { CartItem } from '../../models/cart-item.model';
 import { CheckoutRequest } from '../../models/checkout-request.model';
 import { PosCustomer } from '../../models/pos-customer.model';
@@ -57,6 +60,7 @@ import { PosWorkstationService } from '../../services/pos-workstation.service';
     CartWorkstation,
     CheckoutConfirmDialog,
     CustomerSelectorDialog,
+    CreditNoteEligibilityDialog,
     RecentSalesPanel,
     SaleDetailDialog,
     SaleInvoiceEmailDeliveriesDialog,
@@ -75,6 +79,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly catalogService = inject(PosProductCatalogService);
   private readonly workstationService = inject(PosWorkstationService);
+  private readonly creditNoteService = inject(CreditNoteService);
   private readonly cashSessionService = inject(CashSessionService);
   private readonly keyboard = inject(PosKeyboardService);
   private readonly messageService = inject(MessageService);
@@ -116,6 +121,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly salesError = signal('');
   readonly saleDetailVisible = signal(false);
   readonly selectedSale = signal<Sale | null>(null);
+  readonly creditNoteEligibilityVisible = signal(false);
+  readonly creditNoteEligibilityLoading = signal(false);
+  readonly creditNoteEligibilityError = signal('');
+  readonly creditNoteEligibility = signal<CreditNoteEligibility | null>(null);
+  readonly creditNoteEligibilitySaleId = signal<number | null>(null);
   readonly sriSigningSaleId = signal<number | null>(null);
   readonly sriSubmittingSaleId = signal<number | null>(null);
   readonly sriCheckingAuthorizationSaleId = signal<number | null>(null);
@@ -796,6 +806,54 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         this.sriAttemptsError.set(this.workstationService.resolveBusinessError(error));
       },
     });
+  }
+
+  openCreditNoteEligibility(saleId: number): void {
+    this.creditNoteEligibilitySaleId.set(saleId);
+    this.creditNoteEligibility.set(null);
+    this.creditNoteEligibilityError.set('');
+    this.creditNoteEligibilityVisible.set(true);
+    this.loadCreditNoteEligibility();
+  }
+
+  loadCreditNoteEligibility(): void {
+    const saleId = this.creditNoteEligibilitySaleId();
+    if (!saleId) {
+      return;
+    }
+
+    this.creditNoteEligibilityLoading.set(true);
+    this.creditNoteEligibilityError.set('');
+
+    this.creditNoteService.getEligibility(saleId).subscribe({
+      next: (eligibility) => {
+        if (this.creditNoteEligibilitySaleId() !== saleId) {
+          return;
+        }
+
+        this.creditNoteEligibility.set(eligibility);
+        this.creditNoteEligibilityLoading.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        if (this.creditNoteEligibilitySaleId() !== saleId) {
+          return;
+        }
+
+        this.creditNoteEligibilityLoading.set(false);
+        this.creditNoteEligibilityError.set(this.resolveCreditNoteEligibilityError(error));
+      },
+    });
+  }
+
+  onCreditNoteEligibilityVisibleChange(visible: boolean): void {
+    this.creditNoteEligibilityVisible.set(visible);
+
+    if (!visible) {
+      this.creditNoteEligibilityLoading.set(false);
+      this.creditNoteEligibilityError.set('');
+      this.creditNoteEligibility.set(null);
+      this.creditNoteEligibilitySaleId.set(null);
+    }
   }
 
   openInvoiceEmailDeliveries(saleId: number): void {
@@ -1692,6 +1750,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
 
     if (this.saleDetailVisible()) {
+      if (this.creditNoteEligibilityVisible()) {
+        this.onCreditNoteEligibilityVisibleChange(false);
+        return;
+      }
+
       if (this.invoiceEmailVisible()) {
         this.onInvoiceEmailVisibleChange(false);
         return;
@@ -1745,5 +1808,17 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       default:
         return this.workstationService.resolveBusinessError(error) || 'No se pudo enviar la factura por email.';
     }
+  }
+
+  private resolveCreditNoteEligibilityError(error: HttpErrorResponse): string {
+    if (readErrorCode(error) === 'SALE_NOT_FOUND') {
+      return 'La venta original no existe o no pertenece al contexto operativo actual.';
+    }
+
+    if (error.status === 403) {
+      return 'No tienes permiso para revisar la disponibilidad de notas de crédito.';
+    }
+
+    return 'No se pudo cargar la disponibilidad para nota de crédito. Intenta nuevamente.';
   }
 }
