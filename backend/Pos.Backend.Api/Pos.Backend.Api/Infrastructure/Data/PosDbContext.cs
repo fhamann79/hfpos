@@ -36,6 +36,8 @@ public class PosDbContext : DbContext
     public DbSet<CashMovement> CashMovements { get; set; }
     public DbSet<Sale> Sales { get; set; }
     public DbSet<SaleItem> SaleItems { get; set; }
+    public DbSet<CreditNote> CreditNotes { get; set; }
+    public DbSet<CreditNoteItem> CreditNoteItems { get; set; }
     public DbSet<SriSubmissionAttempt> SriSubmissionAttempts { get; set; }
     public DbSet<SaleInvoiceEmailDelivery> SaleInvoiceEmailDeliveries { get; set; }
 
@@ -898,6 +900,212 @@ public class PosDbContext : DbContext
             entity.HasOne(s => s.EmissionPoint)
                 .WithMany()
                 .HasForeignKey(s => s.EmissionPointId);
+        });
+
+        modelBuilder.Entity<CreditNote>(entity =>
+        {
+            entity.Property(cn => cn.DocumentStatus)
+                .HasConversion<int>();
+
+            entity.Property(cn => cn.BusinessDate)
+                .HasColumnType("date");
+
+            entity.Property(cn => cn.TimeZoneIdSnapshot)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasDefaultValue("America/Guayaquil");
+
+            entity.Property(cn => cn.BuyerNameSnapshot)
+                .HasMaxLength(300);
+
+            entity.Property(cn => cn.BuyerIdentificationTypeSnapshot)
+                .HasMaxLength(2);
+
+            entity.Property(cn => cn.BuyerIdentificationSnapshot)
+                .HasMaxLength(20);
+
+            entity.Property(cn => cn.BuyerAddressSnapshot)
+                .HasMaxLength(300);
+
+            entity.Property(cn => cn.BuyerEmailSnapshot)
+                .HasMaxLength(320);
+
+            entity.Property(cn => cn.OriginalSaleNumberSnapshot)
+                .HasMaxLength(50);
+
+            entity.Property(cn => cn.OriginalSaleAccessKeySnapshot)
+                .HasMaxLength(49);
+
+            entity.Property(cn => cn.OriginalSaleAuthorizationNumberSnapshot)
+                .HasMaxLength(50);
+
+            entity.Property(cn => cn.Reason)
+                .IsRequired()
+                .HasMaxLength(300);
+
+            entity.Property(cn => cn.Notes)
+                .HasMaxLength(500);
+
+            entity.Property(cn => cn.Number)
+                .HasMaxLength(50);
+
+            entity.Property(cn => cn.EstablishmentCodeSnapshot)
+                .HasMaxLength(3);
+
+            entity.Property(cn => cn.EmissionPointCodeSnapshot)
+                .HasMaxLength(3);
+
+            entity.Property(cn => cn.AccessKey)
+                .HasMaxLength(49);
+
+            entity.Property(cn => cn.AuthorizationNumber)
+                .HasMaxLength(50);
+
+            entity.Property(cn => cn.SriNumericCode)
+                .HasMaxLength(8);
+
+            entity.Property(cn => cn.SriReceptionStatus)
+                .HasMaxLength(50);
+
+            entity.Property(cn => cn.SriAuthorizationStatus)
+                .HasMaxLength(50);
+
+            entity.Property(cn => cn.SriLastSubmissionError)
+                .HasMaxLength(1000);
+
+            entity.Property(cn => cn.GrossSubtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(cn => cn.DiscountAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(cn => cn.Subtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(cn => cn.TaxAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(cn => cn.Vat15Subtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(cn => cn.Vat5Subtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(cn => cn.Vat0Subtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(cn => cn.VatExemptSubtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(cn => cn.VatNotSubjectSubtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(cn => cn.Total)
+                .HasPrecision(18, 2);
+
+            entity.HasIndex(cn => cn.CompanyId);
+            entity.HasIndex(cn => cn.EstablishmentId);
+            entity.HasIndex(cn => cn.EmissionPointId);
+            entity.HasIndex(cn => cn.OriginalSaleId);
+            entity.HasIndex(cn => cn.CustomerId);
+            entity.HasIndex(cn => cn.CreatedAt);
+            entity.HasIndex(cn => cn.BusinessDate);
+            entity.HasIndex(cn => cn.DocumentStatus);
+            entity.HasIndex(cn => cn.Number);
+            entity.HasIndex(cn => new { cn.CompanyId, cn.EstablishmentId, cn.EmissionPointId, cn.Sequential })
+                .IsUnique()
+                .HasFilter(@"""Sequential"" IS NOT NULL");
+
+            entity.HasOne(cn => cn.Company)
+                .WithMany()
+                .HasForeignKey(cn => cn.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(cn => cn.Establishment)
+                .WithMany()
+                .HasForeignKey(cn => cn.EstablishmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(cn => cn.EmissionPoint)
+                .WithMany()
+                .HasForeignKey(cn => cn.EmissionPointId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(cn => cn.User)
+                .WithMany()
+                .HasForeignKey(cn => cn.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(cn => cn.OriginalSale)
+                .WithMany()
+                .HasForeignKey(cn => cn.OriginalSaleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(cn => cn.Customer)
+                .WithMany()
+                .HasForeignKey(cn => cn.CustomerId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CreditNoteItem>(entity =>
+        {
+            entity.Property(cni => cni.Quantity)
+                .HasPrecision(18, 4);
+
+            entity.Property(cni => cni.UnitPrice)
+                .HasPrecision(18, 2);
+
+            entity.Property(cni => cni.UnitCost)
+                .HasPrecision(18, 4);
+
+            entity.Property(cni => cni.GrossSubtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(cni => cni.DiscountAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(cni => cni.NetSubtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(cni => cni.LineSubtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(cni => cni.VatCategory)
+                .HasConversion<int>();
+
+            entity.Property(cni => cni.VatRate)
+                .HasPrecision(18, 4);
+
+            entity.Property(cni => cni.TaxableSubtotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(cni => cni.TaxAmount)
+                .HasPrecision(18, 2);
+
+            entity.Property(cni => cni.LineTotal)
+                .HasPrecision(18, 2);
+
+            entity.Property(cni => cni.LineCost)
+                .HasPrecision(18, 4);
+
+            entity.HasIndex(cni => cni.CreditNoteId);
+            entity.HasIndex(cni => cni.SaleItemId);
+            entity.HasIndex(cni => cni.ProductId);
+
+            entity.HasOne(cni => cni.CreditNote)
+                .WithMany(cn => cn.Items)
+                .HasForeignKey(cni => cni.CreditNoteId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(cni => cni.SaleItem)
+                .WithMany()
+                .HasForeignKey(cni => cni.SaleItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(cni => cni.Product)
+                .WithMany()
+                .HasForeignKey(cni => cni.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<SriSubmissionAttempt>(entity =>
