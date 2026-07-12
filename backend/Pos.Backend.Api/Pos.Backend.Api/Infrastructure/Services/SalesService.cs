@@ -18,6 +18,7 @@ public class SalesService : ISalesService
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly IInventoryService _inventoryService;
     private readonly ICashSessionService _cashSessionService;
+    private readonly IFiscalDocumentNumberService _fiscalDocumentNumberService;
     private readonly ISriAccessKeyService _sriAccessKeyService;
     private readonly ISriXmlDraftService _sriXmlDraftService;
     private readonly ISriFiscalClock _sriFiscalClock;
@@ -31,6 +32,7 @@ public class SalesService : ISalesService
         IOperationalContextAccessor operationalContextAccessor,
         IInventoryService inventoryService,
         ICashSessionService cashSessionService,
+        IFiscalDocumentNumberService fiscalDocumentNumberService,
         ISriAccessKeyService sriAccessKeyService,
         ISriXmlDraftService sriXmlDraftService,
         ISriFiscalClock sriFiscalClock,
@@ -43,6 +45,7 @@ public class SalesService : ISalesService
         _operationalContextAccessor = operationalContextAccessor;
         _inventoryService = inventoryService;
         _cashSessionService = cashSessionService;
+        _fiscalDocumentNumberService = fiscalDocumentNumberService;
         _sriAccessKeyService = sriAccessKeyService;
         _sriXmlDraftService = sriXmlDraftService;
         _sriFiscalClock = sriFiscalClock;
@@ -413,7 +416,18 @@ public class SalesService : ISalesService
 
             await using var transaction = await _context.Database.BeginTransactionAsync();
 
-            await AssignDocumentNumberAsync(sale, operationalContext, documentType);
+            var numberAssignment = await _fiscalDocumentNumberService.AssignNextAsync(
+                operationalContext,
+                ToFiscalDocumentType(documentType));
+
+            sale.Number = numberAssignment.Number;
+            sale.EstablishmentCodeSnapshot = numberAssignment.EstablishmentCode;
+            sale.EmissionPointCodeSnapshot = numberAssignment.EmissionPointCode;
+            sale.Sequential = numberAssignment.Sequential;
+            sale.DocumentIssuedAt = numberAssignment.IssuedAt;
+            sale.DocumentStatus = documentType == SaleDocumentType.Invoice
+                ? SaleDocumentStatus.Draft
+                : SaleDocumentStatus.NotRequired;
 
             if (documentType == SaleDocumentType.Invoice)
             {
@@ -662,104 +676,6 @@ public class SalesService : ISalesService
         sale.GrossMarginPercent = sale.Subtotal > 0m
             ? RoundPercent(sale.GrossProfit / sale.Subtotal * 100m)
             : 0m;
-    }
-
-    private async Task AssignDocumentNumberAsync(
-        Sale sale,
-        OperationalContext operationalContext,
-        SaleDocumentType documentType)
-    {
-        if (!Enum.IsDefined(documentType))
-        {
-            throw new InvalidOperationException("INVALID_DOCUMENT_TYPE");
-        }
-
-        var documentContext = await _context.Establishments
-            .AsNoTracking()
-            .Where(e =>
-                e.Id == operationalContext.EstablishmentId
-                && e.CompanyId == operationalContext.CompanyId
-                && e.IsActive)
-            .Select(e => new
-            {
-                EstablishmentCode = e.Code,
-                EmissionPointCode = e.EmissionPoints
-                    .Where(ep => ep.Id == operationalContext.EmissionPointId && ep.IsActive)
-                    .Select(ep => ep.Code)
-                    .FirstOrDefault()
-            })
-            .FirstOrDefaultAsync();
-
-        if (documentContext is null || documentContext.EmissionPointCode is null)
-        {
-            throw new InvalidOperationException("DOCUMENT_NUMBER_GENERATION_FAILED");
-        }
-
-        var establishmentCode = documentContext.EstablishmentCode.Trim();
-        var emissionPointCode = documentContext.EmissionPointCode.Trim();
-
-        if (establishmentCode.Length != 3 || emissionPointCode.Length != 3)
-        {
-            throw new InvalidOperationException("DOCUMENT_NUMBER_GENERATION_FAILED");
-        }
-
-        var now = _sriFiscalClock.UtcNow;
-        var fiscalDocumentType = ToFiscalDocumentType(documentType);
-        var documentTypeValue = (int)fiscalDocumentType;
-
-        try
-        {
-            await _context.Database.ExecuteSqlInterpolatedAsync($@"
-                INSERT INTO ""DocumentSequences""
-                    (""CompanyId"", ""EstablishmentId"", ""EmissionPointId"", ""DocumentType"", ""CurrentNumber"", ""CreatedAt"", ""UpdatedAt"")
-                VALUES
-                    ({operationalContext.CompanyId}, {operationalContext.EstablishmentId}, {operationalContext.EmissionPointId}, {documentTypeValue}, 0, {now}, {now})
-                ON CONFLICT (""CompanyId"", ""EstablishmentId"", ""EmissionPointId"", ""DocumentType"") DO NOTHING");
-
-            var sequence = await _context.DocumentSequences
-                .FromSqlInterpolated($@"
-                    SELECT *
-                    FROM ""DocumentSequences""
-                    WHERE ""CompanyId"" = {operationalContext.CompanyId}
-                      AND ""EstablishmentId"" = {operationalContext.EstablishmentId}
-                      AND ""EmissionPointId"" = {operationalContext.EmissionPointId}
-                      AND ""DocumentType"" = {documentTypeValue}
-                    FOR UPDATE")
-                .SingleOrDefaultAsync();
-
-            if (sequence is null)
-            {
-                throw new InvalidOperationException("DOCUMENT_SEQUENCE_ERROR");
-            }
-
-            sequence.CurrentNumber += 1;
-            sequence.UpdatedAt = now;
-
-            sale.Number = $"{establishmentCode}-{emissionPointCode}-{sequence.CurrentNumber:000000000}";
-            sale.EstablishmentCodeSnapshot = establishmentCode;
-            sale.EmissionPointCodeSnapshot = emissionPointCode;
-            sale.Sequential = sequence.CurrentNumber;
-            sale.DocumentIssuedAt = now;
-            sale.DocumentStatus = documentType == SaleDocumentType.Invoice
-                ? SaleDocumentStatus.Draft
-                : SaleDocumentStatus.NotRequired;
-        }
-        catch (InvalidOperationException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "Document number generation failed. CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId} DocumentType {DocumentType}",
-                operationalContext.CompanyId,
-                operationalContext.EstablishmentId,
-                operationalContext.EmissionPointId,
-                documentType);
-
-            throw new InvalidOperationException("DOCUMENT_NUMBER_GENERATION_FAILED", ex);
-        }
     }
 
     private static FiscalDocumentType ToFiscalDocumentType(SaleDocumentType documentType)
