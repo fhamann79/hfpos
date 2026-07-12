@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { CreditNoteEligibility } from '../models/credit-note-eligibility.model';
+import { CreateCreditNoteDraftRequest, CreditNote } from '../models/credit-note.model';
 
 @Injectable({ providedIn: 'root' })
 export class CreditNoteService {
@@ -13,5 +14,9 @@ export class CreditNoteService {
     return this.http.get<CreditNoteEligibility>(
       `${this.baseUrl}/original-sales/${originalSaleId}/eligibility`
     );
+  }
+
+  createDraft(payload: CreateCreditNoteDraftRequest): Observable<CreditNote> {
+    return this.http.post<CreditNote>(`${this.baseUrl}/drafts`, payload);
   }
 }

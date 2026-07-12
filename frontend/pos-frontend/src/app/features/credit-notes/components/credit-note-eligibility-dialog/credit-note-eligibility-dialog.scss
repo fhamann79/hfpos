@@ -47,23 +47,67 @@
   font-weight:700;
 }
 
+.draft-form {
+  display:grid;
+  gap:.9rem;
+}
+
+.draft-fields {
+  display:grid;
+  grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);
+  gap:.75rem;
+}
+
+.field {
+  min-width:0;
+  display:grid;
+  align-content:start;
+  gap:.35rem;
+}
+
+.field label {
+  color:#334155;
+  font-size:.82rem;
+  font-weight:800;
+}
+
+.field input,
+.field textarea {
+  width:100%;
+}
+
+.field textarea {
+  resize:vertical;
+}
+
 :host ::ng-deep .p-message {
   width:100%;
   margin-bottom:.85rem;
 }
 
+:host ::ng-deep .draft-form .p-message {
+  margin-bottom:0;
+}
+
 :host ::ng-deep .eligibility-items-table .p-datatable-wrapper {
+  max-width:100%;
   overflow-x:auto;
 }
 
 .product-column,
 .product-cell {
-  width:17rem;
+  width:14rem;
 }
 
 .quantity-column,
 .quantity-cell {
   width:7rem;
+  text-align:right;
+}
+
+.credit-column,
+.credit-cell {
+  width:9rem;
   text-align:right;
 }
 
@@ -83,6 +127,21 @@
   font-weight:800;
 }
 
+.credit-cell {
+  vertical-align:top;
+}
+
+:host ::ng-deep .credit-cell .p-inputnumber,
+:host ::ng-deep .credit-cell .p-inputnumber-input {
+  width:100%;
+}
+
+.credit-cell .p-error {
+  display:block;
+  margin-top:.25rem;
+  text-align:left;
+}
+
 .dialog-footer {
   display:flex;
   justify-content:flex-end;
@@ -90,7 +149,8 @@
 }
 
 @media (max-width:720px) {
-  .document-summary {
+  .document-summary,
+  .draft-fields {
     grid-template-columns:1fr;
   }
 

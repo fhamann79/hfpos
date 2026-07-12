@@ -229,11 +229,13 @@
   <app-credit-note-eligibility-dialog
     [visible]="creditNoteEligibilityVisible()"
     [loading]="creditNoteEligibilityLoading()"
+    [creating]="creditNoteCreating()"
     [errorMessage]="creditNoteEligibilityError()"
     [eligibility]="creditNoteEligibility()"
     [companyTimeZoneId]="companyTimeZoneId()"
     (visibleChange)="onCreditNoteEligibilityVisibleChange($event)"
     (refresh)="loadCreditNoteEligibility()"
+    (createDraft)="createCreditNoteDraft($event)"
   ></app-credit-note-eligibility-dialog>
 
   <app-sale-invoice-email-dialog
