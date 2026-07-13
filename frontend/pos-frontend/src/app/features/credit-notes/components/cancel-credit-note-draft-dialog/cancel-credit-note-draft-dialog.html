@@ -1,0 +1,69 @@
+<p-dialog
+  header="Cancelar borrador de nota de crédito"
+  [visible]="visible"
+  [modal]="true"
+  [closable]="!loading"
+  [closeOnEscape]="!loading"
+  [draggable]="false"
+  [style]="{ width: '34rem', maxWidth: '95vw' }"
+  (visibleChange)="requestVisibleChange($event)"
+>
+  @if (creditNote; as note) {
+    <section class="note-summary">
+      <div>
+        <span>Número</span>
+        <strong>{{ note.number || ('#' + note.id) }}</strong>
+      </div>
+      <div>
+        <span>Total</span>
+        <strong>{{ note.total | currency: 'USD' }}</strong>
+      </div>
+      <div class="note-summary__wide">
+        <span>Motivo fiscal</span>
+        <strong>{{ note.reason }}</strong>
+      </div>
+    </section>
+
+    <p-message
+      severity="warn"
+      text="La cancelación liberará las cantidades reservadas, pero el secuencial de la nota de crédito permanecerá consumido."
+    ></p-message>
+
+    <form class="cancel-form" [formGroup]="form" (ngSubmit)="submit()">
+      <label for="credit-note-cancellation-reason">Motivo de cancelación</label>
+      <textarea
+        id="credit-note-cancellation-reason"
+        pTextarea
+        formControlName="reason"
+        maxlength="300"
+        rows="4"
+        autocomplete="off"
+      ></textarea>
+      @if (form.controls.reason.touched && !form.controls.reason.value.trim()) {
+        <small class="p-error">El motivo de cancelación es obligatorio.</small>
+      } @else if (form.controls.reason.touched && form.controls.reason.hasError('maxlength')) {
+        <small class="p-error">El motivo no puede superar 300 caracteres.</small>
+      }
+    </form>
+  }
+
+  <ng-template pTemplate="footer">
+    <div class="dialog-actions">
+      <p-button
+        label="Volver"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="loading"
+        (onClick)="requestVisibleChange(false)"
+      ></p-button>
+      <p-button
+        label="Confirmar cancelación"
+        icon="pi pi-times-circle"
+        severity="danger"
+        [loading]="loading"
+        [disabled]="loading || form.invalid || !form.controls.reason.value.trim()"
+        (onClick)="submit()"
+      ></p-button>
+    </div>
+  </ng-template>
+</p-dialog>

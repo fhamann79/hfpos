@@ -946,6 +946,9 @@ public class PosDbContext : DbContext
             entity.Property(cn => cn.Notes)
                 .HasMaxLength(500);
 
+            entity.Property(cn => cn.CancellationReason)
+                .HasMaxLength(300);
+
             entity.Property(cn => cn.Number)
                 .HasMaxLength(50);
 
@@ -1012,6 +1015,7 @@ public class PosDbContext : DbContext
             entity.HasIndex(cn => cn.BusinessDate);
             entity.HasIndex(cn => cn.DocumentStatus);
             entity.HasIndex(cn => cn.Number);
+            entity.HasIndex(cn => cn.CancelledByUserId);
             entity.HasIndex(cn => new { cn.CompanyId, cn.EstablishmentId, cn.EmissionPointId, cn.Sequential })
                 .IsUnique()
                 .HasFilter(@"""Sequential"" IS NOT NULL");
@@ -1044,6 +1048,11 @@ public class PosDbContext : DbContext
             entity.HasOne(cn => cn.Customer)
                 .WithMany()
                 .HasForeignKey(cn => cn.CustomerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(cn => cn.CancelledByUser)
+                .WithMany()
+                .HasForeignKey(cn => cn.CancelledByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

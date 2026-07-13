@@ -112,5 +112,10 @@ public class CreditNote
 
     public DateTime? VoidedAt { get; set; }
 
+    public string? CancellationReason { get; set; }
+
+    public int? CancelledByUserId { get; set; }
+    public User? CancelledByUser { get; set; }
+
     public ICollection<CreditNoteItem> Items { get; set; } = new List<CreditNoteItem>();
 }

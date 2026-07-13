@@ -2,10 +2,11 @@
   header="Disponibilidad para nota de crédito"
   [visible]="visible"
   [modal]="true"
-  [closable]="!creating"
-  [closeOnEscape]="!creating"
+  [closable]="!isBusy()"
+  [closeOnEscape]="!isBusy()"
   [draggable]="false"
   [style]="{ width: '72rem', maxWidth: '96vw', maxHeight: '94vh' }"
+  styleClass="credit-note-dialog"
   (visibleChange)="requestVisibleChange($event)"
 >
   @if (errorMessage) {
@@ -93,52 +94,54 @@
           </div>
         </div>
 
-        <p-table
-          [value]="result.items"
-          [loading]="loading"
-          responsiveLayout="scroll"
-          styleClass="eligibility-items-table"
-          [tableStyle]="{ 'min-width': '62rem', 'table-layout': 'fixed' }"
-        >
-          <ng-template pTemplate="header">
-            <tr>
-              <th class="product-column">Producto</th>
-              <th class="quantity-column">Cantidad vendida</th>
-              <th class="quantity-column">Ya acreditada</th>
-              <th class="quantity-column">Disponible</th>
-              <th class="credit-column">Cantidad a acreditar</th>
-              <th class="money-column">Precio unitario</th>
-              <th class="money-column">Total original</th>
-            </tr>
-          </ng-template>
+        <div class="credit-note-items-scroll">
+          <p-table
+            [value]="result.items"
+            [loading]="loading"
+            responsiveLayout="scroll"
+            styleClass="eligibility-items-table"
+            [tableStyle]="{ 'min-width': '71rem', 'table-layout': 'fixed' }"
+          >
+            <ng-template pTemplate="header">
+              <tr>
+                <th class="product-column">Producto</th>
+                <th class="quantity-column sold-quantity-column">Cantidad vendida</th>
+                <th class="quantity-column credited-quantity-column">Ya acreditada</th>
+                <th class="quantity-column available-quantity-column">Disponible</th>
+                <th class="credit-column">Cantidad a acreditar</th>
+                <th class="money-column unit-price-column">Precio unitario</th>
+                <th class="money-column original-total-column">Total original</th>
+              </tr>
+            </ng-template>
 
-          <ng-template pTemplate="body" let-item>
-            <tr>
-              <td class="product-cell">{{ item.productName }}</td>
-              <td class="quantity-cell">{{ item.soldQuantity | number: '1.0-4' }}</td>
-              <td class="quantity-cell">{{ item.creditedQuantity | number: '1.0-4' }}</td>
-              <td class="quantity-cell quantity-cell--available">
-                {{ item.availableQuantity | number: '1.0-4' }}
-              </td>
-              <td class="credit-cell">
-                <p-inputnumber
-                  [inputId]="'credit-note-quantity-' + item.saleItemId"
-                  [formControl]="quantityControl(item.saleItemId)"
-                  [min]="0"
-                  [max]="item.availableQuantity"
-                  [minFractionDigits]="0"
-                  [maxFractionDigits]="4"
-                  [useGrouping]="false"
-                ></p-inputnumber>
-                @if (quantityControl(item.saleItemId).touched && quantityControl(item.saleItemId).invalid) {
-                  <small class="p-error">Máximo {{ item.availableQuantity | number: '1.0-4' }}</small>
-                }
-              </td>
-              <td class="money-cell">{{ item.unitPrice | currency: 'USD' }}</td>
-              <td class="money-cell">{{ item.lineTotal | currency: 'USD' }}</td>
-            </tr>
-          </ng-template>
-        </p-table>
+            <ng-template pTemplate="body" let-item>
+              <tr>
+                <td class="product-cell">{{ item.productName }}</td>
+                <td class="quantity-cell sold-quantity-cell">{{ item.soldQuantity | number: '1.0-4' }}</td>
+                <td class="quantity-cell credited-quantity-cell">{{ item.creditedQuantity | number: '1.0-4' }}</td>
+                <td class="quantity-cell available-quantity-cell quantity-cell--available">
+                  {{ item.availableQuantity | number: '1.0-4' }}
+                </td>
+                <td class="credit-cell">
+                  <p-inputnumber
+                    [inputId]="'credit-note-quantity-' + item.saleItemId"
+                    [formControl]="quantityControl(item.saleItemId)"
+                    [min]="0"
+                    [max]="item.availableQuantity"
+                    [minFractionDigits]="0"
+                    [maxFractionDigits]="4"
+                    [useGrouping]="false"
+                  ></p-inputnumber>
+                  @if (quantityControl(item.saleItemId).touched && quantityControl(item.saleItemId).invalid) {
+                    <small class="p-error">Máximo {{ item.availableQuantity | number: '1.0-4' }}</small>
+                  }
+                </td>
+                <td class="money-cell unit-price-cell">{{ item.unitPrice | currency: 'USD' }}</td>
+                <td class="money-cell original-total-cell">{{ item.lineTotal | currency: 'USD' }}</td>
+              </tr>
+            </ng-template>
+          </p-table>
+        </div>
       </form>
     } @else {
       <p-message
@@ -148,6 +151,91 @@
     }
   }
 
+  <section class="history-section" aria-labelledby="credit-note-history-title">
+    <div class="history-heading">
+      <div>
+        <h3 id="credit-note-history-title">Notas de crédito de esta factura</h3>
+        <p>Consulta los borradores y documentos relacionados con la factura original.</p>
+      </div>
+    </div>
+
+    @if (historyErrorMessage) {
+      <p-message severity="error" [text]="historyErrorMessage"></p-message>
+    }
+
+    @if (creditNotes.length) {
+      <div class="credit-note-history-scroll">
+        <p-table
+          [value]="creditNotes"
+          [loading]="historyLoading"
+          responsiveLayout="scroll"
+          styleClass="credit-note-history-table"
+          [tableStyle]="{ 'min-width': '79rem', 'table-layout': 'fixed' }"
+        >
+          <ng-template pTemplate="header">
+            <tr>
+              <th class="history-number-column">Número</th>
+              <th class="history-status-column">Estado</th>
+              <th class="history-date-column">Fecha de emisión</th>
+              <th class="history-reason-column">Motivo</th>
+              <th class="history-total-column">Total</th>
+              <th class="history-cancellation-column">Cancelación</th>
+              <th class="history-action-column">Acción</th>
+            </tr>
+          </ng-template>
+
+          <ng-template pTemplate="body" let-note>
+            <tr>
+              <td class="history-number-cell">{{ note.number || ('#' + note.id) }}</td>
+              <td class="history-status-cell">
+                <p-tag
+                  [value]="documentStatusLabel(note)"
+                  [severity]="documentStatusSeverity(note)"
+                ></p-tag>
+              </td>
+              <td class="history-date-cell">{{ historyDateLabel(note.documentIssuedAt) }}</td>
+              <td class="history-reason-cell">{{ note.reason }}</td>
+              <td class="history-total-cell">{{ note.total | currency: 'USD' }}</td>
+              <td class="history-cancellation-cell">
+                @if (note.voidedAt) {
+                  <strong>{{ historyDateLabel(note.voidedAt) }}</strong>
+                  @if (note.cancellationReason) {
+                    <span>{{ note.cancellationReason }}</span>
+                  }
+                  @if (note.cancelledByUsername) {
+                    <small>Por {{ note.cancelledByUsername }}</small>
+                  }
+                } @else {
+                  <span>-</span>
+                }
+              </td>
+              <td class="history-action-cell">
+                @if (note.canCancelDraft) {
+                  <p-button
+                    label="Cancelar borrador"
+                    icon="pi pi-times-circle"
+                    severity="danger"
+                    [outlined]="true"
+                    [loading]="cancellingCreditNoteId === note.id"
+                    [disabled]="isBusy()"
+                    (onClick)="cancelDraft(note)"
+                  ></p-button>
+                }
+              </td>
+            </tr>
+          </ng-template>
+        </p-table>
+      </div>
+    } @else if (historyLoading) {
+      <div class="history-loading" aria-live="polite">
+        <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+        <span>Cargando historial...</span>
+      </div>
+    } @else if (!historyErrorMessage) {
+      <p class="history-empty">Todavía no existen notas de crédito para esta factura.</p>
+    }
+  </section>
+
   <ng-template pTemplate="footer">
     <div class="dialog-footer">
       <p-button
@@ -155,16 +243,16 @@
         icon="pi pi-times"
         severity="secondary"
         [outlined]="true"
-        [disabled]="creating"
+        [disabled]="isBusy()"
         (onClick)="requestVisibleChange(false)"
       ></p-button>
       <p-button
         label="Actualizar"
         icon="pi pi-refresh"
         severity="secondary"
-        [loading]="loading"
-        [disabled]="creating || (!eligibility && !errorMessage)"
-        (onClick)="refresh.emit()"
+        [loading]="loading || historyLoading"
+        [disabled]="isBusy()"
+        (onClick)="refreshAll()"
       ></p-button>
       @if (eligibility?.isEligible) {
         <p-button

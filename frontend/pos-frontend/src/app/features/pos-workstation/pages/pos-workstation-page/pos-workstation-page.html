@@ -232,11 +232,25 @@
     [creating]="creditNoteCreating()"
     [errorMessage]="creditNoteEligibilityError()"
     [eligibility]="creditNoteEligibility()"
+    [creditNotes]="creditNotesHistory()"
+    [historyLoading]="creditNotesHistoryLoading()"
+    [historyErrorMessage]="creditNotesHistoryError()"
+    [cancellingCreditNoteId]="creditNoteCancellingId()"
     [companyTimeZoneId]="companyTimeZoneId()"
     (visibleChange)="onCreditNoteEligibilityVisibleChange($event)"
     (refresh)="loadCreditNoteEligibility()"
+    (refreshHistory)="loadCreditNotesHistory()"
     (createDraft)="createCreditNoteDraft($event)"
+    (requestCancelDraft)="openCancelCreditNoteDraft($event)"
   ></app-credit-note-eligibility-dialog>
+
+  <app-cancel-credit-note-draft-dialog
+    [visible]="creditNoteCancelVisible()"
+    [loading]="creditNoteCancellingId() !== null"
+    [creditNote]="creditNoteToCancel()"
+    (visibleChange)="onCancelCreditNoteVisibleChange($event)"
+    (confirmCancel)="cancelCreditNoteDraft($event)"
+  ></app-cancel-credit-note-draft-dialog>
 
   <app-sale-invoice-email-dialog
     [visible]="invoiceEmailVisible()"

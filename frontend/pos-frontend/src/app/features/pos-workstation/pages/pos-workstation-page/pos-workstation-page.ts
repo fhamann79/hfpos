@@ -17,6 +17,7 @@ import { calculateTaxSummary, roundMoney } from '../../../../core/utils/vat-cate
 import { CartWorkstation } from '../../components/cart-workstation/cart-workstation';
 import { CheckoutConfirmDialog } from '../../components/checkout-confirm-dialog/checkout-confirm-dialog';
 import { CustomerSelectorDialog } from '../../components/customer-selector-dialog/customer-selector-dialog';
+import { CancelCreditNoteDraftDialog } from '../../../credit-notes/components/cancel-credit-note-draft-dialog/cancel-credit-note-draft-dialog';
 import { CreditNoteEligibilityDialog } from '../../../credit-notes/components/credit-note-eligibility-dialog/credit-note-eligibility-dialog';
 import { ProductSearchPanel } from '../../components/product-search-panel/product-search-panel';
 import { QuickProductSearchDialog } from '../../components/quick-product-search-dialog/quick-product-search-dialog';
@@ -30,7 +31,10 @@ import { VoidSaleDialog } from '../../components/void-sale-dialog/void-sale-dial
 import { CashSession, CashSessionStatus } from '../../../cash-sessions/models/cash-session.model';
 import { CashSessionService } from '../../../cash-sessions/services/cash-session.service';
 import { CreditNoteEligibility } from '../../../credit-notes/models/credit-note-eligibility.model';
-import { CreateCreditNoteDraftRequest } from '../../../credit-notes/models/credit-note.model';
+import {
+  CreateCreditNoteDraftRequest,
+  CreditNoteListItem,
+} from '../../../credit-notes/models/credit-note.model';
 import { CreditNoteService } from '../../../credit-notes/services/credit-note.service';
 import { CartItem } from '../../models/cart-item.model';
 import { CheckoutRequest } from '../../models/checkout-request.model';
@@ -61,6 +65,7 @@ import { PosWorkstationService } from '../../services/pos-workstation.service';
     CartWorkstation,
     CheckoutConfirmDialog,
     CustomerSelectorDialog,
+    CancelCreditNoteDraftDialog,
     CreditNoteEligibilityDialog,
     RecentSalesPanel,
     SaleDetailDialog,
@@ -128,6 +133,12 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly creditNoteEligibility = signal<CreditNoteEligibility | null>(null);
   readonly creditNoteEligibilitySaleId = signal<number | null>(null);
   readonly creditNoteCreating = signal(false);
+  readonly creditNotesHistory = signal<CreditNoteListItem[]>([]);
+  readonly creditNotesHistoryLoading = signal(false);
+  readonly creditNotesHistoryError = signal('');
+  readonly creditNoteToCancel = signal<CreditNoteListItem | null>(null);
+  readonly creditNoteCancelVisible = signal(false);
+  readonly creditNoteCancellingId = signal<number | null>(null);
   readonly sriSigningSaleId = signal<number | null>(null);
   readonly sriSubmittingSaleId = signal<number | null>(null);
   readonly sriCheckingAuthorizationSaleId = signal<number | null>(null);
@@ -815,8 +826,15 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.creditNoteEligibility.set(null);
     this.creditNoteEligibilityError.set('');
     this.creditNoteCreating.set(false);
+    this.creditNotesHistory.set([]);
+    this.creditNotesHistoryError.set('');
+    this.creditNotesHistoryLoading.set(false);
+    this.creditNoteToCancel.set(null);
+    this.creditNoteCancelVisible.set(false);
+    this.creditNoteCancellingId.set(null);
     this.creditNoteEligibilityVisible.set(true);
     this.loadCreditNoteEligibility();
+    this.loadCreditNotesHistory();
   }
 
   loadCreditNoteEligibility(): void {
@@ -844,6 +862,35 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
         this.creditNoteEligibilityLoading.set(false);
         this.creditNoteEligibilityError.set(this.resolveCreditNoteEligibilityError(error));
+      },
+    });
+  }
+
+  loadCreditNotesHistory(): void {
+    const saleId = this.creditNoteEligibilitySaleId();
+    if (!saleId) {
+      return;
+    }
+
+    this.creditNotesHistoryLoading.set(true);
+    this.creditNotesHistoryError.set('');
+
+    this.creditNoteService.getByOriginalSale(saleId).subscribe({
+      next: (creditNotes) => {
+        if (this.creditNoteEligibilitySaleId() !== saleId) {
+          return;
+        }
+
+        this.creditNotesHistory.set(creditNotes);
+        this.creditNotesHistoryLoading.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        if (this.creditNoteEligibilitySaleId() !== saleId) {
+          return;
+        }
+
+        this.creditNotesHistoryLoading.set(false);
+        this.creditNotesHistoryError.set(this.resolveCreditNotesHistoryError(error));
       },
     });
   }
@@ -878,6 +925,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
           detail: `${documentNumber} por ${total}.`,
         });
         this.loadCreditNoteEligibility();
+        this.loadCreditNotesHistory();
       },
       error: (error: HttpErrorResponse) => {
         this.creditNoteCreating.set(false);
@@ -894,13 +942,92 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
           || code === 'CREDIT_NOTE_ORIGINAL_SALE_FULLY_CREDITED'
         ) {
           this.loadCreditNoteEligibility();
+          this.loadCreditNotesHistory();
+        }
+      },
+    });
+  }
+
+  openCancelCreditNoteDraft(creditNote: CreditNoteListItem): void {
+    if (
+      !this.canVoid
+      || !creditNote.canCancelDraft
+      || this.creditNoteCreating()
+      || this.creditNoteCancellingId() !== null
+    ) {
+      return;
+    }
+
+    this.creditNoteToCancel.set(creditNote);
+    this.creditNoteCancelVisible.set(true);
+  }
+
+  onCancelCreditNoteVisibleChange(visible: boolean): void {
+    if (!visible && this.creditNoteCancellingId() !== null) {
+      return;
+    }
+
+    this.creditNoteCancelVisible.set(visible);
+    if (!visible) {
+      this.creditNoteToCancel.set(null);
+    }
+  }
+
+  cancelCreditNoteDraft(reason: string): void {
+    const creditNote = this.creditNoteToCancel();
+    if (
+      !this.canVoid
+      || !creditNote?.canCancelDraft
+      || this.creditNoteCreating()
+      || this.creditNoteCancellingId() !== null
+    ) {
+      return;
+    }
+
+    this.creditNoteCancellingId.set(creditNote.id);
+    this.creditNoteService.cancelDraft(creditNote.id, { reason }).subscribe({
+      next: (cancelledCreditNote) => {
+        this.creditNoteCancellingId.set(null);
+        this.creditNoteCancelVisible.set(false);
+        this.creditNoteToCancel.set(null);
+
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Borrador cancelado',
+          detail: `${cancelledCreditNote.number || `#${cancelledCreditNote.id}`} fue cancelado.`,
+        });
+        this.loadCreditNoteEligibility();
+        this.loadCreditNotesHistory();
+      },
+      error: (error: HttpErrorResponse) => {
+        this.creditNoteCancellingId.set(null);
+        const code = readErrorCode(error);
+
+        this.messageService.add({
+          severity: 'error',
+          summary: 'No se pudo cancelar el borrador',
+          detail: this.resolveCreditNoteCancellationError(error),
+        });
+
+        if (
+          code === 'CREDIT_NOTE_DRAFT_ALREADY_CANCELLED'
+          || code === 'CREDIT_NOTE_DRAFT_NOT_CANCELLABLE'
+          || code === 'CREDIT_NOTE_DRAFT_SRI_PROCESS_STARTED'
+        ) {
+          this.creditNoteCancelVisible.set(false);
+          this.creditNoteToCancel.set(null);
+          this.loadCreditNoteEligibility();
+          this.loadCreditNotesHistory();
         }
       },
     });
   }
 
   onCreditNoteEligibilityVisibleChange(visible: boolean): void {
-    if (!visible && this.creditNoteCreating()) {
+    if (
+      !visible
+      && (this.creditNoteCreating() || this.creditNoteCancellingId() !== null)
+    ) {
       return;
     }
 
@@ -912,6 +1039,12 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       this.creditNoteEligibilityError.set('');
       this.creditNoteEligibility.set(null);
       this.creditNoteEligibilitySaleId.set(null);
+      this.creditNotesHistory.set([]);
+      this.creditNotesHistoryLoading.set(false);
+      this.creditNotesHistoryError.set('');
+      this.creditNoteCancelVisible.set(false);
+      this.creditNoteToCancel.set(null);
+      this.creditNoteCancellingId.set(null);
     }
   }
 
@@ -1809,8 +1942,17 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
 
     if (this.saleDetailVisible()) {
+      if (this.creditNoteCancelVisible()) {
+        if (this.creditNoteCancellingId() !== null) {
+          return;
+        }
+
+        this.onCancelCreditNoteVisibleChange(false);
+        return;
+      }
+
       if (this.creditNoteEligibilityVisible()) {
-        if (this.creditNoteCreating()) {
+        if (this.creditNoteCreating() || this.creditNoteCancellingId() !== null) {
           return;
         }
 
@@ -1916,6 +2058,43 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         }
 
         return 'No se pudo crear el borrador de nota de crédito. Intenta nuevamente.';
+    }
+  }
+
+  private resolveCreditNotesHistoryError(error: HttpErrorResponse): string {
+    if (readErrorCode(error) === 'SALE_NOT_FOUND') {
+      return 'La venta original no existe o no pertenece al contexto operativo actual.';
+    }
+
+    if (error.status === 403) {
+      return 'No tienes permiso para consultar el historial de notas de crédito.';
+    }
+
+    return 'No se pudo cargar el historial de notas de crédito. Intenta nuevamente.';
+  }
+
+  private resolveCreditNoteCancellationError(error: HttpErrorResponse): string {
+    switch (readErrorCode(error)) {
+      case 'CREDIT_NOTE_NOT_FOUND':
+        return 'El borrador no existe o no pertenece al contexto operativo actual.';
+      case 'CREDIT_NOTE_CANCELLATION_REASON_REQUIRED':
+        return 'Ingresa el motivo de cancelación.';
+      case 'CREDIT_NOTE_CANCELLATION_REASON_TOO_LONG':
+        return 'El motivo de cancelación no puede superar 300 caracteres.';
+      case 'CREDIT_NOTE_DRAFT_ALREADY_CANCELLED':
+        return 'El borrador ya fue cancelado.';
+      case 'CREDIT_NOTE_DRAFT_NOT_CANCELLABLE':
+        return 'La nota de crédito ya no es un borrador cancelable.';
+      case 'CREDIT_NOTE_DRAFT_SRI_PROCESS_STARTED':
+        return 'El borrador no puede cancelarse porque ya inició un proceso SRI.';
+      case 'SALE_NOT_FOUND':
+        return 'La factura original no existe o no pertenece al contexto operativo actual.';
+      default:
+        if (error.status === 403) {
+          return 'No tienes permiso para cancelar borradores de nota de crédito.';
+        }
+
+        return 'No se pudo cancelar el borrador de nota de crédito. Intenta nuevamente.';
     }
   }
 }

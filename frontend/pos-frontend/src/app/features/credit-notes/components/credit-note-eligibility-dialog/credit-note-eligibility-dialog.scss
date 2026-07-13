@@ -1,3 +1,22 @@
+:host ::ng-deep .credit-note-dialog {
+  display:flex;
+  flex-direction:column;
+  max-height:94vh;
+}
+
+:host ::ng-deep .credit-note-dialog .p-dialog-content {
+  min-height:0;
+  overflow-x:hidden;
+  overflow-y:auto;
+  padding-bottom:2rem;
+}
+
+:host ::ng-deep .credit-note-dialog .p-dialog-footer {
+  position:static;
+  flex:0 0 auto;
+  border-top:1px solid #e2e8f0;
+}
+
 .document-summary {
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));
@@ -48,6 +67,7 @@
 }
 
 .draft-form {
+  min-width:0;
   display:grid;
   gap:.9rem;
 }
@@ -89,32 +109,78 @@
   margin-bottom:0;
 }
 
-:host ::ng-deep .eligibility-items-table .p-datatable-wrapper {
+.credit-note-items-scroll,
+.credit-note-history-scroll {
+  width:100%;
   max-width:100%;
+  min-width:0;
   overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+}
+
+.credit-note-history-scroll {
+  padding-bottom:.35rem;
+}
+
+:host ::ng-deep .credit-note-items-scroll .p-datatable-wrapper,
+:host ::ng-deep .credit-note-history-scroll .p-datatable-wrapper {
+  overflow:visible;
+}
+
+:host ::ng-deep .eligibility-items-table th,
+:host ::ng-deep .eligibility-items-table td,
+:host ::ng-deep .credit-note-history-table th,
+:host ::ng-deep .credit-note-history-table td {
+  box-sizing:border-box;
+  padding-left:.75rem;
+  padding-right:.75rem;
 }
 
 .product-column,
 .product-cell {
-  width:14rem;
+  width:18rem;
 }
 
 .quantity-column,
 .quantity-cell {
-  width:7rem;
   text-align:right;
+}
+
+.sold-quantity-column,
+.sold-quantity-cell,
+.credited-quantity-column,
+.credited-quantity-cell {
+  width:8.5rem;
+}
+
+.available-quantity-column,
+.available-quantity-cell {
+  width:7.5rem;
 }
 
 .credit-column,
 .credit-cell {
-  width:9rem;
+  width:11rem;
   text-align:right;
+}
+
+.unit-price-column,
+.unit-price-cell,
+.original-total-column,
+.original-total-cell {
+  width:8.5rem;
 }
 
 .money-column,
 .money-cell {
-  width:8rem;
   text-align:right;
+}
+
+.quantity-column,
+.credit-column,
+.money-column {
+  white-space:normal;
+  vertical-align:bottom;
 }
 
 .product-cell {
@@ -134,6 +200,16 @@
 :host ::ng-deep .credit-cell .p-inputnumber,
 :host ::ng-deep .credit-cell .p-inputnumber-input {
   width:100%;
+  min-width:0;
+  box-sizing:border-box;
+}
+
+:host ::ng-deep .credit-cell .p-inputnumber {
+  display:block;
+}
+
+:host ::ng-deep .credit-cell .p-inputnumber-input {
+  text-align:right;
 }
 
 .credit-cell .p-error {
@@ -142,8 +218,119 @@
   text-align:left;
 }
 
+.history-section {
+  min-width:0;
+  display:grid;
+  gap:.75rem;
+  margin-top:1.1rem;
+  padding-top:1rem;
+  padding-bottom:1rem;
+  border-top:1px solid #cbd5e1;
+}
+
+.history-heading h3 {
+  margin:0;
+  color:#0f172a;
+  font-size:1rem;
+}
+
+.history-heading p {
+  margin:.2rem 0 0;
+  color:#64748b;
+  font-size:.82rem;
+}
+
+:host ::ng-deep .credit-note-history-table th {
+  white-space:nowrap;
+  vertical-align:bottom;
+}
+
+:host ::ng-deep .credit-note-history-table .history-reason-column {
+  white-space:normal;
+}
+
+.history-number-column,
+.history-number-cell {
+  width:11rem;
+}
+
+.history-status-column,
+.history-status-cell {
+  width:8rem;
+}
+
+.history-date-column,
+.history-date-cell {
+  width:10rem;
+}
+
+.history-reason-column,
+.history-reason-cell {
+  width:15rem;
+}
+
+.history-total-column,
+.history-total-cell {
+  width:7rem;
+  text-align:right;
+}
+
+.history-cancellation-column,
+.history-cancellation-cell {
+  width:16rem;
+}
+
+.history-action-column,
+.history-action-cell {
+  width:12rem;
+  text-align:right;
+}
+
+.history-number-cell {
+  font-weight:800;
+  white-space:nowrap;
+}
+
+.history-reason-cell,
+.history-cancellation-cell {
+  overflow-wrap:anywhere;
+}
+
+.history-cancellation-cell {
+  vertical-align:top;
+}
+
+.history-cancellation-cell strong,
+.history-cancellation-cell span,
+.history-cancellation-cell small {
+  display:block;
+}
+
+.history-cancellation-cell span,
+.history-cancellation-cell small {
+  margin-top:.18rem;
+  color:#64748b;
+}
+
+:host ::ng-deep .history-action-cell .p-button {
+  white-space:nowrap;
+}
+
+.history-loading,
+.history-empty {
+  min-height:4rem;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:.5rem;
+  margin:0;
+  color:#64748b;
+  text-align:center;
+}
+
 .dialog-footer {
   display:flex;
+  flex-wrap:wrap;
   justify-content:flex-end;
   gap:.5rem;
 }
@@ -157,8 +344,15 @@
   .document-summary__wide {
     grid-column:auto;
   }
+}
 
-  .dialog-footer {
-    flex-wrap:wrap;
+@media (max-width:560px) {
+  .dialog-footer p-button {
+    flex:1 1 100%;
+  }
+
+  :host ::ng-deep .dialog-footer .p-button {
+    width:100%;
+    justify-content:center;
   }
 }

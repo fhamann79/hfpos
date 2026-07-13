@@ -1,0 +1,73 @@
+.note-summary {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:.7rem;
+  margin-bottom:.85rem;
+  padding:.8rem;
+  border:1px solid #cbd5e1;
+  border-radius:6px;
+  background:#f8fafc;
+}
+
+.note-summary > div {
+  min-width:0;
+  display:grid;
+  gap:.2rem;
+}
+
+.note-summary__wide {
+  grid-column:1 / -1;
+}
+
+.note-summary span {
+  color:#64748b;
+  font-size:.72rem;
+  font-weight:800;
+  text-transform:uppercase;
+}
+
+.note-summary strong {
+  color:#0f172a;
+  overflow-wrap:anywhere;
+}
+
+:host ::ng-deep .p-message {
+  width:100%;
+  margin-bottom:.85rem;
+}
+
+.cancel-form {
+  display:grid;
+  gap:.4rem;
+}
+
+.cancel-form label {
+  color:#334155;
+  font-size:.82rem;
+  font-weight:800;
+}
+
+.cancel-form textarea {
+  width:100%;
+  resize:vertical;
+}
+
+.dialog-actions {
+  display:flex;
+  justify-content:flex-end;
+  gap:.5rem;
+}
+
+@media (max-width:560px) {
+  .note-summary {
+    grid-template-columns:1fr;
+  }
+
+  .note-summary__wide {
+    grid-column:auto;
+  }
+
+  .dialog-actions {
+    flex-wrap:wrap;
+  }
+}
