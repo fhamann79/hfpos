@@ -18,6 +18,7 @@ import { CartWorkstation } from '../../components/cart-workstation/cart-workstat
 import { CheckoutConfirmDialog } from '../../components/checkout-confirm-dialog/checkout-confirm-dialog';
 import { CustomerSelectorDialog } from '../../components/customer-selector-dialog/customer-selector-dialog';
 import { CancelCreditNoteDraftDialog } from '../../../credit-notes/components/cancel-credit-note-draft-dialog/cancel-credit-note-draft-dialog';
+import { CreditNoteDetailDialog } from '../../../credit-notes/components/credit-note-detail-dialog/credit-note-detail-dialog';
 import { CreditNoteEligibilityDialog } from '../../../credit-notes/components/credit-note-eligibility-dialog/credit-note-eligibility-dialog';
 import { ProductSearchPanel } from '../../components/product-search-panel/product-search-panel';
 import { QuickProductSearchDialog } from '../../components/quick-product-search-dialog/quick-product-search-dialog';
@@ -33,6 +34,7 @@ import { CashSessionService } from '../../../cash-sessions/services/cash-session
 import { CreditNoteEligibility } from '../../../credit-notes/models/credit-note-eligibility.model';
 import {
   CreateCreditNoteDraftRequest,
+  CreditNote,
   CreditNoteListItem,
 } from '../../../credit-notes/models/credit-note.model';
 import { CreditNoteService } from '../../../credit-notes/services/credit-note.service';
@@ -66,6 +68,7 @@ import { PosWorkstationService } from '../../services/pos-workstation.service';
     CheckoutConfirmDialog,
     CustomerSelectorDialog,
     CancelCreditNoteDraftDialog,
+    CreditNoteDetailDialog,
     CreditNoteEligibilityDialog,
     RecentSalesPanel,
     SaleDetailDialog,
@@ -139,6 +142,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly creditNoteToCancel = signal<CreditNoteListItem | null>(null);
   readonly creditNoteCancelVisible = signal(false);
   readonly creditNoteCancellingId = signal<number | null>(null);
+  readonly creditNoteDetailVisible = signal(false);
+  readonly creditNoteDetailLoading = signal(false);
+  readonly creditNoteDetailError = signal('');
+  readonly selectedCreditNote = signal<CreditNote | null>(null);
+  readonly selectedCreditNoteId = signal<number | null>(null);
   readonly sriSigningSaleId = signal<number | null>(null);
   readonly sriSubmittingSaleId = signal<number | null>(null);
   readonly sriCheckingAuthorizationSaleId = signal<number | null>(null);
@@ -832,6 +840,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.creditNoteToCancel.set(null);
     this.creditNoteCancelVisible.set(false);
     this.creditNoteCancellingId.set(null);
+    this.creditNoteDetailVisible.set(false);
+    this.creditNoteDetailLoading.set(false);
+    this.creditNoteDetailError.set('');
+    this.selectedCreditNote.set(null);
+    this.selectedCreditNoteId.set(null);
     this.creditNoteEligibilityVisible.set(true);
     this.loadCreditNoteEligibility();
     this.loadCreditNotesHistory();
@@ -864,6 +877,62 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         this.creditNoteEligibilityError.set(this.resolveCreditNoteEligibilityError(error));
       },
     });
+  }
+
+  openCreditNoteDetail(creditNote: CreditNoteListItem): void {
+    if (
+      !this.canVoid
+      || this.creditNoteCreating()
+      || this.creditNoteCancellingId() !== null
+    ) {
+      return;
+    }
+
+    this.selectedCreditNoteId.set(creditNote.id);
+    this.selectedCreditNote.set(null);
+    this.creditNoteDetailError.set('');
+    this.creditNoteDetailVisible.set(true);
+    this.loadCreditNoteDetail();
+  }
+
+  loadCreditNoteDetail(): void {
+    const creditNoteId = this.selectedCreditNoteId();
+    if (!creditNoteId) {
+      return;
+    }
+
+    this.creditNoteDetailLoading.set(true);
+    this.creditNoteDetailError.set('');
+
+    this.creditNoteService.getById(creditNoteId).subscribe({
+      next: (creditNote) => {
+        if (this.selectedCreditNoteId() !== creditNoteId) {
+          return;
+        }
+
+        this.selectedCreditNote.set(creditNote);
+        this.creditNoteDetailLoading.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        if (this.selectedCreditNoteId() !== creditNoteId) {
+          return;
+        }
+
+        this.creditNoteDetailLoading.set(false);
+        this.creditNoteDetailError.set(this.resolveCreditNoteDetailError(error));
+      },
+    });
+  }
+
+  onCreditNoteDetailVisibleChange(visible: boolean): void {
+    this.creditNoteDetailVisible.set(visible);
+
+    if (!visible) {
+      this.creditNoteDetailLoading.set(false);
+      this.creditNoteDetailError.set('');
+      this.selectedCreditNote.set(null);
+      this.selectedCreditNoteId.set(null);
+    }
   }
 
   loadCreditNotesHistory(): void {
@@ -998,6 +1067,12 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         });
         this.loadCreditNoteEligibility();
         this.loadCreditNotesHistory();
+        if (
+          this.creditNoteDetailVisible()
+          && this.selectedCreditNoteId() === cancelledCreditNote.id
+        ) {
+          this.loadCreditNoteDetail();
+        }
       },
       error: (error: HttpErrorResponse) => {
         this.creditNoteCancellingId.set(null);
@@ -1018,6 +1093,12 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
           this.creditNoteToCancel.set(null);
           this.loadCreditNoteEligibility();
           this.loadCreditNotesHistory();
+          if (
+            this.creditNoteDetailVisible()
+            && this.selectedCreditNoteId() === creditNote.id
+          ) {
+            this.loadCreditNoteDetail();
+          }
         }
       },
     });
@@ -1045,6 +1126,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       this.creditNoteCancelVisible.set(false);
       this.creditNoteToCancel.set(null);
       this.creditNoteCancellingId.set(null);
+      this.creditNoteDetailVisible.set(false);
+      this.creditNoteDetailLoading.set(false);
+      this.creditNoteDetailError.set('');
+      this.selectedCreditNote.set(null);
+      this.selectedCreditNoteId.set(null);
     }
   }
 
@@ -1917,6 +2003,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   private closeContextualDialog(): void {
+    if (this.creditNoteDetailVisible()) {
+      this.onCreditNoteDetailVisibleChange(false);
+      return;
+    }
+
     if (this.quickSearchVisible()) {
       this.quickSearchVisible.set(false);
       this.focusMainSearch();
@@ -2096,5 +2187,17 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
         return 'No se pudo cancelar el borrador de nota de crédito. Intenta nuevamente.';
     }
+  }
+
+  private resolveCreditNoteDetailError(error: HttpErrorResponse): string {
+    if (readErrorCode(error) === 'CREDIT_NOTE_NOT_FOUND') {
+      return 'La nota de crédito no existe o no pertenece al contexto operativo actual.';
+    }
+
+    if (error.status === 403) {
+      return 'No tienes permiso para consultar el detalle de la nota de crédito.';
+    }
+
+    return 'No se pudo cargar el detalle de la nota de crédito.';
   }
 }

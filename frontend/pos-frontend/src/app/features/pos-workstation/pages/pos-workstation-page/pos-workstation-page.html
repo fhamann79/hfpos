@@ -242,7 +242,18 @@
     (refreshHistory)="loadCreditNotesHistory()"
     (createDraft)="createCreditNoteDraft($event)"
     (requestCancelDraft)="openCancelCreditNoteDraft($event)"
+    (viewCreditNoteDetail)="openCreditNoteDetail($event)"
   ></app-credit-note-eligibility-dialog>
+
+  <app-credit-note-detail-dialog
+    [visible]="creditNoteDetailVisible()"
+    [loading]="creditNoteDetailLoading()"
+    [errorMessage]="creditNoteDetailError()"
+    [creditNote]="selectedCreditNote()"
+    [companyTimeZoneId]="companyTimeZoneId()"
+    (visibleChange)="onCreditNoteDetailVisibleChange($event)"
+    (refresh)="loadCreditNoteDetail()"
+  ></app-credit-note-detail-dialog>
 
   <app-cancel-credit-note-draft-dialog
     [visible]="creditNoteCancelVisible()"

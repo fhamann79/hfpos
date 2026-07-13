@@ -52,6 +52,7 @@ export class CreditNoteEligibilityDialog implements OnChanges {
   @Output() refreshHistory = new EventEmitter<void>();
   @Output() createDraft = new EventEmitter<CreateCreditNoteDraftRequest>();
   @Output() requestCancelDraft = new EventEmitter<CreditNoteListItem>();
+  @Output() viewCreditNoteDetail = new EventEmitter<CreditNoteListItem>();
 
   readonly form = new FormGroup({
     reason: new FormControl('', {
@@ -203,6 +204,14 @@ export class CreditNoteEligibilityDialog implements OnChanges {
     }
 
     this.requestCancelDraft.emit(note);
+  }
+
+  viewDetail(note: CreditNoteListItem): void {
+    if (this.isBusy()) {
+      return;
+    }
+
+    this.viewCreditNoteDetail.emit(note);
   }
 
   private rebuildForm(): void {

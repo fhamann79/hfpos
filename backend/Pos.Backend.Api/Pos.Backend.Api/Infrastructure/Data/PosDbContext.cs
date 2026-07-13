@@ -1058,6 +1058,17 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<CreditNoteItem>(entity =>
         {
+            entity.Property(cni => cni.ProductNameSnapshot)
+                .IsRequired()
+                .HasMaxLength(300);
+
+            entity.Property(cni => cni.ProductMainCodeSnapshot)
+                .IsRequired()
+                .HasMaxLength(25);
+
+            entity.Property(cni => cni.ProductAuxiliaryCodeSnapshot)
+                .HasMaxLength(25);
+
             entity.Property(cni => cni.Quantity)
                 .HasPrecision(18, 4);
 

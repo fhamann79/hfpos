@@ -210,17 +210,27 @@
                 }
               </td>
               <td class="history-action-cell">
-                @if (note.canCancelDraft) {
+                <div class="history-actions">
                   <p-button
-                    label="Cancelar borrador"
-                    icon="pi pi-times-circle"
-                    severity="danger"
+                    label="Ver detalle"
+                    icon="pi pi-eye"
+                    severity="secondary"
                     [outlined]="true"
-                    [loading]="cancellingCreditNoteId === note.id"
                     [disabled]="isBusy()"
-                    (onClick)="cancelDraft(note)"
+                    (onClick)="viewDetail(note)"
                   ></p-button>
-                }
+                  @if (note.canCancelDraft) {
+                    <p-button
+                      label="Cancelar borrador"
+                      icon="pi pi-times-circle"
+                      severity="danger"
+                      [outlined]="true"
+                      [loading]="cancellingCreditNoteId === note.id"
+                      [disabled]="isBusy()"
+                      (onClick)="cancelDraft(note)"
+                    ></p-button>
+                  }
+                </div>
               </td>
             </tr>
           </ng-template>
