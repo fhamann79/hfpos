@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Pos.Backend.Api.Core.DTOs;
@@ -181,7 +182,7 @@ public class CreditNoteService : ICreditNoteService
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
-            return ToDto(creditNote, originalItems);
+            return ToDto(creditNote);
         }
         catch (KeyNotFoundException)
         {
@@ -252,6 +253,59 @@ public class CreditNoteService : ICreditNoteService
                 ex,
                 "Credit note history query failed. OriginalSaleId {OriginalSaleId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
                 originalSaleId,
+                operationalContext.CompanyId,
+                operationalContext.EstablishmentId,
+                operationalContext.EmissionPointId);
+
+            throw new InvalidOperationException("CREDIT_NOTE_OPERATION_FAILED", ex);
+        }
+    }
+
+    public async Task<CreditNoteDto> GetByIdAsync(int creditNoteId)
+    {
+        if (creditNoteId <= 0)
+        {
+            throw new KeyNotFoundException("CREDIT_NOTE_NOT_FOUND");
+        }
+
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+
+        try
+        {
+            var creditNote = await _context.CreditNotes
+                .AsNoTracking()
+                .Include(note => note.Items)
+                .ThenInclude(item => item.Product)
+                .Include(note => note.CancelledByUser)
+                .Include(note => note.OriginalSale)
+                .SingleOrDefaultAsync(note =>
+                    note.Id == creditNoteId
+                    && note.CompanyId == operationalContext.CompanyId
+                    && note.OriginalSale.CompanyId == operationalContext.CompanyId
+                    && note.OriginalSale.EstablishmentId == operationalContext.EstablishmentId
+                    && note.OriginalSale.EmissionPointId == operationalContext.EmissionPointId);
+
+            if (creditNote is null)
+            {
+                throw new KeyNotFoundException("CREDIT_NOTE_NOT_FOUND");
+            }
+
+            return ToDto(creditNote);
+        }
+        catch (KeyNotFoundException)
+        {
+            throw;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Credit note detail query failed. CreditNoteId {CreditNoteId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
+                creditNoteId,
                 operationalContext.CompanyId,
                 operationalContext.EstablishmentId,
                 operationalContext.EmissionPointId);
@@ -539,11 +593,17 @@ public class CreditNoteService : ICreditNoteService
     {
         var useRemainingBalance = requestedQuantity == availableQuantity;
         var ratio = requestedQuantity / originalItem.Quantity;
+        var productSnapshot = ResolveProductFiscalSnapshot(
+            originalItem.Product,
+            originalItem.ProductId);
 
         return new CreditNoteItem
         {
             SaleItemId = originalItem.Id,
             ProductId = originalItem.ProductId,
+            ProductNameSnapshot = productSnapshot.Name,
+            ProductMainCodeSnapshot = productSnapshot.MainCode,
+            ProductAuxiliaryCodeSnapshot = productSnapshot.AuxiliaryCode,
             Quantity = requestedQuantity,
             UnitPrice = originalItem.UnitPrice,
             UnitCost = originalItem.UnitCost,
@@ -624,9 +684,7 @@ public class CreditNoteService : ICreditNoteService
         creditNote.Total = Round(creditNote.Items.Sum(item => item.LineTotal), 2);
     }
 
-    private static CreditNoteDto ToDto(
-        CreditNote creditNote,
-        IReadOnlyDictionary<int, SaleItem>? originalItems = null)
+    private static CreditNoteDto ToDto(CreditNote creditNote)
     {
         return new CreditNoteDto
         {
@@ -670,23 +728,30 @@ public class CreditNoteService : ICreditNoteService
             CancelledByUsername = creditNote.CancelledByUser?.Username,
             Items = creditNote.Items
                 .OrderBy(item => item.SaleItemId)
-                .Select(item => new CreditNoteItemDto
+                .Select(item =>
                 {
-                    Id = item.Id,
-                    SaleItemId = item.SaleItemId,
-                    ProductId = item.ProductId,
-                    ProductName = ResolveProductName(item, originalItems),
-                    Quantity = item.Quantity,
-                    UnitPrice = item.UnitPrice,
-                    GrossSubtotal = item.GrossSubtotal,
-                    DiscountAmount = item.DiscountAmount,
-                    NetSubtotal = item.NetSubtotal,
-                    LineSubtotal = item.LineSubtotal,
-                    VatCategory = item.VatCategory,
-                    VatRate = item.VatRate,
-                    TaxableSubtotal = item.TaxableSubtotal,
-                    TaxAmount = item.TaxAmount,
-                    LineTotal = item.LineTotal
+                    var productSnapshot = ResolveCreditNoteItemProductSnapshot(item);
+
+                    return new CreditNoteItemDto
+                    {
+                        Id = item.Id,
+                        SaleItemId = item.SaleItemId,
+                        ProductId = item.ProductId,
+                        ProductName = productSnapshot.Name,
+                        ProductMainCode = productSnapshot.MainCode,
+                        ProductAuxiliaryCode = productSnapshot.AuxiliaryCode,
+                        Quantity = item.Quantity,
+                        UnitPrice = item.UnitPrice,
+                        GrossSubtotal = item.GrossSubtotal,
+                        DiscountAmount = item.DiscountAmount,
+                        NetSubtotal = item.NetSubtotal,
+                        LineSubtotal = item.LineSubtotal,
+                        VatCategory = item.VatCategory,
+                        VatRate = item.VatRate,
+                        TaxableSubtotal = item.TaxableSubtotal,
+                        TaxAmount = item.TaxAmount,
+                        LineTotal = item.LineTotal
+                    };
                 })
                 .ToList()
         };
@@ -722,23 +787,55 @@ public class CreditNoteService : ICreditNoteService
         };
     }
 
-    private static string ResolveProductName(
-        CreditNoteItem item,
-        IReadOnlyDictionary<int, SaleItem>? originalItems)
+    private static ProductFiscalSnapshot ResolveCreditNoteItemProductSnapshot(
+        CreditNoteItem item)
     {
-        if (item.Product is not null && !string.IsNullOrWhiteSpace(item.Product.Name))
+        var nameSnapshot = NormalizeSnapshotText(item.ProductNameSnapshot, 300);
+        var mainCodeSnapshot = NormalizeSnapshotText(item.ProductMainCodeSnapshot, 25);
+        var auxiliaryCodeSnapshot = NormalizeSnapshotText(item.ProductAuxiliaryCodeSnapshot, 25);
+        var storedSnapshotIsComplete = nameSnapshot is not null && mainCodeSnapshot is not null;
+        var fallback = ResolveProductFiscalSnapshot(item.Product, item.ProductId);
+
+        return new ProductFiscalSnapshot(
+            nameSnapshot ?? fallback.Name,
+            mainCodeSnapshot ?? fallback.MainCode,
+            auxiliaryCodeSnapshot ?? (storedSnapshotIsComplete ? null : fallback.AuxiliaryCode));
+    }
+
+    private static ProductFiscalSnapshot ResolveProductFiscalSnapshot(
+        Product? product,
+        int productId)
+    {
+        var name = NormalizeSnapshotText(product?.Name, 300)
+            ?? $"Producto {productId.ToString(CultureInfo.InvariantCulture)}";
+        var internalCode = NormalizeSnapshotText(product?.InternalCode, 25);
+        var barcode = NormalizeSnapshotText(product?.Barcode, 25);
+        var mainCode = internalCode
+            ?? barcode
+            ?? productId.ToString(CultureInfo.InvariantCulture);
+        var auxiliaryCode = internalCode is not null
+            && barcode is not null
+            && !string.Equals(barcode, internalCode, StringComparison.Ordinal)
+                ? barcode
+                : null;
+
+        return new ProductFiscalSnapshot(name, mainCode, auxiliaryCode);
+    }
+
+    private static string? NormalizeSnapshotText(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
         {
-            return item.Product.Name;
+            return null;
         }
 
-        if (item.SaleItemId.HasValue
-            && originalItems is not null
-            && originalItems.TryGetValue(item.SaleItemId.Value, out var originalItem))
-        {
-            return originalItem.Product.Name;
-        }
+        var normalized = string.Join(
+            " ",
+            value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
-        return "Producto";
+        return normalized.Length <= maxLength
+            ? normalized
+            : normalized[..maxLength];
     }
 
     private static (string Reason, string? Notes) ValidateDraftRequest(CreateCreditNoteDraftDto dto)
@@ -946,4 +1043,9 @@ public class CreditNoteService : ICreditNoteService
         public decimal LineTotal { get; set; }
         public decimal LineCost { get; set; }
     }
+
+    private sealed record ProductFiscalSnapshot(
+        string Name,
+        string MainCode,
+        string? AuxiliaryCode);
 }

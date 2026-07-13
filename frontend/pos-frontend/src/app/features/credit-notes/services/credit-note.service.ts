@@ -31,6 +31,10 @@ export class CreditNoteService {
     );
   }
 
+  getById(creditNoteId: number): Observable<CreditNote> {
+    return this.http.get<CreditNote>(`${this.baseUrl}/${creditNoteId}`);
+  }
+
   cancelDraft(
     creditNoteId: number,
     payload: CancelCreditNoteDraftRequest

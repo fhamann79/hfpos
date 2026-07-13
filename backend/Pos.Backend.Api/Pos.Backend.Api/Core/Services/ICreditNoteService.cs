@@ -10,6 +10,8 @@ public interface ICreditNoteService
 
     Task<IReadOnlyList<CreditNoteListItemDto>> GetByOriginalSaleAsync(int originalSaleId);
 
+    Task<CreditNoteDto> GetByIdAsync(int creditNoteId);
+
     Task<CreditNoteDto> CancelDraftAsync(
         int creditNoteId,
         CancelCreditNoteDraftDto dto);

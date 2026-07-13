@@ -15,6 +15,12 @@ public class CreditNoteItem
     public int ProductId { get; set; }
     public Product Product { get; set; } = null!;
 
+    public string ProductNameSnapshot { get; set; } = string.Empty;
+
+    public string ProductMainCodeSnapshot { get; set; } = string.Empty;
+
+    public string? ProductAuxiliaryCodeSnapshot { get; set; }
+
     public decimal Quantity { get; set; }
 
     public decimal UnitPrice { get; set; }

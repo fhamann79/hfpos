@@ -93,6 +93,10 @@ public class CreditNoteItemDto
 
     public string ProductName { get; set; } = string.Empty;
 
+    public string ProductMainCode { get; set; } = string.Empty;
+
+    public string? ProductAuxiliaryCode { get; set; }
+
     public decimal Quantity { get; set; }
 
     public decimal UnitPrice { get; set; }

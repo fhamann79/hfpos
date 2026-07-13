@@ -83,6 +83,8 @@ export interface CreditNoteItem {
   saleItemId: number | null;
   productId: number;
   productName: string;
+  productMainCode: string;
+  productAuxiliaryCode: string | null;
   quantity: number;
   unitPrice: number;
   grossSubtotal: number;
