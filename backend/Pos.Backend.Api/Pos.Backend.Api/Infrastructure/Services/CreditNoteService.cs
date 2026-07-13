@@ -205,6 +205,137 @@ public class CreditNoteService : ICreditNoteService
         }
     }
 
+    public async Task<IReadOnlyList<CreditNoteListItemDto>> GetByOriginalSaleAsync(int originalSaleId)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+
+        try
+        {
+            var originalSaleExists = await _context.Sales
+                .AsNoTracking()
+                .AnyAsync(sale =>
+                    sale.Id == originalSaleId
+                    && sale.CompanyId == operationalContext.CompanyId
+                    && sale.EstablishmentId == operationalContext.EstablishmentId
+                    && sale.EmissionPointId == operationalContext.EmissionPointId);
+
+            if (!originalSaleExists)
+            {
+                throw new KeyNotFoundException("SALE_NOT_FOUND");
+            }
+
+            var creditNotes = await _context.CreditNotes
+                .AsNoTracking()
+                .Include(creditNote => creditNote.CancelledByUser)
+                .Where(creditNote =>
+                    creditNote.CompanyId == operationalContext.CompanyId
+                    && creditNote.OriginalSaleId == originalSaleId)
+                .OrderByDescending(creditNote => creditNote.CreatedAt)
+                .ThenByDescending(creditNote => creditNote.Id)
+                .ToListAsync();
+
+            return creditNotes
+                .Select(creditNote => ToListItemDto(creditNote, operationalContext))
+                .ToList();
+        }
+        catch (KeyNotFoundException)
+        {
+            throw;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Credit note history query failed. OriginalSaleId {OriginalSaleId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
+                originalSaleId,
+                operationalContext.CompanyId,
+                operationalContext.EstablishmentId,
+                operationalContext.EmissionPointId);
+
+            throw new InvalidOperationException("CREDIT_NOTE_OPERATION_FAILED", ex);
+        }
+    }
+
+    public async Task<CreditNoteDto> CancelDraftAsync(
+        int creditNoteId,
+        CancelCreditNoteDraftDto dto)
+    {
+        var cancellationReason = ValidateCancellationRequest(creditNoteId, dto);
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+
+        try
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+
+            var originalSaleId = await GetCreditNoteOriginalSaleIdAsync(
+                creditNoteId,
+                operationalContext);
+
+            await LockOriginalSaleRowAsync(originalSaleId, operationalContext);
+            var creditNote = await LockCreditNoteAsync(creditNoteId, operationalContext);
+
+            if (creditNote.DocumentStatus == SaleDocumentStatus.Cancelled
+                || creditNote.VoidedAt.HasValue)
+            {
+                throw new InvalidOperationException("CREDIT_NOTE_DRAFT_ALREADY_CANCELLED");
+            }
+
+            if (creditNote.DocumentStatus != SaleDocumentStatus.Draft)
+            {
+                throw new InvalidOperationException("CREDIT_NOTE_DRAFT_NOT_CANCELLABLE");
+            }
+
+            if (HasSriProcessStarted(creditNote))
+            {
+                throw new InvalidOperationException("CREDIT_NOTE_DRAFT_SRI_PROCESS_STARTED");
+            }
+
+            var now = _businessClockService.UtcNow;
+            creditNote.DocumentStatus = SaleDocumentStatus.Cancelled;
+            creditNote.VoidedAt = now;
+            creditNote.UpdatedAt = now;
+            creditNote.CancellationReason = cancellationReason;
+            creditNote.CancelledByUserId = operationalContext.UserId;
+            creditNote.CancelledByUser = await _context.Users
+                .SingleAsync(user => user.Id == operationalContext.UserId);
+
+            await _context.Entry(creditNote)
+                .Collection(note => note.Items)
+                .Query()
+                .Include(item => item.Product)
+                .LoadAsync();
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return ToDto(creditNote);
+        }
+        catch (KeyNotFoundException)
+        {
+            throw;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Credit note draft cancellation failed. CreditNoteId {CreditNoteId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
+                creditNoteId,
+                operationalContext.CompanyId,
+                operationalContext.EstablishmentId,
+                operationalContext.EmissionPointId);
+
+            throw new InvalidOperationException("CREDIT_NOTE_OPERATION_FAILED", ex);
+        }
+    }
+
     private async Task<Sale> LoadOriginalSaleAsync(
         int originalSaleId,
         OperationalContext operationalContext)
@@ -227,6 +358,28 @@ public class CreditNoteService : ICreditNoteService
         int originalSaleId,
         OperationalContext operationalContext)
     {
+        var originalSale = await LockOriginalSaleRowAsync(originalSaleId, operationalContext);
+
+        if (originalSale.CustomerId.HasValue)
+        {
+            await _context.Entry(originalSale)
+                .Reference(s => s.Customer)
+                .LoadAsync();
+        }
+
+        await _context.Entry(originalSale)
+            .Collection(s => s.Items)
+            .Query()
+            .Include(item => item.Product)
+            .LoadAsync();
+
+        return originalSale;
+    }
+
+    private async Task<Sale> LockOriginalSaleRowAsync(
+        int originalSaleId,
+        OperationalContext operationalContext)
+    {
         var originalSale = await _context.Sales
             .FromSqlInterpolated($@"
                 SELECT *
@@ -243,20 +396,44 @@ public class CreditNoteService : ICreditNoteService
             throw new KeyNotFoundException("SALE_NOT_FOUND");
         }
 
-        if (originalSale.CustomerId.HasValue)
-        {
-            await _context.Entry(originalSale)
-                .Reference(s => s.Customer)
-                .LoadAsync();
-        }
-
-        await _context.Entry(originalSale)
-            .Collection(s => s.Items)
-            .Query()
-            .Include(item => item.Product)
-            .LoadAsync();
-
         return originalSale;
+    }
+
+    private async Task<int> GetCreditNoteOriginalSaleIdAsync(
+        int creditNoteId,
+        OperationalContext operationalContext)
+    {
+        var originalSaleId = await _context.CreditNotes
+            .AsNoTracking()
+            .Where(creditNote =>
+                creditNote.Id == creditNoteId
+                && creditNote.CompanyId == operationalContext.CompanyId
+                && creditNote.EstablishmentId == operationalContext.EstablishmentId
+                && creditNote.EmissionPointId == operationalContext.EmissionPointId)
+            .Select(creditNote => (int?)creditNote.OriginalSaleId)
+            .SingleOrDefaultAsync();
+
+        return originalSaleId
+            ?? throw new KeyNotFoundException("CREDIT_NOTE_NOT_FOUND");
+    }
+
+    private async Task<CreditNote> LockCreditNoteAsync(
+        int creditNoteId,
+        OperationalContext operationalContext)
+    {
+        var creditNote = await _context.CreditNotes
+            .FromSqlInterpolated($@"
+                SELECT *
+                FROM ""CreditNotes""
+                WHERE ""Id"" = {creditNoteId}
+                  AND ""CompanyId"" = {operationalContext.CompanyId}
+                  AND ""EstablishmentId"" = {operationalContext.EstablishmentId}
+                  AND ""EmissionPointId"" = {operationalContext.EmissionPointId}
+                FOR UPDATE")
+            .SingleOrDefaultAsync();
+
+        return creditNote
+            ?? throw new KeyNotFoundException("CREDIT_NOTE_NOT_FOUND");
     }
 
     private async Task<IReadOnlyDictionary<int, CreditNoteItemAggregate>> GetActiveCreditNoteItemAggregatesAsync(
@@ -449,7 +626,7 @@ public class CreditNoteService : ICreditNoteService
 
     private static CreditNoteDto ToDto(
         CreditNote creditNote,
-        IReadOnlyDictionary<int, SaleItem> originalItems)
+        IReadOnlyDictionary<int, SaleItem>? originalItems = null)
     {
         return new CreditNoteDto
         {
@@ -486,7 +663,11 @@ public class CreditNoteService : ICreditNoteService
             BusinessDate = creditNote.BusinessDate,
             TimeZoneIdSnapshot = creditNote.TimeZoneIdSnapshot,
             CreatedAt = creditNote.CreatedAt,
+            UpdatedAt = creditNote.UpdatedAt,
             VoidedAt = creditNote.VoidedAt,
+            CancellationReason = creditNote.CancellationReason,
+            CancelledByUserId = creditNote.CancelledByUserId,
+            CancelledByUsername = creditNote.CancelledByUser?.Username,
             Items = creditNote.Items
                 .OrderBy(item => item.SaleItemId)
                 .Select(item => new CreditNoteItemDto
@@ -494,10 +675,7 @@ public class CreditNoteService : ICreditNoteService
                     Id = item.Id,
                     SaleItemId = item.SaleItemId,
                     ProductId = item.ProductId,
-                    ProductName = item.SaleItemId.HasValue
-                        && originalItems.TryGetValue(item.SaleItemId.Value, out var originalItem)
-                            ? originalItem.Product.Name
-                            : "Producto",
+                    ProductName = ResolveProductName(item, originalItems),
                     Quantity = item.Quantity,
                     UnitPrice = item.UnitPrice,
                     GrossSubtotal = item.GrossSubtotal,
@@ -512,6 +690,55 @@ public class CreditNoteService : ICreditNoteService
                 })
                 .ToList()
         };
+    }
+
+    private static CreditNoteListItemDto ToListItemDto(
+        CreditNote creditNote,
+        OperationalContext operationalContext)
+    {
+        return new CreditNoteListItemDto
+        {
+            Id = creditNote.Id,
+            OriginalSaleId = creditNote.OriginalSaleId,
+            Number = creditNote.Number,
+            EstablishmentCodeSnapshot = creditNote.EstablishmentCodeSnapshot,
+            EmissionPointCodeSnapshot = creditNote.EmissionPointCodeSnapshot,
+            DocumentStatus = creditNote.DocumentStatus,
+            DocumentIssuedAt = creditNote.DocumentIssuedAt,
+            BusinessDate = creditNote.BusinessDate,
+            CreatedAt = creditNote.CreatedAt,
+            Reason = creditNote.Reason,
+            Total = creditNote.Total,
+            VoidedAt = creditNote.VoidedAt,
+            CancellationReason = creditNote.CancellationReason,
+            CancelledByUserId = creditNote.CancelledByUserId,
+            CancelledByUsername = creditNote.CancelledByUser?.Username,
+            CanCancelDraft = creditNote.CompanyId == operationalContext.CompanyId
+                && creditNote.EstablishmentId == operationalContext.EstablishmentId
+                && creditNote.EmissionPointId == operationalContext.EmissionPointId
+                && creditNote.DocumentStatus == SaleDocumentStatus.Draft
+                && !creditNote.VoidedAt.HasValue
+                && !HasSriProcessStarted(creditNote)
+        };
+    }
+
+    private static string ResolveProductName(
+        CreditNoteItem item,
+        IReadOnlyDictionary<int, SaleItem>? originalItems)
+    {
+        if (item.Product is not null && !string.IsNullOrWhiteSpace(item.Product.Name))
+        {
+            return item.Product.Name;
+        }
+
+        if (item.SaleItemId.HasValue
+            && originalItems is not null
+            && originalItems.TryGetValue(item.SaleItemId.Value, out var originalItem))
+        {
+            return originalItem.Product.Name;
+        }
+
+        return "Producto";
     }
 
     private static (string Reason, string? Notes) ValidateDraftRequest(CreateCreditNoteDraftDto dto)
@@ -554,6 +781,40 @@ public class CreditNoteService : ICreditNoteService
         }
 
         return (reason, notes);
+    }
+
+    private static string ValidateCancellationRequest(
+        int creditNoteId,
+        CancelCreditNoteDraftDto dto)
+    {
+        if (creditNoteId <= 0)
+        {
+            throw new KeyNotFoundException("CREDIT_NOTE_NOT_FOUND");
+        }
+
+        var reason = dto?.Reason?.Trim() ?? string.Empty;
+        if (reason.Length == 0)
+        {
+            throw new InvalidOperationException("CREDIT_NOTE_CANCELLATION_REASON_REQUIRED");
+        }
+
+        if (reason.Length > 300)
+        {
+            throw new InvalidOperationException("CREDIT_NOTE_CANCELLATION_REASON_TOO_LONG");
+        }
+
+        return reason;
+    }
+
+    private static bool HasSriProcessStarted(CreditNote creditNote)
+    {
+        return !string.IsNullOrWhiteSpace(creditNote.AccessKey)
+            || creditNote.SriSubmittedAt.HasValue
+            || !string.IsNullOrWhiteSpace(creditNote.SriReceptionStatus)
+            || !string.IsNullOrWhiteSpace(creditNote.SriAuthorizationStatus)
+            || !string.IsNullOrWhiteSpace(creditNote.AuthorizationNumber)
+            || creditNote.AuthorizedAt.HasValue
+            || creditNote.SriLastCheckedAt.HasValue;
     }
 
     private static void ApplyEligibilityRules(CreditNoteEligibilityDto eligibility, Sale originalSale)

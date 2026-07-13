@@ -13,6 +13,29 @@ export interface CreateCreditNoteDraftItemRequest {
   quantity: number;
 }
 
+export interface CancelCreditNoteDraftRequest {
+  reason: string;
+}
+
+export interface CreditNoteListItem {
+  id: number;
+  originalSaleId: number;
+  number: string | null;
+  establishmentCodeSnapshot: string | null;
+  emissionPointCodeSnapshot: string | null;
+  documentStatus: SaleDocumentStatus;
+  documentIssuedAt: string | null;
+  businessDate: string;
+  createdAt: string;
+  reason: string;
+  total: number;
+  voidedAt: string | null;
+  cancellationReason: string | null;
+  cancelledByUserId: number | null;
+  cancelledByUsername: string | null;
+  canCancelDraft: boolean;
+}
+
 export interface CreditNote {
   id: number;
   originalSaleId: number;
@@ -47,7 +70,11 @@ export interface CreditNote {
   businessDate: string;
   timeZoneIdSnapshot: string;
   createdAt: string;
+  updatedAt: string | null;
   voidedAt: string | null;
+  cancellationReason: string | null;
+  cancelledByUserId: number | null;
+  cancelledByUsername: string | null;
   items: CreditNoteItem[];
 }
 

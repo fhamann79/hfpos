@@ -7,10 +7,15 @@ import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { TableModule } from 'primeng/table';
+import { TagModule } from 'primeng/tag';
 import { TextareaModule } from 'primeng/textarea';
 import { formatBusinessDateTime } from '../../../../core/utils/business-date-format';
+import {
+  saleDocumentStatusLabel,
+  saleDocumentStatusSeverity,
+} from '../../../pos-workstation/models/sale-document.model';
 import { CreditNoteEligibility } from '../../models/credit-note-eligibility.model';
-import { CreateCreditNoteDraftRequest } from '../../models/credit-note.model';
+import { CreateCreditNoteDraftRequest, CreditNoteListItem } from '../../models/credit-note.model';
 
 @Component({
   selector: 'app-credit-note-eligibility-dialog',
@@ -24,6 +29,7 @@ import { CreateCreditNoteDraftRequest } from '../../models/credit-note.model';
     InputTextModule,
     MessageModule,
     TableModule,
+    TagModule,
     TextareaModule,
   ],
   templateUrl: './credit-note-eligibility-dialog.html',
@@ -35,11 +41,17 @@ export class CreditNoteEligibilityDialog implements OnChanges {
   @Input() creating = false;
   @Input() errorMessage = '';
   @Input() eligibility: CreditNoteEligibility | null = null;
+  @Input() creditNotes: CreditNoteListItem[] = [];
+  @Input() historyLoading = false;
+  @Input() historyErrorMessage = '';
+  @Input() cancellingCreditNoteId: number | null = null;
   @Input() companyTimeZoneId = 'America/Guayaquil';
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() refresh = new EventEmitter<void>();
+  @Output() refreshHistory = new EventEmitter<void>();
   @Output() createDraft = new EventEmitter<CreateCreditNoteDraftRequest>();
+  @Output() requestCancelDraft = new EventEmitter<CreditNoteListItem>();
 
   readonly form = new FormGroup({
     reason: new FormControl('', {
@@ -63,7 +75,7 @@ export class CreditNoteEligibilityDialog implements OnChanges {
       return;
     }
 
-    if (changes['creating']) {
+    if (changes['creating'] || changes['cancellingCreditNoteId']) {
       this.syncCreatingState();
     }
   }
@@ -90,6 +102,22 @@ export class CreditNoteEligibilityDialog implements OnChanges {
     }
   }
 
+  historyDateLabel(value: string | null): string {
+    return formatBusinessDateTime(value, this.companyTimeZoneId) || '-';
+  }
+
+  documentStatusLabel(note: CreditNoteListItem): string {
+    return saleDocumentStatusLabel(note.documentStatus);
+  }
+
+  documentStatusSeverity(note: CreditNoteListItem) {
+    return saleDocumentStatusSeverity(note.documentStatus);
+  }
+
+  isBusy(): boolean {
+    return this.creating || this.cancellingCreditNoteId !== null;
+  }
+
   quantityControl(saleItemId: number): FormControl<number | null> {
     const current = this.quantityControls.get(saleItemId);
     if (current) {
@@ -108,7 +136,7 @@ export class CreditNoteEligibilityDialog implements OnChanges {
     if (
       !eligibility?.isEligible
       || this.loading
-      || this.creating
+      || this.isBusy()
       || this.form.invalid
       || !this.form.controls.reason.value.trim()
     ) {
@@ -153,11 +181,28 @@ export class CreditNoteEligibilityDialog implements OnChanges {
   }
 
   requestVisibleChange(visible: boolean): void {
-    if (!visible && this.creating) {
+    if (!visible && this.isBusy()) {
       return;
     }
 
     this.visibleChange.emit(visible);
+  }
+
+  refreshAll(): void {
+    if (this.isBusy()) {
+      return;
+    }
+
+    this.refresh.emit();
+    this.refreshHistory.emit();
+  }
+
+  cancelDraft(note: CreditNoteListItem): void {
+    if (!note.canCancelDraft || this.isBusy()) {
+      return;
+    }
+
+    this.requestCancelDraft.emit(note);
   }
 
   private rebuildForm(): void {
@@ -187,7 +232,7 @@ export class CreditNoteEligibilityDialog implements OnChanges {
   }
 
   private syncCreatingState(): void {
-    const action = this.creating ? 'disable' : 'enable';
+    const action = this.isBusy() ? 'disable' : 'enable';
     this.form[action]({ emitEvent: false });
     this.quantityControls.forEach((control) => control[action]({ emitEvent: false }));
   }

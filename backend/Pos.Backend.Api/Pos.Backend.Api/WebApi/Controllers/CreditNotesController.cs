@@ -61,6 +61,48 @@ public class CreditNotesController : ControllerBase
         }
     }
 
+    [HttpGet("original-sales/{saleId:int}")]
+    [Authorize(Policy = AppPermissions.PosSalesVoid)]
+    [ProducesResponseType(typeof(IReadOnlyList<CreditNoteListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<CreditNoteListItemDto>>> GetByOriginalSale(int saleId)
+    {
+        try
+        {
+            return Ok(await _creditNoteService.GetByOriginalSaleAsync(saleId));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpPost("{id:int}/cancel")]
+    [Authorize(Policy = AppPermissions.PosSalesVoid)]
+    [ProducesResponseType(typeof(CreditNoteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<CreditNoteDto>> CancelDraft(
+        int id,
+        [FromBody] CancelCreditNoteDraftDto dto)
+    {
+        try
+        {
+            return Ok(await _creditNoteService.CancelDraftAsync(
+                id,
+                dto ?? new CancelCreditNoteDraftDto()));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
     private ActionResult MapDomainError(Exception exception)
     {
         var code = exception.Message;
@@ -68,6 +110,7 @@ public class CreditNotesController : ControllerBase
         return code switch
         {
             "SALE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_REASON_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_REASON_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_NOTES_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
@@ -75,6 +118,8 @@ public class CreditNotesController : ControllerBase
             "CREDIT_NOTE_DUPLICATE_SALE_ITEM" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_ITEM_NOT_FOUND" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_INVALID_QUANTITY" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_CANCELLATION_REASON_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_CANCELLATION_REASON_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_ORIGINAL_SALE_NOT_INVOICE" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_ORIGINAL_SALE_NOT_COMPLETED" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_ORIGINAL_SALE_NOT_AUTHORIZED" => BadRequest(new ApiErrorResponse { Error = code }),
@@ -83,6 +128,9 @@ public class CreditNotesController : ControllerBase
             "CREDIT_NOTE_ORIGINAL_SALE_VOIDED" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_ORIGINAL_SALE_FULLY_CREDITED" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_QUANTITY_EXCEEDS_AVAILABLE" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_DRAFT_ALREADY_CANCELLED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_DRAFT_NOT_CANCELLABLE" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_DRAFT_SRI_PROCESS_STARTED" => Conflict(new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_ERROR" => Conflict(new ApiErrorResponse { Error = code }),
             "DOCUMENT_NUMBER_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
             _ => BadRequest(new ApiErrorResponse { Error = "CREDIT_NOTE_OPERATION_FAILED" })

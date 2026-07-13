@@ -70,7 +70,15 @@ public class CreditNoteDto
 
     public DateTime CreatedAt { get; set; }
 
+    public DateTime? UpdatedAt { get; set; }
+
     public DateTime? VoidedAt { get; set; }
+
+    public string? CancellationReason { get; set; }
+
+    public int? CancelledByUserId { get; set; }
+
+    public string? CancelledByUsername { get; set; }
 
     public List<CreditNoteItemDto> Items { get; set; } = new();
 }

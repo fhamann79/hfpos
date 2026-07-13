@@ -148,6 +148,108 @@
   gap:.5rem;
 }
 
+.history-section {
+  display:grid;
+  gap:.75rem;
+  margin-top:1.1rem;
+  padding-top:1rem;
+  border-top:1px solid #cbd5e1;
+}
+
+.history-heading h3 {
+  margin:0;
+  color:#0f172a;
+  font-size:1rem;
+}
+
+.history-heading p {
+  margin:.2rem 0 0;
+  color:#64748b;
+  font-size:.82rem;
+}
+
+:host ::ng-deep .credit-note-history-table .p-datatable-wrapper {
+  max-width:100%;
+  overflow-x:auto;
+}
+
+.history-number-column,
+.history-number-cell {
+  width:10rem;
+}
+
+.history-status-column {
+  width:8rem;
+}
+
+.history-date-column {
+  width:9rem;
+}
+
+.history-reason-column,
+.history-reason-cell {
+  width:13rem;
+}
+
+.history-total-column,
+.history-total-cell {
+  width:7rem;
+  text-align:right;
+}
+
+.history-cancellation-column,
+.history-cancellation-cell {
+  width:13rem;
+}
+
+.history-action-column,
+.history-action-cell {
+  width:11rem;
+  text-align:right;
+}
+
+.history-number-cell,
+.history-reason-cell,
+.history-cancellation-cell {
+  overflow-wrap:anywhere;
+}
+
+.history-number-cell {
+  font-weight:800;
+}
+
+.history-cancellation-cell {
+  vertical-align:top;
+}
+
+.history-cancellation-cell strong,
+.history-cancellation-cell span,
+.history-cancellation-cell small {
+  display:block;
+}
+
+.history-cancellation-cell span,
+.history-cancellation-cell small {
+  margin-top:.18rem;
+}
+
+.history-cancellation-cell span,
+.history-cancellation-cell small {
+  color:#64748b;
+}
+
+.history-loading,
+.history-empty {
+  min-height:4rem;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:.5rem;
+  margin:0;
+  color:#64748b;
+  text-align:center;
+}
+
 @media (max-width:720px) {
   .document-summary,
   .draft-fields {
