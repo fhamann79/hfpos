@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml;
 using System.Xml.Linq;
 using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Enums;
@@ -130,10 +132,9 @@ public class SriCreditNoteXmlDraftService : ISriCreditNoteXmlDraftService
                         .OrderBy(item => item.Id)
                         .Select(BuildDetail)));
 
-            return new XDocument(
+            return SerializeUtf8(new XDocument(
                     new XDeclaration("1.0", "UTF-8", null),
-                    document)
-                .ToString(SaveOptions.DisableFormatting);
+                    document));
         }
         catch (InvalidOperationException)
         {
@@ -145,6 +146,26 @@ public class SriCreditNoteXmlDraftService : ISriCreditNoteXmlDraftService
                 "SRI_CREDIT_NOTE_XML_DRAFT_GENERATION_FAILED",
                 ex);
         }
+    }
+
+    private static string SerializeUtf8(XDocument document)
+    {
+        using var stream = new MemoryStream();
+
+        var settings = new XmlWriterSettings
+        {
+            Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            OmitXmlDeclaration = false,
+            Indent = false,
+            NewLineHandling = NewLineHandling.None
+        };
+
+        using (var writer = XmlWriter.Create(stream, settings))
+        {
+            document.Save(writer);
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     private static void ValidateContext(SriCreditNoteXmlDraftRequest request)
