@@ -967,6 +967,9 @@ public class PosDbContext : DbContext
             entity.Property(cn => cn.SriNumericCode)
                 .HasMaxLength(8);
 
+            entity.Property(cn => cn.SriXmlDraft)
+                .HasColumnType("text");
+
             entity.Property(cn => cn.SriReceptionStatus)
                 .HasMaxLength(50);
 

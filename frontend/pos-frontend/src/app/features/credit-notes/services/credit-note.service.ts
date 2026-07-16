@@ -35,6 +35,20 @@ export class CreditNoteService {
     return this.http.get<CreditNote>(`${this.baseUrl}/${creditNoteId}`);
   }
 
+  prepareSriDraft(creditNoteId: number): Observable<CreditNote> {
+    return this.http.post<CreditNote>(
+      `${this.baseUrl}/${creditNoteId}/sri/prepare-draft`,
+      {}
+    );
+  }
+
+  getSriXmlDraft(creditNoteId: number): Observable<Blob> {
+    return this.http.get(
+      `${this.baseUrl}/${creditNoteId}/sri/xml-draft`,
+      { responseType: 'blob' }
+    );
+  }
+
   cancelDraft(
     creditNoteId: number,
     payload: CancelCreditNoteDraftRequest

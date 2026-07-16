@@ -7,10 +7,19 @@ namespace Pos.Backend.Api.Infrastructure.Services;
 public class SriAccessKeyService : ISriAccessKeyService
 {
     private const string InvoiceDocumentCode = "01";
+    private const string CreditNoteDocumentCode = "04";
 
     public SriAccessKeyResult GenerateInvoiceAccessKey(SriAccessKeyRequest request)
+        => GenerateAccessKey(request, InvoiceDocumentCode);
+
+    public SriAccessKeyResult GenerateCreditNoteAccessKey(SriAccessKeyRequest request)
+        => GenerateAccessKey(request, CreditNoteDocumentCode);
+
+    private SriAccessKeyResult GenerateAccessKey(
+        SriAccessKeyRequest request,
+        string expectedDocumentCode)
     {
-        if (request.DocumentCode != InvoiceDocumentCode)
+        if (request.DocumentCode != expectedDocumentCode)
         {
             throw new InvalidOperationException("INVALID_SRI_DOCUMENT_CONTEXT");
         }

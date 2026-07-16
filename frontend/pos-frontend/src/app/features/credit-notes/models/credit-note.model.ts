@@ -55,6 +55,12 @@ export interface CreditNote {
   emissionPointCodeSnapshot: string | null;
   sequential: number | null;
   documentIssuedAt: string | null;
+  accessKey: string | null;
+  sriEnvironment: number | null;
+  sriEmissionType: number | null;
+  sriNumericCode: string | null;
+  hasSriXmlDraft: boolean;
+  sriXmlGeneratedAt: string | null;
   reason: string;
   notes: string | null;
   grossSubtotal: number;

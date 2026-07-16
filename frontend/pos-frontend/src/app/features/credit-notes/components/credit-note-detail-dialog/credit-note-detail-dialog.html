@@ -3,9 +3,11 @@
   [visible]="visible"
   [modal]="true"
   [draggable]="false"
+  [closable]="!isBusy()"
+  [closeOnEscape]="!isBusy()"
   [style]="{ width: '76rem', maxWidth: '96vw', maxHeight: '94vh' }"
   styleClass="credit-note-detail-dialog"
-  (visibleChange)="visibleChange.emit($event)"
+  (visibleChange)="requestVisibleChange($event)"
 >
   @if (errorMessage) {
     <p-message severity="error" [text]="errorMessage"></p-message>
@@ -41,6 +43,67 @@
         <div><span>Total</span><strong>{{ note.total | currency: 'USD' }}</strong></div>
         <div class="detail-grid__wide"><span>Motivo fiscal</span><strong>{{ note.reason }}</strong></div>
         <div class="detail-grid__wide"><span>Notas</span><strong>{{ note.notes || '-' }}</strong></div>
+      </div>
+    </section>
+
+    <section class="detail-section">
+      <div class="section-heading"><h3>Preparación SRI</h3></div>
+      <div class="detail-grid sri-grid">
+        <div>
+          <span>Ambiente</span>
+          <strong>{{ environmentLabel(note.sriEnvironment) }}</strong>
+        </div>
+        <div>
+          <span>Código numérico</span>
+          <code>{{ note.sriNumericCode || '-' }}</code>
+        </div>
+        <div>
+          <span>XML draft</span>
+          <strong [class.sri-value--available]="note.hasSriXmlDraft">
+            {{ note.hasSriXmlDraft ? 'Disponible' : 'Pendiente' }}
+          </strong>
+        </div>
+        <div>
+          <span>Generado el</span>
+          <strong>{{ dateLabel(note.sriXmlGeneratedAt) }}</strong>
+        </div>
+        <div class="detail-grid__wide">
+          <span>Clave de acceso</span>
+          <code>{{ note.accessKey || '-' }}</code>
+        </div>
+      </div>
+
+      @if (canShowPrepareSriDraft(note)) {
+        <p-message
+          styleClass="sri-warning"
+          severity="warn"
+          text="Al preparar el XML se generará la clave de acceso y el borrador ya no podrá cancelarse localmente."
+        ></p-message>
+      }
+
+      <div class="sri-actions">
+        @if (canShowPrepareSriDraft(note)) {
+          <p-button
+            label="Preparar XML SRI"
+            icon="pi pi-file-edit"
+            severity="warn"
+            [loading]="preparingSriDraft"
+            [disabled]="isBusy()"
+            (onClick)="requestPrepareSriDraft(note)"
+          ></p-button>
+        }
+
+        @if (note.hasSriXmlDraft) {
+          <p-button
+            label="Descargar XML draft"
+            icon="pi pi-download"
+            severity="secondary"
+            [outlined]="true"
+            [loading]="downloadingSriXmlDraft"
+            [disabled]="isBusy()"
+            (onClick)="requestDownloadSriXmlDraft(note)"
+          ></p-button>
+        }
       </div>
     </section>
 
@@ -149,14 +212,15 @@
         icon="pi pi-times"
         severity="secondary"
         [outlined]="true"
-        (onClick)="visibleChange.emit(false)"
+        [disabled]="isBusy()"
+        (onClick)="requestVisibleChange(false)"
       ></p-button>
       <p-button
         label="Actualizar"
         icon="pi pi-refresh"
         severity="secondary"
         [loading]="loading"
-        [disabled]="!creditNote && !errorMessage"
+        [disabled]="isBusy() || (!creditNote && !errorMessage)"
         (onClick)="refresh.emit()"
       ></p-button>
     </div>

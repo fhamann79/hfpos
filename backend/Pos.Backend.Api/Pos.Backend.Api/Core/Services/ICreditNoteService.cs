@@ -12,6 +12,10 @@ public interface ICreditNoteService
 
     Task<CreditNoteDto> GetByIdAsync(int creditNoteId);
 
+    Task<CreditNoteDto> PrepareSriDraftAsync(int creditNoteId);
+
+    Task<string> GetSriXmlDraftAsync(int creditNoteId);
+
     Task<CreditNoteDto> CancelDraftAsync(
         int creditNoteId,
         CancelCreditNoteDraftDto dto);

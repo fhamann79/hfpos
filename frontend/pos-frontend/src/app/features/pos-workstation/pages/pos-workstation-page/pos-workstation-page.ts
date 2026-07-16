@@ -147,6 +147,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly creditNoteDetailError = signal('');
   readonly selectedCreditNote = signal<CreditNote | null>(null);
   readonly selectedCreditNoteId = signal<number | null>(null);
+  readonly creditNotePreparingSriDraftId = signal<number | null>(null);
+  readonly creditNoteDownloadingSriXmlId = signal<number | null>(null);
   readonly sriSigningSaleId = signal<number | null>(null);
   readonly sriSubmittingSaleId = signal<number | null>(null);
   readonly sriCheckingAuthorizationSaleId = signal<number | null>(null);
@@ -845,6 +847,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.creditNoteDetailError.set('');
     this.selectedCreditNote.set(null);
     this.selectedCreditNoteId.set(null);
+    this.creditNotePreparingSriDraftId.set(null);
+    this.creditNoteDownloadingSriXmlId.set(null);
     this.creditNoteEligibilityVisible.set(true);
     this.loadCreditNoteEligibility();
     this.loadCreditNotesHistory();
@@ -884,6 +888,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       !this.canVoid
       || this.creditNoteCreating()
       || this.creditNoteCancellingId() !== null
+      || this.creditNotePreparingSriDraftId() !== null
+      || this.creditNoteDownloadingSriXmlId() !== null
     ) {
       return;
     }
@@ -925,6 +931,16 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   onCreditNoteDetailVisibleChange(visible: boolean): void {
+    if (
+      !visible
+      && (
+        this.creditNotePreparingSriDraftId() !== null
+        || this.creditNoteDownloadingSriXmlId() !== null
+      )
+    ) {
+      return;
+    }
+
     this.creditNoteDetailVisible.set(visible);
 
     if (!visible) {
@@ -932,7 +948,105 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       this.creditNoteDetailError.set('');
       this.selectedCreditNote.set(null);
       this.selectedCreditNoteId.set(null);
+      this.creditNotePreparingSriDraftId.set(null);
+      this.creditNoteDownloadingSriXmlId.set(null);
     }
+  }
+
+  prepareCreditNoteSriDraft(creditNoteId: number): void {
+    if (!this.canSignSriDocuments) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Permiso requerido',
+        detail: 'No tienes permiso para preparar documentos SRI.',
+      });
+      return;
+    }
+
+    if (
+      this.creditNotePreparingSriDraftId() !== null
+      || this.creditNoteDownloadingSriXmlId() !== null
+      || this.selectedCreditNoteId() !== creditNoteId
+    ) {
+      return;
+    }
+
+    this.creditNotePreparingSriDraftId.set(creditNoteId);
+
+    this.creditNoteService.prepareSriDraft(creditNoteId).pipe(
+      finalize(() => this.creditNotePreparingSriDraftId.set(null))
+    ).subscribe({
+      next: (creditNote) => {
+        if (this.selectedCreditNoteId() === creditNoteId) {
+          this.selectedCreditNote.set(creditNote);
+        }
+
+        const documentNumber = creditNote.number || `#${creditNote.id}`;
+        const accessKeyDetail = creditNote.accessKey
+          ? ` Clave de acceso: ${creditNote.accessKey}.`
+          : '';
+
+        this.messageService.add({
+          severity: 'success',
+          summary: 'XML preparado',
+          detail: `${documentNumber} fue preparado correctamente.${accessKeyDetail}`,
+        });
+
+        this.loadCreditNoteDetail();
+        this.loadCreditNotesHistory();
+        this.loadCreditNoteEligibility();
+      },
+      error: (error: HttpErrorResponse) => {
+        const code = readErrorCode(error);
+
+        this.messageService.add({
+          severity: 'error',
+          summary: 'No se pudo preparar el XML',
+          detail: this.resolveCreditNoteSriDraftError(error),
+        });
+
+        if (
+          code === 'CREDIT_NOTE_SRI_DRAFT_INCONSISTENT'
+          || code === 'CREDIT_NOTE_SRI_PROCESS_ALREADY_STARTED'
+          || code === 'CREDIT_NOTE_SRI_DRAFT_CANCELLED'
+          || code === 'CREDIT_NOTE_SRI_DRAFT_NOT_ALLOWED'
+        ) {
+          this.loadCreditNoteDetail();
+          this.loadCreditNotesHistory();
+          this.loadCreditNoteEligibility();
+        }
+      },
+    });
+  }
+
+  downloadCreditNoteSriXmlDraft(creditNoteId: number): void {
+    if (
+      this.creditNoteDownloadingSriXmlId() !== null
+      || this.creditNotePreparingSriDraftId() !== null
+      || this.selectedCreditNoteId() !== creditNoteId
+    ) {
+      return;
+    }
+
+    this.creditNoteDownloadingSriXmlId.set(creditNoteId);
+
+    this.creditNoteService.getSriXmlDraft(creditNoteId).pipe(
+      finalize(() => this.creditNoteDownloadingSriXmlId.set(null))
+    ).subscribe({
+      next: (blob) => {
+        this.downloadBlob(
+          blob,
+          this.buildCreditNoteXmlDraftFileName(creditNoteId)
+        );
+      },
+      error: (error: HttpErrorResponse) => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'No se pudo descargar el XML',
+          detail: this.resolveCreditNoteSriXmlDownloadError(error),
+        });
+      },
+    });
   }
 
   loadCreditNotesHistory(): void {
@@ -1107,7 +1221,12 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   onCreditNoteEligibilityVisibleChange(visible: boolean): void {
     if (
       !visible
-      && (this.creditNoteCreating() || this.creditNoteCancellingId() !== null)
+      && (
+        this.creditNoteCreating()
+        || this.creditNoteCancellingId() !== null
+        || this.creditNotePreparingSriDraftId() !== null
+        || this.creditNoteDownloadingSriXmlId() !== null
+      )
     ) {
       return;
     }
@@ -1131,6 +1250,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       this.creditNoteDetailError.set('');
       this.selectedCreditNote.set(null);
       this.selectedCreditNoteId.set(null);
+      this.creditNotePreparingSriDraftId.set(null);
+      this.creditNoteDownloadingSriXmlId.set(null);
     }
   }
 
@@ -1969,6 +2090,15 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     return `factura-${this.sanitizeFileNamePart(identifier)}-${suffix}.xml`;
   }
 
+  private buildCreditNoteXmlDraftFileName(creditNoteId: number): string {
+    const creditNote = this.selectedCreditNoteId() === creditNoteId
+      ? this.selectedCreditNote()
+      : null;
+    const identifier = creditNote?.number ?? String(creditNoteId);
+
+    return `nota-credito-${this.sanitizeFileNamePart(identifier)}-draft.xml`;
+  }
+
   private buildAuthorizedXmlFileName(saleId: number): string {
     const sale = this.selectedSale()?.id === saleId ? this.selectedSale() : null;
     const fallback = this.sales().find((item) => item.id === saleId);
@@ -2199,5 +2329,59 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
 
     return 'No se pudo cargar el detalle de la nota de crédito.';
+  }
+
+  private resolveCreditNoteSriDraftError(error: HttpErrorResponse): string {
+    switch (readErrorCode(error)) {
+      case 'CREDIT_NOTE_NOT_FOUND':
+        return 'La nota de crédito no existe o no pertenece al contexto operativo actual.';
+      case 'CREDIT_NOTE_SRI_DRAFT_CANCELLED':
+        return 'No se puede preparar una nota de crédito cancelada.';
+      case 'CREDIT_NOTE_SRI_DRAFT_NOT_ALLOWED':
+        return 'La nota de crédito ya no está en estado borrador.';
+      case 'CREDIT_NOTE_SRI_PROCESS_ALREADY_STARTED':
+        return 'La nota de crédito ya inició otro proceso SRI.';
+      case 'CREDIT_NOTE_SRI_DRAFT_INCONSISTENT':
+        return 'La nota tiene datos SRI parciales y requiere revisión antes de continuar.';
+      case 'INVALID_SRI_DOCUMENT_CONTEXT':
+        return 'La numeración o el contexto fiscal de la nota no son válidos.';
+      case 'INVALID_ISSUER_RUC':
+        return 'El RUC del emisor no es válido para generar la clave de acceso.';
+      case 'SRI_BUYER_IDENTIFICATION_TYPE_REQUIRED':
+        return 'Falta el tipo de identificación fiscal del comprador.';
+      case 'INVALID_SRI_CUSTOMER_IDENTIFICATION':
+        return 'La identificación fiscal del comprador no es válida.';
+      case 'SRI_CREDIT_NOTE_ORIGINAL_DOCUMENT_REQUIRED':
+        return 'Faltan datos de autorización de la factura original.';
+      case 'SRI_CREDIT_NOTE_XML_REQUIRED_FIELD_MISSING':
+        return 'Faltan datos fiscales requeridos para generar el XML.';
+      case 'SRI_ACCESS_KEY_GENERATION_FAILED':
+        return 'No se pudo generar la clave de acceso de la nota de crédito.';
+      case 'SRI_CREDIT_NOTE_XML_DRAFT_GENERATION_FAILED':
+        return 'No se pudo generar el XML de la nota de crédito.';
+      case 'SRI_CREDIT_NOTE_XML_SCHEMA_VALIDATION_FAILED':
+        return 'El XML generado no cumple la estructura requerida por el SRI.';
+      default:
+        if (error.status === 403) {
+          return 'No tienes permiso para preparar el XML de la nota de crédito.';
+        }
+
+        return 'No se pudo preparar el XML de la nota de crédito.';
+    }
+  }
+
+  private resolveCreditNoteSriXmlDownloadError(error: HttpErrorResponse): string {
+    switch (readErrorCode(error)) {
+      case 'CREDIT_NOTE_NOT_FOUND':
+        return 'La nota de crédito no existe o no pertenece al contexto operativo actual.';
+      case 'CREDIT_NOTE_SRI_XML_DRAFT_NOT_FOUND':
+        return 'La nota de crédito todavía no tiene un XML draft disponible.';
+      default:
+        if (error.status === 403) {
+          return 'No tienes permiso para descargar el XML de la nota de crédito.';
+        }
+
+        return 'No se pudo descargar el XML draft de la nota de crédito.';
+    }
   }
 }

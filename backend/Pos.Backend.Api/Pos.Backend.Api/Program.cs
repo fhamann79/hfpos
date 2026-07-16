@@ -92,6 +92,8 @@ builder.Services.AddSingleton<ISriFiscalClock, SriFiscalClock>();
 builder.Services.AddScoped<ISriAccessKeyService, SriAccessKeyService>();
 builder.Services.AddScoped<ISriXmlDraftService, SriXmlDraftService>();
 builder.Services.AddScoped<ISriInvoiceXmlValidator, SriInvoiceXmlValidator>();
+builder.Services.AddScoped<ISriCreditNoteXmlDraftService, SriCreditNoteXmlDraftService>();
+builder.Services.AddScoped<ISriCreditNoteXmlValidator, SriCreditNoteXmlValidator>();
 builder.Services.AddScoped<IFiscalDocumentNumberService, FiscalDocumentNumberService>();
 builder.Services.AddScoped<IFiscalSettingsService, FiscalSettingsService>();
 builder.Services.AddScoped<ICompanyEmailSettingsService, CompanyEmailSettingsService>();
