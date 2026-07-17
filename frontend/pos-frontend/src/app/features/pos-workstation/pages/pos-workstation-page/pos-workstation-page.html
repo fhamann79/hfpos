@@ -251,8 +251,19 @@
     [errorMessage]="creditNoteDetailError()"
     [creditNote]="selectedCreditNote()"
     [companyTimeZoneId]="companyTimeZoneId()"
+    [canPrepareSriDraft]="canSignSriDocuments"
+    [preparingSriDraft]="
+      creditNotePreparingSriDraftId() !== null
+      && creditNotePreparingSriDraftId() === selectedCreditNoteId()
+    "
+    [downloadingSriXmlDraft]="
+      creditNoteDownloadingSriXmlId() !== null
+      && creditNoteDownloadingSriXmlId() === selectedCreditNoteId()
+    "
     (visibleChange)="onCreditNoteDetailVisibleChange($event)"
     (refresh)="loadCreditNoteDetail()"
+    (prepareSriDraft)="prepareCreditNoteSriDraft($event)"
+    (downloadSriXmlDraft)="downloadCreditNoteSriXmlDraft($event)"
   ></app-credit-note-detail-dialog>
 
   <app-cancel-credit-note-draft-dialog

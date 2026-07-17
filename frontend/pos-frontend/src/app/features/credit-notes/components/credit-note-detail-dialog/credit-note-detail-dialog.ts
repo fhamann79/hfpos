@@ -34,9 +34,14 @@ export class CreditNoteDetailDialog {
   @Input() errorMessage = '';
   @Input() creditNote: CreditNote | null = null;
   @Input() companyTimeZoneId = 'America/Guayaquil';
+  @Input() canPrepareSriDraft = false;
+  @Input() preparingSriDraft = false;
+  @Input() downloadingSriXmlDraft = false;
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() refresh = new EventEmitter<void>();
+  @Output() prepareSriDraft = new EventEmitter<number>();
+  @Output() downloadSriXmlDraft = new EventEmitter<number>();
 
   dateLabel(value: string | null): string {
     return formatBusinessDateTime(value, this.companyTimeZoneId) || '-';
@@ -75,5 +80,52 @@ export class CreditNoteDetailDialog {
   isCancelled(creditNote: CreditNote): boolean {
     return creditNote.documentStatus === SaleDocumentStatus.Cancelled
       || creditNote.voidedAt !== null;
+  }
+
+  environmentLabel(environment: number | null): string {
+    switch (environment) {
+      case 1:
+        return 'Pruebas';
+      case 2:
+        return 'Producción';
+      default:
+        return 'Pendiente';
+    }
+  }
+
+  canShowPrepareSriDraft(creditNote: CreditNote): boolean {
+    return this.canPrepareSriDraft
+      && creditNote.documentStatus === SaleDocumentStatus.Draft
+      && creditNote.voidedAt === null
+      && creditNote.accessKey === null
+      && !creditNote.hasSriXmlDraft;
+  }
+
+  isBusy(): boolean {
+    return this.preparingSriDraft || this.downloadingSriXmlDraft;
+  }
+
+  requestVisibleChange(visible: boolean): void {
+    if (!visible && this.isBusy()) {
+      return;
+    }
+
+    this.visibleChange.emit(visible);
+  }
+
+  requestPrepareSriDraft(creditNote: CreditNote): void {
+    if (!this.canShowPrepareSriDraft(creditNote) || this.isBusy()) {
+      return;
+    }
+
+    this.prepareSriDraft.emit(creditNote.id);
+  }
+
+  requestDownloadSriXmlDraft(creditNote: CreditNote): void {
+    if (!creditNote.hasSriXmlDraft || this.isBusy()) {
+      return;
+    }
+
+    this.downloadSriXmlDraft.emit(creditNote.id);
   }
 }

@@ -68,6 +68,10 @@ public class CreditNote
 
     public string? SriNumericCode { get; set; }
 
+    public string? SriXmlDraft { get; set; }
+
+    public DateTime? SriXmlGeneratedAt { get; set; }
+
     public DateTime? SriSubmittedAt { get; set; }
 
     public string? SriReceptionStatus { get; set; }

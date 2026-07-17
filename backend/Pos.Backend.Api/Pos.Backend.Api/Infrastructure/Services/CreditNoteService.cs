@@ -1,6 +1,8 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Pos.Backend.Api.Configuration;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Enums;
@@ -16,6 +18,11 @@ public class CreditNoteService : ICreditNoteService
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly IFiscalDocumentNumberService _fiscalDocumentNumberService;
     private readonly IBusinessClockService _businessClockService;
+    private readonly ISriAccessKeyService _sriAccessKeyService;
+    private readonly ISriCreditNoteXmlDraftService _sriCreditNoteXmlDraftService;
+    private readonly ISriCreditNoteXmlValidator _sriCreditNoteXmlValidator;
+    private readonly ISriFiscalClock _sriFiscalClock;
+    private readonly SriOptions _sriOptions;
     private readonly ILogger<CreditNoteService> _logger;
 
     public CreditNoteService(
@@ -23,12 +30,22 @@ public class CreditNoteService : ICreditNoteService
         IOperationalContextAccessor operationalContextAccessor,
         IFiscalDocumentNumberService fiscalDocumentNumberService,
         IBusinessClockService businessClockService,
+        ISriAccessKeyService sriAccessKeyService,
+        ISriCreditNoteXmlDraftService sriCreditNoteXmlDraftService,
+        ISriCreditNoteXmlValidator sriCreditNoteXmlValidator,
+        ISriFiscalClock sriFiscalClock,
+        IOptions<SriOptions> sriOptions,
         ILogger<CreditNoteService> logger)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
         _fiscalDocumentNumberService = fiscalDocumentNumberService;
         _businessClockService = businessClockService;
+        _sriAccessKeyService = sriAccessKeyService;
+        _sriCreditNoteXmlDraftService = sriCreditNoteXmlDraftService;
+        _sriCreditNoteXmlValidator = sriCreditNoteXmlValidator;
+        _sriFiscalClock = sriFiscalClock;
+        _sriOptions = sriOptions.Value;
         _logger = logger;
     }
 
@@ -314,6 +331,206 @@ public class CreditNoteService : ICreditNoteService
         }
     }
 
+    public async Task<CreditNoteDto> PrepareSriDraftAsync(int creditNoteId)
+    {
+        if (creditNoteId <= 0)
+        {
+            throw new KeyNotFoundException("CREDIT_NOTE_NOT_FOUND");
+        }
+
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+
+        try
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+
+            var originalSaleId = await GetCreditNoteOriginalSaleIdAsync(
+                creditNoteId,
+                operationalContext);
+
+            await LockOriginalSaleRowAsync(originalSaleId, operationalContext);
+            var creditNote = await LockCreditNoteAsync(
+                creditNoteId,
+                operationalContext);
+
+            await _context.Entry(creditNote)
+                .Collection(note => note.Items)
+                .LoadAsync();
+
+            if (HasCompleteSriDraft(creditNote))
+            {
+                await transaction.CommitAsync();
+                return ToDto(creditNote);
+            }
+
+            if (HasAnySriDraftData(creditNote))
+            {
+                throw new InvalidOperationException(
+                    "CREDIT_NOTE_SRI_DRAFT_INCONSISTENT");
+            }
+
+            ValidateSriDraftState(creditNote);
+            ValidateSriDraftContext(creditNote);
+
+            var fiscalContext = await LoadFiscalContextAsync(
+                creditNote,
+                operationalContext);
+            var issuerRuc = fiscalContext.Company.Ruc?.Trim();
+
+            if (!IsNumeric(issuerRuc, 13))
+            {
+                throw new InvalidOperationException("INVALID_ISSUER_RUC");
+            }
+
+            var sriSettings = await ResolveSriSettingsAsync(
+                operationalContext.CompanyId);
+
+            if (sriSettings.Environment is not (1 or 2)
+                || sriSettings.EmissionType != 1)
+            {
+                throw new InvalidOperationException("INVALID_SRI_DOCUMENT_CONTEXT");
+            }
+
+            var fiscalEmissionDate = _sriFiscalClock.GetEcuadorFiscalDate(
+                creditNote.DocumentIssuedAt!.Value);
+            var originalInvoiceFiscalEmissionDate =
+                _sriFiscalClock.GetEcuadorFiscalDate(
+                    creditNote.OriginalSaleDocumentIssuedAtSnapshot!.Value);
+
+            var accessKey = _sriAccessKeyService.GenerateCreditNoteAccessKey(
+                new SriAccessKeyRequest
+                {
+                    EmissionDate = creditNote.DocumentIssuedAt.Value,
+                    FiscalEmissionDate = fiscalEmissionDate,
+                    DocumentCode = "04",
+                    IssuerRuc = issuerRuc!,
+                    Environment = sriSettings.Environment,
+                    EstablishmentCode = creditNote.EstablishmentCodeSnapshot!,
+                    EmissionPointCode = creditNote.EmissionPointCodeSnapshot!,
+                    Sequential = creditNote.Sequential!.Value,
+                    EmissionType = sriSettings.EmissionType,
+                    NumericCodeSeed = string.Join(
+                        "-",
+                        operationalContext.CompanyId,
+                        operationalContext.EstablishmentId,
+                        operationalContext.EmissionPointId,
+                        (int)FiscalDocumentType.CreditNote,
+                        creditNote.Sequential.Value)
+                });
+
+            creditNote.AccessKey = accessKey.AccessKey;
+            creditNote.SriEnvironment = accessKey.Environment;
+            creditNote.SriEmissionType = accessKey.EmissionType;
+            creditNote.SriNumericCode = accessKey.NumericCode;
+
+            var xmlDraft = _sriCreditNoteXmlDraftService
+                .GenerateCreditNoteXmlDraft(new SriCreditNoteXmlDraftRequest
+                {
+                    CreditNote = creditNote,
+                    Company = fiscalContext.Company,
+                    Establishment = fiscalContext.Establishment,
+                    Environment = accessKey.Environment,
+                    EmissionType = accessKey.EmissionType,
+                    FiscalEmissionDate = fiscalEmissionDate,
+                    OriginalInvoiceFiscalEmissionDate =
+                        originalInvoiceFiscalEmissionDate
+                });
+
+            _sriCreditNoteXmlValidator.ValidateUnsignedCreditNoteXml(xmlDraft);
+
+            var now = _businessClockService.UtcNow;
+            creditNote.SriXmlDraft = xmlDraft;
+            creditNote.SriXmlGeneratedAt = now;
+            creditNote.UpdatedAt = now;
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return ToDto(creditNote);
+        }
+        catch (KeyNotFoundException)
+        {
+            throw;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "SRI credit note draft preparation failed. CreditNoteId {CreditNoteId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
+                creditNoteId,
+                operationalContext.CompanyId,
+                operationalContext.EstablishmentId,
+                operationalContext.EmissionPointId);
+
+            throw new InvalidOperationException(
+                "SRI_CREDIT_NOTE_XML_DRAFT_GENERATION_FAILED",
+                ex);
+        }
+    }
+
+    public async Task<string> GetSriXmlDraftAsync(int creditNoteId)
+    {
+        if (creditNoteId <= 0)
+        {
+            throw new KeyNotFoundException("CREDIT_NOTE_NOT_FOUND");
+        }
+
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+
+        try
+        {
+            var result = await _context.CreditNotes
+                .AsNoTracking()
+                .Where(note =>
+                    note.Id == creditNoteId
+                    && note.CompanyId == operationalContext.CompanyId
+                    && note.OriginalSale.CompanyId == operationalContext.CompanyId
+                    && note.OriginalSale.EstablishmentId
+                        == operationalContext.EstablishmentId
+                    && note.OriginalSale.EmissionPointId
+                        == operationalContext.EmissionPointId)
+                .Select(note => new { note.SriXmlDraft })
+                .SingleOrDefaultAsync();
+
+            if (result is null)
+            {
+                throw new KeyNotFoundException("CREDIT_NOTE_NOT_FOUND");
+            }
+
+            if (string.IsNullOrWhiteSpace(result.SriXmlDraft))
+            {
+                throw new KeyNotFoundException(
+                    "CREDIT_NOTE_SRI_XML_DRAFT_NOT_FOUND");
+            }
+
+            return result.SriXmlDraft;
+        }
+        catch (KeyNotFoundException)
+        {
+            throw;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "SRI credit note XML draft query failed. CreditNoteId {CreditNoteId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
+                creditNoteId,
+                operationalContext.CompanyId,
+                operationalContext.EstablishmentId,
+                operationalContext.EmissionPointId);
+
+            throw new InvalidOperationException("CREDIT_NOTE_OPERATION_FAILED", ex);
+        }
+    }
+
     public async Task<CreditNoteDto> CancelDraftAsync(
         int creditNoteId,
         CancelCreditNoteDraftDto dto)
@@ -488,6 +705,44 @@ public class CreditNoteService : ICreditNoteService
 
         return creditNote
             ?? throw new KeyNotFoundException("CREDIT_NOTE_NOT_FOUND");
+    }
+
+    private async Task<CreditNoteFiscalContext> LoadFiscalContextAsync(
+        CreditNote creditNote,
+        OperationalContext operationalContext)
+    {
+        var establishment = await _context.Establishments
+            .AsNoTracking()
+            .Include(item => item.Company)
+            .SingleOrDefaultAsync(item =>
+                item.Id == creditNote.EstablishmentId
+                && item.Id == operationalContext.EstablishmentId
+                && item.CompanyId == creditNote.CompanyId
+                && item.CompanyId == operationalContext.CompanyId);
+
+        return establishment is null
+            ? throw new InvalidOperationException("INVALID_SRI_DOCUMENT_CONTEXT")
+            : new CreditNoteFiscalContext(
+                establishment.Company,
+                establishment);
+    }
+
+    private async Task<(int Environment, int EmissionType)> ResolveSriSettingsAsync(
+        int companyId)
+    {
+        var settings = await _context.CompanySriSettings
+            .AsNoTracking()
+            .Where(item => item.CompanyId == companyId)
+            .Select(item => new
+            {
+                item.Environment,
+                item.EmissionType
+            })
+            .SingleOrDefaultAsync();
+
+        return settings is null
+            ? (_sriOptions.Environment, _sriOptions.EmissionType)
+            : (settings.Environment, settings.EmissionType);
     }
 
     private async Task<IReadOnlyDictionary<int, CreditNoteItemAggregate>> GetActiveCreditNoteItemAggregatesAsync(
@@ -706,6 +961,12 @@ public class CreditNoteService : ICreditNoteService
             EmissionPointCodeSnapshot = creditNote.EmissionPointCodeSnapshot,
             Sequential = creditNote.Sequential,
             DocumentIssuedAt = creditNote.DocumentIssuedAt,
+            AccessKey = creditNote.AccessKey,
+            SriEnvironment = creditNote.SriEnvironment,
+            SriEmissionType = creditNote.SriEmissionType,
+            SriNumericCode = creditNote.SriNumericCode,
+            HasSriXmlDraft = !string.IsNullOrWhiteSpace(creditNote.SriXmlDraft),
+            SriXmlGeneratedAt = creditNote.SriXmlGeneratedAt,
             Reason = creditNote.Reason,
             Notes = creditNote.Notes,
             GrossSubtotal = creditNote.GrossSubtotal,
@@ -903,9 +1164,140 @@ public class CreditNoteService : ICreditNoteService
         return reason;
     }
 
+    private static void ValidateSriDraftState(CreditNote creditNote)
+    {
+        if (creditNote.DocumentStatus == SaleDocumentStatus.Cancelled
+            || creditNote.VoidedAt.HasValue)
+        {
+            throw new InvalidOperationException(
+                "CREDIT_NOTE_SRI_DRAFT_CANCELLED");
+        }
+
+        if (creditNote.DocumentStatus != SaleDocumentStatus.Draft)
+        {
+            throw new InvalidOperationException(
+                "CREDIT_NOTE_SRI_DRAFT_NOT_ALLOWED");
+        }
+
+        if (HasSriDownstreamProcessStarted(creditNote))
+        {
+            throw new InvalidOperationException(
+                "CREDIT_NOTE_SRI_PROCESS_ALREADY_STARTED");
+        }
+    }
+
+    private static void ValidateSriDraftContext(CreditNote creditNote)
+    {
+        if (string.IsNullOrWhiteSpace(creditNote.Number)
+            || !IsNumeric(creditNote.EstablishmentCodeSnapshot, 3)
+            || !IsNumeric(creditNote.EmissionPointCodeSnapshot, 3)
+            || creditNote.Sequential is null
+            || creditNote.Sequential <= 0
+            || !creditNote.DocumentIssuedAt.HasValue)
+        {
+            throw new InvalidOperationException("INVALID_SRI_DOCUMENT_CONTEXT");
+        }
+
+        var buyerIdentificationType =
+            NormalizeOptional(creditNote.BuyerIdentificationTypeSnapshot);
+        if (buyerIdentificationType is null)
+        {
+            throw new InvalidOperationException(
+                "SRI_BUYER_IDENTIFICATION_TYPE_REQUIRED");
+        }
+
+        var buyerIdentification =
+            NormalizeOptional(creditNote.BuyerIdentificationSnapshot);
+        if (buyerIdentification is null)
+        {
+            throw new InvalidOperationException(
+                "INVALID_SRI_CUSTOMER_IDENTIFICATION");
+        }
+
+        ValidateSriBuyerIdentification(
+            buyerIdentificationType,
+            buyerIdentification);
+
+        if (string.IsNullOrWhiteSpace(creditNote.BuyerNameSnapshot)
+            || string.IsNullOrWhiteSpace(creditNote.Reason)
+            || creditNote.Items.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "SRI_CREDIT_NOTE_XML_REQUIRED_FIELD_MISSING");
+        }
+
+        if (string.IsNullOrWhiteSpace(creditNote.OriginalSaleNumberSnapshot)
+            || !IsNumeric(creditNote.OriginalSaleAccessKeySnapshot, 49)
+            || string.IsNullOrWhiteSpace(
+                creditNote.OriginalSaleAuthorizationNumberSnapshot)
+            || !creditNote.OriginalSaleAuthorizedAtSnapshot.HasValue
+            || !creditNote.OriginalSaleDocumentIssuedAtSnapshot.HasValue)
+        {
+            throw new InvalidOperationException(
+                "SRI_CREDIT_NOTE_ORIGINAL_DOCUMENT_REQUIRED");
+        }
+    }
+
+    private static void ValidateSriBuyerIdentification(
+        string identificationType,
+        string identification)
+    {
+        var isValid = identificationType switch
+        {
+            "04" => identification.Length == 13
+                && identification.All(char.IsDigit),
+            "05" => identification.Length == 10
+                && identification.All(char.IsDigit),
+            "06" => identification.Length <= 20
+                && identification.All(char.IsLetterOrDigit),
+            "07" => identification == "9999999999999",
+            _ => false
+        };
+
+        if (!isValid)
+        {
+            throw new InvalidOperationException(
+                identificationType is "04" or "05" or "06" or "07"
+                    ? "INVALID_SRI_CUSTOMER_IDENTIFICATION"
+                    : "SRI_BUYER_IDENTIFICATION_TYPE_REQUIRED");
+        }
+    }
+
+    private static bool HasCompleteSriDraft(CreditNote creditNote)
+    {
+        return !string.IsNullOrWhiteSpace(creditNote.AccessKey)
+            && creditNote.SriEnvironment.HasValue
+            && creditNote.SriEmissionType.HasValue
+            && !string.IsNullOrWhiteSpace(creditNote.SriNumericCode)
+            && !string.IsNullOrWhiteSpace(creditNote.SriXmlDraft)
+            && creditNote.SriXmlGeneratedAt.HasValue;
+    }
+
+    private static bool HasAnySriDraftData(CreditNote creditNote)
+    {
+        return creditNote.AccessKey is not null
+            || creditNote.SriEnvironment.HasValue
+            || creditNote.SriEmissionType.HasValue
+            || creditNote.SriNumericCode is not null
+            || creditNote.SriXmlDraft is not null
+            || creditNote.SriXmlGeneratedAt.HasValue;
+    }
+
+    private static bool HasSriDownstreamProcessStarted(CreditNote creditNote)
+    {
+        return creditNote.SriSubmittedAt.HasValue
+            || !string.IsNullOrWhiteSpace(creditNote.SriReceptionStatus)
+            || !string.IsNullOrWhiteSpace(creditNote.SriAuthorizationStatus)
+            || !string.IsNullOrWhiteSpace(creditNote.AuthorizationNumber)
+            || creditNote.AuthorizedAt.HasValue
+            || creditNote.SriLastCheckedAt.HasValue;
+    }
+
     private static bool HasSriProcessStarted(CreditNote creditNote)
     {
         return !string.IsNullOrWhiteSpace(creditNote.AccessKey)
+            || !string.IsNullOrWhiteSpace(creditNote.SriXmlDraft)
+            || creditNote.SriXmlGeneratedAt.HasValue
             || creditNote.SriSubmittedAt.HasValue
             || !string.IsNullOrWhiteSpace(creditNote.SriReceptionStatus)
             || !string.IsNullOrWhiteSpace(creditNote.SriAuthorizationStatus)
@@ -1030,6 +1422,13 @@ public class CreditNoteService : ICreditNoteService
         return string.IsNullOrEmpty(normalized) ? null : normalized;
     }
 
+    private static bool IsNumeric(string? value, int expectedLength)
+    {
+        return value is not null
+            && value.Length == expectedLength
+            && value.All(char.IsDigit);
+    }
+
     private sealed class CreditNoteItemAggregate
     {
         public int SaleItemId { get; set; }
@@ -1048,4 +1447,8 @@ public class CreditNoteService : ICreditNoteService
         string Name,
         string MainCode,
         string? AuxiliaryCode);
+
+    private sealed record CreditNoteFiscalContext(
+        Company Company,
+        Establishment Establishment);
 }

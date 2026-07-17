@@ -40,6 +40,18 @@ public class CreditNoteDto
 
     public DateTime? DocumentIssuedAt { get; set; }
 
+    public string? AccessKey { get; set; }
+
+    public int? SriEnvironment { get; set; }
+
+    public int? SriEmissionType { get; set; }
+
+    public string? SriNumericCode { get; set; }
+
+    public bool HasSriXmlDraft { get; set; }
+
+    public DateTime? SriXmlGeneratedAt { get; set; }
+
     public string Reason { get; set; } = string.Empty;
 
     public string? Notes { get; set; }

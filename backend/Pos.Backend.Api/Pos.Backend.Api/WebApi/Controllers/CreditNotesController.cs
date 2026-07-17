@@ -98,6 +98,45 @@ public class CreditNotesController : ControllerBase
         }
     }
 
+    [HttpPost("{id:int}/sri/prepare-draft")]
+    [Authorize(Policy = AppPermissions.SriDocumentsSign)]
+    [ProducesResponseType(typeof(CreditNoteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<CreditNoteDto>> PrepareSriDraft(int id)
+    {
+        try
+        {
+            return Ok(await _creditNoteService.PrepareSriDraftAsync(id));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpGet("{id:int}/sri/xml-draft")]
+    [Authorize(Policy = AppPermissions.PosSalesVoid)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult> GetSriXmlDraft(int id)
+    {
+        try
+        {
+            var xmlDraft = await _creditNoteService.GetSriXmlDraftAsync(id);
+            return Content(xmlDraft, "application/xml");
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
     [HttpPost("{id:int}/cancel")]
     [Authorize(Policy = AppPermissions.PosSalesVoid)]
     [ProducesResponseType(typeof(CreditNoteDto), StatusCodes.Status200OK)]
@@ -130,6 +169,7 @@ public class CreditNotesController : ControllerBase
         {
             "SALE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_XML_DRAFT_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_REASON_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_REASON_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_NOTES_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
@@ -150,6 +190,19 @@ public class CreditNotesController : ControllerBase
             "CREDIT_NOTE_DRAFT_ALREADY_CANCELLED" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_DRAFT_NOT_CANCELLABLE" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_DRAFT_SRI_PROCESS_STARTED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_DRAFT_CANCELLED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_DRAFT_NOT_ALLOWED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_PROCESS_ALREADY_STARTED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_DRAFT_INCONSISTENT" => Conflict(new ApiErrorResponse { Error = code }),
+            "INVALID_SRI_DOCUMENT_CONTEXT" => BadRequest(new ApiErrorResponse { Error = code }),
+            "INVALID_ISSUER_RUC" => BadRequest(new ApiErrorResponse { Error = code }),
+            "SRI_BUYER_IDENTIFICATION_TYPE_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "INVALID_SRI_CUSTOMER_IDENTIFICATION" => BadRequest(new ApiErrorResponse { Error = code }),
+            "SRI_CREDIT_NOTE_XML_REQUIRED_FIELD_MISSING" => BadRequest(new ApiErrorResponse { Error = code }),
+            "SRI_CREDIT_NOTE_ORIGINAL_DOCUMENT_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "SRI_ACCESS_KEY_GENERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "SRI_CREDIT_NOTE_XML_DRAFT_GENERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "SRI_CREDIT_NOTE_XML_SCHEMA_VALIDATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_ERROR" => Conflict(new ApiErrorResponse { Error = code }),
             "DOCUMENT_NUMBER_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
             _ => BadRequest(new ApiErrorResponse { Error = "CREDIT_NOTE_OPERATION_FAILED" })
