@@ -154,6 +154,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly creditNoteSubmittingSriId = signal<number | null>(null);
   readonly creditNoteCheckingAuthorizationId = signal<number | null>(null);
   readonly creditNoteDownloadingAuthorizedXmlId = signal<number | null>(null);
+  readonly creditNoteViewingRideId = signal<number | null>(null);
+  readonly creditNoteDownloadingRidePdfId = signal<number | null>(null);
   readonly creditNoteSriAttempts = signal<SriSubmissionAttempt[]>([]);
   readonly creditNoteSriAttemptsLoading = signal(false);
   readonly creditNoteSriAttemptsError = signal('');
@@ -850,6 +852,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteSubmittingSriId() !== null
       || this.creditNoteCheckingAuthorizationId() !== null
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
     ) {
       return;
     }
@@ -876,6 +880,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.creditNoteSubmittingSriId.set(null);
     this.creditNoteCheckingAuthorizationId.set(null);
     this.creditNoteDownloadingAuthorizedXmlId.set(null);
+    this.creditNoteViewingRideId.set(null);
+    this.creditNoteDownloadingRidePdfId.set(null);
     this.creditNoteSriAttempts.set([]);
     this.creditNoteSriAttemptsLoading.set(false);
     this.creditNoteSriAttemptsError.set('');
@@ -925,6 +931,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteSubmittingSriId() !== null
       || this.creditNoteCheckingAuthorizationId() !== null
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
     ) {
       return;
     }
@@ -980,6 +988,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         || this.creditNoteSubmittingSriId() !== null
         || this.creditNoteCheckingAuthorizationId() !== null
         || this.creditNoteDownloadingAuthorizedXmlId() !== null
+        || this.creditNoteViewingRideId() !== null
+        || this.creditNoteDownloadingRidePdfId() !== null
       )
     ) {
       return;
@@ -999,6 +1009,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       this.creditNoteSubmittingSriId.set(null);
       this.creditNoteCheckingAuthorizationId.set(null);
       this.creditNoteDownloadingAuthorizedXmlId.set(null);
+      this.creditNoteViewingRideId.set(null);
+      this.creditNoteDownloadingRidePdfId.set(null);
       this.creditNoteSriAttempts.set([]);
       this.creditNoteSriAttemptsLoading.set(false);
       this.creditNoteSriAttemptsError.set('');
@@ -1023,6 +1035,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteSubmittingSriId() !== null
       || this.creditNoteCheckingAuthorizationId() !== null
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
       return;
@@ -1085,6 +1099,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteSubmittingSriId() !== null
       || this.creditNoteCheckingAuthorizationId() !== null
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
       return;
@@ -1129,6 +1145,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteSubmittingSriId() !== null
       || this.creditNoteCheckingAuthorizationId() !== null
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
       return;
@@ -1182,6 +1200,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteSubmittingSriId() !== null
       || this.creditNoteCheckingAuthorizationId() !== null
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
       return;
@@ -1229,6 +1249,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteSubmittingSriId() !== null
       || this.creditNoteCheckingAuthorizationId() !== null
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
       || creditNote.documentStatus !== SaleDocumentStatus.Draft
@@ -1320,6 +1342,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteSubmittingSriId() !== null
       || this.creditNoteCheckingAuthorizationId() !== null
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
       || creditNote.documentStatus !== SaleDocumentStatus.PendingAuthorization
@@ -1418,6 +1442,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteSubmittingSriId() !== null
       || this.creditNoteCheckingAuthorizationId() !== null
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
       || !isAuthorized
@@ -1449,6 +1475,131 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
             error,
             'download'
           ),
+        });
+      },
+    });
+  }
+
+  openCreditNoteSriRide(creditNoteId: number): void {
+    if (!this.canVoid) {
+      this.sriRide.set(null);
+      this.sriRideError.set(
+        'No tienes permiso para consultar el RIDE de la nota de crédito.'
+      );
+      this.sriRideLoading.set(false);
+      this.sriRideVisible.set(true);
+      return;
+    }
+
+    const creditNote = this.selectedCreditNote();
+    const isAuthorized =
+      creditNote?.documentStatus === SaleDocumentStatus.Authorized
+      || creditNote?.sriAuthorizationStatus?.trim().toUpperCase()
+        === 'AUTORIZADO';
+
+    if (
+      this.creditNotePreparingSriDraftId() !== null
+      || this.creditNoteDownloadingSriXmlId() !== null
+      || this.creditNoteSigningSriXmlId() !== null
+      || this.creditNoteDownloadingSriSignedXmlId() !== null
+      || this.creditNoteSubmittingSriId() !== null
+      || this.creditNoteCheckingAuthorizationId() !== null
+      || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
+      || this.selectedCreditNoteId() !== creditNoteId
+      || creditNote?.id !== creditNoteId
+      || !isAuthorized
+      || !creditNote.authorizationNumber?.trim()
+      || creditNote.voidedAt !== null
+    ) {
+      return;
+    }
+
+    this.creditNoteViewingRideId.set(creditNoteId);
+    this.sriRide.set(null);
+    this.sriRideError.set('');
+    this.sriRideLoading.set(true);
+    this.sriRideVisible.set(true);
+
+    this.creditNoteService.getSriRide(creditNoteId).pipe(
+      finalize(() => {
+        if (this.creditNoteViewingRideId() === creditNoteId) {
+          this.creditNoteViewingRideId.set(null);
+        }
+        this.sriRideLoading.set(false);
+      })
+    ).subscribe({
+      next: (ride) => this.sriRide.set(ride),
+      error: (error: HttpErrorResponse) => {
+        this.sriRideError.set(
+          this.resolveCreditNoteSriRideError(error, 'view')
+        );
+      },
+    });
+  }
+
+  downloadCreditNoteSriRidePdf(creditNoteId: number): void {
+    if (!this.canVoid) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Permiso requerido',
+        detail: 'No tienes permiso para descargar el RIDE PDF.',
+      });
+      return;
+    }
+
+    const creditNote = this.selectedCreditNote();
+    const isAuthorized =
+      creditNote?.documentStatus === SaleDocumentStatus.Authorized
+      || creditNote?.sriAuthorizationStatus?.trim().toUpperCase()
+        === 'AUTORIZADO';
+
+    if (
+      this.creditNotePreparingSriDraftId() !== null
+      || this.creditNoteDownloadingSriXmlId() !== null
+      || this.creditNoteSigningSriXmlId() !== null
+      || this.creditNoteDownloadingSriSignedXmlId() !== null
+      || this.creditNoteSubmittingSriId() !== null
+      || this.creditNoteCheckingAuthorizationId() !== null
+      || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
+      || this.selectedCreditNoteId() !== creditNoteId
+      || creditNote?.id !== creditNoteId
+      || !isAuthorized
+      || !creditNote.authorizationNumber?.trim()
+      || creditNote.voidedAt !== null
+    ) {
+      return;
+    }
+
+    this.creditNoteDownloadingRidePdfId.set(creditNoteId);
+
+    this.creditNoteService.getSriRidePdf(creditNoteId).pipe(
+      finalize(() => {
+        if (this.creditNoteDownloadingRidePdfId() === creditNoteId) {
+          this.creditNoteDownloadingRidePdfId.set(null);
+        }
+      })
+    ).subscribe({
+      next: (blob) => {
+        this.downloadBlob(
+          blob,
+          this.buildCreditNoteRidePdfFileName(creditNoteId)
+        );
+        const documentNumber = creditNote.number || `#${creditNoteId}`;
+        this.messageService.add({
+          severity: 'success',
+          summary: 'RIDE PDF descargado',
+          detail: `Se descargó el RIDE PDF de ${documentNumber}.`,
+        });
+      },
+      error: (error: HttpErrorResponse) => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'No se pudo descargar el RIDE PDF',
+          detail: this.resolveCreditNoteSriRideError(error, 'pdf'),
         });
       },
     });
@@ -1576,6 +1727,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteSubmittingSriId() !== null
       || this.creditNoteCheckingAuthorizationId() !== null
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
     ) {
       return;
     }
@@ -1605,6 +1758,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteSubmittingSriId() !== null
       || this.creditNoteCheckingAuthorizationId() !== null
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
     ) {
       return;
     }
@@ -1673,6 +1828,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         || this.creditNoteSubmittingSriId() !== null
         || this.creditNoteCheckingAuthorizationId() !== null
         || this.creditNoteDownloadingAuthorizedXmlId() !== null
+        || this.creditNoteViewingRideId() !== null
+        || this.creditNoteDownloadingRidePdfId() !== null
       )
     ) {
       return;
@@ -1704,6 +1861,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       this.creditNoteSubmittingSriId.set(null);
       this.creditNoteCheckingAuthorizationId.set(null);
       this.creditNoteDownloadingAuthorizedXmlId.set(null);
+      this.creditNoteViewingRideId.set(null);
+      this.creditNoteDownloadingRidePdfId.set(null);
       this.creditNoteSriAttempts.set([]);
       this.creditNoteSriAttemptsLoading.set(false);
       this.creditNoteSriAttemptsError.set('');
@@ -2572,6 +2731,15 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     return `nota-credito-${this.sanitizeFileNamePart(identifier)}-autorizado.xml`;
   }
 
+  private buildCreditNoteRidePdfFileName(creditNoteId: number): string {
+    const creditNote = this.selectedCreditNoteId() === creditNoteId
+      ? this.selectedCreditNote()
+      : null;
+    const identifier = creditNote?.number ?? String(creditNoteId);
+
+    return `nota-credito-${this.sanitizeFileNamePart(identifier)}-RIDE.pdf`;
+  }
+
   private buildAuthorizedXmlFileName(saleId: number): string {
     const sale = this.selectedSale()?.id === saleId ? this.selectedSale() : null;
     const fallback = this.sales().find((item) => item.id === saleId);
@@ -2999,6 +3167,34 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         return operation === 'download'
           ? 'No se pudo descargar el XML autorizado de la nota de crédito.'
           : 'No se pudo consultar la autorización de la nota de crédito.';
+    }
+  }
+
+  private resolveCreditNoteSriRideError(
+    error: HttpErrorResponse,
+    operation: 'view' | 'pdf'
+  ): string {
+    switch (readErrorCode(error)) {
+      case 'CREDIT_NOTE_NOT_FOUND':
+        return 'La nota de crédito no existe o no pertenece al contexto operativo actual.';
+      case 'CREDIT_NOTE_SRI_RIDE_ONLY_AUTHORIZED':
+        return 'El RIDE solo está disponible para una nota de crédito autorizada.';
+      case 'CREDIT_NOTE_SRI_RIDE_NOT_FOUND':
+        return 'No se encontró el XML autorizado necesario para generar el RIDE.';
+      case 'CREDIT_NOTE_SRI_RIDE_INVALID_AUTHORIZED_XML':
+        return 'El XML autorizado guardado no contiene un comprobante válido para esta nota de crédito.';
+      case 'CREDIT_NOTE_SRI_RIDE_PDF_GENERATION_FAILED':
+        return 'No se pudo generar el RIDE PDF de la nota de crédito.';
+      default:
+        if (error.status === 403) {
+          return operation === 'pdf'
+            ? 'No tienes permiso para descargar el RIDE PDF de la nota de crédito.'
+            : 'No tienes permiso para consultar el RIDE de la nota de crédito.';
+        }
+
+        return operation === 'pdf'
+          ? 'No se pudo descargar el RIDE PDF de la nota de crédito.'
+          : 'No se pudo generar el RIDE de la nota de crédito.';
     }
   }
 

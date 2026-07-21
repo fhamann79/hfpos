@@ -1,14 +1,15 @@
-import { CommonModule, DatePipe } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { Component, ElementRef, EventEmitter, Input, Output, ViewChild } from '@angular/core';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { MessageModule } from 'primeng/message';
+import { formatBusinessDateTime } from '../../../../core/utils/business-date-format';
 import { SriRide } from '../../models/sri-ride.model';
 
 @Component({
   selector: 'app-sri-ride-dialog',
   standalone: true,
-  imports: [CommonModule, DatePipe, DialogModule, ButtonModule, MessageModule],
+  imports: [CommonModule, DialogModule, ButtonModule, MessageModule],
   templateUrl: './sri-ride-dialog.html',
   styleUrl: './sri-ride-dialog.scss',
 })
@@ -21,6 +22,7 @@ export class SriRideDialog {
   @Input() ride: SriRide | null = null;
   @Input() loading = false;
   @Input() errorMessage = '';
+  @Input() companyTimeZoneId = 'America/Guayaquil';
 
   @Output() visibleChange = new EventEmitter<boolean>();
 
@@ -118,6 +120,33 @@ export class SriRideDialog {
     }
 
     return `${type}: ${identification}`;
+  }
+
+  authorizationDateLabel(ride: SriRide): string {
+    const timeZoneId = ride.timeZoneId?.trim()
+      || this.companyTimeZoneId
+      || 'America/Guayaquil';
+
+    return formatBusinessDateTime(ride.authorizationDate, timeZoneId) || '-';
+  }
+
+  calendarDateLabel(value: string | null | undefined): string {
+    const normalized = value?.trim();
+    if (!normalized) {
+      return '-';
+    }
+
+    const isoDate = /^(\d{4})-(\d{2})-(\d{2})/.exec(normalized);
+    if (isoDate) {
+      return `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`;
+    }
+
+    const localDate = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/.exec(normalized);
+    if (!localDate) {
+      return '-';
+    }
+
+    return `${localDate[1].padStart(2, '0')}/${localDate[2].padStart(2, '0')}/${localDate[3]}`;
   }
 
   footerNote(ride: SriRide): string {

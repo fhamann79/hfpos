@@ -254,6 +254,27 @@
             (onClick)="requestDownloadAuthorizedXml(note)"
           ></p-button>
         }
+
+        @if (canShowRide(note)) {
+          <p-button
+            label="Ver RIDE"
+            icon="pi pi-eye"
+            severity="secondary"
+            [outlined]="true"
+            [loading]="viewingRide"
+            [disabled]="isBusy()"
+            (onClick)="requestViewRide(note)"
+          ></p-button>
+          <p-button
+            label="Descargar RIDE PDF"
+            icon="pi pi-file-pdf"
+            severity="secondary"
+            [outlined]="true"
+            [loading]="downloadingRidePdf"
+            [disabled]="isBusy()"
+            (onClick)="requestDownloadRidePdf(note)"
+          ></p-button>
+        }
       </div>
     </section>
 

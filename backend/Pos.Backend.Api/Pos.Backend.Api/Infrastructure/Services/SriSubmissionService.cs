@@ -495,6 +495,7 @@ public class SriSubmissionService : ISriSubmissionService
         return new SriRideDto
         {
             SaleId = sale.Id,
+            CreditNoteId = null,
             DocumentTypeLabel = "Factura",
             DocumentNumber = BuildDocumentNumber(infoTributaria) ?? sale.Number,
             AccessKey = accessKey,
@@ -504,6 +505,9 @@ public class SriSubmissionService : ISriSubmissionService
             EnvironmentLabel = SriEnvironmentLabel(environment),
             EmissionTypeLabel = SriEmissionTypeLabel(emissionType),
             IssueDate = ParseSriDate(ChildValue(infoFactura, "fechaEmision")) ?? sale.DocumentIssuedAt,
+            TimeZoneId = sale.TimeZoneIdSnapshot,
+            ModifiedDocument = null,
+            Reason = null,
             Issuer = new SriRideIssuerDto
             {
                 Ruc = ChildValue(infoTributaria, "ruc"),

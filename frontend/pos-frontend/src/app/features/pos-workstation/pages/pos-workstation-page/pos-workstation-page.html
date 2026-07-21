@@ -281,6 +281,14 @@
       creditNoteDownloadingAuthorizedXmlId() !== null
       && creditNoteDownloadingAuthorizedXmlId() === selectedCreditNoteId()
     "
+    [viewingRide]="
+      creditNoteViewingRideId() !== null
+      && creditNoteViewingRideId() === selectedCreditNoteId()
+    "
+    [downloadingRidePdf]="
+      creditNoteDownloadingRidePdfId() !== null
+      && creditNoteDownloadingRidePdfId() === selectedCreditNoteId()
+    "
     [submissionAttempts]="creditNoteSriAttempts()"
     [submissionAttemptsLoading]="creditNoteSriAttemptsLoading()"
     [submissionAttemptsError]="creditNoteSriAttemptsError()"
@@ -293,6 +301,8 @@
     (submitSri)="submitCreditNoteSri($event)"
     (checkAuthorization)="checkCreditNoteSriAuthorization($event)"
     (downloadAuthorizedXml)="downloadCreditNoteSriAuthorizedXml($event)"
+    (viewRide)="openCreditNoteSriRide($event)"
+    (downloadRidePdf)="downloadCreditNoteSriRidePdf($event)"
     (refreshSubmissionAttempts)="loadCreditNoteSriAttempts()"
   ></app-credit-note-detail-dialog>
 
@@ -317,6 +327,7 @@
     [ride]="sriRide()"
     [loading]="sriRideLoading()"
     [errorMessage]="sriRideError()"
+    [companyTimeZoneId]="companyTimeZoneId()"
     (visibleChange)="sriRideVisible.set($event)"
   ></app-sri-ride-dialog>
 

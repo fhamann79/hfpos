@@ -1,5 +1,6 @@
 export interface SriRide {
-  saleId: number;
+  saleId: number | null;
+  creditNoteId: number | null;
   documentTypeLabel: string;
   documentNumber: string | null;
   accessKey: string | null;
@@ -9,6 +10,9 @@ export interface SriRide {
   environmentLabel: string | null;
   emissionTypeLabel: string | null;
   issueDate: string | null;
+  timeZoneId: string;
+  modifiedDocument: SriRideModifiedDocument | null;
+  reason: string | null;
   issuer: SriRideIssuer;
   buyer: SriRideBuyer;
   branding: SriRideBranding;
@@ -17,6 +21,13 @@ export interface SriRide {
   payments: SriRidePayment[];
   additionalInfo: SriRideAdditionalInfo[];
   footerNote: string;
+}
+
+export interface SriRideModifiedDocument {
+  documentCode: string | null;
+  documentTypeLabel: string | null;
+  documentNumber: string | null;
+  issueDate: string | null;
 }
 
 export interface SriRideIssuer {

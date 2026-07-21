@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using Microsoft.EntityFrameworkCore;
@@ -9,6 +11,7 @@ using Pos.Backend.Api.Core.Enums;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.Infrastructure.Data;
+using QRCoder;
 
 namespace Pos.Backend.Api.Infrastructure.Services;
 
@@ -397,6 +400,51 @@ public class SriCreditNoteSubmissionService : ISriCreditNoteSubmissionService
         return authorizationNode.ToString(SaveOptions.DisableFormatting);
     }
 
+    public async Task<SriRideDto> GetRideAsync(int creditNoteId)
+    {
+        if (creditNoteId <= 0)
+        {
+            throw new KeyNotFoundException("CREDIT_NOTE_NOT_FOUND");
+        }
+
+        var operationalContext =
+            await _operationalContextAccessor.GetRequiredContextAsync();
+        var creditNote = await LoadCreditNoteReadSnapshotAsync(
+            creditNoteId,
+            operationalContext);
+
+        ValidateCanBuildRide(creditNote);
+
+        var responseXml = await _context.SriSubmissionAttempts
+            .AsNoTracking()
+            .Where(attempt =>
+                attempt.CreditNoteId == creditNoteId
+                && attempt.CompanyId == operationalContext.CompanyId
+                && attempt.AttemptType == SriSubmissionAttemptType.Authorization
+                && attempt.Status == SriSubmissionAttemptStatus.Success
+                && attempt.AuthorizationStatus != null
+                && attempt.AuthorizationStatus.ToUpper() == "AUTORIZADO"
+                && attempt.ResponseXml != null
+                && attempt.ResponseXml != string.Empty)
+            .OrderByDescending(attempt => attempt.CreatedAt)
+            .ThenByDescending(attempt => attempt.Id)
+            .Select(attempt => attempt.ResponseXml)
+            .FirstOrDefaultAsync();
+
+        if (string.IsNullOrWhiteSpace(responseXml))
+        {
+            throw new KeyNotFoundException("CREDIT_NOTE_SRI_RIDE_NOT_FOUND");
+        }
+
+        var authorizationNode = ExtractAuthorizationNode(
+            responseXml,
+            "CREDIT_NOTE_SRI_RIDE_INVALID_AUTHORIZED_XML");
+        var ride = BuildRide(creditNote, authorizationNode);
+        await ApplyRideBrandingAsync(ride, creditNote.CompanyId);
+
+        return ride;
+    }
+
     public async Task<IReadOnlyList<SriSubmissionAttemptDto>> GetAttemptsAsync(
         int creditNoteId)
     {
@@ -745,6 +793,482 @@ public class SriCreditNoteSubmissionService : ISriCreditNoteSubmissionService
         }
     }
 
+    private static void ValidateCanBuildRide(CreditNote creditNote)
+    {
+        var isAuthorized =
+            creditNote.DocumentStatus == SaleDocumentStatus.Authorized
+            || string.Equals(
+                creditNote.SriAuthorizationStatus,
+                "AUTORIZADO",
+                StringComparison.OrdinalIgnoreCase);
+
+        if (!isAuthorized
+            || string.IsNullOrWhiteSpace(creditNote.AuthorizationNumber)
+            || string.IsNullOrWhiteSpace(creditNote.AccessKey))
+        {
+            throw new InvalidOperationException(
+                "CREDIT_NOTE_SRI_RIDE_ONLY_AUTHORIZED");
+        }
+    }
+
+    private static SriRideDto BuildRide(
+        CreditNote creditNote,
+        XElement authorizationNode)
+    {
+        var document = ExtractAuthorizedCreditNoteDocument(
+            authorizationNode,
+            "CREDIT_NOTE_SRI_RIDE_INVALID_AUTHORIZED_XML");
+        var root = document.Root;
+        var infoTributaria = ChildElement(root, "infoTributaria");
+        var infoNotaCredito = ChildElement(root, "infoNotaCredito");
+
+        if (root is null
+            || !HasLocalName(root, "notaCredito")
+            || infoTributaria is null
+            || infoNotaCredito is null
+            || ChildValue(infoTributaria, "codDoc") != "04"
+            || !string.Equals(
+                ChildValue(infoTributaria, "claveAcceso"),
+                creditNote.AccessKey,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "CREDIT_NOTE_SRI_RIDE_INVALID_AUTHORIZED_XML");
+        }
+
+        var modifiedDocumentCode = ChildValue(
+            infoNotaCredito,
+            "codDocModificado");
+        var modifiedDocumentNumber = ChildValue(
+            infoNotaCredito,
+            "numDocModificado");
+        var modifiedDocumentIssueDate = ParseSriDate(
+            ChildValue(infoNotaCredito, "fechaEmisionDocSustento"));
+
+        if (modifiedDocumentCode is null
+            || modifiedDocumentNumber is null
+            || modifiedDocumentIssueDate is null)
+        {
+            throw new InvalidOperationException(
+                "CREDIT_NOTE_SRI_RIDE_INVALID_AUTHORIZED_XML");
+        }
+
+        var environment = ChildValue(infoTributaria, "ambiente")
+            ?? creditNote.SriEnvironment?.ToString(
+                CultureInfo.InvariantCulture);
+        var emissionType = ChildValue(infoTributaria, "tipoEmision")
+            ?? creditNote.SriEmissionType?.ToString(
+                CultureInfo.InvariantCulture);
+        var accessKey = ChildValue(infoTributaria, "claveAcceso")
+            ?? creditNote.AccessKey;
+
+        return new SriRideDto
+        {
+            SaleId = null,
+            CreditNoteId = creditNote.Id,
+            DocumentTypeLabel = "Nota de crédito",
+            DocumentNumber = BuildDocumentNumber(infoTributaria)
+                ?? creditNote.Number,
+            AccessKey = accessKey,
+            Qr = BuildRideQr(accessKey),
+            AuthorizationNumber = ChildValue(
+                authorizationNode,
+                "numeroAutorizacion") ?? creditNote.AuthorizationNumber,
+            AuthorizationDate = ParseSriDate(
+                ChildValue(authorizationNode, "fechaAutorizacion"))
+                ?? creditNote.AuthorizedAt,
+            EnvironmentLabel = SriEnvironmentLabel(environment),
+            EmissionTypeLabel = SriEmissionTypeLabel(emissionType),
+            IssueDate = ParseSriDate(
+                ChildValue(infoNotaCredito, "fechaEmision"))
+                ?? creditNote.BusinessDate.ToDateTime(TimeOnly.MinValue),
+            TimeZoneId = creditNote.TimeZoneIdSnapshot,
+            ModifiedDocument = new SriRideModifiedDocumentDto
+            {
+                DocumentCode = modifiedDocumentCode,
+                DocumentTypeLabel = modifiedDocumentCode == "01"
+                    ? "Factura"
+                    : modifiedDocumentCode,
+                DocumentNumber = modifiedDocumentNumber,
+                IssueDate = modifiedDocumentIssueDate
+            },
+            Reason = ChildValue(infoNotaCredito, "motivo"),
+            Issuer = new SriRideIssuerDto
+            {
+                Ruc = ChildValue(infoTributaria, "ruc"),
+                LegalName = ChildValue(infoTributaria, "razonSocial"),
+                TradeName = ChildValue(infoTributaria, "nombreComercial"),
+                MatrixAddress = ChildValue(infoTributaria, "dirMatriz"),
+                EstablishmentAddress = ChildValue(
+                    infoNotaCredito,
+                    "dirEstablecimiento"),
+                AccountingRequired = ChildValue(
+                    infoNotaCredito,
+                    "obligadoContabilidad"),
+                TaxpayerRegime = ChildValue(
+                    infoTributaria,
+                    "contribuyenteRimpe")
+                    ?? ChildValue(infoNotaCredito, "contribuyenteRimpe")
+            },
+            Buyer = new SriRideBuyerDto
+            {
+                IdentificationType = BuyerIdentificationTypeLabel(
+                    ChildValue(
+                        infoNotaCredito,
+                        "tipoIdentificacionComprador")),
+                Identification = ChildValue(
+                    infoNotaCredito,
+                    "identificacionComprador"),
+                LegalName = ChildValue(
+                    infoNotaCredito,
+                    "razonSocialComprador"),
+                Address = ChildValue(infoNotaCredito, "direccionComprador")
+                    ?? TrimToNull(creditNote.BuyerAddressSnapshot)
+            },
+            Items = BuildRideItems(root),
+            Totals = BuildRideTotals(creditNote, infoNotaCredito),
+            Payments = new List<SriRidePaymentDto>(),
+            AdditionalInfo = BuildRideAdditionalInfo(root)
+        };
+    }
+
+    private static List<SriRideItemDto> BuildRideItems(XElement creditNote)
+    {
+        var details = ChildElement(creditNote, "detalles");
+
+        return ChildElements(details, "detalle")
+            .Select(detail =>
+            {
+                var taxes = ChildElement(detail, "impuestos");
+                var taxAmount = ChildElements(taxes, "impuesto")
+                    .Select(tax =>
+                        ParseDecimal(ChildValue(tax, "valor")) ?? 0)
+                    .Sum();
+                var subtotal = ParseDecimal(
+                    ChildValue(detail, "precioTotalSinImpuesto")) ?? 0;
+
+                return new SriRideItemDto
+                {
+                    MainCode = ChildValue(detail, "codigoInterno")
+                        ?? ChildValue(detail, "codigoPrincipal"),
+                    Description = ChildValue(detail, "descripcion"),
+                    Quantity = ParseDecimal(
+                        ChildValue(detail, "cantidad")) ?? 0,
+                    UnitPrice = ParseDecimal(
+                        ChildValue(detail, "precioUnitario")) ?? 0,
+                    Discount = ParseDecimal(
+                        ChildValue(detail, "descuento")) ?? 0,
+                    Subtotal = subtotal,
+                    TaxAmount = taxAmount,
+                    LineTotal = subtotal + taxAmount
+                };
+            })
+            .ToList();
+    }
+
+    private static SriRideTotalsDto BuildRideTotals(
+        CreditNote creditNote,
+        XElement infoNotaCredito)
+    {
+        var totals = new SriRideTotalsDto
+        {
+            SubtotalWithoutTaxes = ParseDecimal(
+                ChildValue(infoNotaCredito, "totalSinImpuestos"))
+                ?? creditNote.Subtotal,
+            TotalDiscount = ParseDecimal(
+                ChildValue(infoNotaCredito, "totalDescuento"))
+                ?? creditNote.DiscountAmount,
+            TaxAmount = creditNote.TaxAmount,
+            Total = ParseDecimal(
+                ChildValue(infoNotaCredito, "valorModificacion"))
+                ?? creditNote.Total,
+            Currency = ChildValue(infoNotaCredito, "moneda") ?? "DOLAR"
+        };
+
+        var taxSummary = ChildElement(
+            infoNotaCredito,
+            "totalConImpuestos");
+        var hasXmlTaxTotals = false;
+        var xmlTaxAmount = 0m;
+
+        foreach (var tax in ChildElements(taxSummary, "totalImpuesto"))
+        {
+            hasXmlTaxTotals = true;
+            var code = ChildValue(tax, "codigo");
+            var percentageCode = ChildValue(tax, "codigoPorcentaje");
+            var taxableBase = ParseDecimal(
+                ChildValue(tax, "baseImponible")) ?? 0;
+            var amount = ParseDecimal(ChildValue(tax, "valor")) ?? 0;
+
+            xmlTaxAmount += amount;
+
+            if (code != "2")
+            {
+                continue;
+            }
+
+            switch (percentageCode)
+            {
+                case "4":
+                    totals.Vat15Subtotal += taxableBase;
+                    break;
+                case "5":
+                    totals.Vat5Subtotal += taxableBase;
+                    break;
+                case "0":
+                    totals.Vat0Subtotal += taxableBase;
+                    break;
+                case "6":
+                    totals.NotSubjectSubtotal += taxableBase;
+                    break;
+                case "7":
+                    totals.ExemptSubtotal += taxableBase;
+                    break;
+            }
+        }
+
+        if (hasXmlTaxTotals)
+        {
+            totals.TaxAmount = xmlTaxAmount;
+        }
+        else
+        {
+            totals.Vat15Subtotal = creditNote.Vat15Subtotal;
+            totals.Vat5Subtotal = creditNote.Vat5Subtotal;
+            totals.Vat0Subtotal = creditNote.Vat0Subtotal;
+            totals.ExemptSubtotal = creditNote.VatExemptSubtotal;
+            totals.NotSubjectSubtotal = creditNote.VatNotSubjectSubtotal;
+        }
+
+        return totals;
+    }
+
+    private static List<SriRideAdditionalInfoDto> BuildRideAdditionalInfo(
+        XElement creditNote)
+    {
+        var additionalSection = ChildElement(creditNote, "infoAdicional");
+        var additionalInfo = new List<SriRideAdditionalInfoDto>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var field in ChildElements(
+            additionalSection,
+            "campoAdicional"))
+        {
+            var value = TrimToNull(field.Value);
+
+            if (value is null)
+            {
+                continue;
+            }
+
+            var name = TrimToNull(field.Attributes()
+                .FirstOrDefault(attribute => string.Equals(
+                    attribute.Name.LocalName,
+                    "nombre",
+                    StringComparison.OrdinalIgnoreCase))
+                ?.Value) ?? "Informacion adicional";
+            var key = $"{name}\u001F{value}";
+
+            if (!seen.Add(key))
+            {
+                continue;
+            }
+
+            additionalInfo.Add(new SriRideAdditionalInfoDto
+            {
+                Name = name,
+                Value = value
+            });
+        }
+
+        return additionalInfo;
+    }
+
+    private static SriRideQrDto? BuildRideQr(string? accessKey)
+    {
+        var content = TrimToNull(accessKey);
+
+        if (content is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var qrCodeData = QRCodeGenerator.GenerateQrCode(
+                content,
+                QRCodeGenerator.ECCLevel.Q);
+            using var qrCode = new SvgQRCode(qrCodeData);
+            var svg = qrCode.GetGraphic();
+
+            return new SriRideQrDto
+            {
+                Content = content,
+                DataUrl = $"data:image/svg+xml;base64,{Convert.ToBase64String(Encoding.UTF8.GetBytes(svg))}"
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task ApplyRideBrandingAsync(
+        SriRideDto ride,
+        int companyId)
+    {
+        var branding = await _context.CompanyBrandings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.CompanyId == companyId);
+
+        if (branding is null)
+        {
+            return;
+        }
+
+        var logoConfigured = branding.LogoBytes is { Length: > 0 }
+            && !string.IsNullOrWhiteSpace(branding.LogoContentType);
+        var logoBase64 = logoConfigured
+            ? Convert.ToBase64String(branding.LogoBytes!)
+            : null;
+
+        ride.Branding = new SriRideBrandingDto
+        {
+            LogoConfigured = logoConfigured,
+            LogoContentType = logoConfigured
+                ? branding.LogoContentType
+                : null,
+            LogoDataUrl = logoConfigured
+                ? $"data:{branding.LogoContentType};base64,{logoBase64}"
+                : null,
+            PrimaryColor = branding.PrimaryColor,
+            DocumentFooterText = branding.DocumentFooterText
+        };
+
+        if (!string.IsNullOrWhiteSpace(branding.DocumentFooterText))
+        {
+            ride.FooterNote = branding.DocumentFooterText;
+        }
+    }
+
+    private static string? BuildDocumentNumber(XElement infoTributaria)
+    {
+        var establishment = ChildValue(infoTributaria, "estab");
+        var emissionPoint = ChildValue(infoTributaria, "ptoEmi");
+        var sequential = ChildValue(infoTributaria, "secuencial");
+
+        return establishment is not null
+            && emissionPoint is not null
+            && sequential is not null
+                ? $"{establishment}-{emissionPoint}-{sequential}"
+                : null;
+    }
+
+    private static decimal? ParseDecimal(string? value)
+    {
+        var normalized = TrimToNull(value);
+
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        if (decimal.TryParse(
+            normalized,
+            NumberStyles.Number,
+            CultureInfo.InvariantCulture,
+            out var invariantValue))
+        {
+            return invariantValue;
+        }
+
+        return decimal.TryParse(
+            normalized,
+            NumberStyles.Number,
+            CultureInfo.GetCultureInfo("es-EC"),
+            out var localValue)
+                ? localValue
+                : null;
+    }
+
+    private static DateTime? ParseSriDate(string? value)
+    {
+        var normalized = TrimToNull(value);
+
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        string[] formats =
+        [
+            "dd/MM/yyyy",
+            "d/M/yyyy",
+            "dd-MM-yyyy",
+            "d-M-yyyy",
+            "yyyy-MM-dd",
+            "yyyy-MM-ddTHH:mm:ss",
+            "yyyy-MM-ddTHH:mm:ssK",
+            "yyyy-MM-ddTHH:mm:sszzz",
+            "yyyy-MM-ddTHH:mm:ss.fffK",
+            "yyyy-MM-ddTHH:mm:ss.fffzzz"
+        ];
+
+        if (DateTime.TryParseExact(
+            normalized,
+            formats,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AllowWhiteSpaces,
+            out var exactValue))
+        {
+            return exactValue;
+        }
+
+        if (DateTime.TryParse(
+            normalized,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AllowWhiteSpaces,
+            out var invariantValue))
+        {
+            return invariantValue;
+        }
+
+        return DateTime.TryParse(
+            normalized,
+            CultureInfo.GetCultureInfo("es-EC"),
+            DateTimeStyles.AllowWhiteSpaces,
+            out var localValue)
+                ? localValue
+                : null;
+    }
+
+    private static string? SriEnvironmentLabel(string? environment)
+        => environment switch
+        {
+            "1" => "Pruebas",
+            "2" => "Produccion",
+            _ => environment
+        };
+
+    private static string? SriEmissionTypeLabel(string? emissionType)
+        => emissionType switch
+        {
+            "1" => "Normal",
+            _ => emissionType
+        };
+
+    private static string? BuyerIdentificationTypeLabel(string? code)
+        => code switch
+        {
+            "04" => "RUC",
+            "05" => "Cedula",
+            "06" => "Pasaporte",
+            "07" => "Consumidor final",
+            "08" => "Identificacion exterior",
+            "09" => "Placa",
+            _ => code
+        };
+
     private static bool IsValidAuthorizedCreditNoteXml(
         XDocument document,
         string? expectedAccessKey,
@@ -780,30 +1304,33 @@ public class SriCreditNoteSubmissionService : ISriCreditNoteSubmissionService
             && documentCode == "04";
     }
 
-    private static XElement ExtractAuthorizationNode(string responseXml)
+    private static XElement ExtractAuthorizationNode(
+        string responseXml,
+        string errorCode =
+            "CREDIT_NOTE_SRI_AUTHORIZED_XML_INVALID_RESPONSE")
     {
-        var document = LoadXmlDocument(
-            responseXml,
-            "CREDIT_NOTE_SRI_AUTHORIZED_XML_INVALID_RESPONSE");
-        var authorizationNode = document
-            .Descendants()
-            .FirstOrDefault(element =>
-                element.Name.LocalName == "autorizacion");
+        var document = LoadXmlDocument(responseXml, errorCode);
+        var authorizationNode = document.Root is not null
+            && HasLocalName(document.Root, "autorizacion")
+                ? document.Root
+                : document.Descendants()
+                    .FirstOrDefault(element =>
+                        HasLocalName(element, "autorizacion"));
 
         return authorizationNode
-            ?? throw new InvalidOperationException(
-                "CREDIT_NOTE_SRI_AUTHORIZED_XML_INVALID_RESPONSE");
+            ?? throw new InvalidOperationException(errorCode);
     }
 
     private static XDocument ExtractAuthorizedCreditNoteDocument(
-        XElement authorizationNode)
+        XElement authorizationNode,
+        string errorCode =
+            "CREDIT_NOTE_SRI_AUTHORIZED_XML_INVALID_RESPONSE")
     {
         var comprobanteNode = authorizationNode
             .Descendants()
             .FirstOrDefault(element =>
-                element.Name.LocalName == "comprobante")
-            ?? throw new InvalidOperationException(
-                "CREDIT_NOTE_SRI_AUTHORIZED_XML_INVALID_RESPONSE");
+                HasLocalName(element, "comprobante"))
+            ?? throw new InvalidOperationException(errorCode);
         var embeddedDocument = comprobanteNode.Elements().FirstOrDefault();
 
         if (embeddedDocument is not null)
@@ -814,13 +1341,10 @@ public class SriCreditNoteSubmissionService : ISriCreditNoteSubmissionService
         var comprobanteXml = comprobanteNode.Value.Trim();
         if (comprobanteXml.Length == 0)
         {
-            throw new InvalidOperationException(
-                "CREDIT_NOTE_SRI_AUTHORIZED_XML_INVALID_RESPONSE");
+            throw new InvalidOperationException(errorCode);
         }
 
-        return LoadXmlDocument(
-            comprobanteXml,
-            "CREDIT_NOTE_SRI_AUTHORIZED_XML_INVALID_RESPONSE");
+        return LoadXmlDocument(comprobanteXml, errorCode);
     }
 
     private static XDocument LoadXmlDocument(string xml, string errorCode)
@@ -845,13 +1369,29 @@ public class SriCreditNoteSubmissionService : ISriCreditNoteSubmissionService
 
     private static XElement? ChildElement(XElement? parent, string name)
         => parent?.Elements()
-            .FirstOrDefault(element => element.Name.LocalName == name);
+            .FirstOrDefault(element => HasLocalName(element, name));
+
+    private static IEnumerable<XElement> ChildElements(
+        XElement? parent,
+        string name)
+        => parent?.Elements()
+            .Where(element => HasLocalName(element, name))
+            ?? Enumerable.Empty<XElement>();
 
     private static string? ChildValue(XElement? parent, string name)
     {
         var value = ChildElement(parent, name)?.Value.Trim();
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
+
+    private static bool HasLocalName(XElement element, string name)
+        => string.Equals(
+            element.Name.LocalName,
+            name,
+            StringComparison.OrdinalIgnoreCase);
+
+    private static string? TrimToNull(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private void ValidateUnsignedDraftIfPresent(CreditNote creditNote)
     {

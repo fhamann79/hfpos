@@ -53,6 +53,8 @@ export class CreditNoteDetailDialog {
   @Input() submittingSri = false;
   @Input() checkingAuthorization = false;
   @Input() downloadingAuthorizedXml = false;
+  @Input() viewingRide = false;
+  @Input() downloadingRidePdf = false;
   @Input() submissionAttempts: SriSubmissionAttempt[] = [];
   @Input() submissionAttemptsLoading = false;
   @Input() submissionAttemptsError = '';
@@ -66,6 +68,8 @@ export class CreditNoteDetailDialog {
   @Output() submitSri = new EventEmitter<number>();
   @Output() checkAuthorization = new EventEmitter<number>();
   @Output() downloadAuthorizedXml = new EventEmitter<number>();
+  @Output() viewRide = new EventEmitter<number>();
+  @Output() downloadRidePdf = new EventEmitter<number>();
   @Output() refreshSubmissionAttempts = new EventEmitter<void>();
 
   dateLabel(value: string | null): string {
@@ -196,6 +200,17 @@ export class CreditNoteDetailDialog {
     return isAuthorized && !!creditNote.authorizationNumber?.trim();
   }
 
+  canShowRide(creditNote: CreditNote): boolean {
+    const isAuthorized =
+      creditNote.documentStatus === SaleDocumentStatus.Authorized
+      || creditNote.sriAuthorizationStatus?.trim().toUpperCase()
+        === 'AUTORIZADO';
+
+    return isAuthorized
+      && !!creditNote.authorizationNumber?.trim()
+      && creditNote.voidedAt === null;
+  }
+
   isBusy(): boolean {
     return this.preparingSriDraft
       || this.downloadingSriXmlDraft
@@ -203,7 +218,9 @@ export class CreditNoteDetailDialog {
       || this.downloadingSriSignedXml
       || this.submittingSri
       || this.checkingAuthorization
-      || this.downloadingAuthorizedXml;
+      || this.downloadingAuthorizedXml
+      || this.viewingRide
+      || this.downloadingRidePdf;
   }
 
   requestVisibleChange(visible: boolean): void {
@@ -268,6 +285,22 @@ export class CreditNoteDetailDialog {
     }
 
     this.downloadAuthorizedXml.emit(creditNote.id);
+  }
+
+  requestViewRide(creditNote: CreditNote): void {
+    if (!this.canShowRide(creditNote) || this.isBusy()) {
+      return;
+    }
+
+    this.viewRide.emit(creditNote.id);
+  }
+
+  requestDownloadRidePdf(creditNote: CreditNote): void {
+    if (!this.canShowRide(creditNote) || this.isBusy()) {
+      return;
+    }
+
+    this.downloadRidePdf.emit(creditNote.id);
   }
 
   requestRefreshSubmissionAttempts(): void {
