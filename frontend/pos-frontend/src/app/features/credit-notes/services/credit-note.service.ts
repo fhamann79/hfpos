@@ -49,6 +49,20 @@ export class CreditNoteService {
     );
   }
 
+  signSriXml(creditNoteId: number): Observable<CreditNote> {
+    return this.http.post<CreditNote>(
+      `${this.baseUrl}/${creditNoteId}/sri/sign`,
+      {}
+    );
+  }
+
+  getSriSignedXml(creditNoteId: number): Observable<Blob> {
+    return this.http.get(
+      `${this.baseUrl}/${creditNoteId}/sri/signed-xml`,
+      { responseType: 'blob' }
+    );
+  }
+
   cancelDraft(
     creditNoteId: number,
     payload: CancelCreditNoteDraftRequest

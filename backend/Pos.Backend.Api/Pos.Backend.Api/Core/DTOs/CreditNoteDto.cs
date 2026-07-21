@@ -52,6 +52,18 @@ public class CreditNoteDto
 
     public DateTime? SriXmlGeneratedAt { get; set; }
 
+    public DateTime? SriSignedAt { get; set; }
+
+    public bool HasSriSignedXml { get; set; }
+
+    public string? SriSignatureHash { get; set; }
+
+    public string? SriSigningCertificateThumbprint { get; set; }
+
+    public string? SriSigningCertificateSubject { get; set; }
+
+    public string? SriSigningCertificateSerialNumber { get; set; }
+
     public string Reason { get; set; } = string.Empty;
 
     public string? Notes { get; set; }

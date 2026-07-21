@@ -15,10 +15,14 @@ namespace Pos.Backend.Api.WebApi.Controllers;
 public class CreditNotesController : ControllerBase
 {
     private readonly ICreditNoteService _creditNoteService;
+    private readonly ISriCreditNoteSigningService _sriCreditNoteSigningService;
 
-    public CreditNotesController(ICreditNoteService creditNoteService)
+    public CreditNotesController(
+        ICreditNoteService creditNoteService,
+        ISriCreditNoteSigningService sriCreditNoteSigningService)
     {
         _creditNoteService = creditNoteService;
+        _sriCreditNoteSigningService = sriCreditNoteSigningService;
     }
 
     [HttpGet("original-sales/{saleId:int}/eligibility")]
@@ -137,6 +141,47 @@ public class CreditNotesController : ControllerBase
         }
     }
 
+    [HttpPost("{id:int}/sri/sign")]
+    [Authorize(Policy = AppPermissions.SriDocumentsSign)]
+    [ProducesResponseType(typeof(CreditNoteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<CreditNoteDto>> SignSriXml(int id)
+    {
+        try
+        {
+            return Ok(await _sriCreditNoteSigningService.SignDraftAsync(id));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpGet("{id:int}/sri/signed-xml")]
+    [Authorize(Policy = AppPermissions.PosSalesVoid)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult> GetSriSignedXml(int id)
+    {
+        try
+        {
+            var signedXml = await _sriCreditNoteSigningService
+                .GetSignedXmlAsync(id);
+            return Content(signedXml, "application/xml");
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
     [HttpPost("{id:int}/cancel")]
     [Authorize(Policy = AppPermissions.PosSalesVoid)]
     [ProducesResponseType(typeof(CreditNoteDto), StatusCodes.Status200OK)]
@@ -170,6 +215,7 @@ public class CreditNotesController : ControllerBase
             "SALE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_XML_DRAFT_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_SIGNED_XML_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_REASON_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_REASON_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_NOTES_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
@@ -194,6 +240,16 @@ public class CreditNotesController : ControllerBase
             "CREDIT_NOTE_SRI_DRAFT_NOT_ALLOWED" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_PROCESS_ALREADY_STARTED" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_DRAFT_INCONSISTENT" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_SIGN_CANCELLED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_SIGN_NOT_ALLOWED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_SIGNATURE_INCONSISTENT" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_XML_ACCESS_KEY_MISMATCH" => Conflict(new ApiErrorResponse { Error = code }),
+            "CERTIFICATE_NOT_FOUND" => Conflict(new ApiErrorResponse { Error = code }),
+            "CERTIFICATE_EXPIRED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CERTIFICATE_WITHOUT_PRIVATE_KEY" => Conflict(new ApiErrorResponse { Error = code }),
+            "CERTIFICATE_LOAD_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_SIGNATURE_VALIDATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_ACCESS_KEY_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_SRI_DOCUMENT_CONTEXT" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_ISSUER_RUC" => BadRequest(new ApiErrorResponse { Error = code }),
             "SRI_BUYER_IDENTIFICATION_TYPE_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
@@ -205,6 +261,8 @@ public class CreditNotesController : ControllerBase
             "SRI_CREDIT_NOTE_XML_SCHEMA_VALIDATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_ERROR" => Conflict(new ApiErrorResponse { Error = code }),
             "DOCUMENT_NUMBER_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CERTIFICATE_UNPROTECT_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
+            "SRI_XML_SIGNING_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             _ => BadRequest(new ApiErrorResponse { Error = "CREDIT_NOTE_OPERATION_FAILED" })
         };
     }
