@@ -56,6 +56,8 @@ export interface CreditNote {
   sequential: number | null;
   documentIssuedAt: string | null;
   accessKey: string | null;
+  authorizationNumber: string | null;
+  authorizedAt: string | null;
   sriEnvironment: number | null;
   sriEmissionType: number | null;
   sriNumericCode: string | null;
@@ -67,6 +69,11 @@ export interface CreditNote {
   sriSigningCertificateThumbprint: string | null;
   sriSigningCertificateSubject: string | null;
   sriSigningCertificateSerialNumber: string | null;
+  sriSubmittedAt: string | null;
+  sriReceptionStatus: string | null;
+  sriAuthorizationStatus: string | null;
+  sriLastSubmissionError: string | null;
+  sriLastCheckedAt: string | null;
   reason: string;
   notes: string | null;
   grossSubtotal: number;

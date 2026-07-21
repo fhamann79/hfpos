@@ -105,6 +105,7 @@ builder.Services.AddSingleton<ISriXadesBesSigner, SriXadesBesSigner>();
 builder.Services.AddScoped<ISriInvoiceSigningService, SriInvoiceSigningService>();
 builder.Services.AddScoped<ISriCreditNoteSigningService, SriCreditNoteSigningService>();
 builder.Services.AddScoped<ISriSubmissionService, SriSubmissionService>();
+builder.Services.AddScoped<ISriCreditNoteSubmissionService, SriCreditNoteSubmissionService>();
 builder.Services.AddScoped<ISriRidePdfService, SriRidePdfService>();
 builder.Services.AddScoped<ISaleInvoiceEmailService, SaleInvoiceEmailService>();
 builder.Services.AddScoped<ISalesService, SalesService>();

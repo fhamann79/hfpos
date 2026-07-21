@@ -218,7 +218,8 @@ export class PosWorkstationService {
 
     return {
       id: this.readNumber(row, ['id'], 0),
-      saleId: this.readNumber(row, ['saleId'], 0),
+      saleId: this.readOptionalNumber(row, ['saleId']),
+      creditNoteId: this.readOptionalNumber(row, ['creditNoteId']),
       accessKey: this.readString(row, ['accessKey'], ''),
       environment: this.readNumber(row, ['environment'], 1),
       attemptType: normalizeSriSubmissionAttemptType(row?.['attemptType']),

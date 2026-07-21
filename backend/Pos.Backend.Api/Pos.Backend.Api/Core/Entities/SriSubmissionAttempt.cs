@@ -6,8 +6,11 @@ public class SriSubmissionAttempt
 {
     public int Id { get; set; }
 
-    public int SaleId { get; set; }
-    public Sale Sale { get; set; } = null!;
+    public int? SaleId { get; set; }
+    public Sale? Sale { get; set; }
+
+    public int? CreditNoteId { get; set; }
+    public CreditNote? CreditNote { get; set; }
 
     public int CompanyId { get; set; }
     public Company Company { get; set; } = null!;

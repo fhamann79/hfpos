@@ -151,6 +151,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly creditNoteDownloadingSriXmlId = signal<number | null>(null);
   readonly creditNoteSigningSriXmlId = signal<number | null>(null);
   readonly creditNoteDownloadingSriSignedXmlId = signal<number | null>(null);
+  readonly creditNoteSubmittingSriId = signal<number | null>(null);
+  readonly creditNoteSriAttempts = signal<SriSubmissionAttempt[]>([]);
+  readonly creditNoteSriAttemptsLoading = signal(false);
+  readonly creditNoteSriAttemptsError = signal('');
   readonly sriSigningSaleId = signal<number | null>(null);
   readonly sriSubmittingSaleId = signal<number | null>(null);
   readonly sriCheckingAuthorizationSaleId = signal<number | null>(null);
@@ -853,6 +857,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.creditNoteDownloadingSriXmlId.set(null);
     this.creditNoteSigningSriXmlId.set(null);
     this.creditNoteDownloadingSriSignedXmlId.set(null);
+    this.creditNoteSubmittingSriId.set(null);
+    this.creditNoteSriAttempts.set([]);
+    this.creditNoteSriAttemptsLoading.set(false);
+    this.creditNoteSriAttemptsError.set('');
     this.creditNoteEligibilityVisible.set(true);
     this.loadCreditNoteEligibility();
     this.loadCreditNotesHistory();
@@ -896,6 +904,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingSriXmlId() !== null
       || this.creditNoteSigningSriXmlId() !== null
       || this.creditNoteDownloadingSriSignedXmlId() !== null
+      || this.creditNoteSubmittingSriId() !== null
     ) {
       return;
     }
@@ -903,8 +912,12 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.selectedCreditNoteId.set(creditNote.id);
     this.selectedCreditNote.set(null);
     this.creditNoteDetailError.set('');
+    this.creditNoteSriAttempts.set([]);
+    this.creditNoteSriAttemptsError.set('');
+    this.creditNoteSriAttemptsLoading.set(false);
     this.creditNoteDetailVisible.set(true);
     this.loadCreditNoteDetail();
+    this.loadCreditNoteSriAttempts();
   }
 
   loadCreditNoteDetail(): void {
@@ -944,6 +957,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         || this.creditNoteDownloadingSriXmlId() !== null
         || this.creditNoteSigningSriXmlId() !== null
         || this.creditNoteDownloadingSriSignedXmlId() !== null
+        || this.creditNoteSubmittingSriId() !== null
       )
     ) {
       return;
@@ -960,6 +974,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       this.creditNoteDownloadingSriXmlId.set(null);
       this.creditNoteSigningSriXmlId.set(null);
       this.creditNoteDownloadingSriSignedXmlId.set(null);
+      this.creditNoteSubmittingSriId.set(null);
+      this.creditNoteSriAttempts.set([]);
+      this.creditNoteSriAttemptsLoading.set(false);
+      this.creditNoteSriAttemptsError.set('');
     }
   }
 
@@ -978,6 +996,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingSriXmlId() !== null
       || this.creditNoteSigningSriXmlId() !== null
       || this.creditNoteDownloadingSriSignedXmlId() !== null
+      || this.creditNoteSubmittingSriId() !== null
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
       return;
@@ -1037,6 +1056,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNotePreparingSriDraftId() !== null
       || this.creditNoteSigningSriXmlId() !== null
       || this.creditNoteDownloadingSriSignedXmlId() !== null
+      || this.creditNoteSubmittingSriId() !== null
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
       return;
@@ -1078,6 +1098,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingSriXmlId() !== null
       || this.creditNoteSigningSriXmlId() !== null
       || this.creditNoteDownloadingSriSignedXmlId() !== null
+      || this.creditNoteSubmittingSriId() !== null
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
       return;
@@ -1128,6 +1149,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingSriXmlId() !== null
       || this.creditNoteSigningSriXmlId() !== null
       || this.creditNoteDownloadingSriSignedXmlId() !== null
+      || this.creditNoteSubmittingSriId() !== null
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
       return;
@@ -1150,6 +1172,121 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
           summary: 'No se pudo descargar el XML',
           detail: this.resolveCreditNoteSriSignedXmlDownloadError(error),
         });
+      },
+    });
+  }
+
+  submitCreditNoteSri(creditNoteId: number): void {
+    if (!this.canSubmitSriDocuments) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Permiso requerido',
+        detail: 'No tienes permiso para enviar documentos al SRI.',
+      });
+      return;
+    }
+
+    const creditNote = this.selectedCreditNote();
+    const receptionStatus = creditNote?.sriReceptionStatus?.trim().toUpperCase();
+
+    if (
+      this.creditNotePreparingSriDraftId() !== null
+      || this.creditNoteDownloadingSriXmlId() !== null
+      || this.creditNoteSigningSriXmlId() !== null
+      || this.creditNoteDownloadingSriSignedXmlId() !== null
+      || this.creditNoteSubmittingSriId() !== null
+      || this.selectedCreditNoteId() !== creditNoteId
+      || creditNote?.id !== creditNoteId
+      || creditNote.documentStatus !== SaleDocumentStatus.Draft
+      || creditNote.voidedAt !== null
+      || !creditNote.hasSriSignedXml
+      || creditNote.sriSubmittedAt !== null
+      || receptionStatus === 'RECIBIDA'
+    ) {
+      return;
+    }
+
+    this.creditNoteSubmittingSriId.set(creditNoteId);
+
+    this.creditNoteService.submitSri(creditNoteId).pipe(
+      finalize(() => {
+        if (this.creditNoteSubmittingSriId() === creditNoteId) {
+          this.creditNoteSubmittingSriId.set(null);
+        }
+      })
+    ).subscribe({
+      next: (submittedCreditNote) => {
+        if (this.selectedCreditNoteId() === creditNoteId) {
+          this.selectedCreditNote.set(submittedCreditNote);
+        }
+
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Recibida por SRI',
+          detail: `${submittedCreditNote.number || `#${submittedCreditNote.id}`} fue recibida por el SRI.`,
+        });
+
+        this.loadCreditNoteDetail();
+        this.loadCreditNotesHistory();
+        this.loadCreditNoteEligibility();
+        this.loadCreditNoteSriAttempts();
+      },
+      error: (error: HttpErrorResponse) => {
+        const code = readErrorCode(error);
+
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Envío SRI',
+          detail: this.resolveCreditNoteSriSubmissionError(error),
+        });
+
+        this.loadCreditNoteSriAttempts();
+
+        if (
+          code === 'CREDIT_NOTE_SRI_RECEPTION_REJECTED'
+          || code === 'CREDIT_NOTE_SRI_REJECTED_NOT_RESUBMITTABLE'
+          || code === 'CREDIT_NOTE_SRI_ALREADY_AUTHORIZED'
+        ) {
+          this.loadCreditNoteDetail();
+          this.loadCreditNotesHistory();
+          this.loadCreditNoteEligibility();
+        } else if (
+          code === 'SRI_RECEPTION_ENDPOINT_NOT_CONFIGURED'
+          || code === 'SRI_RECEPTION_COMMUNICATION_FAILED'
+        ) {
+          this.loadCreditNoteDetail();
+        }
+      },
+    });
+  }
+
+  loadCreditNoteSriAttempts(): void {
+    const creditNoteId = this.selectedCreditNoteId();
+    if (!creditNoteId) {
+      return;
+    }
+
+    this.creditNoteSriAttemptsLoading.set(true);
+    this.creditNoteSriAttemptsError.set('');
+
+    this.creditNoteService.getSriSubmissionAttempts(creditNoteId).subscribe({
+      next: (attempts) => {
+        if (this.selectedCreditNoteId() !== creditNoteId) {
+          return;
+        }
+
+        this.creditNoteSriAttempts.set(attempts);
+        this.creditNoteSriAttemptsLoading.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        if (this.selectedCreditNoteId() !== creditNoteId) {
+          return;
+        }
+
+        this.creditNoteSriAttemptsLoading.set(false);
+        this.creditNoteSriAttemptsError.set(
+          this.resolveCreditNoteSriAttemptsError(error)
+        );
       },
     });
   }
@@ -1242,6 +1379,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || !creditNote.canCancelDraft
       || this.creditNoteCreating()
       || this.creditNoteCancellingId() !== null
+      || this.creditNoteSubmittingSriId() !== null
     ) {
       return;
     }
@@ -1268,6 +1406,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || !creditNote?.canCancelDraft
       || this.creditNoteCreating()
       || this.creditNoteCancellingId() !== null
+      || this.creditNoteSubmittingSriId() !== null
     ) {
       return;
     }
@@ -1333,6 +1472,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         || this.creditNoteDownloadingSriXmlId() !== null
         || this.creditNoteSigningSriXmlId() !== null
         || this.creditNoteDownloadingSriSignedXmlId() !== null
+        || this.creditNoteSubmittingSriId() !== null
       )
     ) {
       return;
@@ -1361,6 +1501,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       this.creditNoteDownloadingSriXmlId.set(null);
       this.creditNoteSigningSriXmlId.set(null);
       this.creditNoteDownloadingSriSignedXmlId.set(null);
+      this.creditNoteSubmittingSriId.set(null);
+      this.creditNoteSriAttempts.set([]);
+      this.creditNoteSriAttemptsLoading.set(false);
+      this.creditNoteSriAttemptsError.set('');
     }
   }
 
@@ -2546,6 +2690,61 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
         return 'No se pudo firmar el XML de la nota de crédito.';
     }
+  }
+
+  private resolveCreditNoteSriSubmissionError(error: HttpErrorResponse): string {
+    switch (readErrorCode(error)) {
+      case 'CREDIT_NOTE_NOT_FOUND':
+        return 'La nota de crédito no existe o no pertenece al contexto operativo actual.';
+      case 'CREDIT_NOTE_SRI_ACCESS_KEY_REQUIRED':
+        return 'La nota de crédito no tiene una clave de acceso para enviarse.';
+      case 'CREDIT_NOTE_SRI_SIGNED_XML_REQUIRED':
+        return 'La nota de crédito todavía no tiene un XML firmado disponible.';
+      case 'CREDIT_NOTE_SRI_SUBMISSION_CANCELLED':
+        return 'No se puede enviar al SRI una nota de crédito cancelada.';
+      case 'CREDIT_NOTE_SRI_ALREADY_AUTHORIZED':
+        return 'La nota de crédito ya está autorizada por el SRI.';
+      case 'CREDIT_NOTE_SRI_REJECTED_NOT_RESUBMITTABLE':
+        return 'La nota de crédito fue rechazada y no puede volver a enviarse.';
+      case 'CREDIT_NOTE_SRI_SUBMISSION_NOT_ALLOWED':
+        return 'La nota de crédito ya no está disponible para envío al SRI.';
+      case 'CREDIT_NOTE_SRI_SIGNATURE_INCONSISTENT':
+        return 'La nota tiene datos parciales de firma y requiere revisión.';
+      case 'CREDIT_NOTE_SRI_RECEPTION_REJECTED':
+        return 'El SRI devolvió la nota de crédito. Revisa el detalle del intento.';
+      case 'SRI_SETTINGS_DISABLED':
+        return 'La emisión de documentos SRI está deshabilitada para la compañía.';
+      case 'SRI_PRODUCTION_SUBMISSION_DISABLED':
+        return 'El envío al ambiente de producción está bloqueado en la configuración actual.';
+      case 'SRI_RECEPTION_ENDPOINT_NOT_CONFIGURED':
+        return 'El endpoint de recepción del SRI no está configurado.';
+      case 'SRI_RECEPTION_COMMUNICATION_FAILED':
+        return 'No fue posible comunicarse con el servicio de recepción del SRI.';
+      case 'SRI_CREDIT_NOTE_XML_SCHEMA_VALIDATION_FAILED':
+        return 'El XML de la nota no cumple la estructura requerida por el SRI.';
+      case 'INVALID_SRI_ENVIRONMENT':
+        return 'El ambiente SRI configurado no es válido.';
+      case 'INVALID_SRI_EMISSION_TYPE':
+        return 'El tipo de emisión SRI configurado no es válido.';
+      default:
+        if (error.status === 403) {
+          return 'No tienes permiso para enviar la nota de crédito al SRI.';
+        }
+
+        return 'No se pudo enviar la nota de crédito al SRI.';
+    }
+  }
+
+  private resolveCreditNoteSriAttemptsError(error: HttpErrorResponse): string {
+    if (readErrorCode(error) === 'CREDIT_NOTE_NOT_FOUND') {
+      return 'La nota de crédito no existe o no pertenece al contexto operativo actual.';
+    }
+
+    if (error.status === 403) {
+      return 'No tienes permiso para consultar los intentos SRI de la nota de crédito.';
+    }
+
+    return 'No se pudieron cargar los intentos SRI de la nota de crédito.';
   }
 
   private resolveCreditNoteSriSignedXmlDownloadError(

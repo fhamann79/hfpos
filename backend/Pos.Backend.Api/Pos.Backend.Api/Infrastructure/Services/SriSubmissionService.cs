@@ -305,6 +305,7 @@ public class SriSubmissionService : ISriSubmissionService
             {
                 Id = a.Id,
                 SaleId = a.SaleId,
+                CreditNoteId = a.CreditNoteId,
                 AccessKey = a.AccessKey,
                 Environment = a.Environment,
                 AttemptType = a.AttemptType,

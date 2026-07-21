@@ -13,7 +13,8 @@ export enum SriSubmissionAttemptStatus {
 
 export interface SriSubmissionAttempt {
   id: number;
-  saleId: number;
+  saleId: number | null;
+  creditNoteId: number | null;
   accessKey: string;
   environment: number;
   attemptType: SriSubmissionAttemptType;
