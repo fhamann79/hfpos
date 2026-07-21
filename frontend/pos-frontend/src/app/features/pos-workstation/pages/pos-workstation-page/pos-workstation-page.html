@@ -273,6 +273,14 @@
       creditNoteSubmittingSriId() !== null
       && creditNoteSubmittingSriId() === selectedCreditNoteId()
     "
+    [checkingAuthorization]="
+      creditNoteCheckingAuthorizationId() !== null
+      && creditNoteCheckingAuthorizationId() === selectedCreditNoteId()
+    "
+    [downloadingAuthorizedXml]="
+      creditNoteDownloadingAuthorizedXmlId() !== null
+      && creditNoteDownloadingAuthorizedXmlId() === selectedCreditNoteId()
+    "
     [submissionAttempts]="creditNoteSriAttempts()"
     [submissionAttemptsLoading]="creditNoteSriAttemptsLoading()"
     [submissionAttemptsError]="creditNoteSriAttemptsError()"
@@ -283,6 +291,8 @@
     (signSriXml)="signCreditNoteSriXml($event)"
     (downloadSriSignedXml)="downloadCreditNoteSriSignedXml($event)"
     (submitSri)="submitCreditNoteSri($event)"
+    (checkAuthorization)="checkCreditNoteSriAuthorization($event)"
+    (downloadAuthorizedXml)="downloadCreditNoteSriAuthorizedXml($event)"
     (refreshSubmissionAttempts)="loadCreditNoteSriAttempts()"
   ></app-credit-note-detail-dialog>
 

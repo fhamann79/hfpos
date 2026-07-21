@@ -6,6 +6,10 @@ public interface ISriCreditNoteSubmissionService
 {
     Task<CreditNoteDto> SubmitSignedAsync(int creditNoteId);
 
+    Task<CreditNoteDto> CheckAuthorizationAsync(int creditNoteId);
+
+    Task<string> GetAuthorizedXmlAsync(int creditNoteId);
+
     Task<IReadOnlyList<SriSubmissionAttemptDto>> GetAttemptsAsync(
         int creditNoteId);
 }
