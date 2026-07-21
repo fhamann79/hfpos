@@ -14,6 +14,8 @@ import {
 } from '../../../pos-workstation/models/sale-document.model';
 import {
   SriSubmissionAttempt,
+  sriAuthorizationStatusLabel,
+  sriAuthorizationStatusSeverity,
   sriReceptionStatusLabel,
   sriReceptionStatusSeverity,
   sriSubmissionAttemptStatusLabel,
@@ -49,6 +51,8 @@ export class CreditNoteDetailDialog {
   @Input() downloadingSriSignedXml = false;
   @Input() canSubmitSriDocuments = false;
   @Input() submittingSri = false;
+  @Input() checkingAuthorization = false;
+  @Input() downloadingAuthorizedXml = false;
   @Input() submissionAttempts: SriSubmissionAttempt[] = [];
   @Input() submissionAttemptsLoading = false;
   @Input() submissionAttemptsError = '';
@@ -60,6 +64,8 @@ export class CreditNoteDetailDialog {
   @Output() signSriXml = new EventEmitter<number>();
   @Output() downloadSriSignedXml = new EventEmitter<number>();
   @Output() submitSri = new EventEmitter<number>();
+  @Output() checkAuthorization = new EventEmitter<number>();
+  @Output() downloadAuthorizedXml = new EventEmitter<number>();
   @Output() refreshSubmissionAttempts = new EventEmitter<void>();
 
   dateLabel(value: string | null): string {
@@ -80,6 +86,14 @@ export class CreditNoteDetailDialog {
 
   receptionStatusSeverity(status: string | null): DocumentTagSeverity {
     return sriReceptionStatusSeverity(status);
+  }
+
+  authorizationStatusLabel(status: string | null): string {
+    return sriAuthorizationStatusLabel(status);
+  }
+
+  authorizationStatusSeverity(status: string | null): DocumentTagSeverity {
+    return sriAuthorizationStatusSeverity(status);
   }
 
   attemptTypeLabel(attempt: SriSubmissionAttempt): string {
@@ -162,12 +176,34 @@ export class CreditNoteDetailDialog {
       && creditNote.sriReceptionStatus?.trim().toUpperCase() !== 'RECIBIDA';
   }
 
+  canShowCheckAuthorization(creditNote: CreditNote): boolean {
+    return this.canSubmitSriDocuments
+      && creditNote.documentStatus === SaleDocumentStatus.PendingAuthorization
+      && creditNote.voidedAt === null
+      && !!creditNote.accessKey?.trim()
+      && creditNote.sriSubmittedAt !== null
+      && creditNote.sriReceptionStatus?.trim().toUpperCase() === 'RECIBIDA'
+      && creditNote.sriAuthorizationStatus?.trim().toUpperCase()
+        !== 'AUTORIZADO';
+  }
+
+  canShowDownloadAuthorizedXml(creditNote: CreditNote): boolean {
+    const isAuthorized =
+      creditNote.documentStatus === SaleDocumentStatus.Authorized
+      || creditNote.sriAuthorizationStatus?.trim().toUpperCase()
+        === 'AUTORIZADO';
+
+    return isAuthorized && !!creditNote.authorizationNumber?.trim();
+  }
+
   isBusy(): boolean {
     return this.preparingSriDraft
       || this.downloadingSriXmlDraft
       || this.signingSriXml
       || this.downloadingSriSignedXml
-      || this.submittingSri;
+      || this.submittingSri
+      || this.checkingAuthorization
+      || this.downloadingAuthorizedXml;
   }
 
   requestVisibleChange(visible: boolean): void {
@@ -218,8 +254,24 @@ export class CreditNoteDetailDialog {
     this.submitSri.emit(creditNote.id);
   }
 
+  requestCheckAuthorization(creditNote: CreditNote): void {
+    if (!this.canShowCheckAuthorization(creditNote) || this.isBusy()) {
+      return;
+    }
+
+    this.checkAuthorization.emit(creditNote.id);
+  }
+
+  requestDownloadAuthorizedXml(creditNote: CreditNote): void {
+    if (!this.canShowDownloadAuthorizedXml(creditNote) || this.isBusy()) {
+      return;
+    }
+
+    this.downloadAuthorizedXml.emit(creditNote.id);
+  }
+
   requestRefreshSubmissionAttempts(): void {
-    if (this.submissionAttemptsLoading) {
+    if (this.submissionAttemptsLoading || this.isBusy()) {
       return;
     }
 

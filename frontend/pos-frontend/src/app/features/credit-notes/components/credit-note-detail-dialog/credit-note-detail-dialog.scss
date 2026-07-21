@@ -172,6 +172,18 @@
   width:9rem;
 }
 
+.attempt-authorization-column {
+  width:10rem;
+}
+
+.attempt-authorization-number-column {
+  width:18rem;
+}
+
+.attempt-authorization-date-column {
+  width:11rem;
+}
+
 .attempt-message-column {
   width:15rem;
 }
@@ -181,6 +193,12 @@
 }
 
 .attempt-text-cell {
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+
+.attempt-code-cell code {
+  display:block;
   white-space:normal;
   overflow-wrap:anywhere;
 }

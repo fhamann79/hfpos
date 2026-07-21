@@ -64,6 +64,13 @@
           ></p-tag>
         </div>
         <div>
+          <span>Estado de autorización</span>
+          <p-tag
+            [value]="authorizationStatusLabel(note.sriAuthorizationStatus)"
+            [severity]="authorizationStatusSeverity(note.sriAuthorizationStatus)"
+          ></p-tag>
+        </div>
+        <div>
           <span>Ambiente</span>
           <strong>{{ environmentLabel(note.sriEnvironment) }}</strong>
         </div>
@@ -94,6 +101,18 @@
         <div>
           <span>Enviado el</span>
           <strong>{{ dateLabel(note.sriSubmittedAt) }}</strong>
+        </div>
+        <div>
+          <span>Última consulta</span>
+          <strong>{{ dateLabel(note.sriLastCheckedAt) }}</strong>
+        </div>
+        <div>
+          <span>Fecha de autorización</span>
+          <strong>{{ dateLabel(note.authorizedAt) }}</strong>
+        </div>
+        <div class="detail-grid__wide">
+          <span>Número de autorización</span>
+          <code>{{ note.authorizationNumber || '-' }}</code>
         </div>
         <div class="detail-grid__wide">
           <span>Último error</span>
@@ -147,6 +166,14 @@
         ></p-message>
       }
 
+      @if (canShowCheckAuthorization(note)) {
+        <p-message
+          styleClass="sri-warning"
+          severity="warn"
+          text="Se consultará al SRI el estado de autorización mediante la clave de acceso."
+        ></p-message>
+      }
+
       <div class="sri-actions">
         @if (canShowPrepareSriDraft(note)) {
           <p-button
@@ -181,6 +208,17 @@
           ></p-button>
         }
 
+        @if (canShowCheckAuthorization(note)) {
+          <p-button
+            label="Consultar autorización"
+            icon="pi pi-search"
+            severity="warn"
+            [loading]="checkingAuthorization"
+            [disabled]="isBusy()"
+            (onClick)="requestCheckAuthorization(note)"
+          ></p-button>
+        }
+
         @if (note.hasSriXmlDraft) {
           <p-button
             label="Descargar XML draft"
@@ -204,6 +242,18 @@
             (onClick)="requestDownloadSriSignedXml(note)"
           ></p-button>
         }
+
+        @if (canShowDownloadAuthorizedXml(note)) {
+          <p-button
+            label="Descargar XML autorizado"
+            icon="pi pi-download"
+            severity="secondary"
+            [outlined]="true"
+            [loading]="downloadingAuthorizedXml"
+            [disabled]="isBusy()"
+            (onClick)="requestDownloadAuthorizedXml(note)"
+          ></p-button>
+        }
       </div>
     </section>
 
@@ -216,7 +266,7 @@
           severity="secondary"
           [outlined]="true"
           [loading]="submissionAttemptsLoading"
-          [disabled]="submissionAttemptsLoading || submittingSri"
+          [disabled]="submissionAttemptsLoading || isBusy()"
           (onClick)="requestRefreshSubmissionAttempts()"
         ></p-button>
       </div>
@@ -234,7 +284,7 @@
           [loading]="submissionAttemptsLoading"
           responsiveLayout="scroll"
           styleClass="credit-note-attempts"
-          [tableStyle]="{ 'min-width': '68rem', 'table-layout': 'fixed' }"
+          [tableStyle]="{ 'min-width': '107rem', 'table-layout': 'fixed' }"
         >
           <ng-template pTemplate="header">
             <tr>
@@ -242,6 +292,9 @@
               <th class="attempt-type-column">Tipo</th>
               <th class="attempt-status-column">Estado</th>
               <th class="attempt-reception-column">Recepción</th>
+              <th class="attempt-authorization-column">Autorización</th>
+              <th class="attempt-authorization-number-column">Número de autorización</th>
+              <th class="attempt-authorization-date-column">Fecha de autorización</th>
               <th class="attempt-message-column">Mensaje</th>
               <th class="attempt-info-column">Información adicional</th>
             </tr>
@@ -262,13 +315,23 @@
                   [severity]="receptionStatusSeverity(attempt.receptionStatus)"
                 ></p-tag>
               </td>
+              <td>
+                <p-tag
+                  [value]="authorizationStatusLabel(attempt.authorizationStatus)"
+                  [severity]="authorizationStatusSeverity(attempt.authorizationStatus)"
+                ></p-tag>
+              </td>
+              <td class="attempt-code-cell">
+                <code>{{ attempt.authorizationNumber || '-' }}</code>
+              </td>
+              <td>{{ dateLabel(attempt.authorizationDate) }}</td>
               <td class="attempt-text-cell">{{ attemptMessage(attempt) }}</td>
               <td class="attempt-text-cell">{{ attempt.sriAdditionalInfo || '-' }}</td>
             </tr>
           </ng-template>
           <ng-template pTemplate="emptymessage">
             <tr>
-              <td colspan="6">No hay intentos SRI registrados.</td>
+              <td colspan="9">No hay intentos SRI registrados.</td>
             </tr>
           </ng-template>
         </p-table>
