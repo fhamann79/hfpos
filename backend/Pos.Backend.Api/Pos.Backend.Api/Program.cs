@@ -103,6 +103,7 @@ builder.Services.AddScoped<ISriFiscalReadinessService, SriFiscalReadinessService
 builder.Services.AddScoped<ISriSigningCertificateProvider, SriSigningCertificateProvider>();
 builder.Services.AddSingleton<ISriXadesBesSigner, SriXadesBesSigner>();
 builder.Services.AddScoped<ISriInvoiceSigningService, SriInvoiceSigningService>();
+builder.Services.AddScoped<ISriCreditNoteSigningService, SriCreditNoteSigningService>();
 builder.Services.AddScoped<ISriSubmissionService, SriSubmissionService>();
 builder.Services.AddScoped<ISriRidePdfService, SriRidePdfService>();
 builder.Services.AddScoped<ISaleInvoiceEmailService, SaleInvoiceEmailService>();

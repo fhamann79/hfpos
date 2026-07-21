@@ -11,7 +11,8 @@ namespace Pos.Backend.Api.Infrastructure.Services;
 public class SriXadesBesSigner : ISriXadesBesSigner
 {
     private const string InvoiceRootName = "factura";
-    private const string InvoiceRootId = "comprobante";
+    private const string CreditNoteRootName = "notaCredito";
+    private const string DocumentRootId = "comprobante";
     private const string DsNamespace = SignedXml.XmlDsigNamespaceUrl;
     private const string XadesNamespace = "http://uri.etsi.org/01903/v1.3.2#";
     private const string XadesSignedPropertiesType = "http://uri.etsi.org/01903#SignedProperties";
@@ -24,6 +25,31 @@ public class SriXadesBesSigner : ISriXadesBesSigner
         X509Certificate2 certificate,
         string accessKey,
         DateTime signingTimeUtc)
+        => SignXml(
+            unsignedXml,
+            certificate,
+            accessKey,
+            signingTimeUtc,
+            InvoiceRootName);
+
+    public string SignCreditNoteXml(
+        string unsignedXml,
+        X509Certificate2 certificate,
+        string accessKey,
+        DateTime signingTimeUtc)
+        => SignXml(
+            unsignedXml,
+            certificate,
+            accessKey,
+            signingTimeUtc,
+            CreditNoteRootName);
+
+    private static string SignXml(
+        string unsignedXml,
+        X509Certificate2 certificate,
+        string accessKey,
+        DateTime signingTimeUtc,
+        string expectedRootName)
     {
         try
         {
@@ -31,8 +57,8 @@ public class SriXadesBesSigner : ISriXadesBesSigner
             var root = xmlDocument.DocumentElement;
 
             if (root is null
-                || !string.Equals(root.Name, InvoiceRootName, StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(root.GetAttribute("id"), InvoiceRootId, StringComparison.Ordinal))
+                || !string.Equals(root.Name, expectedRootName, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(root.GetAttribute("id"), DocumentRootId, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("SRI_XML_SIGNING_FAILED");
             }
@@ -64,16 +90,16 @@ public class SriXadesBesSigner : ISriXadesBesSigner
             signedInfo.CanonicalizationMethod = CanonicalizationMethod;
             signedInfo.SignatureMethod = SignatureMethod;
 
-            var invoiceReference = new Reference
+            var documentReference = new Reference
             {
                 Id = referenceId,
-                Uri = $"#{InvoiceRootId}",
+                Uri = $"#{DocumentRootId}",
                 DigestMethod = DigestMethod
             };
 
-            invoiceReference.AddTransform(new XmlDsigEnvelopedSignatureTransform());
-            invoiceReference.AddTransform(new XmlDsigC14NTransform());
-            signedXml.AddReference(invoiceReference);
+            documentReference.AddTransform(new XmlDsigEnvelopedSignatureTransform());
+            documentReference.AddTransform(new XmlDsigC14NTransform());
+            signedXml.AddReference(documentReference);
 
             var signedProperties = BuildSignedProperties(
                 xmlDocument,

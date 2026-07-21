@@ -260,10 +260,20 @@
       creditNoteDownloadingSriXmlId() !== null
       && creditNoteDownloadingSriXmlId() === selectedCreditNoteId()
     "
+    [signingSriXml]="
+      creditNoteSigningSriXmlId() !== null
+      && creditNoteSigningSriXmlId() === selectedCreditNoteId()
+    "
+    [downloadingSriSignedXml]="
+      creditNoteDownloadingSriSignedXmlId() !== null
+      && creditNoteDownloadingSriSignedXmlId() === selectedCreditNoteId()
+    "
     (visibleChange)="onCreditNoteDetailVisibleChange($event)"
     (refresh)="loadCreditNoteDetail()"
     (prepareSriDraft)="prepareCreditNoteSriDraft($event)"
     (downloadSriXmlDraft)="downloadCreditNoteSriXmlDraft($event)"
+    (signSriXml)="signCreditNoteSriXml($event)"
+    (downloadSriSignedXml)="downloadCreditNoteSriSignedXml($event)"
   ></app-credit-note-detail-dialog>
 
   <app-cancel-credit-note-draft-dialog

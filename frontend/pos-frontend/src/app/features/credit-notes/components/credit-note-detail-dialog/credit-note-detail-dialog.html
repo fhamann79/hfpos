@@ -64,12 +64,38 @@
           </strong>
         </div>
         <div>
+          <span>XML firmado</span>
+          <strong [class.sri-value--available]="note.hasSriSignedXml">
+            {{ note.hasSriSignedXml ? 'Disponible' : 'Pendiente' }}
+          </strong>
+        </div>
+        <div>
           <span>Generado el</span>
           <strong>{{ dateLabel(note.sriXmlGeneratedAt) }}</strong>
+        </div>
+        <div>
+          <span>Firmado el</span>
+          <strong>{{ dateLabel(note.sriSignedAt) }}</strong>
         </div>
         <div class="detail-grid__wide">
           <span>Clave de acceso</span>
           <code>{{ note.accessKey || '-' }}</code>
+        </div>
+        <div class="detail-grid__wide">
+          <span>Hash de firma</span>
+          <code>{{ note.sriSignatureHash || '-' }}</code>
+        </div>
+        <div class="detail-grid__wide">
+          <span>Certificado</span>
+          <code>{{ note.sriSigningCertificateSubject || '-' }}</code>
+        </div>
+        <div>
+          <span>Serie del certificado</span>
+          <code>{{ note.sriSigningCertificateSerialNumber || '-' }}</code>
+        </div>
+        <div class="detail-grid__wide">
+          <span>Huella del certificado</span>
+          <code>{{ note.sriSigningCertificateThumbprint || '-' }}</code>
         </div>
       </div>
 
@@ -78,6 +104,14 @@
           styleClass="sri-warning"
           severity="warn"
           text="Al preparar el XML se generará la clave de acceso y el borrador ya no podrá cancelarse localmente."
+        ></p-message>
+      }
+
+      @if (canShowSignSriXml(note)) {
+        <p-message
+          styleClass="sri-warning"
+          severity="warn"
+          text="La firma utilizará el certificado activo de la compañía. El comprobante todavía no será enviado al SRI."
         ></p-message>
       }
 
@@ -93,6 +127,17 @@
           ></p-button>
         }
 
+        @if (canShowSignSriXml(note)) {
+          <p-button
+            label="Firmar XML"
+            icon="pi pi-file-check"
+            severity="warn"
+            [loading]="signingSriXml"
+            [disabled]="isBusy()"
+            (onClick)="requestSignSriXml(note)"
+          ></p-button>
+        }
+
         @if (note.hasSriXmlDraft) {
           <p-button
             label="Descargar XML draft"
@@ -102,6 +147,18 @@
             [loading]="downloadingSriXmlDraft"
             [disabled]="isBusy()"
             (onClick)="requestDownloadSriXmlDraft(note)"
+          ></p-button>
+        }
+
+        @if (note.hasSriSignedXml) {
+          <p-button
+            label="Descargar XML firmado"
+            icon="pi pi-download"
+            severity="secondary"
+            [outlined]="true"
+            [loading]="downloadingSriSignedXml"
+            [disabled]="isBusy()"
+            (onClick)="requestDownloadSriSignedXml(note)"
           ></p-button>
         }
       </div>

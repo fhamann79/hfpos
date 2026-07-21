@@ -967,6 +967,12 @@ public class CreditNoteService : ICreditNoteService
             SriNumericCode = creditNote.SriNumericCode,
             HasSriXmlDraft = !string.IsNullOrWhiteSpace(creditNote.SriXmlDraft),
             SriXmlGeneratedAt = creditNote.SriXmlGeneratedAt,
+            SriSignedAt = creditNote.SriSignedAt,
+            HasSriSignedXml = !string.IsNullOrWhiteSpace(creditNote.SriSignedXml),
+            SriSignatureHash = creditNote.SriSignatureHash,
+            SriSigningCertificateThumbprint = creditNote.SriSigningCertificateThumbprint,
+            SriSigningCertificateSubject = creditNote.SriSigningCertificateSubject,
+            SriSigningCertificateSerialNumber = creditNote.SriSigningCertificateSerialNumber,
             Reason = creditNote.Reason,
             Notes = creditNote.Notes,
             GrossSubtotal = creditNote.GrossSubtotal,
@@ -1298,6 +1304,12 @@ public class CreditNoteService : ICreditNoteService
         return !string.IsNullOrWhiteSpace(creditNote.AccessKey)
             || !string.IsNullOrWhiteSpace(creditNote.SriXmlDraft)
             || creditNote.SriXmlGeneratedAt.HasValue
+            || !string.IsNullOrWhiteSpace(creditNote.SriSignedXml)
+            || creditNote.SriSignedAt.HasValue
+            || !string.IsNullOrWhiteSpace(creditNote.SriSignatureHash)
+            || !string.IsNullOrWhiteSpace(creditNote.SriSigningCertificateThumbprint)
+            || !string.IsNullOrWhiteSpace(creditNote.SriSigningCertificateSubject)
+            || !string.IsNullOrWhiteSpace(creditNote.SriSigningCertificateSerialNumber)
             || creditNote.SriSubmittedAt.HasValue
             || !string.IsNullOrWhiteSpace(creditNote.SriReceptionStatus)
             || !string.IsNullOrWhiteSpace(creditNote.SriAuthorizationStatus)

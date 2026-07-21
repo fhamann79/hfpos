@@ -61,6 +61,12 @@ export interface CreditNote {
   sriNumericCode: string | null;
   hasSriXmlDraft: boolean;
   sriXmlGeneratedAt: string | null;
+  sriSignedAt: string | null;
+  hasSriSignedXml: boolean;
+  sriSignatureHash: string | null;
+  sriSigningCertificateThumbprint: string | null;
+  sriSigningCertificateSubject: string | null;
+  sriSigningCertificateSerialNumber: string | null;
   reason: string;
   notes: string | null;
   grossSubtotal: number;

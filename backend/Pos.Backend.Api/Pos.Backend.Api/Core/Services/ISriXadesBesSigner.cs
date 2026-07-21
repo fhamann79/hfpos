@@ -9,4 +9,10 @@ public interface ISriXadesBesSigner
         X509Certificate2 certificate,
         string accessKey,
         DateTime signingTimeUtc);
+
+    string SignCreditNoteXml(
+        string unsignedXml,
+        X509Certificate2 certificate,
+        string accessKey,
+        DateTime signingTimeUtc);
 }

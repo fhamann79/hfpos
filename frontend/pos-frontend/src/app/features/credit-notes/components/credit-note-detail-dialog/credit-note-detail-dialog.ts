@@ -37,11 +37,15 @@ export class CreditNoteDetailDialog {
   @Input() canPrepareSriDraft = false;
   @Input() preparingSriDraft = false;
   @Input() downloadingSriXmlDraft = false;
+  @Input() signingSriXml = false;
+  @Input() downloadingSriSignedXml = false;
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() refresh = new EventEmitter<void>();
   @Output() prepareSriDraft = new EventEmitter<number>();
   @Output() downloadSriXmlDraft = new EventEmitter<number>();
+  @Output() signSriXml = new EventEmitter<number>();
+  @Output() downloadSriSignedXml = new EventEmitter<number>();
 
   dateLabel(value: string | null): string {
     return formatBusinessDateTime(value, this.companyTimeZoneId) || '-';
@@ -101,8 +105,20 @@ export class CreditNoteDetailDialog {
       && !creditNote.hasSriXmlDraft;
   }
 
+  canShowSignSriXml(creditNote: CreditNote): boolean {
+    return this.canPrepareSriDraft
+      && creditNote.documentStatus === SaleDocumentStatus.Draft
+      && creditNote.voidedAt === null
+      && !!creditNote.accessKey?.trim()
+      && creditNote.hasSriXmlDraft
+      && !creditNote.hasSriSignedXml;
+  }
+
   isBusy(): boolean {
-    return this.preparingSriDraft || this.downloadingSriXmlDraft;
+    return this.preparingSriDraft
+      || this.downloadingSriXmlDraft
+      || this.signingSriXml
+      || this.downloadingSriSignedXml;
   }
 
   requestVisibleChange(visible: boolean): void {
@@ -127,5 +143,21 @@ export class CreditNoteDetailDialog {
     }
 
     this.downloadSriXmlDraft.emit(creditNote.id);
+  }
+
+  requestSignSriXml(creditNote: CreditNote): void {
+    if (!this.canShowSignSriXml(creditNote) || this.isBusy()) {
+      return;
+    }
+
+    this.signSriXml.emit(creditNote.id);
+  }
+
+  requestDownloadSriSignedXml(creditNote: CreditNote): void {
+    if (!creditNote.hasSriSignedXml || this.isBusy()) {
+      return;
+    }
+
+    this.downloadSriSignedXml.emit(creditNote.id);
   }
 }

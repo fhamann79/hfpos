@@ -970,6 +970,24 @@ public class PosDbContext : DbContext
             entity.Property(cn => cn.SriXmlDraft)
                 .HasColumnType("text");
 
+            entity.Property(cn => cn.SriSignedXml)
+                .HasColumnType("text");
+
+            entity.Property(cn => cn.SriSignedAt)
+                .IsRequired(false);
+
+            entity.Property(cn => cn.SriSignatureHash)
+                .HasMaxLength(64);
+
+            entity.Property(cn => cn.SriSigningCertificateThumbprint)
+                .HasMaxLength(100);
+
+            entity.Property(cn => cn.SriSigningCertificateSubject)
+                .HasMaxLength(500);
+
+            entity.Property(cn => cn.SriSigningCertificateSerialNumber)
+                .HasMaxLength(100);
+
             entity.Property(cn => cn.SriReceptionStatus)
                 .HasMaxLength(50);
 
