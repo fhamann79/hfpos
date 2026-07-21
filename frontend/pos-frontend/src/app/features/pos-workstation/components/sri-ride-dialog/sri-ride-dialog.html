@@ -84,7 +84,7 @@
             </div>
             <div>
               <dt>Fecha autorizacion</dt>
-              <dd>{{ ride.authorizationDate ? (ride.authorizationDate | date: 'medium') : '-' }}</dd>
+              <dd>{{ authorizationDateLabel(ride) }}</dd>
             </div>
             <div>
               <dt>Ambiente</dt>
@@ -122,7 +122,7 @@
         </div>
         <div>
           <span>Fecha emision</span>
-          <strong>{{ ride.issueDate ? (ride.issueDate | date: 'mediumDate') : '-' }}</strong>
+          <strong>{{ calendarDateLabel(ride.issueDate) }}</strong>
         </div>
         @if (ride.buyer.address) {
           <div class="buyer-address">
@@ -183,17 +183,44 @@
             </section>
           }
 
-          <section class="payments-block">
-            <h3>Forma de pago</h3>
-            @for (payment of ride.payments; track $index) {
-              <div>
-                <span>{{ payment.paymentMethod || '-' }}</span>
-                <strong>{{ formatMoney(payment.amount, ride) }}</strong>
-              </div>
-            } @empty {
-              <p>Sin pagos informados.</p>
-            }
-          </section>
+          @if (ride.modifiedDocument; as modifiedDocument) {
+            <section class="modified-document-block">
+              <h3>Documento modificado</h3>
+              <dl>
+                <div>
+                  <dt>Tipo</dt>
+                  <dd>{{ modifiedDocument.documentTypeLabel || modifiedDocument.documentCode || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>Numero</dt>
+                  <dd>{{ modifiedDocument.documentNumber || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>Fecha de emision</dt>
+                  <dd>{{ calendarDateLabel(modifiedDocument.issueDate) }}</dd>
+                </div>
+              </dl>
+            </section>
+          }
+
+          @if (ride.reason) {
+            <section class="reason-block">
+              <h3>Motivo</h3>
+              <p>{{ ride.reason }}</p>
+            </section>
+          }
+
+          @if (ride.payments.length > 0) {
+            <section class="payments-block">
+              <h3>Forma de pago</h3>
+              @for (payment of ride.payments; track $index) {
+                <div>
+                  <span>{{ payment.paymentMethod || '-' }}</span>
+                  <strong>{{ formatMoney(payment.amount, ride) }}</strong>
+                </div>
+              }
+            </section>
+          }
         </div>
 
         <section class="totals-block">

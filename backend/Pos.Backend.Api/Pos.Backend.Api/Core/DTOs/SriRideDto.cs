@@ -2,7 +2,9 @@ namespace Pos.Backend.Api.Core.DTOs;
 
 public class SriRideDto
 {
-    public int SaleId { get; set; }
+    public int? SaleId { get; set; }
+
+    public int? CreditNoteId { get; set; }
 
     public string DocumentTypeLabel { get; set; } = "Factura";
 
@@ -22,6 +24,12 @@ public class SriRideDto
 
     public DateTime? IssueDate { get; set; }
 
+    public string TimeZoneId { get; set; } = "America/Guayaquil";
+
+    public SriRideModifiedDocumentDto? ModifiedDocument { get; set; }
+
+    public string? Reason { get; set; }
+
     public SriRideIssuerDto Issuer { get; set; } = new();
 
     public SriRideBuyerDto Buyer { get; set; } = new();
@@ -37,6 +45,17 @@ public class SriRideDto
     public List<SriRideAdditionalInfoDto> AdditionalInfo { get; set; } = new();
 
     public string FooterNote { get; set; } = "Representacion impresa de comprobante electronico autorizado.";
+}
+
+public class SriRideModifiedDocumentDto
+{
+    public string? DocumentCode { get; set; }
+
+    public string? DocumentTypeLabel { get; set; }
+
+    public string? DocumentNumber { get; set; }
+
+    public DateTime? IssueDate { get; set; }
 }
 
 public class SriRideIssuerDto

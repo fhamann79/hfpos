@@ -17,15 +17,18 @@ public class CreditNotesController : ControllerBase
     private readonly ICreditNoteService _creditNoteService;
     private readonly ISriCreditNoteSigningService _sriCreditNoteSigningService;
     private readonly ISriCreditNoteSubmissionService _sriCreditNoteSubmissionService;
+    private readonly ISriRidePdfService _sriRidePdfService;
 
     public CreditNotesController(
         ICreditNoteService creditNoteService,
         ISriCreditNoteSigningService sriCreditNoteSigningService,
-        ISriCreditNoteSubmissionService sriCreditNoteSubmissionService)
+        ISriCreditNoteSubmissionService sriCreditNoteSubmissionService,
+        ISriRidePdfService sriRidePdfService)
     {
         _creditNoteService = creditNoteService;
         _sriCreditNoteSigningService = sriCreditNoteSigningService;
         _sriCreditNoteSubmissionService = sriCreditNoteSubmissionService;
+        _sriRidePdfService = sriRidePdfService;
     }
 
     [HttpGet("original-sales/{saleId:int}/eligibility")]
@@ -255,6 +258,53 @@ public class CreditNotesController : ControllerBase
         }
     }
 
+    [HttpGet("{id:int}/sri/ride")]
+    [Authorize(Policy = AppPermissions.PosSalesVoid)]
+    [ProducesResponseType(typeof(SriRideDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<SriRideDto>> GetSriRide(int id)
+    {
+        try
+        {
+            return Ok(await _sriCreditNoteSubmissionService.GetRideAsync(id));
+        }
+        catch (Exception ex) when (
+            ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpGet("{id:int}/sri/ride-pdf")]
+    [Authorize(Policy = AppPermissions.PosSalesVoid)]
+    [Produces("application/pdf")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult> GetSriRidePdf(int id)
+    {
+        try
+        {
+            var result = await _sriRidePdfService
+                .GenerateCreditNoteAsync(id);
+            return File(
+                result.Bytes,
+                result.ContentType,
+                result.FileName);
+        }
+        catch (Exception ex) when (
+            ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
     [HttpGet("{id:int}/sri/submission-attempts")]
     [Authorize(Policy = AppPermissions.PosSalesVoid)]
     [ProducesResponseType(typeof(IReadOnlyList<SriSubmissionAttemptDto>), StatusCodes.Status200OK)]
@@ -309,6 +359,7 @@ public class CreditNotesController : ControllerBase
             "CREDIT_NOTE_SRI_XML_DRAFT_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_SIGNED_XML_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_AUTHORIZED_XML_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_RIDE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_REASON_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_REASON_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_NOTES_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
@@ -367,6 +418,8 @@ public class CreditNotesController : ControllerBase
             "CREDIT_NOTE_SRI_AUTHORIZATION_INVALID_RESPONSE" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_AUTHORIZED_XML_NOT_AUTHORIZED" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_AUTHORIZED_XML_INVALID_RESPONSE" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_RIDE_ONLY_AUTHORIZED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_RIDE_INVALID_AUTHORIZED_XML" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_SETTINGS_DISABLED" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_PRODUCTION_SUBMISSION_DISABLED" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_AUTHORIZATION_PENDING" => StatusCode(StatusCodes.Status202Accepted, new ApiErrorResponse { Error = code }),
@@ -374,6 +427,7 @@ public class CreditNotesController : ControllerBase
             "DOCUMENT_NUMBER_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
             "CERTIFICATE_UNPROTECT_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "SRI_XML_SIGNING_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_RIDE_PDF_GENERATION_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "SRI_RECEPTION_ENDPOINT_NOT_CONFIGURED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "SRI_AUTHORIZATION_ENDPOINT_NOT_CONFIGURED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "SRI_RECEPTION_COMMUNICATION_FAILED" => StatusCode(StatusCodes.Status502BadGateway, new ApiErrorResponse { Error = code }),

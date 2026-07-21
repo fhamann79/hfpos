@@ -16,13 +16,17 @@ public class SriRidePdfService : ISriRidePdfService
     private const string PdfContentType = "application/pdf";
 
     private readonly ISriSubmissionService _sriSubmissionService;
+    private readonly ISriCreditNoteSubmissionService
+        _sriCreditNoteSubmissionService;
     private readonly ILogger<SriRidePdfService> _logger;
 
     public SriRidePdfService(
         ISriSubmissionService sriSubmissionService,
+        ISriCreditNoteSubmissionService sriCreditNoteSubmissionService,
         ILogger<SriRidePdfService> logger)
     {
         _sriSubmissionService = sriSubmissionService;
+        _sriCreditNoteSubmissionService = sriCreditNoteSubmissionService;
         _logger = logger;
     }
 
@@ -55,6 +59,43 @@ public class SriRidePdfService : ISriRidePdfService
         }
     }
 
+    public async Task<SriRidePdfFileResult> GenerateCreditNoteAsync(
+        int creditNoteId)
+    {
+        var ride = await _sriCreditNoteSubmissionService.GetRideAsync(
+            creditNoteId);
+
+        try
+        {
+            SriRidePdfFontResolver.Register();
+
+            var bytes = new RidePdfRenderer(ride).Render();
+
+            if (!IsPdf(bytes))
+            {
+                throw new InvalidOperationException(
+                    "Generated credit note RIDE file is not a PDF.");
+            }
+
+            return new SriRidePdfFileResult
+            {
+                Bytes = bytes,
+                ContentType = PdfContentType,
+                FileName = BuildCreditNoteFileName(ride, creditNoteId)
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Could not generate SRI credit note RIDE PDF. CreditNoteId {CreditNoteId}",
+                creditNoteId);
+            throw new InvalidOperationException(
+                "CREDIT_NOTE_SRI_RIDE_PDF_GENERATION_FAILED",
+                ex);
+        }
+    }
+
     private static bool IsPdf(byte[] bytes)
         => bytes.Length >= 5
             && bytes[0] == 0x25
@@ -69,6 +110,17 @@ public class SriRidePdfService : ISriRidePdfService
         var safeIdentifier = SanitizeFileNamePart(identifier);
 
         return $"{safeIdentifier}-RIDE.pdf";
+    }
+
+    private static string BuildCreditNoteFileName(
+        SriRideDto ride,
+        int creditNoteId)
+    {
+        var identifier = TrimToNull(ride.DocumentNumber)
+            ?? creditNoteId.ToString(CultureInfo.InvariantCulture);
+        var safeIdentifier = SanitizeFileNamePart(identifier);
+
+        return $"nota-credito-{safeIdentifier}-RIDE.pdf";
     }
 
     private static string SanitizeFileNamePart(string value)
@@ -93,6 +145,7 @@ public class SriRidePdfService : ISriRidePdfService
         private const double Margin = 28;
         private const double Gap = 7;
         private const double FooterReserve = 18;
+        private const string DefaultTimeZoneId = "America/Guayaquil";
         private const string DefaultFooterNote = "Representacion impresa de comprobante electronico autorizado.";
         private static readonly CultureInfo MoneyCulture = CultureInfo.GetCultureInfo("en-US");
         private static readonly XStringFormat TopLeft = new()
@@ -258,7 +311,14 @@ public class SriRidePdfService : ISriRidePdfService
 
             var rowY = y + 61;
             rowY = DrawCodeField("Autorizacion", _ride.AuthorizationNumber, x, rowY, width);
-            rowY = DrawWideField("Fecha autorizacion", FormatDateTime(_ride.AuthorizationDate), x, rowY, width);
+            rowY = DrawWideField(
+                "Fecha autorizacion",
+                FormatAuthorizationDate(
+                    _ride.AuthorizationDate,
+                    _ride.TimeZoneId),
+                x,
+                rowY,
+                width);
             rowY = DrawField("Ambiente", _ride.EnvironmentLabel, x, rowY, width / 2 - 4);
             DrawField("Emision", _ride.EmissionTypeLabel, x + width / 2 + 4, rowY - 18, width / 2 - 4);
         }
@@ -308,7 +368,12 @@ public class SriRidePdfService : ISriRidePdfService
             var x = Margin + 8;
             DrawField("Razon social / Nombres y apellidos", _ride.Buyer.LegalName, x, _y + 8, col1 - 12);
             DrawField("Identificacion", BuyerIdentification(), x + col1, _y + 8, col2 - 12);
-            DrawField("Fecha emision", FormatDate(_ride.IssueDate), x + col1 + col2, _y + 8, col3 - 16);
+            DrawField(
+                "Fecha emision",
+                FormatCalendarDate(_ride.IssueDate),
+                x + col1 + col2,
+                _y + 8,
+                col3 - 16);
 
             if (buyerAddress is not null)
             {
@@ -456,37 +521,133 @@ public class SriRidePdfService : ISriRidePdfService
                 var infoHeight = 24 + Math.Min(_ride.AdditionalInfo.Count, 8) * 15;
                 DrawBox(x, cursor, width, infoHeight, XBrushes.White, _borderPen);
                 _gfx.DrawString("Informacion adicional", _subHeaderFont, _brandBrush, new XRect(x + 8, cursor + 7, width - 16, 11), TopLeft);
-                cursor += 22;
+                var rowY = cursor + 22;
 
                 foreach (var field in _ride.AdditionalInfo.Take(8))
                 {
-                    DrawTwoPartLine(field.Name, field.Value, x + 8, cursor, width - 16);
-                    cursor += 15;
+                    DrawTwoPartLine(field.Name, field.Value, x + 8, rowY, width - 16);
+                    rowY += 15;
                 }
 
-                cursor = y + infoHeight + Gap;
+                cursor += infoHeight;
             }
 
-            var paymentHeight = 24 + Math.Max(_ride.Payments.Count, 1) * 15;
-            DrawBox(x, cursor, width, paymentHeight, XBrushes.White, _borderPen);
-            _gfx.DrawString("Forma de pago", _subHeaderFont, _brandBrush, new XRect(x + 8, cursor + 7, width - 16, 11), TopLeft);
-            cursor += 22;
-
-            if (_ride.Payments.Count == 0)
+            if (_ride.ModifiedDocument is not null)
             {
-                _gfx.DrawString("Sin pagos informados.", _bodyFont, _mutedBrush, new XRect(x + 8, cursor, width - 16, 10), TopLeft);
+                cursor = AddPanelGap(cursor, y);
+                const double modifiedDocumentHeight = 69;
+                DrawBox(
+                    x,
+                    cursor,
+                    width,
+                    modifiedDocumentHeight,
+                    XBrushes.White,
+                    _borderPen);
+                _gfx.DrawString(
+                    "Documento modificado",
+                    _subHeaderFont,
+                    _brandBrush,
+                    new XRect(x + 8, cursor + 7, width - 16, 11),
+                    TopLeft);
+                var rowY = cursor + 22;
+                DrawTwoPartLine(
+                    "Tipo",
+                    _ride.ModifiedDocument.DocumentTypeLabel
+                        ?? _ride.ModifiedDocument.DocumentCode,
+                    x + 8,
+                    rowY,
+                    width - 16);
+                rowY += 15;
+                DrawTwoPartLine(
+                    "Numero",
+                    _ride.ModifiedDocument.DocumentNumber,
+                    x + 8,
+                    rowY,
+                    width - 16);
+                rowY += 15;
+                DrawTwoPartLine(
+                    "Fecha de emision",
+                    FormatCalendarDate(_ride.ModifiedDocument.IssueDate),
+                    x + 8,
+                    rowY,
+                    width - 16);
+                cursor += modifiedDocumentHeight;
             }
-            else
+
+            var reason = TrimToNull(_ride.Reason);
+            if (reason is not null)
             {
+                cursor = AddPanelGap(cursor, y);
+                var reasonLines = WrapTextByWidth(
+                    reason,
+                    _bodyFont,
+                    width - 16);
+                var reasonTextHeight = Math.Max(
+                    LineHeight(_bodyFont),
+                    LinesHeight(reasonLines, _bodyFont));
+                var reasonHeight = 29 + reasonTextHeight;
+                DrawBox(
+                    x,
+                    cursor,
+                    width,
+                    reasonHeight,
+                    XBrushes.White,
+                    _borderPen);
+                _gfx.DrawString(
+                    "Motivo",
+                    _subHeaderFont,
+                    _brandBrush,
+                    new XRect(x + 8, cursor + 7, width - 16, 11),
+                    TopLeft);
+                DrawWrappedLines(
+                    reasonLines,
+                    _bodyFont,
+                    _textBrush,
+                    x + 8,
+                    cursor + 22,
+                    width - 16,
+                    TopLeft);
+                cursor += reasonHeight;
+            }
+
+            if (_ride.Payments.Count > 0)
+            {
+                cursor = AddPanelGap(cursor, y);
+                var paymentHeight = 24 + _ride.Payments.Count * 15;
+                DrawBox(
+                    x,
+                    cursor,
+                    width,
+                    paymentHeight,
+                    XBrushes.White,
+                    _borderPen);
+                _gfx.DrawString(
+                    "Forma de pago",
+                    _subHeaderFont,
+                    _brandBrush,
+                    new XRect(x + 8, cursor + 7, width - 16, 11),
+                    TopLeft);
+                var rowY = cursor + 22;
+
                 foreach (var payment in _ride.Payments)
                 {
-                    DrawTwoPartLine(payment.PaymentMethod ?? "-", FormatMoney(payment.Amount), x + 8, cursor, width - 16);
-                    cursor += 15;
+                    DrawTwoPartLine(
+                        payment.PaymentMethod ?? "-",
+                        FormatMoney(payment.Amount),
+                        x + 8,
+                        rowY,
+                        width - 16);
+                    rowY += 15;
                 }
+
+                cursor += paymentHeight;
             }
 
-            return cursor - y + 8;
+            return cursor - y;
         }
+
+        private static double AddPanelGap(double cursor, double startY)
+            => cursor > startY ? cursor + Gap : cursor;
 
         private double DrawTotals(double x, double y, double width)
         {
@@ -553,9 +714,39 @@ public class SriRidePdfService : ISriRidePdfService
 
         private double EstimateSummaryHeight()
         {
-            var additionalRows = _ride.AdditionalInfo.Count > 0 ? Math.Min(_ride.AdditionalInfo.Count, 8) : 0;
-            var leftHeight = (_ride.AdditionalInfo.Count > 0 ? 24 + additionalRows * 15 + Gap : 0)
-                + 24 + Math.Max(_ride.Payments.Count, 1) * 15 + 8;
+            var panelHeights = new List<double>();
+
+            if (_ride.AdditionalInfo.Count > 0)
+            {
+                panelHeights.Add(
+                    24 + Math.Min(_ride.AdditionalInfo.Count, 8) * 15);
+            }
+
+            if (_ride.ModifiedDocument is not null)
+            {
+                panelHeights.Add(69);
+            }
+
+            var reason = TrimToNull(_ride.Reason);
+            if (reason is not null)
+            {
+                var reasonLines = WrapTextByWidth(
+                    reason,
+                    _bodyFont,
+                    ContentWidth - 190 - Gap - 16);
+                panelHeights.Add(
+                    29 + Math.Max(
+                        LineHeight(_bodyFont),
+                        LinesHeight(reasonLines, _bodyFont)));
+            }
+
+            if (_ride.Payments.Count > 0)
+            {
+                panelHeights.Add(24 + _ride.Payments.Count * 15);
+            }
+
+            var leftHeight = panelHeights.Sum()
+                + Math.Max(0, panelHeights.Count - 1) * Gap;
             var totalsHeight = 14 + BuildTotals().Count * 15 + 9;
 
             return Math.Max(leftHeight, totalsHeight);
@@ -858,11 +1049,78 @@ public class SriRidePdfService : ISriRidePdfService
                 : compact;
         }
 
-        private static string FormatDate(DateTime? value)
+        private static string FormatCalendarDate(DateTime? value)
             => value?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? "-";
 
-        private static string FormatDateTime(DateTime? value)
-            => value?.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture) ?? "-";
+        private static string FormatAuthorizationDate(
+            DateTime? value,
+            string? timeZoneId)
+        {
+            if (value is null)
+            {
+                return "-";
+            }
+
+            var timeZone = ResolveTimeZone(timeZoneId);
+            var instant = value.Value.Kind switch
+            {
+                DateTimeKind.Utc => value.Value,
+                DateTimeKind.Local => value.Value.ToUniversalTime(),
+                _ => DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)
+            };
+            var localValue = TimeZoneInfo.ConvertTimeFromUtc(
+                instant,
+                timeZone);
+
+            return localValue.ToString(
+                "dd/MM/yyyy HH:mm",
+                CultureInfo.InvariantCulture);
+        }
+
+        private static TimeZoneInfo ResolveTimeZone(string? timeZoneId)
+        {
+            var requestedTimeZoneId = TrimToNull(timeZoneId)
+                ?? DefaultTimeZoneId;
+
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(
+                    requestedTimeZoneId);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                return ResolveDefaultTimeZone();
+            }
+            catch (InvalidTimeZoneException)
+            {
+                return ResolveDefaultTimeZone();
+            }
+        }
+
+        private static TimeZoneInfo ResolveDefaultTimeZone()
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(
+                    DefaultTimeZoneId);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                return TimeZoneInfo.CreateCustomTimeZone(
+                    DefaultTimeZoneId,
+                    TimeSpan.FromHours(-5),
+                    DefaultTimeZoneId,
+                    DefaultTimeZoneId);
+            }
+            catch (InvalidTimeZoneException)
+            {
+                return TimeZoneInfo.CreateCustomTimeZone(
+                    DefaultTimeZoneId,
+                    TimeSpan.FromHours(-5),
+                    DefaultTimeZoneId,
+                    DefaultTimeZoneId);
+            }
+        }
 
         private static string ValueOrDash(string? value)
             => TrimToNull(value) ?? "-";

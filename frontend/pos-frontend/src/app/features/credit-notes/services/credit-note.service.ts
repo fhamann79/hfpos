@@ -10,6 +10,7 @@ import {
 } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { SriSubmissionAttempt } from '../../pos-workstation/models/sri-submission-attempt.model';
+import { SriRide } from '../../pos-workstation/models/sri-ride.model';
 import { CreditNoteEligibility } from '../models/credit-note-eligibility.model';
 import {
   CancelCreditNoteDraftRequest,
@@ -100,6 +101,21 @@ export class CreditNoteService {
   getSriAuthorizedXml(creditNoteId: number): Observable<Blob> {
     return this.http.get(
       `${this.baseUrl}/${creditNoteId}/sri/authorized-xml`,
+      { responseType: 'blob' }
+    ).pipe(
+      catchError((error) => this.normalizeBlobHttpError(error))
+    );
+  }
+
+  getSriRide(creditNoteId: number): Observable<SriRide> {
+    return this.http.get<SriRide>(
+      `${this.baseUrl}/${creditNoteId}/sri/ride`
+    );
+  }
+
+  getSriRidePdf(creditNoteId: number): Observable<Blob> {
+    return this.http.get(
+      `${this.baseUrl}/${creditNoteId}/sri/ride-pdf`,
       { responseType: 'blob' }
     ).pipe(
       catchError((error) => this.normalizeBlobHttpError(error))
