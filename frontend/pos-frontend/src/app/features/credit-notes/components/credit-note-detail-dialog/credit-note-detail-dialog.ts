@@ -12,6 +12,14 @@ import {
   saleDocumentStatusLabel,
   saleDocumentStatusSeverity,
 } from '../../../pos-workstation/models/sale-document.model';
+import {
+  SriSubmissionAttempt,
+  sriReceptionStatusLabel,
+  sriReceptionStatusSeverity,
+  sriSubmissionAttemptStatusLabel,
+  sriSubmissionAttemptStatusSeverity,
+  sriSubmissionAttemptTypeLabel,
+} from '../../../pos-workstation/models/sri-submission-attempt.model';
 import { CreditNote } from '../../models/credit-note.model';
 
 @Component({
@@ -39,6 +47,11 @@ export class CreditNoteDetailDialog {
   @Input() downloadingSriXmlDraft = false;
   @Input() signingSriXml = false;
   @Input() downloadingSriSignedXml = false;
+  @Input() canSubmitSriDocuments = false;
+  @Input() submittingSri = false;
+  @Input() submissionAttempts: SriSubmissionAttempt[] = [];
+  @Input() submissionAttemptsLoading = false;
+  @Input() submissionAttemptsError = '';
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() refresh = new EventEmitter<void>();
@@ -46,6 +59,8 @@ export class CreditNoteDetailDialog {
   @Output() downloadSriXmlDraft = new EventEmitter<number>();
   @Output() signSriXml = new EventEmitter<number>();
   @Output() downloadSriSignedXml = new EventEmitter<number>();
+  @Output() submitSri = new EventEmitter<number>();
+  @Output() refreshSubmissionAttempts = new EventEmitter<void>();
 
   dateLabel(value: string | null): string {
     return formatBusinessDateTime(value, this.companyTimeZoneId) || '-';
@@ -57,6 +72,30 @@ export class CreditNoteDetailDialog {
 
   documentStatusSeverity(creditNote: CreditNote): DocumentTagSeverity {
     return saleDocumentStatusSeverity(creditNote.documentStatus);
+  }
+
+  receptionStatusLabel(status: string | null): string {
+    return sriReceptionStatusLabel(status);
+  }
+
+  receptionStatusSeverity(status: string | null): DocumentTagSeverity {
+    return sriReceptionStatusSeverity(status);
+  }
+
+  attemptTypeLabel(attempt: SriSubmissionAttempt): string {
+    return sriSubmissionAttemptTypeLabel(attempt.attemptType);
+  }
+
+  attemptStatusLabel(attempt: SriSubmissionAttempt): string {
+    return sriSubmissionAttemptStatusLabel(attempt.status);
+  }
+
+  attemptStatusSeverity(attempt: SriSubmissionAttempt): DocumentTagSeverity {
+    return sriSubmissionAttemptStatusSeverity(attempt.status);
+  }
+
+  attemptMessage(attempt: SriSubmissionAttempt): string {
+    return attempt.sriMessage || attempt.errorMessage || '-';
   }
 
   identificationTypeLabel(type: string | null): string {
@@ -114,11 +153,21 @@ export class CreditNoteDetailDialog {
       && !creditNote.hasSriSignedXml;
   }
 
+  canShowSubmitSri(creditNote: CreditNote): boolean {
+    return this.canSubmitSriDocuments
+      && creditNote.documentStatus === SaleDocumentStatus.Draft
+      && creditNote.voidedAt === null
+      && creditNote.hasSriSignedXml
+      && creditNote.sriSubmittedAt === null
+      && creditNote.sriReceptionStatus?.trim().toUpperCase() !== 'RECIBIDA';
+  }
+
   isBusy(): boolean {
     return this.preparingSriDraft
       || this.downloadingSriXmlDraft
       || this.signingSriXml
-      || this.downloadingSriSignedXml;
+      || this.downloadingSriSignedXml
+      || this.submittingSri;
   }
 
   requestVisibleChange(visible: boolean): void {
@@ -159,5 +208,21 @@ export class CreditNoteDetailDialog {
     }
 
     this.downloadSriSignedXml.emit(creditNote.id);
+  }
+
+  requestSubmitSri(creditNote: CreditNote): void {
+    if (!this.canShowSubmitSri(creditNote) || this.isBusy()) {
+      return;
+    }
+
+    this.submitSri.emit(creditNote.id);
+  }
+
+  requestRefreshSubmissionAttempts(): void {
+    if (this.submissionAttemptsLoading) {
+      return;
+    }
+
+    this.refreshSubmissionAttempts.emit();
   }
 }

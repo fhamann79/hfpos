@@ -1151,6 +1151,16 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<SriSubmissionAttempt>(entity =>
         {
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_SriSubmissionAttempts_ExactlyOneDocument",
+                "((\"SaleId\" IS NOT NULL AND \"CreditNoteId\" IS NULL) OR (\"SaleId\" IS NULL AND \"CreditNoteId\" IS NOT NULL))"));
+
+            entity.Property(a => a.SaleId)
+                .IsRequired(false);
+
+            entity.Property(a => a.CreditNoteId)
+                .IsRequired(false);
+
             entity.Property(a => a.AccessKey)
                 .IsRequired()
                 .HasMaxLength(49);
@@ -1195,6 +1205,7 @@ public class PosDbContext : DbContext
                 .HasMaxLength(2000);
 
             entity.HasIndex(a => new { a.SaleId, a.CreatedAt });
+            entity.HasIndex(a => new { a.CreditNoteId, a.CreatedAt });
             entity.HasIndex(a => new { a.CompanyId, a.AccessKey });
             entity.HasIndex(a => new { a.CompanyId, a.CreatedAt });
             entity.HasIndex(a => a.AccessKey);
@@ -1202,6 +1213,11 @@ public class PosDbContext : DbContext
             entity.HasOne(a => a.Sale)
                 .WithMany(s => s.SriSubmissionAttempts)
                 .HasForeignKey(a => a.SaleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(a => a.CreditNote)
+                .WithMany(cn => cn.SriSubmissionAttempts)
+                .HasForeignKey(a => a.CreditNoteId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(a => a.Company)

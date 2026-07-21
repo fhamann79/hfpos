@@ -48,6 +48,13 @@
   margin-bottom:.7rem;
 }
 
+.section-heading--actions {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem;
+}
+
 .section-heading h3 {
   margin:0;
   color:#0f172a;
@@ -105,6 +112,10 @@
   color:#166534 !important;
 }
 
+.sri-value--error {
+  color:#b91c1c !important;
+}
+
 :host ::ng-deep .sri-warning {
   margin-top:.9rem;
   margin-bottom:0;
@@ -125,6 +136,53 @@
   overflow-x:auto;
   padding-bottom:.35rem;
   -webkit-overflow-scrolling:touch;
+}
+
+.attempts-scroll {
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  overflow-x:auto;
+  padding-bottom:.35rem;
+  -webkit-overflow-scrolling:touch;
+}
+
+:host ::ng-deep .attempts-scroll .p-datatable-wrapper {
+  overflow:visible;
+}
+
+:host ::ng-deep .credit-note-attempts th,
+:host ::ng-deep .credit-note-attempts td {
+  box-sizing:border-box;
+  padding-left:.75rem;
+  padding-right:.75rem;
+  vertical-align:top;
+}
+
+.attempt-date-column {
+  width:11rem;
+}
+
+.attempt-type-column {
+  width:7rem;
+}
+
+.attempt-status-column,
+.attempt-reception-column {
+  width:9rem;
+}
+
+.attempt-message-column {
+  width:15rem;
+}
+
+.attempt-info-column {
+  width:17rem;
+}
+
+.attempt-text-cell {
+  white-space:normal;
+  overflow-wrap:anywhere;
 }
 
 :host ::ng-deep .items-scroll .p-datatable-wrapper {
@@ -231,6 +289,15 @@
     flex:1 1 100%;
   }
 
+  .section-heading--actions {
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .section-heading--actions p-button {
+    width:100%;
+  }
+
   .sri-actions p-button {
     flex:1 1 100%;
   }
@@ -241,6 +308,11 @@
   }
 
   :host ::ng-deep .sri-actions .p-button {
+    width:100%;
+    justify-content:center;
+  }
+
+  :host ::ng-deep .section-heading--actions .p-button {
     width:100%;
     justify-content:center;
   }

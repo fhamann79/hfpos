@@ -16,13 +16,16 @@ public class CreditNotesController : ControllerBase
 {
     private readonly ICreditNoteService _creditNoteService;
     private readonly ISriCreditNoteSigningService _sriCreditNoteSigningService;
+    private readonly ISriCreditNoteSubmissionService _sriCreditNoteSubmissionService;
 
     public CreditNotesController(
         ICreditNoteService creditNoteService,
-        ISriCreditNoteSigningService sriCreditNoteSigningService)
+        ISriCreditNoteSigningService sriCreditNoteSigningService,
+        ISriCreditNoteSubmissionService sriCreditNoteSubmissionService)
     {
         _creditNoteService = creditNoteService;
         _sriCreditNoteSigningService = sriCreditNoteSigningService;
+        _sriCreditNoteSubmissionService = sriCreditNoteSubmissionService;
     }
 
     [HttpGet("original-sales/{saleId:int}/eligibility")]
@@ -182,6 +185,47 @@ public class CreditNotesController : ControllerBase
         }
     }
 
+    [HttpPost("{id:int}/sri/submit")]
+    [Authorize(Policy = AppPermissions.SriDocumentsSubmit)]
+    [ProducesResponseType(typeof(CreditNoteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<CreditNoteDto>> SubmitSriSignedXml(int id)
+    {
+        try
+        {
+            return Ok(await _sriCreditNoteSubmissionService.SubmitSignedAsync(id));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpGet("{id:int}/sri/submission-attempts")]
+    [Authorize(Policy = AppPermissions.PosSalesVoid)]
+    [ProducesResponseType(typeof(IReadOnlyList<SriSubmissionAttemptDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<SriSubmissionAttemptDto>>>
+        GetSriSubmissionAttempts(int id)
+    {
+        try
+        {
+            return Ok(await _sriCreditNoteSubmissionService.GetAttemptsAsync(id));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
     [HttpPost("{id:int}/cancel")]
     [Authorize(Policy = AppPermissions.PosSalesVoid)]
     [ProducesResponseType(typeof(CreditNoteDto), StatusCodes.Status200OK)]
@@ -250,6 +294,9 @@ public class CreditNotesController : ControllerBase
             "CERTIFICATE_LOAD_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
             "SRI_SIGNATURE_VALIDATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_ACCESS_KEY_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_SIGNED_XML_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "INVALID_SRI_ENVIRONMENT" => BadRequest(new ApiErrorResponse { Error = code }),
+            "INVALID_SRI_EMISSION_TYPE" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_SRI_DOCUMENT_CONTEXT" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_ISSUER_RUC" => BadRequest(new ApiErrorResponse { Error = code }),
             "SRI_BUYER_IDENTIFICATION_TYPE_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
@@ -259,10 +306,19 @@ public class CreditNotesController : ControllerBase
             "SRI_ACCESS_KEY_GENERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
             "SRI_CREDIT_NOTE_XML_DRAFT_GENERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
             "SRI_CREDIT_NOTE_XML_SCHEMA_VALIDATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_SUBMISSION_CANCELLED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_ALREADY_AUTHORIZED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_REJECTED_NOT_RESUBMITTABLE" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_SUBMISSION_NOT_ALLOWED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_SRI_RECEPTION_REJECTED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_SETTINGS_DISABLED" => Conflict(new ApiErrorResponse { Error = code }),
+            "SRI_PRODUCTION_SUBMISSION_DISABLED" => Conflict(new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_ERROR" => Conflict(new ApiErrorResponse { Error = code }),
             "DOCUMENT_NUMBER_GENERATION_FAILED" => Conflict(new ApiErrorResponse { Error = code }),
             "CERTIFICATE_UNPROTECT_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "SRI_XML_SIGNING_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
+            "SRI_RECEPTION_ENDPOINT_NOT_CONFIGURED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
+            "SRI_RECEPTION_COMMUNICATION_FAILED" => StatusCode(StatusCodes.Status502BadGateway, new ApiErrorResponse { Error = code }),
             _ => BadRequest(new ApiErrorResponse { Error = "CREDIT_NOTE_OPERATION_FAILED" })
         };
     }

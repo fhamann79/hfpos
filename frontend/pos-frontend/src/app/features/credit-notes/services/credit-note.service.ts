@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import { SriSubmissionAttempt } from '../../pos-workstation/models/sri-submission-attempt.model';
 import { CreditNoteEligibility } from '../models/credit-note-eligibility.model';
 import {
   CancelCreditNoteDraftRequest,
@@ -60,6 +61,21 @@ export class CreditNoteService {
     return this.http.get(
       `${this.baseUrl}/${creditNoteId}/sri/signed-xml`,
       { responseType: 'blob' }
+    );
+  }
+
+  submitSri(creditNoteId: number): Observable<CreditNote> {
+    return this.http.post<CreditNote>(
+      `${this.baseUrl}/${creditNoteId}/sri/submit`,
+      {}
+    );
+  }
+
+  getSriSubmissionAttempts(
+    creditNoteId: number
+  ): Observable<SriSubmissionAttempt[]> {
+    return this.http.get<SriSubmissionAttempt[]>(
+      `${this.baseUrl}/${creditNoteId}/sri/submission-attempts`
     );
   }
 

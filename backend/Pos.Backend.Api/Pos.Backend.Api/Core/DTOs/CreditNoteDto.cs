@@ -42,6 +42,10 @@ public class CreditNoteDto
 
     public string? AccessKey { get; set; }
 
+    public string? AuthorizationNumber { get; set; }
+
+    public DateTime? AuthorizedAt { get; set; }
+
     public int? SriEnvironment { get; set; }
 
     public int? SriEmissionType { get; set; }
@@ -63,6 +67,16 @@ public class CreditNoteDto
     public string? SriSigningCertificateSubject { get; set; }
 
     public string? SriSigningCertificateSerialNumber { get; set; }
+
+    public DateTime? SriSubmittedAt { get; set; }
+
+    public string? SriReceptionStatus { get; set; }
+
+    public string? SriAuthorizationStatus { get; set; }
+
+    public string? SriLastSubmissionError { get; set; }
+
+    public DateTime? SriLastCheckedAt { get; set; }
 
     public string Reason { get; set; } = string.Empty;
 

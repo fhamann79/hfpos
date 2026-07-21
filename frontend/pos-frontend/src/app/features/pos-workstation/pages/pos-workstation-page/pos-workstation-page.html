@@ -252,6 +252,7 @@
     [creditNote]="selectedCreditNote()"
     [companyTimeZoneId]="companyTimeZoneId()"
     [canPrepareSriDraft]="canSignSriDocuments"
+    [canSubmitSriDocuments]="canSubmitSriDocuments"
     [preparingSriDraft]="
       creditNotePreparingSriDraftId() !== null
       && creditNotePreparingSriDraftId() === selectedCreditNoteId()
@@ -268,12 +269,21 @@
       creditNoteDownloadingSriSignedXmlId() !== null
       && creditNoteDownloadingSriSignedXmlId() === selectedCreditNoteId()
     "
+    [submittingSri]="
+      creditNoteSubmittingSriId() !== null
+      && creditNoteSubmittingSriId() === selectedCreditNoteId()
+    "
+    [submissionAttempts]="creditNoteSriAttempts()"
+    [submissionAttemptsLoading]="creditNoteSriAttemptsLoading()"
+    [submissionAttemptsError]="creditNoteSriAttemptsError()"
     (visibleChange)="onCreditNoteDetailVisibleChange($event)"
     (refresh)="loadCreditNoteDetail()"
     (prepareSriDraft)="prepareCreditNoteSriDraft($event)"
     (downloadSriXmlDraft)="downloadCreditNoteSriXmlDraft($event)"
     (signSriXml)="signCreditNoteSriXml($event)"
     (downloadSriSignedXml)="downloadCreditNoteSriSignedXml($event)"
+    (submitSri)="submitCreditNoteSri($event)"
+    (refreshSubmissionAttempts)="loadCreditNoteSriAttempts()"
   ></app-credit-note-detail-dialog>
 
   <app-cancel-credit-note-draft-dialog

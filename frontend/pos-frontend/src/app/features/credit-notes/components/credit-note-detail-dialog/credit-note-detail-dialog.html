@@ -47,8 +47,22 @@
     </section>
 
     <section class="detail-section">
-      <div class="section-heading"><h3>Preparación SRI</h3></div>
+      <div class="section-heading"><h3>SRI</h3></div>
       <div class="detail-grid sri-grid">
+        <div>
+          <span>Estado del documento</span>
+          <p-tag
+            [value]="documentStatusLabel(note)"
+            [severity]="documentStatusSeverity(note)"
+          ></p-tag>
+        </div>
+        <div>
+          <span>Estado de recepción</span>
+          <p-tag
+            [value]="receptionStatusLabel(note.sriReceptionStatus)"
+            [severity]="receptionStatusSeverity(note.sriReceptionStatus)"
+          ></p-tag>
+        </div>
         <div>
           <span>Ambiente</span>
           <strong>{{ environmentLabel(note.sriEnvironment) }}</strong>
@@ -76,6 +90,16 @@
         <div>
           <span>Firmado el</span>
           <strong>{{ dateLabel(note.sriSignedAt) }}</strong>
+        </div>
+        <div>
+          <span>Enviado el</span>
+          <strong>{{ dateLabel(note.sriSubmittedAt) }}</strong>
+        </div>
+        <div class="detail-grid__wide">
+          <span>Último error</span>
+          <strong [class.sri-value--error]="note.sriLastSubmissionError">
+            {{ note.sriLastSubmissionError || '-' }}
+          </strong>
         </div>
         <div class="detail-grid__wide">
           <span>Clave de acceso</span>
@@ -115,6 +139,14 @@
         ></p-message>
       }
 
+      @if (canShowSubmitSri(note)) {
+        <p-message
+          styleClass="sri-warning"
+          severity="warn"
+          text="El XML firmado será enviado al ambiente SRI configurado. Después de ser recibido quedará pendiente de autorización."
+        ></p-message>
+      }
+
       <div class="sri-actions">
         @if (canShowPrepareSriDraft(note)) {
           <p-button
@@ -135,6 +167,17 @@
             [loading]="signingSriXml"
             [disabled]="isBusy()"
             (onClick)="requestSignSriXml(note)"
+          ></p-button>
+        }
+
+        @if (canShowSubmitSri(note)) {
+          <p-button
+            label="Enviar al SRI"
+            icon="pi pi-send"
+            severity="warn"
+            [loading]="submittingSri"
+            [disabled]="isBusy()"
+            (onClick)="requestSubmitSri(note)"
           ></p-button>
         }
 
@@ -161,6 +204,74 @@
             (onClick)="requestDownloadSriSignedXml(note)"
           ></p-button>
         }
+      </div>
+    </section>
+
+    <section class="detail-section">
+      <div class="section-heading section-heading--actions">
+        <h3>Intentos SRI</h3>
+        <p-button
+          label="Actualizar intentos"
+          icon="pi pi-refresh"
+          severity="secondary"
+          [outlined]="true"
+          [loading]="submissionAttemptsLoading"
+          [disabled]="submissionAttemptsLoading || submittingSri"
+          (onClick)="requestRefreshSubmissionAttempts()"
+        ></p-button>
+      </div>
+
+      @if (submissionAttemptsError) {
+        <p-message
+          severity="error"
+          [text]="submissionAttemptsError"
+        ></p-message>
+      }
+
+      <div class="attempts-scroll">
+        <p-table
+          [value]="submissionAttempts"
+          [loading]="submissionAttemptsLoading"
+          responsiveLayout="scroll"
+          styleClass="credit-note-attempts"
+          [tableStyle]="{ 'min-width': '68rem', 'table-layout': 'fixed' }"
+        >
+          <ng-template pTemplate="header">
+            <tr>
+              <th class="attempt-date-column">Fecha</th>
+              <th class="attempt-type-column">Tipo</th>
+              <th class="attempt-status-column">Estado</th>
+              <th class="attempt-reception-column">Recepción</th>
+              <th class="attempt-message-column">Mensaje</th>
+              <th class="attempt-info-column">Información adicional</th>
+            </tr>
+          </ng-template>
+          <ng-template pTemplate="body" let-attempt>
+            <tr>
+              <td>{{ dateLabel(attempt.createdAt) }}</td>
+              <td>{{ attemptTypeLabel(attempt) }}</td>
+              <td>
+                <p-tag
+                  [value]="attemptStatusLabel(attempt)"
+                  [severity]="attemptStatusSeverity(attempt)"
+                ></p-tag>
+              </td>
+              <td>
+                <p-tag
+                  [value]="receptionStatusLabel(attempt.receptionStatus)"
+                  [severity]="receptionStatusSeverity(attempt.receptionStatus)"
+                ></p-tag>
+              </td>
+              <td class="attempt-text-cell">{{ attemptMessage(attempt) }}</td>
+              <td class="attempt-text-cell">{{ attempt.sriAdditionalInfo || '-' }}</td>
+            </tr>
+          </ng-template>
+          <ng-template pTemplate="emptymessage">
+            <tr>
+              <td colspan="6">No hay intentos SRI registrados.</td>
+            </tr>
+          </ng-template>
+        </p-table>
       </div>
     </section>
 

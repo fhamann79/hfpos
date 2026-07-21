@@ -134,4 +134,7 @@ public class CreditNote
     public User? CancelledByUser { get; set; }
 
     public ICollection<CreditNoteItem> Items { get; set; } = new List<CreditNoteItem>();
+
+    public ICollection<SriSubmissionAttempt> SriSubmissionAttempts { get; set; } =
+        new List<SriSubmissionAttempt>();
 }
