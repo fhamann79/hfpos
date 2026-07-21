@@ -18,17 +18,20 @@ public class CreditNotesController : ControllerBase
     private readonly ISriCreditNoteSigningService _sriCreditNoteSigningService;
     private readonly ISriCreditNoteSubmissionService _sriCreditNoteSubmissionService;
     private readonly ISriRidePdfService _sriRidePdfService;
+    private readonly ICreditNoteEmailService _creditNoteEmailService;
 
     public CreditNotesController(
         ICreditNoteService creditNoteService,
         ISriCreditNoteSigningService sriCreditNoteSigningService,
         ISriCreditNoteSubmissionService sriCreditNoteSubmissionService,
-        ISriRidePdfService sriRidePdfService)
+        ISriRidePdfService sriRidePdfService,
+        ICreditNoteEmailService creditNoteEmailService)
     {
         _creditNoteService = creditNoteService;
         _sriCreditNoteSigningService = sriCreditNoteSigningService;
         _sriCreditNoteSubmissionService = sriCreditNoteSubmissionService;
         _sriRidePdfService = sriRidePdfService;
+        _creditNoteEmailService = creditNoteEmailService;
     }
 
     [HttpGet("original-sales/{saleId:int}/eligibility")]
@@ -305,6 +308,54 @@ public class CreditNotesController : ControllerBase
         }
     }
 
+    [HttpPost("{id:int}/sri/email")]
+    [Authorize(Policy = AppPermissions.SriDocumentsSubmit)]
+    [ProducesResponseType(typeof(SendCreditNoteEmailResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<SendCreditNoteEmailResultDto>>
+        SendSriCreditNoteEmail(
+            int id,
+            [FromBody] SendCreditNoteEmailRequestDto dto)
+    {
+        try
+        {
+            return Ok(await _creditNoteEmailService
+                .SendAuthorizedCreditNoteEmailAsync(
+                    id,
+                    dto ?? new SendCreditNoteEmailRequestDto()));
+        }
+        catch (Exception ex) when (
+            ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
+    [HttpGet("{id:int}/sri/email-deliveries")]
+    [Authorize(Policy = AppPermissions.PosSalesVoid)]
+    [ProducesResponseType(typeof(IReadOnlyList<SaleInvoiceEmailDeliveryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<SaleInvoiceEmailDeliveryDto>>>
+        GetSriCreditNoteEmailDeliveries(int id)
+    {
+        try
+        {
+            return Ok(await _creditNoteEmailService.GetDeliveriesAsync(id));
+        }
+        catch (Exception ex) when (
+            ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
     [HttpGet("{id:int}/sri/submission-attempts")]
     [Authorize(Policy = AppPermissions.PosSalesVoid)]
     [ProducesResponseType(typeof(IReadOnlyList<SriSubmissionAttemptDto>), StatusCodes.Status200OK)]
@@ -361,6 +412,16 @@ public class CreditNotesController : ControllerBase
             "CREDIT_NOTE_SRI_AUTHORIZED_XML_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_RIDE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_REASON_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_EMAIL_INVALID_ADDRESS" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_EMAIL_OPERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_SETTINGS_NOT_CONFIGURED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_DISABLED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_SMTP_HOST_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_FROM_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_PASSWORD_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_NOT_TESTED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_INVALID_ADDRESS" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_EMAIL_OPERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_REASON_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_NOTES_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_ITEMS_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
@@ -378,6 +439,10 @@ public class CreditNotesController : ControllerBase
             "CREDIT_NOTE_ORIGINAL_SALE_FULLY_CREDITED" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_QUANTITY_EXCEEDS_AVAILABLE" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_DRAFT_ALREADY_CANCELLED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_EMAIL_VOIDED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_EMAIL_NOT_AUTHORIZED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_EMAIL_AUTHORIZED_XML_NOT_AVAILABLE" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_EMAIL_RIDE_PDF_NOT_AVAILABLE" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_DRAFT_NOT_CANCELLABLE" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_DRAFT_SRI_PROCESS_STARTED" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_DRAFT_CANCELLED" => Conflict(new ApiErrorResponse { Error = code }),
@@ -432,6 +497,7 @@ public class CreditNotesController : ControllerBase
             "SRI_AUTHORIZATION_ENDPOINT_NOT_CONFIGURED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "SRI_RECEPTION_COMMUNICATION_FAILED" => StatusCode(StatusCodes.Status502BadGateway, new ApiErrorResponse { Error = code }),
             "SRI_AUTHORIZATION_COMMUNICATION_FAILED" => StatusCode(StatusCodes.Status502BadGateway, new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_EMAIL_SEND_FAILED" => StatusCode(StatusCodes.Status502BadGateway, new ApiErrorResponse { Error = code }),
             _ => BadRequest(new ApiErrorResponse { Error = "CREDIT_NOTE_OPERATION_FAILED" })
         };
     }

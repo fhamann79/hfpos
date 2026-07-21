@@ -162,6 +162,7 @@ public class SaleInvoiceEmailService : ISaleInvoiceEmailService
             {
                 Id = d.Id,
                 SaleId = d.SaleId,
+                CreditNoteId = null,
                 ToEmail = d.ToEmail,
                 CcEmail = d.CcEmail,
                 Subject = d.Subject,

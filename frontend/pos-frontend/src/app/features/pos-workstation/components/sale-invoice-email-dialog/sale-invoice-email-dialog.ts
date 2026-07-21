@@ -6,6 +6,7 @@ import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { TextareaModule } from 'primeng/textarea';
+import { CreditNote } from '../../../credit-notes/models/credit-note.model';
 import { SendSaleInvoiceEmailRequest } from '../../models/sale-invoice-email.model';
 import { Sale } from '../../models/sale.model';
 
@@ -19,6 +20,7 @@ import { Sale } from '../../models/sale.model';
 export class SaleInvoiceEmailDialog implements OnChanges {
   @Input({ required: true }) visible = false;
   @Input() sale: Sale | null = null;
+  @Input() creditNote: CreditNote | null = null;
   @Input() loading = false;
 
   @Output() visibleChange = new EventEmitter<boolean>();
@@ -31,9 +33,43 @@ export class SaleInvoiceEmailDialog implements OnChanges {
   submitted = false;
 
   ngOnChanges(changes: SimpleChanges): void {
-    if ((changes['visible'] || changes['sale']) && this.visible && !this.loading) {
+    if (
+      (changes['visible'] || changes['sale'] || changes['creditNote'])
+      && this.visible
+      && !this.loading
+    ) {
       this.reset();
     }
+  }
+
+  get isCreditNote(): boolean {
+    return this.creditNote !== null && this.sale === null;
+  }
+
+  get dialogHeader(): string {
+    return this.isCreditNote
+      ? 'Enviar nota de crédito por email'
+      : 'Enviar factura por email';
+  }
+
+  get documentTypeLabel(): string {
+    return this.isCreditNote ? 'Nota de crédito' : 'Factura';
+  }
+
+  get documentNumber(): string {
+    const document = this.isCreditNote ? this.creditNote : this.sale;
+    return document?.number || (document ? `#${document.id}` : '-');
+  }
+
+  get authorizationNumber(): string {
+    const document = this.isCreditNote ? this.creditNote : this.sale;
+    return document?.authorizationNumber || '-';
+  }
+
+  get defaultRecipientEmail(): string {
+    return this.isCreditNote
+      ? this.creditNote?.buyerEmailSnapshot?.trim() ?? ''
+      : this.sale?.customerEmail?.trim() ?? '';
   }
 
   submit(): void {
@@ -68,7 +104,7 @@ export class SaleInvoiceEmailDialog implements OnChanges {
   }
 
   private reset(): void {
-    this.toEmail = this.sale?.customerEmail?.trim() ?? '';
+    this.toEmail = this.defaultRecipientEmail;
     this.ccEmail = '';
     this.subject = '';
     this.message = '';
@@ -77,7 +113,8 @@ export class SaleInvoiceEmailDialog implements OnChanges {
 
   private isValidEmail(value: string): boolean {
     const normalized = value.trim();
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
+    return normalized.length <= 320
+      && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
   }
 
   private normalizeOptional(value: string): string | null {

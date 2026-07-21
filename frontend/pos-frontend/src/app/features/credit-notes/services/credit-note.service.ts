@@ -11,6 +11,11 @@ import {
 import { environment } from '../../../../environments/environment';
 import { SriSubmissionAttempt } from '../../pos-workstation/models/sri-submission-attempt.model';
 import { SriRide } from '../../pos-workstation/models/sri-ride.model';
+import {
+  SaleInvoiceEmailDelivery,
+  SendCreditNoteEmailRequest,
+  SendCreditNoteEmailResult,
+} from '../../pos-workstation/models/sale-invoice-email.model';
 import { CreditNoteEligibility } from '../models/credit-note-eligibility.model';
 import {
   CancelCreditNoteDraftRequest,
@@ -127,6 +132,24 @@ export class CreditNoteService {
   ): Observable<SriSubmissionAttempt[]> {
     return this.http.get<SriSubmissionAttempt[]>(
       `${this.baseUrl}/${creditNoteId}/sri/submission-attempts`
+    );
+  }
+
+  sendSriEmail(
+    creditNoteId: number,
+    payload: SendCreditNoteEmailRequest
+  ): Observable<SendCreditNoteEmailResult> {
+    return this.http.post<SendCreditNoteEmailResult>(
+      `${this.baseUrl}/${creditNoteId}/sri/email`,
+      payload
+    );
+  }
+
+  getSriEmailDeliveries(
+    creditNoteId: number
+  ): Observable<SaleInvoiceEmailDelivery[]> {
+    return this.http.get<SaleInvoiceEmailDelivery[]>(
+      `${this.baseUrl}/${creditNoteId}/sri/email-deliveries`
     );
   }
 

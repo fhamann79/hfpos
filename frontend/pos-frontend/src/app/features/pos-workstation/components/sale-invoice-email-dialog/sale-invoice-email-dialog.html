@@ -1,5 +1,5 @@
 <p-dialog
-  header="Enviar factura por email"
+  [header]="dialogHeader"
   [visible]="visible"
   [modal]="true"
   [style]="{ width: '34rem', maxWidth: '94vw' }"
@@ -9,15 +9,15 @@
   <form class="invoice-email-form" (ngSubmit)="submit()">
     <p-message
       severity="info"
-      text="Se enviara el XML autorizado y el RIDE PDF usando la configuracion SMTP guardada en Configuracion Fiscal."
+      text="Se enviarán el XML autorizado y el RIDE PDF usando la configuración SMTP guardada en Configuración Fiscal."
     ></p-message>
 
-    @if (sale) {
+    @if (sale || creditNote) {
       <div class="invoice-email-summary">
-        <span>Factura</span>
-        <strong>{{ sale.number || ('#' + sale.id) }}</strong>
-        <span>Autorizacion</span>
-        <strong>{{ sale.authorizationNumber || '-' }}</strong>
+        <span>{{ documentTypeLabel }}</span>
+        <strong>{{ documentNumber }}</strong>
+        <span>Autorización</span>
+        <strong>{{ authorizationNumber }}</strong>
       </div>
     }
 
@@ -29,11 +29,12 @@
         name="toEmail"
         [(ngModel)]="toEmail"
         autocomplete="email"
+        maxlength="320"
         placeholder="cliente@correo.com"
         [disabled]="loading"
       />
       @if (toEmailInvalid()) {
-        <small class="p-error">Ingresa un email destinatario valido.</small>
+        <small class="p-error">Ingresa un email destinatario válido.</small>
       }
     </label>
 
@@ -45,11 +46,12 @@
         name="ccEmail"
         [(ngModel)]="ccEmail"
         autocomplete="email"
+        maxlength="320"
         placeholder="copia@correo.com"
         [disabled]="loading"
       />
       @if (ccEmailInvalid()) {
-        <small class="p-error">Ingresa un email CC valido.</small>
+        <small class="p-error">Ingresa un email CC válido.</small>
       }
     </label>
 

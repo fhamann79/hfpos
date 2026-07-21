@@ -43,7 +43,11 @@ import { CheckoutRequest } from '../../models/checkout-request.model';
 import { PosCustomer } from '../../models/pos-customer.model';
 import { PosProduct } from '../../models/pos-product.model';
 import { SaleDocumentStatus, SaleDocumentType } from '../../models/sale-document.model';
-import { SaleInvoiceEmailDelivery, SendSaleInvoiceEmailRequest } from '../../models/sale-invoice-email.model';
+import {
+  SaleInvoiceEmailDelivery,
+  SendCreditNoteEmailRequest,
+  SendSaleInvoiceEmailRequest,
+} from '../../models/sale-invoice-email.model';
 import { Sale } from '../../models/sale.model';
 import { SaleListItem } from '../../models/sale-list-item.model';
 import { SalePaymentMethod } from '../../models/sale-payment-method.model';
@@ -159,6 +163,14 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly creditNoteSriAttempts = signal<SriSubmissionAttempt[]>([]);
   readonly creditNoteSriAttemptsLoading = signal(false);
   readonly creditNoteSriAttemptsError = signal('');
+  readonly creditNoteEmailVisible = signal(false);
+  readonly creditNoteEmailCreditNote = signal<CreditNote | null>(null);
+  readonly creditNoteEmailSending = signal(false);
+  readonly creditNoteEmailDeliveriesVisible = signal(false);
+  readonly creditNoteEmailDeliveriesLoading = signal(false);
+  readonly creditNoteEmailDeliveriesError = signal('');
+  readonly creditNoteEmailDeliveries = signal<SaleInvoiceEmailDelivery[]>([]);
+  readonly creditNoteEmailDeliveriesCreditNote = signal<CreditNote | null>(null);
   readonly sriSigningSaleId = signal<number | null>(null);
   readonly sriSubmittingSaleId = signal<number | null>(null);
   readonly sriCheckingAuthorizationSaleId = signal<number | null>(null);
@@ -854,6 +866,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteEmailSending()
     ) {
       return;
     }
@@ -885,6 +898,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.creditNoteSriAttempts.set([]);
     this.creditNoteSriAttemptsLoading.set(false);
     this.creditNoteSriAttemptsError.set('');
+    this.resetCreditNoteEmailState();
     this.creditNoteEligibilityVisible.set(true);
     this.loadCreditNoteEligibility();
     this.loadCreditNotesHistory();
@@ -933,6 +947,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteEmailSending()
     ) {
       return;
     }
@@ -943,6 +958,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.creditNoteSriAttempts.set([]);
     this.creditNoteSriAttemptsError.set('');
     this.creditNoteSriAttemptsLoading.set(false);
+    this.resetCreditNoteEmailState();
     this.creditNoteDetailVisible.set(true);
     this.loadCreditNoteDetail();
     this.loadCreditNoteSriAttempts();
@@ -990,6 +1006,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         || this.creditNoteDownloadingAuthorizedXmlId() !== null
         || this.creditNoteViewingRideId() !== null
         || this.creditNoteDownloadingRidePdfId() !== null
+        || this.creditNoteEmailSending()
       )
     ) {
       return;
@@ -1014,6 +1031,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       this.creditNoteSriAttempts.set([]);
       this.creditNoteSriAttemptsLoading.set(false);
       this.creditNoteSriAttemptsError.set('');
+      this.resetCreditNoteEmailState();
     }
   }
 
@@ -1037,6 +1055,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
       return;
@@ -1101,6 +1120,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
       return;
@@ -1147,6 +1167,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
       return;
@@ -1202,6 +1223,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
       return;
@@ -1251,6 +1273,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
       || creditNote.documentStatus !== SaleDocumentStatus.Draft
@@ -1344,6 +1367,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
       || creditNote.documentStatus !== SaleDocumentStatus.PendingAuthorization
@@ -1444,6 +1468,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
       || !isAuthorized
@@ -1507,6 +1532,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
       || !isAuthorized
@@ -1565,6 +1591,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
       || !isAuthorized
@@ -1631,6 +1658,186 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         this.creditNoteSriAttemptsLoading.set(false);
         this.creditNoteSriAttemptsError.set(
           this.resolveCreditNoteSriAttemptsError(error)
+        );
+      },
+    });
+  }
+
+  openCreditNoteEmailDialog(creditNoteId: number): void {
+    if (!this.canSubmitSriDocuments) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Permiso requerido',
+        detail: 'No tienes permiso para enviar documentos por email.',
+      });
+      return;
+    }
+
+    const creditNote = this.selectedCreditNote();
+    const isAuthorized =
+      creditNote?.documentStatus === SaleDocumentStatus.Authorized
+      || creditNote?.sriAuthorizationStatus?.trim().toUpperCase()
+        === 'AUTORIZADO';
+
+    if (
+      this.creditNotePreparingSriDraftId() !== null
+      || this.creditNoteDownloadingSriXmlId() !== null
+      || this.creditNoteSigningSriXmlId() !== null
+      || this.creditNoteDownloadingSriSignedXmlId() !== null
+      || this.creditNoteSubmittingSriId() !== null
+      || this.creditNoteCheckingAuthorizationId() !== null
+      || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteEmailSending()
+      || this.selectedCreditNoteId() !== creditNoteId
+      || creditNote?.id !== creditNoteId
+    ) {
+      return;
+    }
+
+    if (
+      !isAuthorized
+      || creditNote.voidedAt !== null
+      || !creditNote.authorizationNumber?.trim()
+    ) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Envío de nota de crédito',
+        detail: 'Solo puedes enviar una nota de crédito autorizada y no anulada.',
+      });
+      return;
+    }
+
+    this.creditNoteEmailCreditNote.set(creditNote);
+    this.creditNoteEmailVisible.set(true);
+  }
+
+  onCreditNoteEmailVisibleChange(visible: boolean): void {
+    if (this.creditNoteEmailSending()) {
+      return;
+    }
+
+    this.creditNoteEmailVisible.set(visible);
+    if (!visible) {
+      this.creditNoteEmailCreditNote.set(null);
+    }
+  }
+
+  sendCreditNoteEmail(payload: SendCreditNoteEmailRequest): void {
+    const creditNote = this.creditNoteEmailCreditNote();
+
+    if (
+      !this.canSubmitSriDocuments
+      || !creditNote
+      || this.creditNoteEmailSending()
+    ) {
+      return;
+    }
+
+    this.creditNoteEmailSending.set(true);
+
+    this.creditNoteService.sendSriEmail(creditNote.id, payload).pipe(
+      finalize(() => this.creditNoteEmailSending.set(false))
+    ).subscribe({
+      next: (result) => {
+        this.creditNoteEmailVisible.set(false);
+        this.creditNoteEmailCreditNote.set(null);
+
+        if (
+          this.creditNoteEmailDeliveriesVisible()
+          && this.creditNoteEmailDeliveriesCreditNote()?.id === creditNote.id
+        ) {
+          this.loadCreditNoteEmailDeliveries();
+        }
+
+        const documentNumber = result.documentNumber
+          || creditNote.number
+          || `#${creditNote.id}`;
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Nota de crédito enviada',
+          detail: `${documentNumber} fue enviada a ${result.toEmail}.`,
+        });
+      },
+      error: (error: HttpErrorResponse) => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'No se pudo enviar la nota de crédito',
+          detail: this.resolveCreditNoteEmailError(error),
+        });
+      },
+    });
+  }
+
+  openCreditNoteEmailDeliveries(creditNoteId: number): void {
+    const creditNote = this.selectedCreditNote();
+    const isAuthorized =
+      creditNote?.documentStatus === SaleDocumentStatus.Authorized
+      || creditNote?.sriAuthorizationStatus?.trim().toUpperCase()
+        === 'AUTORIZADO';
+
+    if (
+      !this.canVoid
+      || this.creditNoteEmailSending()
+      || this.selectedCreditNoteId() !== creditNoteId
+      || creditNote?.id !== creditNoteId
+      || !isAuthorized
+      || creditNote.voidedAt !== null
+      || !creditNote.authorizationNumber?.trim()
+    ) {
+      return;
+    }
+
+    this.creditNoteEmailDeliveriesCreditNote.set(creditNote);
+    this.creditNoteEmailDeliveries.set([]);
+    this.creditNoteEmailDeliveriesError.set('');
+    this.creditNoteEmailDeliveriesVisible.set(true);
+    this.loadCreditNoteEmailDeliveries();
+  }
+
+  onCreditNoteEmailDeliveriesVisibleChange(visible: boolean): void {
+    this.creditNoteEmailDeliveriesVisible.set(visible);
+
+    if (!visible) {
+      this.creditNoteEmailDeliveriesCreditNote.set(null);
+      this.creditNoteEmailDeliveriesLoading.set(false);
+      this.creditNoteEmailDeliveries.set([]);
+      this.creditNoteEmailDeliveriesError.set('');
+    }
+  }
+
+  loadCreditNoteEmailDeliveries(
+    creditNoteId = this.creditNoteEmailDeliveriesCreditNote()?.id
+  ): void {
+    if (!creditNoteId) {
+      return;
+    }
+
+    this.creditNoteEmailDeliveriesLoading.set(true);
+    this.creditNoteEmailDeliveriesError.set('');
+
+    this.creditNoteService.getSriEmailDeliveries(creditNoteId).subscribe({
+      next: (deliveries) => {
+        if (
+          this.creditNoteEmailDeliveriesCreditNote()?.id !== creditNoteId
+        ) {
+          return;
+        }
+
+        this.creditNoteEmailDeliveries.set(deliveries);
+        this.creditNoteEmailDeliveriesLoading.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        if (
+          this.creditNoteEmailDeliveriesCreditNote()?.id !== creditNoteId
+        ) {
+          return;
+        }
+
+        this.creditNoteEmailDeliveriesLoading.set(false);
+        this.creditNoteEmailDeliveriesError.set(
+          this.resolveCreditNoteEmailDeliveriesError(error)
         );
       },
     });
@@ -1729,6 +1936,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteEmailSending()
     ) {
       return;
     }
@@ -1760,6 +1968,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteDownloadingAuthorizedXmlId() !== null
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteEmailSending()
     ) {
       return;
     }
@@ -1830,6 +2039,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         || this.creditNoteDownloadingAuthorizedXmlId() !== null
         || this.creditNoteViewingRideId() !== null
         || this.creditNoteDownloadingRidePdfId() !== null
+        || this.creditNoteEmailSending()
       )
     ) {
       return;
@@ -1866,6 +2076,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       this.creditNoteSriAttempts.set([]);
       this.creditNoteSriAttemptsLoading.set(false);
       this.creditNoteSriAttemptsError.set('');
+      this.resetCreditNoteEmailState();
     }
   }
 
@@ -2773,7 +2984,28 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     return `${match[3]}/${match[2]}/${match[1]}`;
   }
 
+  private resetCreditNoteEmailState(): void {
+    this.creditNoteEmailVisible.set(false);
+    this.creditNoteEmailCreditNote.set(null);
+    this.creditNoteEmailSending.set(false);
+    this.creditNoteEmailDeliveriesVisible.set(false);
+    this.creditNoteEmailDeliveriesLoading.set(false);
+    this.creditNoteEmailDeliveriesError.set('');
+    this.creditNoteEmailDeliveries.set([]);
+    this.creditNoteEmailDeliveriesCreditNote.set(null);
+  }
+
   private closeContextualDialog(): void {
+    if (this.creditNoteEmailVisible()) {
+      this.onCreditNoteEmailVisibleChange(false);
+      return;
+    }
+
+    if (this.creditNoteEmailDeliveriesVisible()) {
+      this.onCreditNoteEmailDeliveriesVisibleChange(false);
+      return;
+    }
+
     if (this.creditNoteDetailVisible()) {
       this.onCreditNoteDetailVisibleChange(false);
       return;
@@ -2875,6 +3107,63 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       default:
         return this.workstationService.resolveBusinessError(error) || 'No se pudo enviar la factura por email.';
     }
+  }
+
+  private resolveCreditNoteEmailError(error: HttpErrorResponse): string {
+    switch (readErrorCode(error)) {
+      case 'CREDIT_NOTE_NOT_FOUND':
+        return 'La nota de crédito no existe o no pertenece al contexto operativo actual.';
+      case 'CREDIT_NOTE_EMAIL_INVALID_ADDRESS':
+        return 'El email destinatario o la copia no son válidos.';
+      case 'CREDIT_NOTE_EMAIL_OPERATION_FAILED':
+        return 'Revisa el asunto y el mensaje antes de volver a intentar.';
+      case 'CREDIT_NOTE_EMAIL_VOIDED':
+        return 'No se puede enviar una nota de crédito anulada.';
+      case 'CREDIT_NOTE_EMAIL_NOT_AUTHORIZED':
+        return 'Solo se pueden enviar notas de crédito autorizadas por el SRI.';
+      case 'CREDIT_NOTE_EMAIL_AUTHORIZED_XML_NOT_AVAILABLE':
+        return 'No está disponible el XML autorizado de la nota de crédito.';
+      case 'CREDIT_NOTE_EMAIL_RIDE_PDF_NOT_AVAILABLE':
+        return 'No está disponible el RIDE PDF de la nota de crédito.';
+      case 'CREDIT_NOTE_EMAIL_SEND_FAILED':
+        return 'No se pudo enviar la nota de crédito. Revisa la configuración SMTP.';
+      case 'COMPANY_EMAIL_SETTINGS_NOT_CONFIGURED':
+        return 'Configura el correo SMTP en Configuración Fiscal.';
+      case 'COMPANY_EMAIL_DISABLED':
+        return 'Habilita el envío de correos en Configuración Fiscal.';
+      case 'COMPANY_EMAIL_SMTP_HOST_REQUIRED':
+        return 'Ingresa el servidor SMTP en Configuración Fiscal.';
+      case 'COMPANY_EMAIL_FROM_REQUIRED':
+        return 'Ingresa el correo remitente en Configuración Fiscal.';
+      case 'COMPANY_EMAIL_PASSWORD_REQUIRED':
+        return 'Guarda la contraseña o API Key SMTP antes de enviar correos.';
+      case 'COMPANY_EMAIL_NOT_TESTED':
+        return 'Primero envía un correo de prueba exitoso en Configuración Fiscal.';
+      case 'COMPANY_EMAIL_INVALID_ADDRESS':
+        return 'La dirección configurada para el remitente no es válida.';
+      case 'COMPANY_EMAIL_OPERATION_FAILED':
+        return 'No se pudo usar la configuración de email de la compañía.';
+      default:
+        if (error.status === 403) {
+          return 'No tienes permiso para enviar la nota de crédito por email.';
+        }
+
+        return 'No se pudo enviar por email la nota de crédito.';
+    }
+  }
+
+  private resolveCreditNoteEmailDeliveriesError(
+    error: HttpErrorResponse
+  ): string {
+    if (readErrorCode(error) === 'CREDIT_NOTE_NOT_FOUND') {
+      return 'La nota de crédito no existe o no pertenece al contexto operativo actual.';
+    }
+
+    if (error.status === 403) {
+      return 'No tienes permiso para consultar el historial de email de la nota de crédito.';
+    }
+
+    return 'No se pudo cargar el historial de emails de la nota de crédito.';
   }
 
   private resolveCreditNoteEligibilityError(error: HttpErrorResponse): string {
