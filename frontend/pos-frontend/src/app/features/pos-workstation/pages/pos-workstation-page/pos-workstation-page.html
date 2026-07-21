@@ -289,6 +289,8 @@
       creditNoteDownloadingRidePdfId() !== null
       && creditNoteDownloadingRidePdfId() === selectedCreditNoteId()
     "
+    [canSendEmail]="canSubmitSriDocuments"
+    [sendingEmail]="creditNoteEmailSending()"
     [submissionAttempts]="creditNoteSriAttempts()"
     [submissionAttemptsLoading]="creditNoteSriAttemptsLoading()"
     [submissionAttemptsError]="creditNoteSriAttemptsError()"
@@ -303,6 +305,8 @@
     (downloadAuthorizedXml)="downloadCreditNoteSriAuthorizedXml($event)"
     (viewRide)="openCreditNoteSriRide($event)"
     (downloadRidePdf)="downloadCreditNoteSriRidePdf($event)"
+    (sendEmail)="openCreditNoteEmailDialog($event)"
+    (viewEmailDeliveries)="openCreditNoteEmailDeliveries($event)"
     (refreshSubmissionAttempts)="loadCreditNoteSriAttempts()"
   ></app-credit-note-detail-dialog>
 
@@ -320,6 +324,15 @@
     [loading]="invoiceEmailSending()"
     (visibleChange)="onInvoiceEmailVisibleChange($event)"
     (sendEmail)="sendInvoiceEmail($event)"
+  ></app-sale-invoice-email-dialog>
+
+  <app-sale-invoice-email-dialog
+    [visible]="creditNoteEmailVisible()"
+    [sale]="null"
+    [creditNote]="creditNoteEmailCreditNote()"
+    [loading]="creditNoteEmailSending()"
+    (visibleChange)="onCreditNoteEmailVisibleChange($event)"
+    (sendEmail)="sendCreditNoteEmail($event)"
   ></app-sale-invoice-email-dialog>
 
   <app-sri-ride-dialog
@@ -351,6 +364,18 @@
     [companyTimeZoneId]="companyTimeZoneId()"
     (visibleChange)="invoiceEmailDeliveriesVisible.set($event)"
     (refresh)="loadInvoiceEmailDeliveries()"
+  ></app-sale-invoice-email-deliveries-dialog>
+
+  <app-sale-invoice-email-deliveries-dialog
+    [visible]="creditNoteEmailDeliveriesVisible()"
+    [sale]="null"
+    [creditNote]="creditNoteEmailDeliveriesCreditNote()"
+    [deliveries]="creditNoteEmailDeliveries()"
+    [loading]="creditNoteEmailDeliveriesLoading()"
+    [errorMessage]="creditNoteEmailDeliveriesError()"
+    [companyTimeZoneId]="companyTimeZoneId()"
+    (visibleChange)="onCreditNoteEmailDeliveriesVisibleChange($event)"
+    (refresh)="loadCreditNoteEmailDeliveries()"
   ></app-sale-invoice-email-deliveries-dialog>
 
   <app-void-sale-dialog

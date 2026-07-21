@@ -17,9 +17,27 @@ export interface SendSaleInvoiceEmailResult {
   authorizationNumber: string | null;
 }
 
+export interface SendCreditNoteEmailRequest {
+  toEmail: string;
+  ccEmail?: string | null;
+  subject?: string | null;
+  message?: string | null;
+}
+
+export interface SendCreditNoteEmailResult {
+  success: boolean;
+  message: string;
+  sentAt: string;
+  toEmail: string;
+  ccEmail: string | null;
+  documentNumber: string | null;
+  authorizationNumber: string | null;
+}
+
 export interface SaleInvoiceEmailDelivery {
   id: number;
-  saleId: number;
+  saleId: number | null;
+  creditNoteId: number | null;
   toEmail: string;
   ccEmail: string | null;
   subject: string;

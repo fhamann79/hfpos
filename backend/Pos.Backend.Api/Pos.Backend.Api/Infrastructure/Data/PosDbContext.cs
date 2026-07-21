@@ -1243,6 +1243,16 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<SaleInvoiceEmailDelivery>(entity =>
         {
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_SaleInvoiceEmailDeliveries_ExactlyOneDocument",
+                "((\"SaleId\" IS NOT NULL AND \"CreditNoteId\" IS NULL) OR (\"SaleId\" IS NULL AND \"CreditNoteId\" IS NOT NULL))"));
+
+            entity.Property(d => d.SaleId)
+                .IsRequired(false);
+
+            entity.Property(d => d.CreditNoteId)
+                .IsRequired(false);
+
             entity.Property(d => d.ToEmail)
                 .IsRequired()
                 .HasMaxLength(320);
@@ -1271,11 +1281,17 @@ public class PosDbContext : DbContext
                 .HasMaxLength(500);
 
             entity.HasIndex(d => new { d.SaleId, d.CreatedAt });
+            entity.HasIndex(d => new { d.CreditNoteId, d.CreatedAt });
             entity.HasIndex(d => new { d.CompanyId, d.CreatedAt });
 
             entity.HasOne(d => d.Sale)
                 .WithMany(s => s.InvoiceEmailDeliveries)
                 .HasForeignKey(d => d.SaleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(d => d.CreditNote)
+                .WithMany(cn => cn.EmailDeliveries)
+                .HasForeignKey(d => d.CreditNoteId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(d => d.Company)

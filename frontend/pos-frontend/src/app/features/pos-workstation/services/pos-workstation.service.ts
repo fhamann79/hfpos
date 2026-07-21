@@ -244,7 +244,8 @@ export class PosWorkstationService {
 
     return {
       id: this.readNumber(row, ['id'], 0),
-      saleId: this.readNumber(row, ['saleId'], 0),
+      saleId: this.readOptionalNumber(row, ['saleId']),
+      creditNoteId: this.readOptionalNumber(row, ['creditNoteId']),
       toEmail: this.readString(row, ['toEmail'], ''),
       ccEmail: this.readString(row, ['ccEmail'], null),
       subject: this.readString(row, ['subject'], ''),

@@ -5,6 +5,7 @@ import { DialogModule } from 'primeng/dialog';
 import { MessageModule } from 'primeng/message';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
+import { CreditNote } from '../../../credit-notes/models/credit-note.model';
 import {
   SaleInvoiceEmailDelivery,
   saleInvoiceEmailDeliveryStatusLabel,
@@ -23,6 +24,7 @@ import { formatBusinessDateTime } from '../../../../core/utils/business-date-for
 export class SaleInvoiceEmailDeliveriesDialog {
   @Input({ required: true }) visible = false;
   @Input() sale: Sale | null = null;
+  @Input() creditNote: CreditNote | null = null;
   @Input() deliveries: SaleInvoiceEmailDelivery[] = [];
   @Input() loading = false;
   @Input() errorMessage = '';
@@ -30,6 +32,26 @@ export class SaleInvoiceEmailDeliveriesDialog {
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() refresh = new EventEmitter<void>();
+
+  get documentTypeLabel(): string {
+    return this.creditNote !== null && this.sale === null
+      ? 'Nota de crédito'
+      : 'Factura';
+  }
+
+  get documentNumber(): string {
+    const document = this.creditNote !== null && this.sale === null
+      ? this.creditNote
+      : this.sale;
+    return document?.number || (document ? `#${document.id}` : '-');
+  }
+
+  get authorizationNumber(): string {
+    const document = this.creditNote !== null && this.sale === null
+      ? this.creditNote
+      : this.sale;
+    return document?.authorizationNumber || '-';
+  }
 
   statusLabel(delivery: SaleInvoiceEmailDelivery): string {
     return saleInvoiceEmailDeliveryStatusLabel(delivery.status);

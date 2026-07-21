@@ -55,6 +55,8 @@ export class CreditNoteDetailDialog {
   @Input() downloadingAuthorizedXml = false;
   @Input() viewingRide = false;
   @Input() downloadingRidePdf = false;
+  @Input() canSendEmail = false;
+  @Input() sendingEmail = false;
   @Input() submissionAttempts: SriSubmissionAttempt[] = [];
   @Input() submissionAttemptsLoading = false;
   @Input() submissionAttemptsError = '';
@@ -70,6 +72,8 @@ export class CreditNoteDetailDialog {
   @Output() downloadAuthorizedXml = new EventEmitter<number>();
   @Output() viewRide = new EventEmitter<number>();
   @Output() downloadRidePdf = new EventEmitter<number>();
+  @Output() sendEmail = new EventEmitter<number>();
+  @Output() viewEmailDeliveries = new EventEmitter<number>();
   @Output() refreshSubmissionAttempts = new EventEmitter<void>();
 
   dateLabel(value: string | null): string {
@@ -211,6 +215,18 @@ export class CreditNoteDetailDialog {
       && creditNote.voidedAt === null;
   }
 
+  canShowEmail(creditNote: CreditNote): boolean {
+    const isAuthorized =
+      creditNote.documentStatus === SaleDocumentStatus.Authorized
+      || creditNote.sriAuthorizationStatus?.trim().toUpperCase()
+        === 'AUTORIZADO';
+
+    return this.canSendEmail
+      && creditNote.voidedAt === null
+      && isAuthorized
+      && !!creditNote.authorizationNumber?.trim();
+  }
+
   isBusy(): boolean {
     return this.preparingSriDraft
       || this.downloadingSriXmlDraft
@@ -220,7 +236,8 @@ export class CreditNoteDetailDialog {
       || this.checkingAuthorization
       || this.downloadingAuthorizedXml
       || this.viewingRide
-      || this.downloadingRidePdf;
+      || this.downloadingRidePdf
+      || this.sendingEmail;
   }
 
   requestVisibleChange(visible: boolean): void {
@@ -301,6 +318,22 @@ export class CreditNoteDetailDialog {
     }
 
     this.downloadRidePdf.emit(creditNote.id);
+  }
+
+  requestSendEmail(creditNote: CreditNote): void {
+    if (!this.canShowEmail(creditNote) || this.isBusy()) {
+      return;
+    }
+
+    this.sendEmail.emit(creditNote.id);
+  }
+
+  requestViewEmailDeliveries(creditNote: CreditNote): void {
+    if (!this.canShowEmail(creditNote) || this.isBusy()) {
+      return;
+    }
+
+    this.viewEmailDeliveries.emit(creditNote.id);
   }
 
   requestRefreshSubmissionAttempts(): void {

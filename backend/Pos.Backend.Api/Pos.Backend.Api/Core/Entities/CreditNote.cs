@@ -137,4 +137,7 @@ public class CreditNote
 
     public ICollection<SriSubmissionAttempt> SriSubmissionAttempts { get; set; } =
         new List<SriSubmissionAttempt>();
+
+    public ICollection<SaleInvoiceEmailDelivery> EmailDeliveries { get; set; } =
+        new List<SaleInvoiceEmailDelivery>();
 }

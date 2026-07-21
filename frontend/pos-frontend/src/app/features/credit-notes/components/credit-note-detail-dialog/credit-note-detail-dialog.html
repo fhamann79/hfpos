@@ -275,6 +275,26 @@
             (onClick)="requestDownloadRidePdf(note)"
           ></p-button>
         }
+
+        @if (canShowEmail(note)) {
+          <p-button
+            label="Enviar por email"
+            icon="pi pi-envelope"
+            severity="secondary"
+            [outlined]="true"
+            [loading]="sendingEmail"
+            [disabled]="isBusy()"
+            (onClick)="requestSendEmail(note)"
+          ></p-button>
+          <p-button
+            label="Historial email"
+            icon="pi pi-history"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="isBusy()"
+            (onClick)="requestViewEmailDeliveries(note)"
+          ></p-button>
+        }
       </div>
     </section>
 

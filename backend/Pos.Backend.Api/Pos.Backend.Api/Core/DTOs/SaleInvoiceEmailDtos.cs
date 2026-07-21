@@ -32,7 +32,9 @@ public class SaleInvoiceEmailDeliveryDto
 {
     public int Id { get; set; }
 
-    public int SaleId { get; set; }
+    public int? SaleId { get; set; }
+
+    public int? CreditNoteId { get; set; }
 
     public string ToEmail { get; set; } = string.Empty;
 

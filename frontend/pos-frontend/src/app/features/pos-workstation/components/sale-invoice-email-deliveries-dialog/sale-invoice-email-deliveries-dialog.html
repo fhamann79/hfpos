@@ -6,15 +6,15 @@
   [style]="{ width: '66rem', maxWidth: '96vw' }"
   (visibleChange)="visibleChange.emit($event)"
 >
-  @if (sale) {
+  @if (sale || creditNote) {
     <section class="delivery-context">
       <div>
         <span>Documento</span>
-        <strong>{{ sale.number || ('#' + sale.id) }}</strong>
+        <strong>{{ documentTypeLabel }} {{ documentNumber }}</strong>
       </div>
       <div>
-        <span>Autorizacion</span>
-        <code class="long-code">{{ sale.authorizationNumber || '-' }}</code>
+        <span>Autorización</span>
+        <code class="long-code">{{ authorizationNumber }}</code>
       </div>
       <p-button
         label="Refrescar"
@@ -74,7 +74,7 @@
     <ng-template pTemplate="emptymessage">
       <tr>
         <td colspan="6">
-          <div class="empty-state">No hay envios de email registrados.</div>
+          <div class="empty-state">No hay envíos de email registrados.</div>
         </td>
       </tr>
     </ng-template>
