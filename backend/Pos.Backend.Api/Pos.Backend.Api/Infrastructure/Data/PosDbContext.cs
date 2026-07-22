@@ -476,7 +476,7 @@ public class PosDbContext : DbContext
             entity.HasIndex(im => new { im.SourceType, im.SourceId });
             entity.HasIndex(im => new { im.SourceType, im.SourceId, im.SourceLineId })
                 .IsUnique()
-                .HasFilter(@"""SourceId"" IS NOT NULL AND ""SourceLineId"" IS NOT NULL AND ""SourceType"" IN (4, 5, 6, 7)");
+                .HasFilter(@"""SourceId"" IS NOT NULL AND ""SourceLineId"" IS NOT NULL AND ""SourceType"" IN (4, 5, 6, 7, 8)");
 
             entity.HasOne(im => im.Product)
                 .WithMany()
@@ -904,6 +904,10 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<CreditNote>(entity =>
         {
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_CreditNotes_InventoryReturnAuditComplete",
+                "((\"InventoryReturnedAt\" IS NULL AND \"InventoryReturnedByUserId\" IS NULL AND \"InventoryReturnNotes\" IS NULL) OR (\"InventoryReturnedAt\" IS NOT NULL AND \"InventoryReturnedByUserId\" IS NOT NULL))"));
+
             entity.Property(cn => cn.DocumentStatus)
                 .HasConversion<int>();
 
@@ -997,6 +1001,9 @@ public class PosDbContext : DbContext
             entity.Property(cn => cn.SriLastSubmissionError)
                 .HasMaxLength(1000);
 
+            entity.Property(cn => cn.InventoryReturnNotes)
+                .HasMaxLength(500);
+
             entity.Property(cn => cn.GrossSubtotal)
                 .HasPrecision(18, 2);
 
@@ -1037,6 +1044,7 @@ public class PosDbContext : DbContext
             entity.HasIndex(cn => cn.DocumentStatus);
             entity.HasIndex(cn => cn.Number);
             entity.HasIndex(cn => cn.CancelledByUserId);
+            entity.HasIndex(cn => cn.InventoryReturnedByUserId);
             entity.HasIndex(cn => new { cn.CompanyId, cn.EstablishmentId, cn.EmissionPointId, cn.Sequential })
                 .IsUnique()
                 .HasFilter(@"""Sequential"" IS NOT NULL");
@@ -1074,6 +1082,11 @@ public class PosDbContext : DbContext
             entity.HasOne(cn => cn.CancelledByUser)
                 .WithMany()
                 .HasForeignKey(cn => cn.CancelledByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(cn => cn.InventoryReturnedByUser)
+                .WithMany()
+                .HasForeignKey(cn => cn.InventoryReturnedByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

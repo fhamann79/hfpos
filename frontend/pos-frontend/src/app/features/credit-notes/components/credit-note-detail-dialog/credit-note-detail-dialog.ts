@@ -57,6 +57,8 @@ export class CreditNoteDetailDialog {
   @Input() downloadingRidePdf = false;
   @Input() canSendEmail = false;
   @Input() sendingEmail = false;
+  @Input() canReturnInventory = false;
+  @Input() returningInventory = false;
   @Input() submissionAttempts: SriSubmissionAttempt[] = [];
   @Input() submissionAttemptsLoading = false;
   @Input() submissionAttemptsError = '';
@@ -74,6 +76,7 @@ export class CreditNoteDetailDialog {
   @Output() downloadRidePdf = new EventEmitter<number>();
   @Output() sendEmail = new EventEmitter<number>();
   @Output() viewEmailDeliveries = new EventEmitter<number>();
+  @Output() returnInventory = new EventEmitter<number>();
   @Output() refreshSubmissionAttempts = new EventEmitter<void>();
 
   dateLabel(value: string | null): string {
@@ -227,6 +230,19 @@ export class CreditNoteDetailDialog {
       && !!creditNote.authorizationNumber?.trim();
   }
 
+  canShowInventoryReturn(creditNote: CreditNote): boolean {
+    const isAuthorized =
+      creditNote.documentStatus === SaleDocumentStatus.Authorized
+      || creditNote.sriAuthorizationStatus?.trim().toUpperCase()
+        === 'AUTORIZADO';
+
+    return this.canReturnInventory
+      && creditNote.voidedAt === null
+      && !creditNote.hasInventoryReturn
+      && isAuthorized
+      && !!creditNote.authorizationNumber?.trim();
+  }
+
   isBusy(): boolean {
     return this.preparingSriDraft
       || this.downloadingSriXmlDraft
@@ -237,7 +253,8 @@ export class CreditNoteDetailDialog {
       || this.downloadingAuthorizedXml
       || this.viewingRide
       || this.downloadingRidePdf
-      || this.sendingEmail;
+      || this.sendingEmail
+      || this.returningInventory;
   }
 
   requestVisibleChange(visible: boolean): void {
@@ -334,6 +351,14 @@ export class CreditNoteDetailDialog {
     }
 
     this.viewEmailDeliveries.emit(creditNote.id);
+  }
+
+  requestInventoryReturn(creditNote: CreditNote): void {
+    if (!this.canShowInventoryReturn(creditNote) || this.isBusy()) {
+      return;
+    }
+
+    this.returnInventory.emit(creditNote.id);
   }
 
   requestRefreshSubmissionAttempts(): void {

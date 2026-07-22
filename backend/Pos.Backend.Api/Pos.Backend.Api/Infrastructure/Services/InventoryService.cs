@@ -404,6 +404,40 @@ public class InventoryService : IInventoryService
             requireActiveProduct: false);
     }
 
+    public Task<InventoryMovementDto> RegisterCreditNoteReturnAsync(
+        int productId,
+        decimal quantity,
+        int creditNoteId,
+        int creditNoteItemId,
+        string? notes)
+    {
+        if (quantity <= 0m)
+        {
+            throw new InvalidOperationException("INVALID_QUANTITY");
+        }
+
+        if (creditNoteId <= 0)
+        {
+            throw new KeyNotFoundException("CREDIT_NOTE_NOT_FOUND");
+        }
+
+        if (creditNoteItemId <= 0)
+        {
+            throw new InvalidOperationException("CREDIT_NOTE_ITEM_NOT_FOUND");
+        }
+
+        return RegisterMovementAsync(
+            productId,
+            InventoryMovementType.Return,
+            InventoryMovementSourceType.CreditNoteReturn,
+            quantity,
+            $"CREDIT-NOTE-RETURN-{creditNoteId}",
+            notes,
+            creditNoteId,
+            creditNoteItemId,
+            requireActiveProduct: false);
+    }
+
     private async Task<InventoryMovementDto> RegisterMovementAsync(
         int productId,
         InventoryMovementType type,
@@ -434,7 +468,8 @@ public class InventoryService : IInventoryService
 
             var canCreateStock = type == InventoryMovementType.Entry
                 || type == InventoryMovementType.Adjustment
-                || type == InventoryMovementType.Void;
+                || type == InventoryMovementType.Void
+                || type == InventoryMovementType.Return;
 
             if (productStock is null && canCreateStock)
             {
@@ -483,6 +518,9 @@ public class InventoryService : IInventoryService
                     stockAfter = stockBefore - quantity;
                     break;
                 case InventoryMovementType.Void:
+                    stockAfter = stockBefore + quantity;
+                    break;
+                case InventoryMovementType.Return:
                     stockAfter = stockBefore + quantity;
                     break;
                 case InventoryMovementType.Adjustment:

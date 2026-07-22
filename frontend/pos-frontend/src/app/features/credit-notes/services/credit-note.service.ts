@@ -22,6 +22,7 @@ import {
   CreateCreditNoteDraftRequest,
   CreditNote,
   CreditNoteListItem,
+  ReturnCreditNoteInventoryRequest,
 } from '../models/credit-note.model';
 
 @Injectable({ providedIn: 'root' })
@@ -47,6 +48,16 @@ export class CreditNoteService {
 
   getById(creditNoteId: number): Observable<CreditNote> {
     return this.http.get<CreditNote>(`${this.baseUrl}/${creditNoteId}`);
+  }
+
+  returnToInventory(
+    creditNoteId: number,
+    payload: ReturnCreditNoteInventoryRequest
+  ): Observable<CreditNote> {
+    return this.http.post<CreditNote>(
+      `${this.baseUrl}/${creditNoteId}/inventory-return`,
+      payload
+    );
   }
 
   prepareSriDraft(creditNoteId: number): Observable<CreditNote> {
