@@ -5,6 +5,7 @@ export enum InventoryMovementType {
   Adjustment = 3,
   Sale = 4,
   Void = 5,
+  Return = 6,
 }
 
 export enum InventoryMovementSourceType {
@@ -15,6 +16,7 @@ export enum InventoryMovementSourceType {
   SaleVoid = 5,
   PurchaseReceipt = 6,
   PurchaseReceiptCancel = 7,
+  CreditNoteReturn = 8,
 }
 
 export interface InventoryMovement {

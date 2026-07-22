@@ -16,4 +16,5 @@ public interface IInventoryService
     Task<InventoryMovementDto> RegisterVoidAsync(int productId, decimal quantity, int saleId, int saleItemId, string? notes);
     Task<InventoryMovementDto> RegisterPurchaseReceiptAsync(int productId, decimal quantity, int purchaseReceiptId, int purchaseReceiptItemId, string? notes);
     Task<InventoryMovementDto> RegisterPurchaseReceiptCancelAsync(int productId, decimal quantity, int purchaseReceiptId, int purchaseReceiptItemId, string? notes);
+    Task<InventoryMovementDto> RegisterCreditNoteReturnAsync(int productId, decimal quantity, int creditNoteId, int creditNoteItemId, string? notes);
 }

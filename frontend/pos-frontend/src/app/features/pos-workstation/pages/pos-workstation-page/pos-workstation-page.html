@@ -291,6 +291,8 @@
     "
     [canSendEmail]="canSubmitSriDocuments"
     [sendingEmail]="creditNoteEmailSending()"
+    [canReturnInventory]="canWriteInventory"
+    [returningInventory]="creditNoteInventoryReturningId() === selectedCreditNoteId()"
     [submissionAttempts]="creditNoteSriAttempts()"
     [submissionAttemptsLoading]="creditNoteSriAttemptsLoading()"
     [submissionAttemptsError]="creditNoteSriAttemptsError()"
@@ -307,8 +309,17 @@
     (downloadRidePdf)="downloadCreditNoteSriRidePdf($event)"
     (sendEmail)="openCreditNoteEmailDialog($event)"
     (viewEmailDeliveries)="openCreditNoteEmailDeliveries($event)"
+    (returnInventory)="openCreditNoteInventoryReturnDialog($event)"
     (refreshSubmissionAttempts)="loadCreditNoteSriAttempts()"
   ></app-credit-note-detail-dialog>
+
+  <app-credit-note-inventory-return-dialog
+    [visible]="creditNoteInventoryReturnVisible()"
+    [creditNote]="creditNoteInventoryReturnCreditNote()"
+    [loading]="creditNoteInventoryReturningId() !== null"
+    (visibleChange)="onCreditNoteInventoryReturnVisibleChange($event)"
+    (confirmReturn)="confirmCreditNoteInventoryReturn($event)"
+  ></app-credit-note-inventory-return-dialog>
 
   <app-cancel-credit-note-draft-dialog
     [visible]="creditNoteCancelVisible()"
