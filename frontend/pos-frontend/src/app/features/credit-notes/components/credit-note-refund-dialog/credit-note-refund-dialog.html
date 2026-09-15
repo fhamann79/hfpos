@@ -1,0 +1,63 @@
+<p-dialog
+  header="Devolución económica"
+  [visible]="visible"
+  [modal]="true"
+  [closable]="!loading"
+  [closeOnEscape]="!loading"
+  [draggable]="false"
+  [style]="{ width: '42rem', maxWidth: '95vw', maxHeight: '92vh' }"
+  styleClass="credit-note-refund-dialog"
+  (visibleChange)="requestVisibleChange($event)"
+>
+  @if (creditNote; as note) {
+    <dl class="refund-summary">
+      <div><dt>Nota de crédito</dt><dd>{{ note.number || ('#' + note.id) }}</dd></div>
+      <div><dt>Factura original</dt><dd>{{ note.originalSaleNumberSnapshot || ('#' + note.originalSaleId) }}</dd></div>
+      <div><dt>Método de pago original</dt><dd>{{ paymentMethodLabel(note.originalSalePaymentMethod) }}</dd></div>
+      <div><dt>Total a devolver</dt><dd>{{ note.total | currency: 'USD' : 'symbol' : '1.2-2' }}</dd></div>
+    </dl>
+
+    <form class="refund-form" [formGroup]="form" (ngSubmit)="submit()">
+      <label for="credit-note-refund-method">Método de devolución</label>
+      <p-select
+        inputId="credit-note-refund-method"
+        formControlName="method"
+        [options]="paymentMethods"
+        optionLabel="label"
+        optionValue="value"
+        appendTo="body"
+        [style]="{ width: '100%' }"
+      ></p-select>
+
+      @if (isCash) {
+        <p-message severity="warn" text="La devolución en efectivo generará una salida en la caja abierta del usuario actual."></p-message>
+        @if (cashSessionLoading) {
+          <p-message severity="info" text="Consultando caja actual..."></p-message>
+        } @else if (hasOpenCashSession === false) {
+          <p-message severity="error" text="Debes abrir una caja antes de registrar una devolución en efectivo."></p-message>
+        }
+      } @else {
+        <p-message severity="info" text="El sistema registrará la devolución económica, pero no ejecutará automáticamente una reversión bancaria o de tarjeta."></p-message>
+      }
+
+      <label for="credit-note-refund-reference">Referencia</label>
+      <input id="credit-note-refund-reference" pInputText formControlName="reference" maxlength="150" autocomplete="off" placeholder="Opcional" />
+      @if (form.controls.reference.touched && form.controls.reference.hasError('maxlength')) {
+        <small class="p-error">La referencia no puede superar 150 caracteres.</small>
+      }
+
+      <label for="credit-note-refund-notes">Observaciones</label>
+      <textarea id="credit-note-refund-notes" pTextarea formControlName="notes" maxlength="500" rows="3" placeholder="Opcional"></textarea>
+      @if (form.controls.notes.touched && form.controls.notes.hasError('maxlength')) {
+        <small class="p-error">Las observaciones no pueden superar 500 caracteres.</small>
+      }
+    </form>
+  }
+  <ng-template pTemplate="footer">
+    <div class="dialog-actions">
+      <p-button label="Cancelar" severity="secondary" [outlined]="true" [disabled]="loading" (onClick)="requestVisibleChange(false)"></p-button>
+      <p-button label="Registrar devolución" icon="pi pi-wallet" [loading]="loading"
+        [disabled]="loading || !creditNote || form.invalid || cashBlocked" (onClick)="submit()"></p-button>
+    </div>
+  </ng-template>
+</p-dialog>

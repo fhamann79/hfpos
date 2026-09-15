@@ -89,6 +89,7 @@ builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<ICashSessionService, CashSessionService>();
 builder.Services.AddScoped<ICreditNoteService, CreditNoteService>();
 builder.Services.AddScoped<ICreditNoteInventoryReturnService, CreditNoteInventoryReturnService>();
+builder.Services.AddScoped<ICreditNoteRefundService, CreditNoteRefundService>();
 builder.Services.AddSingleton<ISriFiscalClock, SriFiscalClock>();
 builder.Services.AddScoped<ISriAccessKeyService, SriAccessKeyService>();
 builder.Services.AddScoped<ISriXmlDraftService, SriXmlDraftService>();

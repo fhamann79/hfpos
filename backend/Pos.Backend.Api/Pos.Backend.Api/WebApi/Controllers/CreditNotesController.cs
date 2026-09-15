@@ -20,6 +20,7 @@ public class CreditNotesController : ControllerBase
     private readonly ISriRidePdfService _sriRidePdfService;
     private readonly ICreditNoteEmailService _creditNoteEmailService;
     private readonly ICreditNoteInventoryReturnService _creditNoteInventoryReturnService;
+    private readonly ICreditNoteRefundService _creditNoteRefundService;
 
     public CreditNotesController(
         ICreditNoteService creditNoteService,
@@ -27,7 +28,8 @@ public class CreditNotesController : ControllerBase
         ISriCreditNoteSubmissionService sriCreditNoteSubmissionService,
         ISriRidePdfService sriRidePdfService,
         ICreditNoteEmailService creditNoteEmailService,
-        ICreditNoteInventoryReturnService creditNoteInventoryReturnService)
+        ICreditNoteInventoryReturnService creditNoteInventoryReturnService,
+        ICreditNoteRefundService creditNoteRefundService)
     {
         _creditNoteService = creditNoteService;
         _sriCreditNoteSigningService = sriCreditNoteSigningService;
@@ -35,6 +37,7 @@ public class CreditNotesController : ControllerBase
         _sriRidePdfService = sriRidePdfService;
         _creditNoteEmailService = creditNoteEmailService;
         _creditNoteInventoryReturnService = creditNoteInventoryReturnService;
+        _creditNoteRefundService = creditNoteRefundService;
     }
 
     [HttpGet("original-sales/{saleId:int}/eligibility")]
@@ -429,6 +432,28 @@ public class CreditNotesController : ControllerBase
         }
     }
 
+    [HttpPost("{id:int}/refund")]
+    [Authorize(Policy = AppPermissions.PosSalesVoid)]
+    [ProducesResponseType(typeof(CreditNoteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<CreditNoteDto>> Refund(
+        int id, [FromBody] RefundCreditNoteDto dto)
+    {
+        try
+        {
+            return Ok(await _creditNoteRefundService.RefundAsync(id, dto));
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
     private ActionResult MapDomainError(Exception exception)
     {
         var code = exception.Message;
@@ -443,6 +468,20 @@ public class CreditNotesController : ControllerBase
             "CREDIT_NOTE_SRI_AUTHORIZED_XML_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_RIDE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_REASON_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_REFUND_METHOD_INVALID" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_REFUND_REFERENCE_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_REFUND_NOTES_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_REFUND_AMOUNT_INVALID" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CASH_MOVEMENT_AMOUNT_INVALID" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CASH_MOVEMENT_REASON_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_REFUND_CANCELLED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_REFUND_REJECTED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_REFUND_ONLY_AUTHORIZED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_REFUND_INCONSISTENT" => Conflict(new ApiErrorResponse { Error = code }),
+            "CASH_SESSION_REQUIRED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CASH_SESSION_NOT_OPEN" => Conflict(new ApiErrorResponse { Error = code }),
+            "CASH_SESSION_CONTEXT_MISMATCH" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_REFUND_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_EMAIL_INVALID_ADDRESS" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_EMAIL_OPERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
             "COMPANY_EMAIL_SETTINGS_NOT_CONFIGURED" => BadRequest(new ApiErrorResponse { Error = code }),

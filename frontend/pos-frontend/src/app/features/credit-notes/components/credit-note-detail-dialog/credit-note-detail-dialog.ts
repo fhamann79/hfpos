@@ -22,7 +22,8 @@ import {
   sriSubmissionAttemptStatusSeverity,
   sriSubmissionAttemptTypeLabel,
 } from '../../../pos-workstation/models/sri-submission-attempt.model';
-import { CreditNote } from '../../models/credit-note.model';
+import { salePaymentMethodLabel } from '../../../pos-workstation/models/sale-payment-method.model';
+import { CreditNote, CreditNoteRefund, isCreditNoteRefundEligible } from '../../models/credit-note.model';
 
 @Component({
   selector: 'app-credit-note-detail-dialog',
@@ -59,6 +60,8 @@ export class CreditNoteDetailDialog {
   @Input() sendingEmail = false;
   @Input() canReturnInventory = false;
   @Input() returningInventory = false;
+  @Input() canRefund = false;
+  @Input() refunding = false;
   @Input() submissionAttempts: SriSubmissionAttempt[] = [];
   @Input() submissionAttemptsLoading = false;
   @Input() submissionAttemptsError = '';
@@ -77,7 +80,27 @@ export class CreditNoteDetailDialog {
   @Output() sendEmail = new EventEmitter<number>();
   @Output() viewEmailDeliveries = new EventEmitter<number>();
   @Output() returnInventory = new EventEmitter<number>();
+  @Output() refund = new EventEmitter<number>();
   @Output() refreshSubmissionAttempts = new EventEmitter<void>();
+
+  readonly paymentMethodLabel = salePaymentMethodLabel;
+
+  refundDateLabel(refund: CreditNoteRefund): string {
+    return formatBusinessDateTime(
+      refund.refundedAt, refund.timeZoneIdSnapshot || this.companyTimeZoneId
+    ) || '-';
+  }
+
+  canShowRefund(creditNote: CreditNote): boolean {
+    return this.canRefund && isCreditNoteRefundEligible(creditNote);
+  }
+
+  requestRefund(creditNote: CreditNote): void {
+    if (this.loading || this.isBusy() || !this.canShowRefund(creditNote)) {
+      return;
+    }
+    this.refund.emit(creditNote.id);
+  }
 
   dateLabel(value: string | null): string {
     return formatBusinessDateTime(value, this.companyTimeZoneId) || '-';
@@ -254,7 +277,8 @@ export class CreditNoteDetailDialog {
       || this.viewingRide
       || this.downloadingRidePdf
       || this.sendingEmail
-      || this.returningInventory;
+      || this.returningInventory
+      || this.refunding;
   }
 
   requestVisibleChange(visible: boolean): void {
