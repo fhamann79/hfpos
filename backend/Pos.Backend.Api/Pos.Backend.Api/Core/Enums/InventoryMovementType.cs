@@ -7,5 +7,6 @@ public enum InventoryMovementType
     Exit = 2,
     Adjustment = 3,
     Sale = 4,
-    Void = 5
+    Void = 5,
+    Return = 6
 }

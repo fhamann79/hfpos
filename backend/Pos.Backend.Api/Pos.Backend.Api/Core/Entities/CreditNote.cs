@@ -94,6 +94,13 @@ public class CreditNote
 
     public DateTime? SriLastCheckedAt { get; set; }
 
+    public DateTime? InventoryReturnedAt { get; set; }
+
+    public int? InventoryReturnedByUserId { get; set; }
+    public User? InventoryReturnedByUser { get; set; }
+
+    public string? InventoryReturnNotes { get; set; }
+
     public string Reason { get; set; } = string.Empty;
 
     public string? Notes { get; set; }

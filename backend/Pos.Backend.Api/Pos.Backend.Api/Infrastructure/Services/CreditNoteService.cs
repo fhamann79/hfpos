@@ -294,6 +294,7 @@ public class CreditNoteService : ICreditNoteService
                 .Include(note => note.Items)
                 .ThenInclude(item => item.Product)
                 .Include(note => note.CancelledByUser)
+                .Include(note => note.InventoryReturnedByUser)
                 .Include(note => note.OriginalSale)
                 .SingleOrDefaultAsync(note =>
                     note.Id == creditNoteId
@@ -980,6 +981,12 @@ public class CreditNoteService : ICreditNoteService
             SriAuthorizationStatus = creditNote.SriAuthorizationStatus,
             SriLastSubmissionError = creditNote.SriLastSubmissionError,
             SriLastCheckedAt = creditNote.SriLastCheckedAt,
+            HasInventoryReturn = creditNote.InventoryReturnedAt.HasValue
+                && creditNote.InventoryReturnedByUserId.HasValue,
+            InventoryReturnedAt = creditNote.InventoryReturnedAt,
+            InventoryReturnedByUserId = creditNote.InventoryReturnedByUserId,
+            InventoryReturnedByUsername = creditNote.InventoryReturnedByUser?.Username,
+            InventoryReturnNotes = creditNote.InventoryReturnNotes,
             Reason = creditNote.Reason,
             Notes = creditNote.Notes,
             GrossSubtotal = creditNote.GrossSubtotal,

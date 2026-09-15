@@ -19,19 +19,22 @@ public class CreditNotesController : ControllerBase
     private readonly ISriCreditNoteSubmissionService _sriCreditNoteSubmissionService;
     private readonly ISriRidePdfService _sriRidePdfService;
     private readonly ICreditNoteEmailService _creditNoteEmailService;
+    private readonly ICreditNoteInventoryReturnService _creditNoteInventoryReturnService;
 
     public CreditNotesController(
         ICreditNoteService creditNoteService,
         ISriCreditNoteSigningService sriCreditNoteSigningService,
         ISriCreditNoteSubmissionService sriCreditNoteSubmissionService,
         ISriRidePdfService sriRidePdfService,
-        ICreditNoteEmailService creditNoteEmailService)
+        ICreditNoteEmailService creditNoteEmailService,
+        ICreditNoteInventoryReturnService creditNoteInventoryReturnService)
     {
         _creditNoteService = creditNoteService;
         _sriCreditNoteSigningService = sriCreditNoteSigningService;
         _sriCreditNoteSubmissionService = sriCreditNoteSubmissionService;
         _sriRidePdfService = sriRidePdfService;
         _creditNoteEmailService = creditNoteEmailService;
+        _creditNoteInventoryReturnService = creditNoteInventoryReturnService;
     }
 
     [HttpGet("original-sales/{saleId:int}/eligibility")]
@@ -399,6 +402,33 @@ public class CreditNotesController : ControllerBase
         }
     }
 
+    [HttpPost("{id:int}/inventory-return")]
+    [Authorize(Policy = AppPermissions.InventoryWrite)]
+    [ProducesResponseType(typeof(CreditNoteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<CreditNoteDto>> ReturnToInventory(
+        int id,
+        [FromBody] ReturnCreditNoteInventoryDto dto)
+    {
+        try
+        {
+            return Ok(await _creditNoteInventoryReturnService
+                .ReturnToInventoryAsync(
+                    id,
+                    dto ?? new ReturnCreditNoteInventoryDto()));
+        }
+        catch (Exception ex) when (
+            ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return MapDomainError(ex);
+        }
+    }
+
     private ActionResult MapDomainError(Exception exception)
     {
         var code = exception.Message;
@@ -407,6 +437,7 @@ public class CreditNotesController : ControllerBase
         {
             "SALE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
+            "PRODUCT_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_XML_DRAFT_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_SIGNED_XML_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_AUTHORIZED_XML_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
@@ -428,6 +459,9 @@ public class CreditNotesController : ControllerBase
             "CREDIT_NOTE_DUPLICATE_SALE_ITEM" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_ITEM_NOT_FOUND" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_INVALID_QUANTITY" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_INVENTORY_RETURN_NOTES_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_INVENTORY_RETURN_ITEM_INVALID" => BadRequest(new ApiErrorResponse { Error = code }),
+            "INVALID_QUANTITY" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_CANCELLATION_REASON_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_CANCELLATION_REASON_TOO_LONG" => BadRequest(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_ORIGINAL_SALE_NOT_INVOICE" => BadRequest(new ApiErrorResponse { Error = code }),
@@ -438,6 +472,11 @@ public class CreditNotesController : ControllerBase
             "CREDIT_NOTE_ORIGINAL_SALE_VOIDED" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_ORIGINAL_SALE_FULLY_CREDITED" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_QUANTITY_EXCEEDS_AVAILABLE" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_INVENTORY_RETURN_CANCELLED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_INVENTORY_RETURN_REJECTED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_INVENTORY_RETURN_ONLY_AUTHORIZED" => Conflict(new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_INVENTORY_RETURN_INCONSISTENT" => Conflict(new ApiErrorResponse { Error = code }),
+            "INVENTORY_CONCURRENCY_CONFLICT" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_DRAFT_ALREADY_CANCELLED" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_EMAIL_VOIDED" => Conflict(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_EMAIL_NOT_AUTHORIZED" => Conflict(new ApiErrorResponse { Error = code }),
@@ -493,6 +532,7 @@ public class CreditNotesController : ControllerBase
             "CERTIFICATE_UNPROTECT_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "SRI_XML_SIGNING_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_SRI_RIDE_PDF_GENERATION_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
+            "CREDIT_NOTE_INVENTORY_RETURN_FAILED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "SRI_RECEPTION_ENDPOINT_NOT_CONFIGURED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "SRI_AUTHORIZATION_ENDPOINT_NOT_CONFIGURED" => StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse { Error = code }),
             "SRI_RECEPTION_COMMUNICATION_FAILED" => StatusCode(StatusCodes.Status502BadGateway, new ApiErrorResponse { Error = code }),

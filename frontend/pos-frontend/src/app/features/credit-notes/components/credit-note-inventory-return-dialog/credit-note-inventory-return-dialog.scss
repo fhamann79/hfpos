@@ -1,0 +1,131 @@
+:host ::ng-deep .credit-note-inventory-return-dialog {
+  display:flex;
+  flex-direction:column;
+  max-height:92vh;
+}
+
+:host ::ng-deep .credit-note-inventory-return-dialog .p-dialog-content {
+  min-height:0;
+  overflow-y:auto;
+}
+
+.return-summary {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:.75rem;
+  margin-bottom:.9rem;
+  padding:.85rem;
+  border:1px solid #cbd5e1;
+  border-radius:6px;
+  background:#f8fafc;
+}
+
+.return-summary > div {
+  min-width:0;
+  display:grid;
+  gap:.2rem;
+}
+
+.return-summary span {
+  color:#64748b;
+  font-size:.72rem;
+  font-weight:800;
+  text-transform:uppercase;
+}
+
+.return-summary strong {
+  color:#0f172a;
+  overflow-wrap:anywhere;
+}
+
+:host ::ng-deep .p-message {
+  width:100%;
+  margin-bottom:.9rem;
+}
+
+.return-items-scroll {
+  width:100%;
+  min-width:0;
+  overflow-x:auto;
+  margin-bottom:.9rem;
+}
+
+:host ::ng-deep .return-items-scroll .p-datatable-wrapper {
+  overflow:visible;
+}
+
+:host ::ng-deep .return-items-table th,
+:host ::ng-deep .return-items-table td {
+  padding:.65rem .75rem;
+}
+
+.return-code-column,
+.return-code-cell {
+  width:10rem;
+}
+
+.return-quantity-column,
+.return-quantity-cell {
+  width:8rem;
+  text-align:right;
+}
+
+.return-product-cell,
+.return-code-cell {
+  overflow-wrap:anywhere;
+}
+
+.return-product-cell {
+  font-weight:700;
+}
+
+.return-form {
+  display:grid;
+  gap:.4rem;
+}
+
+.return-form label {
+  color:#334155;
+  font-size:.82rem;
+  font-weight:800;
+}
+
+.return-form textarea {
+  width:100%;
+  resize:vertical;
+}
+
+.return-form__meta {
+  display:flex;
+  justify-content:space-between;
+  gap:.75rem;
+  color:#64748b;
+}
+
+.dialog-actions {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  gap:.5rem;
+}
+
+@media (max-width:720px) {
+  .return-summary {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+
+@media (max-width:480px) {
+  .return-summary {
+    grid-template-columns:1fr;
+  }
+
+  .dialog-actions p-button {
+    flex:1 1 100%;
+  }
+
+  :host ::ng-deep .dialog-actions .p-button {
+    width:100%;
+    justify-content:center;
+  }
+}

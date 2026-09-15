@@ -17,6 +17,10 @@ export interface CancelCreditNoteDraftRequest {
   reason: string;
 }
 
+export interface ReturnCreditNoteInventoryRequest {
+  notes: string | null;
+}
+
 export interface CreditNoteListItem {
   id: number;
   originalSaleId: number;
@@ -74,6 +78,11 @@ export interface CreditNote {
   sriAuthorizationStatus: string | null;
   sriLastSubmissionError: string | null;
   sriLastCheckedAt: string | null;
+  hasInventoryReturn: boolean;
+  inventoryReturnedAt: string | null;
+  inventoryReturnedByUserId: number | null;
+  inventoryReturnedByUsername: string | null;
+  inventoryReturnNotes: string | null;
   reason: string;
   notes: string | null;
   grossSubtotal: number;

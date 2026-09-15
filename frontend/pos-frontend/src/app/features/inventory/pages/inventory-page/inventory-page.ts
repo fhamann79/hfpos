@@ -140,6 +140,7 @@ export class InventoryPage implements OnInit {
     { label: 'Ajuste', value: InventoryMovementType.Adjustment },
     { label: 'Venta', value: InventoryMovementType.Sale },
     { label: 'Anulación', value: InventoryMovementType.Void },
+    { label: 'Devolución', value: InventoryMovementType.Return },
   ];
 
   readonly sourceTypeOptions: SelectOption<InventoryMovementSourceType>[] = [
@@ -150,6 +151,7 @@ export class InventoryPage implements OnInit {
     { label: 'Anulación de venta', value: InventoryMovementSourceType.SaleVoid },
     { label: 'Recepción de compra', value: InventoryMovementSourceType.PurchaseReceipt },
     { label: 'Cancelación recepción de compra', value: InventoryMovementSourceType.PurchaseReceiptCancel },
+    { label: 'Nota de crédito', value: InventoryMovementSourceType.CreditNoteReturn },
   ];
 
   readonly operationOptions: SelectOption<InventoryOperationKind>[] = [
@@ -440,7 +442,7 @@ export class InventoryPage implements OnInit {
   }
 
   movementSeverity(type: InventoryMovementType): 'success' | 'secondary' | 'info' | 'warn' | 'danger' | 'contrast' | undefined {
-    if (type === InventoryMovementType.Entry) {
+    if (type === InventoryMovementType.Entry || type === InventoryMovementType.Return) {
       return 'success';
     }
 
@@ -476,6 +478,10 @@ export class InventoryPage implements OnInit {
       return 'source-badge source-badge--purchase-cancel';
     }
 
+    if (sourceType === InventoryMovementSourceType.CreditNoteReturn) {
+      return 'source-badge source-badge--credit-note-return';
+    }
+
     if (sourceType === InventoryMovementSourceType.ManualAdjustment) {
       return 'source-badge source-badge--adjustment';
     }
@@ -497,8 +503,10 @@ export class InventoryPage implements OnInit {
 
   isReversalMovement(movement: InventoryMovement): boolean {
     return movement.type === InventoryMovementType.Void
+      || movement.type === InventoryMovementType.Return
       || movement.sourceType === InventoryMovementSourceType.SaleVoid
-      || movement.sourceType === InventoryMovementSourceType.PurchaseReceiptCancel;
+      || movement.sourceType === InventoryMovementSourceType.PurchaseReceiptCancel
+      || movement.sourceType === InventoryMovementSourceType.CreditNoteReturn;
   }
 
   currentOperationForm(): InventoryOperationForm {
