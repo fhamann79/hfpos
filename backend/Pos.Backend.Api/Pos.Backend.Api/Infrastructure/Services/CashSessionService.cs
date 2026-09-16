@@ -322,6 +322,74 @@ public class CashSessionService : ICashSessionService
         return session ?? throw new InvalidOperationException("CASH_SESSION_REQUIRED");
     }
 
+    public async Task<CashMovement> RegisterCreditNoteRefundCashOutAsync(
+        int creditNoteId, decimal amount, string reason)
+    {
+        amount = RoundMoney(amount);
+        if (amount <= 0m)
+        {
+            throw new InvalidOperationException("CASH_MOVEMENT_AMOUNT_INVALID");
+        }
+
+        var normalizedReason = NormalizeOptionalText(reason);
+        if (normalizedReason is null || normalizedReason.Length > 300)
+        {
+            throw new InvalidOperationException("CASH_MOVEMENT_REASON_REQUIRED");
+        }
+
+        // The refund owns the transaction and document locks; never commit a standalone cash-out.
+        if (creditNoteId <= 0 || _context.Database.CurrentTransaction is null)
+        {
+            throw new InvalidOperationException("CREDIT_NOTE_REFUND_FAILED");
+        }
+
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var session = await _context.CashSessions
+            .FromSqlInterpolated($@"
+                SELECT * FROM ""CashSessions""
+                WHERE ""CompanyId"" = {operationalContext.CompanyId}
+                  AND ""EstablishmentId"" = {operationalContext.EstablishmentId}
+                  AND ""EmissionPointId"" = {operationalContext.EmissionPointId}
+                  AND ""OpenedByUserId"" = {operationalContext.UserId}
+                  AND ""Status"" = {(int)CashSessionStatus.Open}
+                FOR UPDATE")
+            .SingleOrDefaultAsync();
+
+        if (session is null)
+        {
+            throw new InvalidOperationException("CASH_SESSION_REQUIRED");
+        }
+
+        EnsureSessionExistsAndMatchesContext(session, operationalContext, requireCurrentUser: true);
+        if (session.Status != CashSessionStatus.Open)
+        {
+            throw new InvalidOperationException("CASH_SESSION_NOT_OPEN");
+        }
+
+        var now = _businessClock.UtcNow;
+        var movement = new CashMovement
+        {
+            CashSessionId = session.Id,
+            CompanyId = operationalContext.CompanyId,
+            EstablishmentId = operationalContext.EstablishmentId,
+            EmissionPointId = operationalContext.EmissionPointId,
+            UserId = operationalContext.UserId,
+            Type = CashMovementType.CashOut,
+            Amount = amount,
+            Reason = normalizedReason,
+            CreatedAt = now,
+            BusinessDate = _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId),
+            TimeZoneIdSnapshot = operationalContext.CompanyTimeZoneId
+        };
+
+        var totals = await CalculateLiveTotalsAsync(session.Id, session.OpeningAmount);
+        session.CashOutAmount = RoundMoney(totals.CashOutAmount + amount);
+        session.ExpectedCashAmount = RoundMoney(totals.ExpectedCashAmount - amount);
+        _context.CashMovements.Add(movement);
+        await _context.SaveChangesAsync();
+        return movement;
+    }
+
     private IQueryable<CashSession> BuildBaseSessionQuery(OperationalContext operationalContext)
     {
         return _context.CashSessions

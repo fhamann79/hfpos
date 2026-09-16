@@ -46,6 +46,42 @@
       </div>
     </section>
 
+    <section class="detail-section">
+      <div class="section-heading section-heading--actions">
+        <h3>Devolución económica</h3>
+        @if (canShowRefund(note)) {
+          <p-button
+            label="Registrar devolución económica"
+            icon="pi pi-wallet"
+            [loading]="refunding"
+            [disabled]="loading || isBusy()"
+            (onClick)="requestRefund(note)"
+          ></p-button>
+        }
+      </div>
+      <div class="detail-grid">
+        <div>
+          <span>Estado</span>
+          <p-tag [value]="note.hasFinancialRefund ? 'Registrada' : 'Pendiente'"
+            [severity]="note.hasFinancialRefund ? 'success' : 'warn'"></p-tag>
+        </div>
+        @if (note.financialRefund; as refund) {
+          <div><span>Método</span><strong>{{ paymentMethodLabel(refund.method) }}</strong></div>
+          <div><span>Valor</span><strong>{{ refund.amount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+          <div><span>Registrada el</span><strong>{{ refundDateLabel(refund) }}</strong></div>
+          <div><span>Registrada por</span><strong>{{ refund.refundedByUsername }}</strong></div>
+          @if (refund.cashSessionId !== null) {
+            <div><span>Sesión de caja</span><strong>#{{ refund.cashSessionId }}</strong></div>
+          }
+          @if (refund.cashMovementId !== null) {
+            <div><span>Movimiento de caja</span><strong>#{{ refund.cashMovementId }}</strong></div>
+          }
+          <div class="detail-grid__wide"><span>Referencia</span><strong>{{ refund.reference || '-' }}</strong></div>
+          <div class="detail-grid__wide"><span>Observaciones</span><strong>{{ refund.notes || '-' }}</strong></div>
+        }
+      </div>
+    </section>
+
     <section class="detail-section inventory-return-section">
       <div class="section-heading section-heading--actions">
         <h3>Devolución física</h3>

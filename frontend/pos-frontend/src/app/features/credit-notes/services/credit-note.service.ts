@@ -22,6 +22,7 @@ import {
   CreateCreditNoteDraftRequest,
   CreditNote,
   CreditNoteListItem,
+  RefundCreditNoteRequest,
   ReturnCreditNoteInventoryRequest,
 } from '../models/credit-note.model';
 
@@ -58,6 +59,10 @@ export class CreditNoteService {
       `${this.baseUrl}/${creditNoteId}/inventory-return`,
       payload
     );
+  }
+
+  refund(creditNoteId: number, payload: RefundCreditNoteRequest): Observable<CreditNote> {
+    return this.http.post<CreditNote>(`${this.baseUrl}/${creditNoteId}/refund`, payload);
   }
 
   prepareSriDraft(creditNoteId: number): Observable<CreditNote> {

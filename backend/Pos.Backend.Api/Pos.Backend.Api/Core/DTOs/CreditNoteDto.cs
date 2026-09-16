@@ -8,6 +8,12 @@ public class CreditNoteDto
 
     public int OriginalSaleId { get; set; }
 
+    public SalePaymentMethod OriginalSalePaymentMethod { get; set; }
+
+    public bool HasFinancialRefund { get; set; }
+
+    public CreditNoteRefundDto? FinancialRefund { get; set; }
+
     public string? OriginalSaleNumberSnapshot { get; set; }
 
     public string? OriginalSaleAccessKeySnapshot { get; set; }

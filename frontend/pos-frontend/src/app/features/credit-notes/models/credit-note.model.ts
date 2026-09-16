@@ -1,5 +1,6 @@
 import { ProductVatCategory } from '../../../core/utils/vat-category';
 import { SaleDocumentStatus } from '../../pos-workstation/models/sale-document.model';
+import { SalePaymentMethod } from '../../pos-workstation/models/sale-payment-method.model';
 
 export interface CreateCreditNoteDraftRequest {
   originalSaleId: number;
@@ -18,6 +19,28 @@ export interface CancelCreditNoteDraftRequest {
 }
 
 export interface ReturnCreditNoteInventoryRequest {
+  notes: string | null;
+}
+
+export interface RefundCreditNoteRequest {
+  method: SalePaymentMethod;
+  reference: string | null;
+  notes: string | null;
+}
+
+export interface CreditNoteRefund {
+  id: number;
+  creditNoteId: number;
+  method: SalePaymentMethod;
+  amount: number;
+  refundedAt: string;
+  businessDate: string;
+  timeZoneIdSnapshot: string;
+  refundedByUserId: number;
+  refundedByUsername: string;
+  cashSessionId: number | null;
+  cashMovementId: number | null;
+  reference: string | null;
   notes: string | null;
 }
 
@@ -43,6 +66,9 @@ export interface CreditNoteListItem {
 export interface CreditNote {
   id: number;
   originalSaleId: number;
+  originalSalePaymentMethod: SalePaymentMethod;
+  hasFinancialRefund: boolean;
+  financialRefund: CreditNoteRefund | null;
   originalSaleNumberSnapshot: string | null;
   originalSaleAccessKeySnapshot: string | null;
   originalSaleAuthorizationNumberSnapshot: string | null;
@@ -124,4 +150,16 @@ export interface CreditNoteItem {
   taxableSubtotal: number;
   taxAmount: number;
   lineTotal: number;
+}
+
+export function isCreditNoteRefundEligible(note: CreditNote): boolean {
+  return !note.hasFinancialRefund
+    && !note.financialRefund
+    && note.voidedAt === null
+    && note.documentStatus !== SaleDocumentStatus.Cancelled
+    && note.documentStatus !== SaleDocumentStatus.Rejected
+    && (note.documentStatus === SaleDocumentStatus.Authorized
+      || note.sriAuthorizationStatus?.trim().toUpperCase() === 'AUTORIZADO')
+    && !!note.authorizationNumber?.trim()
+    && !!note.accessKey?.trim();
 }

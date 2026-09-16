@@ -37,6 +37,7 @@ public class PosDbContext : DbContext
     public DbSet<Sale> Sales { get; set; }
     public DbSet<SaleItem> SaleItems { get; set; }
     public DbSet<CreditNote> CreditNotes { get; set; }
+    public DbSet<CreditNoteRefund> CreditNoteRefunds { get; set; }
     public DbSet<CreditNoteItem> CreditNoteItems { get; set; }
     public DbSet<SriSubmissionAttempt> SriSubmissionAttempts { get; set; }
     public DbSet<SaleInvoiceEmailDelivery> SaleInvoiceEmailDeliveries { get; set; }
@@ -1087,6 +1088,47 @@ public class PosDbContext : DbContext
             entity.HasOne(cn => cn.InventoryReturnedByUser)
                 .WithMany()
                 .HasForeignKey(cn => cn.InventoryReturnedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CreditNoteRefund>(entity =>
+        {
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint("CK_CreditNoteRefunds_AmountPositive", "\"Amount\" > 0");
+                table.HasCheckConstraint("CK_CreditNoteRefunds_Method", "\"Method\" IN (0, 1, 2, 3)");
+                table.HasCheckConstraint("CK_CreditNoteRefunds_CashLinks",
+                    "((\"Method\" = 0 AND \"CashSessionId\" IS NOT NULL AND \"CashMovementId\" IS NOT NULL) OR (\"Method\" <> 0 AND \"CashSessionId\" IS NULL AND \"CashMovementId\" IS NULL))");
+            });
+
+            entity.Property(r => r.Amount).HasPrecision(18, 2);
+            entity.Property(r => r.Method).HasConversion<int>();
+            entity.Property(r => r.BusinessDate).HasColumnType("date");
+            entity.Property(r => r.TimeZoneIdSnapshot).IsRequired().HasMaxLength(100);
+            entity.Property(r => r.Reference).HasMaxLength(150);
+            entity.Property(r => r.Notes).HasMaxLength(500);
+
+            entity.HasIndex(r => r.CreditNoteId).IsUnique();
+            entity.HasIndex(r => new { r.CompanyId, r.EstablishmentId, r.BusinessDate });
+            entity.HasIndex(r => r.RefundedByUserId);
+            entity.HasIndex(r => r.CashSessionId);
+            entity.HasIndex(r => r.CashMovementId).IsUnique()
+                .HasFilter("\"CashMovementId\" IS NOT NULL");
+
+            entity.HasOne(r => r.CreditNote).WithOne(cn => cn.FinancialRefund)
+                .HasForeignKey<CreditNoteRefund>(r => r.CreditNoteId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.Company).WithMany().HasForeignKey(r => r.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.Establishment).WithMany().HasForeignKey(r => r.EstablishmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.EmissionPoint).WithMany().HasForeignKey(r => r.EmissionPointId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.RefundedByUser).WithMany().HasForeignKey(r => r.RefundedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.CashSession).WithMany().HasForeignKey(r => r.CashSessionId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.CashMovement).WithMany().HasForeignKey(r => r.CashMovementId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

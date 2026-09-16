@@ -295,6 +295,8 @@ public class CreditNoteService : ICreditNoteService
                 .ThenInclude(item => item.Product)
                 .Include(note => note.CancelledByUser)
                 .Include(note => note.InventoryReturnedByUser)
+                .Include(note => note.FinancialRefund)
+                    .ThenInclude(refund => refund!.RefundedByUser)
                 .Include(note => note.OriginalSale)
                 .SingleOrDefaultAsync(note =>
                     note.Id == creditNoteId
@@ -704,8 +706,18 @@ public class CreditNoteService : ICreditNoteService
                 FOR UPDATE")
             .SingleOrDefaultAsync();
 
-        return creditNote
-            ?? throw new KeyNotFoundException("CREDIT_NOTE_NOT_FOUND");
+        if (creditNote is null)
+        {
+            throw new KeyNotFoundException("CREDIT_NOTE_NOT_FOUND");
+        }
+
+        await _context.Entry(creditNote)
+            .Reference(note => note.FinancialRefund)
+            .Query()
+            .Include(refund => refund.RefundedByUser)
+            .LoadAsync();
+
+        return creditNote;
     }
 
     private async Task<CreditNoteFiscalContext> LoadFiscalContextAsync(
@@ -947,6 +959,26 @@ public class CreditNoteService : ICreditNoteService
             Id = creditNote.Id,
             OriginalSaleId = creditNote.OriginalSaleId,
             OriginalSaleNumberSnapshot = creditNote.OriginalSaleNumberSnapshot,
+            OriginalSalePaymentMethod = creditNote.OriginalSale.PaymentMethod,
+            HasFinancialRefund = creditNote.FinancialRefund is not null,
+            FinancialRefund = creditNote.FinancialRefund is { } refund
+                ? new CreditNoteRefundDto
+                {
+                    Id = refund.Id,
+                    CreditNoteId = refund.CreditNoteId,
+                    Method = refund.Method,
+                    Amount = refund.Amount,
+                    RefundedAt = refund.RefundedAt,
+                    BusinessDate = refund.BusinessDate,
+                    TimeZoneIdSnapshot = refund.TimeZoneIdSnapshot,
+                    RefundedByUserId = refund.RefundedByUserId,
+                    RefundedByUsername = refund.RefundedByUser.Username,
+                    CashSessionId = refund.CashSessionId,
+                    CashMovementId = refund.CashMovementId,
+                    Reference = refund.Reference,
+                    Notes = refund.Notes
+                }
+                : null,
             OriginalSaleAccessKeySnapshot = creditNote.OriginalSaleAccessKeySnapshot,
             OriginalSaleAuthorizationNumberSnapshot = creditNote.OriginalSaleAuthorizationNumberSnapshot,
             OriginalSaleAuthorizedAtSnapshot = creditNote.OriginalSaleAuthorizedAtSnapshot,

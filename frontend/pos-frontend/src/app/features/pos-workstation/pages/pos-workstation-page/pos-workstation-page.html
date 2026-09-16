@@ -293,6 +293,8 @@
     [sendingEmail]="creditNoteEmailSending()"
     [canReturnInventory]="canWriteInventory"
     [returningInventory]="creditNoteInventoryReturningId() === selectedCreditNoteId()"
+    [canRefund]="canVoid"
+    [refunding]="creditNoteRefundingId() !== null && creditNoteRefundingId() === selectedCreditNoteId()"
     [submissionAttempts]="creditNoteSriAttempts()"
     [submissionAttemptsLoading]="creditNoteSriAttemptsLoading()"
     [submissionAttemptsError]="creditNoteSriAttemptsError()"
@@ -310,8 +312,19 @@
     (sendEmail)="openCreditNoteEmailDialog($event)"
     (viewEmailDeliveries)="openCreditNoteEmailDeliveries($event)"
     (returnInventory)="openCreditNoteInventoryReturnDialog($event)"
+    (refund)="openCreditNoteRefundDialog($event)"
     (refreshSubmissionAttempts)="loadCreditNoteSriAttempts()"
   ></app-credit-note-detail-dialog>
+
+  <app-credit-note-refund-dialog
+    [visible]="creditNoteRefundVisible()"
+    [creditNote]="creditNoteRefundCreditNote()"
+    [loading]="creditNoteRefundingId() !== null"
+    [hasOpenCashSession]="cashSessionLoading() || cashSessionError() ? null : hasOpenCashSession()"
+    [cashSessionLoading]="cashSessionLoading()"
+    (visibleChange)="onCreditNoteRefundVisibleChange($event)"
+    (confirmRefund)="confirmCreditNoteRefund($event)"
+  ></app-credit-note-refund-dialog>
 
   <app-credit-note-inventory-return-dialog
     [visible]="creditNoteInventoryReturnVisible()"

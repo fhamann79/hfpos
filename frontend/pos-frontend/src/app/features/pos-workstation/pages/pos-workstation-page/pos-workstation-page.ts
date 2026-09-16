@@ -21,6 +21,7 @@ import { CancelCreditNoteDraftDialog } from '../../../credit-notes/components/ca
 import { CreditNoteDetailDialog } from '../../../credit-notes/components/credit-note-detail-dialog/credit-note-detail-dialog';
 import { CreditNoteEligibilityDialog } from '../../../credit-notes/components/credit-note-eligibility-dialog/credit-note-eligibility-dialog';
 import { CreditNoteInventoryReturnDialog } from '../../../credit-notes/components/credit-note-inventory-return-dialog/credit-note-inventory-return-dialog';
+import { CreditNoteRefundDialog } from '../../../credit-notes/components/credit-note-refund-dialog/credit-note-refund-dialog';
 import { ProductSearchPanel } from '../../components/product-search-panel/product-search-panel';
 import { QuickProductSearchDialog } from '../../components/quick-product-search-dialog/quick-product-search-dialog';
 import { RecentSalesPanel } from '../../components/recent-sales-panel/recent-sales-panel';
@@ -37,6 +38,8 @@ import {
   CreateCreditNoteDraftRequest,
   CreditNote,
   CreditNoteListItem,
+  RefundCreditNoteRequest,
+  isCreditNoteRefundEligible,
   ReturnCreditNoteInventoryRequest,
 } from '../../../credit-notes/models/credit-note.model';
 import { CreditNoteService } from '../../../credit-notes/services/credit-note.service';
@@ -77,6 +80,7 @@ import { PosWorkstationService } from '../../services/pos-workstation.service';
     CreditNoteDetailDialog,
     CreditNoteEligibilityDialog,
     CreditNoteInventoryReturnDialog,
+    CreditNoteRefundDialog,
     RecentSalesPanel,
     SaleDetailDialog,
     SaleInvoiceEmailDeliveriesDialog,
@@ -158,6 +162,9 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly creditNoteInventoryReturnVisible = signal(false);
   readonly creditNoteInventoryReturnCreditNote = signal<CreditNote | null>(null);
   readonly creditNoteInventoryReturningId = signal<number | null>(null);
+  readonly creditNoteRefundVisible = signal(false);
+  readonly creditNoteRefundCreditNote = signal<CreditNote | null>(null);
+  readonly creditNoteRefundingId = signal<number | null>(null);
   readonly creditNotePreparingSriDraftId = signal<number | null>(null);
   readonly creditNoteDownloadingSriXmlId = signal<number | null>(null);
   readonly creditNoteSigningSriXmlId = signal<number | null>(null);
@@ -874,6 +881,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
     ) {
       return;
@@ -907,6 +915,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.creditNoteSriAttemptsLoading.set(false);
     this.creditNoteSriAttemptsError.set('');
     this.resetCreditNoteInventoryReturnState();
+    this.resetCreditNoteRefundState();
     this.resetCreditNoteEmailState();
     this.creditNoteEligibilityVisible.set(true);
     this.loadCreditNoteEligibility();
@@ -957,6 +966,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
     ) {
       return;
@@ -969,6 +979,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.creditNoteSriAttemptsError.set('');
     this.creditNoteSriAttemptsLoading.set(false);
     this.resetCreditNoteInventoryReturnState();
+    this.resetCreditNoteRefundState();
     this.resetCreditNoteEmailState();
     this.creditNoteDetailVisible.set(true);
     this.loadCreditNoteDetail();
@@ -1018,6 +1029,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         || this.creditNoteViewingRideId() !== null
         || this.creditNoteDownloadingRidePdfId() !== null
         || this.creditNoteInventoryReturningId() !== null
+        || this.creditNoteRefundingId() !== null
         || this.creditNoteEmailSending()
       )
     ) {
@@ -1044,8 +1056,95 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       this.creditNoteSriAttemptsLoading.set(false);
       this.creditNoteSriAttemptsError.set('');
       this.resetCreditNoteInventoryReturnState();
+      this.resetCreditNoteRefundState();
       this.resetCreditNoteEmailState();
     }
+  }
+
+  openCreditNoteRefundDialog(creditNoteId: number): void {
+    const creditNote = this.selectedCreditNote();
+    if (!this.canVoid || !creditNote || creditNote.id !== creditNoteId
+      || this.selectedCreditNoteId() !== creditNoteId
+      || this.creditNoteDetailLoading() || this.isCreditNoteRefundBusy()
+      || this.creditNoteRefundVisible() || this.creditNoteInventoryReturnVisible()
+      || this.creditNoteEmailVisible() || this.creditNoteEmailDeliveriesVisible()
+      || !isCreditNoteRefundEligible(creditNote)) {
+      return;
+    }
+    this.creditNoteRefundCreditNote.set(creditNote);
+    this.creditNoteRefundVisible.set(true);
+    this.loadCurrentCashSession();
+  }
+
+  onCreditNoteRefundVisibleChange(visible: boolean): void {
+    if (!visible && this.creditNoteRefundingId() !== null) {
+      return;
+    }
+    this.creditNoteRefundVisible.set(visible);
+    if (!visible) {
+      this.creditNoteRefundCreditNote.set(null);
+    }
+  }
+
+  confirmCreditNoteRefund(payload: RefundCreditNoteRequest): void {
+    const creditNote = this.creditNoteRefundCreditNote();
+    const selected = this.selectedCreditNote();
+    if (!this.canVoid || !this.creditNoteRefundVisible() || !creditNote || !selected
+      || selected.id !== creditNote.id || this.selectedCreditNoteId() !== creditNote.id
+      || this.creditNoteDetailLoading() || this.isCreditNoteRefundBusy()
+      || !isCreditNoteRefundEligible(selected)
+      || (payload.method === SalePaymentMethod.Cash
+        && (this.cashSessionLoading() || (!this.cashSessionError() && !this.hasOpenCashSession())))) {
+      return;
+    }
+
+    this.creditNoteRefundingId.set(creditNote.id);
+    this.creditNoteService.refund(creditNote.id, payload).pipe(
+      finalize(() => this.creditNoteRefundingId.set(null))
+    ).subscribe({
+      next: (updatedCreditNote) => {
+        this.selectedCreditNote.set(updatedCreditNote);
+        this.creditNoteRefundVisible.set(false);
+        this.creditNoteRefundCreditNote.set(null);
+        const refund = updatedCreditNote.financialRefund;
+        const amount = new Intl.NumberFormat('en-US', {
+          style: 'currency', currency: 'USD',
+        }).format(refund?.amount ?? updatedCreditNote.total);
+        this.messageService.add({
+          severity: 'success', summary: 'Devolución registrada',
+          detail: `Nota ${updatedCreditNote.number || '#' + updatedCreditNote.id}: ${amount}.`,
+        });
+        this.loadCreditNoteDetail();
+        if (refund?.method === SalePaymentMethod.Cash) {
+          this.loadCurrentCashSession();
+        }
+      },
+      error: (error: HttpErrorResponse) => {
+        this.messageService.add({
+          severity: 'error', summary: 'No se pudo registrar la devolución',
+          detail: this.resolveCreditNoteRefundError(error),
+        });
+        if (payload.method === SalePaymentMethod.Cash) {
+          this.loadCurrentCashSession();
+        }
+      },
+    });
+  }
+
+  private isCreditNoteRefundBusy(): boolean {
+    return this.creditNoteRefundingId() !== null
+      || this.creditNoteCreating() || this.creditNoteCancellingId() !== null
+      || this.creditNotePreparingSriDraftId() !== null
+      || this.creditNoteDownloadingSriXmlId() !== null
+      || this.creditNoteSigningSriXmlId() !== null
+      || this.creditNoteDownloadingSriSignedXmlId() !== null
+      || this.creditNoteSubmittingSriId() !== null
+      || this.creditNoteCheckingAuthorizationId() !== null
+      || this.creditNoteDownloadingAuthorizedXmlId() !== null
+      || this.creditNoteViewingRideId() !== null
+      || this.creditNoteDownloadingRidePdfId() !== null
+      || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteEmailSending();
   }
 
   openCreditNoteInventoryReturnDialog(creditNoteId: number): void {
@@ -1080,6 +1179,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
       || this.creditNoteInventoryReturnVisible()
     ) {
@@ -1144,6 +1244,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
       || creditNote.voidedAt !== null
       || creditNote.documentStatus === SaleDocumentStatus.Cancelled
@@ -1213,6 +1314,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
@@ -1279,6 +1381,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
@@ -1327,6 +1430,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
@@ -1384,6 +1488,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
     ) {
@@ -1435,6 +1540,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
@@ -1530,6 +1636,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
@@ -1632,6 +1739,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
@@ -1697,6 +1805,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
@@ -1757,6 +1866,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
@@ -1856,6 +1966,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
@@ -1884,6 +1995,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     if (
       this.creditNoteEmailSending()
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
     ) {
       return;
     }
@@ -1901,6 +2013,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       !this.canSubmitSriDocuments
       || !creditNote
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
     ) {
       return;
@@ -1951,6 +2064,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     if (
       !this.canVoid
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
       || this.selectedCreditNoteId() !== creditNoteId
       || creditNote?.id !== creditNoteId
@@ -2109,6 +2223,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
     ) {
       return;
@@ -2142,6 +2257,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.creditNoteViewingRideId() !== null
       || this.creditNoteDownloadingRidePdfId() !== null
       || this.creditNoteInventoryReturningId() !== null
+      || this.creditNoteRefundingId() !== null
       || this.creditNoteEmailSending()
     ) {
       return;
@@ -2214,6 +2330,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         || this.creditNoteViewingRideId() !== null
         || this.creditNoteDownloadingRidePdfId() !== null
         || this.creditNoteInventoryReturningId() !== null
+        || this.creditNoteRefundingId() !== null
         || this.creditNoteEmailSending()
       )
     ) {
@@ -2252,6 +2369,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       this.creditNoteSriAttemptsLoading.set(false);
       this.creditNoteSriAttemptsError.set('');
       this.resetCreditNoteInventoryReturnState();
+      this.resetCreditNoteRefundState();
       this.resetCreditNoteEmailState();
     }
   }
@@ -3160,6 +3278,12 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     return `${match[3]}/${match[2]}/${match[1]}`;
   }
 
+  private resetCreditNoteRefundState(): void {
+    this.creditNoteRefundVisible.set(false);
+    this.creditNoteRefundCreditNote.set(null);
+    this.creditNoteRefundingId.set(null);
+  }
+
   private resetCreditNoteInventoryReturnState(): void {
     this.creditNoteInventoryReturnVisible.set(false);
     this.creditNoteInventoryReturnCreditNote.set(null);
@@ -3178,6 +3302,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   private closeContextualDialog(): void {
+    if (this.creditNoteRefundVisible()) {
+      this.onCreditNoteRefundVisibleChange(false);
+      return;
+    }
+
     if (this.creditNoteInventoryReturnVisible()) {
       if (this.creditNoteInventoryReturningId() !== null) {
         return;
@@ -3297,6 +3426,44 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         return 'No se pudo enviar la factura por email. Revisa la configuracion SMTP.';
       default:
         return this.workstationService.resolveBusinessError(error) || 'No se pudo enviar la factura por email.';
+    }
+  }
+
+  private resolveCreditNoteRefundError(error: HttpErrorResponse): string {
+    if (error.status === 403) {
+      return 'No tienes permiso para registrar devoluciones económicas.';
+    }
+    switch (readErrorCode(error)) {
+      case 'CREDIT_NOTE_NOT_FOUND':
+        return 'La nota de crédito no existe o no pertenece al contexto operativo actual.';
+      case 'CREDIT_NOTE_REFUND_METHOD_INVALID':
+        return 'Selecciona un método de devolución válido.';
+      case 'CREDIT_NOTE_REFUND_REFERENCE_TOO_LONG':
+        return 'La referencia no puede superar 150 caracteres.';
+      case 'CREDIT_NOTE_REFUND_NOTES_TOO_LONG':
+        return 'Las observaciones no pueden superar 500 caracteres.';
+      case 'CREDIT_NOTE_REFUND_AMOUNT_INVALID':
+      case 'CASH_MOVEMENT_AMOUNT_INVALID':
+        return 'El total de la nota no es válido para registrar la devolución.';
+      case 'CREDIT_NOTE_REFUND_CANCELLED':
+        return 'No se puede registrar una devolución de una nota cancelada o anulada.';
+      case 'CREDIT_NOTE_REFUND_REJECTED':
+        return 'No se puede registrar una devolución de una nota rechazada.';
+      case 'CREDIT_NOTE_REFUND_ONLY_AUTHORIZED':
+        return 'Solo se pueden devolver notas autorizadas con sus datos fiscales completos.';
+      case 'CREDIT_NOTE_REFUND_INCONSISTENT':
+        return 'La devolución tiene datos inconsistentes y requiere revisión. No se ha generado otra salida de caja.';
+      case 'CASH_SESSION_REQUIRED':
+        return 'Debes abrir una caja antes de registrar una devolución en efectivo.';
+      case 'CASH_SESSION_NOT_OPEN':
+        return 'La caja ya no está abierta. Revisa la caja actual antes de continuar.';
+      case 'CASH_SESSION_CONTEXT_MISMATCH':
+        return 'La caja no corresponde al usuario y contexto operativo actuales.';
+      case 'CASH_MOVEMENT_REASON_REQUIRED':
+        return 'No se pudo identificar el motivo de la salida de caja. Revisa la nota.';
+      case 'CREDIT_NOTE_REFUND_FAILED':
+      default:
+        return 'No se pudo registrar la devolución económica.';
     }
   }
 

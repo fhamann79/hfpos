@@ -23,4 +23,7 @@ public interface ICashSessionService
     Task<CashSessionDto> CloseAsync(int id, CloseCashSessionDto dto);
 
     Task<CashSession> GetRequiredOpenSessionForCurrentContextAsync();
+
+    Task<CashMovement> RegisterCreditNoteRefundCashOutAsync(
+        int creditNoteId, decimal amount, string reason);
 }

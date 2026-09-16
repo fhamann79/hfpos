@@ -1,0 +1,29 @@
+:host ::ng-deep .credit-note-refund-dialog .p-dialog-content {
+  min-height:0;
+  overflow-y:auto;
+}
+
+.refund-summary {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:1rem;
+  margin:0 0 1rem;
+  padding-bottom:1rem;
+  border-bottom:1px solid var(--p-content-border-color);
+}
+
+.refund-summary div { min-width:0; }
+.refund-summary dt { color:var(--p-text-muted-color); font-size:.8rem; }
+.refund-summary dd { margin:.25rem 0 0; font-weight:700; overflow-wrap:anywhere; }
+.refund-form { display:grid; gap:.6rem; }
+.refund-form label { font-weight:600; }
+.refund-form input,
+.refund-form textarea { width:100%; min-width:0; }
+.refund-form textarea { resize:vertical; }
+.dialog-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:.5rem; }
+
+@media (max-width:480px) {
+  .refund-summary { grid-template-columns:1fr; }
+  .dialog-actions p-button { flex:1 1 100%; }
+  :host ::ng-deep .dialog-actions .p-button { width:100%; justify-content:center; }
+}
