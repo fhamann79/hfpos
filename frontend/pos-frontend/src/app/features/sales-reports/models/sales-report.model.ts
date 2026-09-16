@@ -25,6 +25,18 @@ export interface SalesReportFilters {
   documentStatus?: SaleDocumentStatus | null;
 }
 
+export interface SaleCreditNoteImpact {
+  authorizedCreditNoteCount: number;
+  authorizedCreditNoteTotal: number;
+  authorizedCreditNoteSubtotal: number;
+  returnedCost: number;
+  netTotal: number;
+  netSubtotal: number;
+  netCost: number;
+  netGrossProfit: number;
+  netGrossMarginPercent: number;
+}
+
 export interface SalesReportRow {
   id: number;
   businessDate: string | null;
@@ -42,6 +54,7 @@ export interface SalesReportRow {
   totalCost: number;
   grossProfit: number;
   grossMarginPercent: number;
+  creditNoteImpact: SaleCreditNoteImpact;
   itemsCount: number;
   userId: number;
   username: string | null;

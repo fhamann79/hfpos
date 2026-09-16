@@ -19,7 +19,20 @@ public class DashboardSummaryDto
     public List<DashboardAlertDto> Alerts { get; set; } = new();
 }
 
-public class DashboardSalesTodayDto
+public class DashboardNetSalesDto
+{
+    public int CreditNoteCount { get; set; }
+    public decimal CreditNoteTotal { get; set; }
+    public decimal CreditNoteSubtotal { get; set; }
+    public decimal ReturnedCost { get; set; }
+    public decimal NetSales { get; set; }
+    public decimal NetSubtotal { get; set; }
+    public decimal NetCost { get; set; }
+    public decimal NetGrossProfit { get; set; }
+    public decimal NetGrossMarginPercent { get; set; }
+}
+
+public class DashboardSalesTodayDto : DashboardNetSalesDto
 {
     public int Count { get; set; }
 
@@ -40,7 +53,7 @@ public class DashboardSalesTodayDto
     public int AuthorizedSriInvoiceCount { get; set; }
 }
 
-public class DashboardSalesLastSevenDaysDto
+public class DashboardSalesLastSevenDaysDto : DashboardNetSalesDto
 {
     public int Count { get; set; }
 
@@ -55,7 +68,7 @@ public class DashboardSalesLastSevenDaysDto
     public List<DashboardDailySalesDto> Days { get; set; } = new();
 }
 
-public class DashboardDailySalesDto
+public class DashboardDailySalesDto : DashboardNetSalesDto
 {
     public DateOnly Date { get; set; }
 

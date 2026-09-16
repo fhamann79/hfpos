@@ -120,7 +120,7 @@ public class SalesService : ISalesService
                 || s.Id.ToString().Contains(term));
         }
 
-        return await query
+        var sales = await query
             .OrderByDescending(s => s.CreatedAt)
             .ThenByDescending(s => s.Id)
             .Select(s => new SaleListItemDto
@@ -143,6 +143,7 @@ public class SalesService : ISalesService
                 SriLastSubmissionError = s.SriLastSubmissionError,
                 SriLastCheckedAt = s.SriLastCheckedAt,
                 Total = s.Total,
+                Subtotal = s.Subtotal,
                 TotalCost = s.TotalCost,
                 GrossProfit = s.GrossProfit,
                 GrossMarginPercent = s.GrossMarginPercent,
@@ -155,13 +156,24 @@ public class SalesService : ISalesService
                 Notes = s.Notes
             })
             .ToListAsync();
+
+        var creditNotes = await CreditNoteReporting.LoadBySaleAsync(
+            _context, operationalContext, sales.Select(s => s.Id).ToArray());
+
+        foreach (var sale in sales)
+        {
+            sale.CreditNoteImpact = CreditNoteReporting.Calculate(
+                sale.Total, sale.Subtotal, sale.TotalCost, creditNotes.GetValueOrDefault(sale.Id));
+        }
+
+        return sales;
     }
 
     public async Task<SaleDto?> GetByIdAsync(int id)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
-        return await _context.Sales
+        var sale = await _context.Sales
             .AsNoTracking()
             .Where(s => s.Id == id
                 && s.CompanyId == operationalContext.CompanyId
@@ -254,6 +266,15 @@ public class SalesService : ISalesService
                     .ToList()
             })
             .FirstOrDefaultAsync();
+
+        if (sale is not null)
+        {
+            var creditNotes = await CreditNoteReporting.LoadBySaleAsync(_context, operationalContext, new[] { id });
+            sale.CreditNoteImpact = CreditNoteReporting.Calculate(
+                sale.Total, sale.Subtotal, sale.TotalCost, creditNotes.GetValueOrDefault(id));
+        }
+
+        return sale;
     }
 
     public async Task<string?> GetSriXmlDraftAsync(int id)

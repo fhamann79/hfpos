@@ -101,9 +101,42 @@
 .metric-card em {
   font-size:.78rem;
   font-style:normal;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
+  overflow-wrap:anywhere;
+}
+
+.metric-card > div {
+  min-width:0;
+}
+
+.metric-card strong {
+  overflow-wrap:anywhere;
+}
+
+.sales-period-totals {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(8rem,1fr));
+  gap:.75rem;
+  margin:0 0 1rem;
+  padding-bottom:1rem;
+  border-bottom:1px solid var(--app-border);
+}
+
+.sales-period-totals dt,
+.trend-row strong small {
+  font-size:.75rem;
+  font-weight:400;
+  color:var(--app-text-muted);
+}
+
+.sales-period-totals dd {
+  margin:.25rem 0 0;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+  overflow-wrap:anywhere;
+}
+
+.trend-row strong small {
+  display:block;
 }
 
 .metric-card--money > span {
@@ -193,7 +226,7 @@
 }
 
 .trend-row--sales {
-  grid-template-columns:4rem minmax(7rem,1fr) 7.4rem 7.4rem 4.5rem;
+  grid-template-columns:3.5rem minmax(0,1fr) minmax(6rem,auto) minmax(6rem,auto) 4.5rem;
 }
 
 .trend-bars {

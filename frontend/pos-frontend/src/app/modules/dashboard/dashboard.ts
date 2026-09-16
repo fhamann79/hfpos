@@ -116,26 +116,26 @@ export class Dashboard implements OnInit {
     this.router.navigateByUrl(route);
   }
 
-  dayBarWidth(total: number): string {
+  dayBarWidth(netSales: number): string {
     const days = this.summary()?.salesLastSevenDays.days ?? [];
-    const max = Math.max(...days.map((day) => day.totalSold), 0);
+    const max = Math.max(...days.map((day) => Math.abs(day.netSales)), 0);
 
-    if (max <= 0 || total <= 0) {
+    if (max <= 0 || netSales === 0) {
       return '0%';
     }
 
-    return `${Math.max((total / max) * 100, 6)}%`;
+    return `${Math.max((Math.abs(netSales) / max) * 100, 6)}%`;
   }
 
-  profitBarWidth(grossProfit: number): string {
+  profitBarWidth(netGrossProfit: number): string {
     const days = this.summary()?.salesLastSevenDays.days ?? [];
-    const max = Math.max(...days.map((day) => Math.abs(day.grossProfit)), 0);
+    const max = Math.max(...days.map((day) => Math.abs(day.netGrossProfit)), 0);
 
-    if (max <= 0 || grossProfit === 0) {
+    if (max <= 0 || netGrossProfit === 0) {
       return '0%';
     }
 
-    return `${Math.max((Math.abs(grossProfit) / max) * 100, 6)}%`;
+    return `${Math.max((Math.abs(netGrossProfit) / max) * 100, 6)}%`;
   }
 
   purchaseBarWidth(netPurchased: number): string {

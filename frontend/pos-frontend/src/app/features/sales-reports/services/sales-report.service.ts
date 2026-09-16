@@ -61,6 +61,12 @@ export class SalesReportService {
 
   private toSalesReportRow(source: unknown): SalesReportRow {
     const row = this.asRecord(source);
+    const impact = this.asRecord(row?.['creditNoteImpact']);
+    const total = this.readNumber(row, ['total', 'grandTotal'], 0);
+    const totalCost = this.readNumber(row, ['totalCost'], 0);
+    const grossProfit = this.readNumber(row, ['grossProfit'], 0);
+    const grossMarginPercent = this.readNumber(row, ['grossMarginPercent'], 0);
+    const subtotal = this.readNumber(row, ['subtotal'], totalCost + grossProfit);
 
     return {
       id: this.readNumber(row, ['id', 'saleId'], 0),
@@ -75,10 +81,21 @@ export class SalesReportService {
       documentType: normalizeSaleDocumentType(row?.['documentType']),
       documentStatus: normalizeSaleDocumentStatus(row?.['documentStatus']),
       sriAuthorizationStatus: this.readString(row, ['sriAuthorizationStatus'], null),
-      total: this.readNumber(row, ['total', 'grandTotal'], 0),
-      totalCost: this.readNumber(row, ['totalCost'], 0),
-      grossProfit: this.readNumber(row, ['grossProfit'], 0),
-      grossMarginPercent: this.readNumber(row, ['grossMarginPercent'], 0),
+      total,
+      totalCost,
+      grossProfit,
+      grossMarginPercent,
+      creditNoteImpact: {
+        authorizedCreditNoteCount: this.readNumber(impact, ['authorizedCreditNoteCount'], 0),
+        authorizedCreditNoteTotal: this.readNumber(impact, ['authorizedCreditNoteTotal'], 0),
+        authorizedCreditNoteSubtotal: this.readNumber(impact, ['authorizedCreditNoteSubtotal'], 0),
+        returnedCost: this.readNumber(impact, ['returnedCost'], 0),
+        netTotal: this.readNumber(impact, ['netTotal'], total),
+        netSubtotal: this.readNumber(impact, ['netSubtotal'], subtotal),
+        netCost: this.readNumber(impact, ['netCost'], totalCost),
+        netGrossProfit: this.readNumber(impact, ['netGrossProfit'], grossProfit),
+        netGrossMarginPercent: this.readNumber(impact, ['netGrossMarginPercent'], grossMarginPercent),
+      },
       itemsCount: this.readNumber(row, ['itemsCount'], 0),
       userId: this.readNumber(row, ['userId'], 0),
       username: this.readString(row, ['username', 'createdBy', 'userName'], null),
