@@ -40,11 +40,15 @@ public class SaleListItemDto
 
     public decimal Total { get; set; }
 
+    public decimal Subtotal { get; set; }
+
     public decimal TotalCost { get; set; }
 
     public decimal GrossProfit { get; set; }
 
     public decimal GrossMarginPercent { get; set; }
+
+    public SaleCreditNoteImpactDto CreditNoteImpact { get; set; } = new();
 
     public int ItemsCount { get; set; }
 

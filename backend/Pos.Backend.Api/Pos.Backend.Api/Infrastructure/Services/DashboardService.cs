@@ -45,13 +45,16 @@ public class DashboardService : IDashboardService
             firstDay,
             today);
 
+        var creditNotesByDate = await CreditNoteReporting.LoadByDateAsync(
+            _context, operationalContext, firstDay, today);
+
         var inventory = await BuildInventorySummaryAsync(
             operationalContext.CompanyId,
             operationalContext.EstablishmentId);
 
         var fiscal = await BuildFiscalSummaryAsync(operationalContext.CompanyId, now);
-        var salesToday = BuildSalesToday(sales, today);
-        var salesLastSevenDays = BuildSalesLastSevenDays(sales, firstDay);
+        var salesToday = BuildSalesToday(sales, creditNotesByDate, today);
+        var salesLastSevenDays = BuildSalesLastSevenDays(sales, creditNotesByDate, firstDay);
         var purchasesToday = BuildPurchasesToday(purchaseReceipts, today);
         var purchasesLastSevenDays = BuildPurchasesLastSevenDays(purchaseReceipts, firstDay);
         var alerts = BuildAlerts(inventory, fiscal);
@@ -239,14 +242,17 @@ public class DashboardService : IDashboardService
         };
     }
 
-    private static DashboardSalesTodayDto BuildSalesToday(IReadOnlyList<SaleSnapshot> sales, DateOnly today)
+    private static DashboardSalesTodayDto BuildSalesToday(
+        IReadOnlyList<SaleSnapshot> sales,
+        IReadOnlyDictionary<DateOnly, CreditNoteReporting.Totals> creditNotesByDate,
+        DateOnly today)
     {
         var todaySales = sales.Where(s => s.Date == today).ToList();
         var validSales = todaySales.Where(s => s.Status != SaleStatus.Voided).ToList();
         var subtotal = validSales.Sum(s => s.Subtotal);
         var grossProfit = validSales.Sum(s => s.GrossProfit);
 
-        return new DashboardSalesTodayDto
+        var result = new DashboardSalesTodayDto
         {
             Count = validSales.Count,
             TotalSold = validSales.Sum(s => s.Total),
@@ -258,9 +264,15 @@ public class DashboardService : IDashboardService
             TicketCount = validSales.Count(s => s.DocumentType == SaleDocumentType.Ticket),
             AuthorizedSriInvoiceCount = validSales.Count(IsAuthorizedInvoice)
         };
+
+        ApplyNetSales(result, validSales, creditNotesByDate.GetValueOrDefault(today));
+        return result;
     }
 
-    private static DashboardSalesLastSevenDaysDto BuildSalesLastSevenDays(IReadOnlyList<SaleSnapshot> sales, DateOnly firstDay)
+    private static DashboardSalesLastSevenDaysDto BuildSalesLastSevenDays(
+        IReadOnlyList<SaleSnapshot> sales,
+        IReadOnlyDictionary<DateOnly, CreditNoteReporting.Totals> creditNotesByDate,
+        DateOnly firstDay)
     {
         var validSales = sales.Where(s => s.Status != SaleStatus.Voided).ToList();
         var days = Enumerable.Range(0, 7)
@@ -269,20 +281,23 @@ public class DashboardService : IDashboardService
             {
                 var daySales = validSales.Where(s => s.Date == day).ToList();
 
-                return new DashboardDailySalesDto
+                var result = new DashboardDailySalesDto
                 {
                     Date = day,
                     Count = daySales.Count,
                     TotalSold = daySales.Sum(s => s.Total),
                     GrossProfit = daySales.Sum(s => s.GrossProfit)
                 };
+
+                ApplyNetSales(result, daySales, creditNotesByDate.GetValueOrDefault(day));
+                return result;
             })
             .ToList();
 
         var subtotal = validSales.Sum(s => s.Subtotal);
         var grossProfit = validSales.Sum(s => s.GrossProfit);
 
-        return new DashboardSalesLastSevenDaysDto
+        var result = new DashboardSalesLastSevenDaysDto
         {
             Count = validSales.Count,
             TotalSold = validSales.Sum(s => s.Total),
@@ -291,6 +306,36 @@ public class DashboardService : IDashboardService
             GrossMarginPercent = CalculateGrossMarginPercent(grossProfit, subtotal),
             Days = days
         };
+
+        var periodNotes = new CreditNoteReporting.Totals(
+            creditNotesByDate.Values.Sum(n => n.Count),
+            creditNotesByDate.Values.Sum(n => n.Total),
+            creditNotesByDate.Values.Sum(n => n.Subtotal),
+            creditNotesByDate.Values.Sum(n => n.ReturnedCost));
+        ApplyNetSales(result, validSales, periodNotes);
+        return result;
+    }
+
+    private static void ApplyNetSales(
+        DashboardNetSalesDto result,
+        IReadOnlyList<SaleSnapshot> validSales,
+        CreditNoteReporting.Totals? notes)
+    {
+        var impact = CreditNoteReporting.Calculate(
+            validSales.Sum(s => s.Total),
+            validSales.Sum(s => s.Subtotal),
+            validSales.Sum(s => s.TotalCost),
+            notes);
+
+        result.CreditNoteCount = impact.AuthorizedCreditNoteCount;
+        result.CreditNoteTotal = impact.AuthorizedCreditNoteTotal;
+        result.CreditNoteSubtotal = impact.AuthorizedCreditNoteSubtotal;
+        result.ReturnedCost = impact.ReturnedCost;
+        result.NetSales = impact.NetTotal;
+        result.NetSubtotal = impact.NetSubtotal;
+        result.NetCost = impact.NetCost;
+        result.NetGrossProfit = impact.NetGrossProfit;
+        result.NetGrossMarginPercent = impact.NetGrossMarginPercent;
     }
 
     private static DashboardPurchasesTodayDto BuildPurchasesToday(

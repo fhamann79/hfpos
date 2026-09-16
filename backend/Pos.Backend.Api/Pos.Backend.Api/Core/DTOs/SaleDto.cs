@@ -106,6 +106,8 @@ public class SaleDto
 
     public decimal GrossMarginPercent { get; set; }
 
+    public SaleCreditNoteImpactDto CreditNoteImpact { get; set; } = new();
+
     public string? Notes { get; set; }
 
     public int CompanyId { get; set; }

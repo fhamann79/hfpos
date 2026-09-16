@@ -35,32 +35,49 @@
     <article class="metric-card metric-card--money">
       <span><i class="pi pi-dollar"></i></span>
       <div>
-        <small>Total vendido</small>
+        <small>Venta bruta</small>
         <strong>{{ totalSold() | currency: 'USD' }}</strong>
+      </div>
+    </article>
+
+    <article class="metric-card">
+      <span><i class="pi pi-undo"></i></span>
+      <div>
+        <small>Notas de crédito</small>
+        <strong>{{ creditNoteTotal() | currency: 'USD' }}</strong>
+        <small>{{ creditNoteCount() }} NC autorizadas</small>
+      </div>
+    </article>
+
+    <article class="metric-card metric-card--money">
+      <span><i class="pi pi-dollar"></i></span>
+      <div>
+        <small>Venta neta</small>
+        <strong [class.negative-amount]="netTotal() < 0">{{ netTotal() | currency: 'USD' }}</strong>
       </div>
     </article>
 
     <article class="metric-card metric-card--cost">
       <span><i class="pi pi-calculator"></i></span>
       <div>
-        <small>Costo total</small>
-        <strong>{{ totalCost() | currency: 'USD' }}</strong>
+        <small>Costo neto</small>
+        <strong>{{ netCost() | currency: 'USD' }}</strong>
       </div>
     </article>
 
     <article class="metric-card metric-card--profit">
       <span><i class="pi pi-chart-line"></i></span>
       <div>
-        <small>Utilidad bruta</small>
-        <strong>{{ totalGrossProfit() | currency: 'USD' }}</strong>
+        <small>Utilidad neta</small>
+        <strong [class.negative-amount]="netGrossProfit() < 0">{{ netGrossProfit() | currency: 'USD' }}</strong>
       </div>
     </article>
 
     <article class="metric-card metric-card--margin">
       <span><i class="pi pi-percentage"></i></span>
       <div>
-        <small>Margen bruto</small>
-        <strong>{{ grossMarginPercent() | number: '1.2-2' }}%</strong>
+        <small>Margen neto</small>
+        <strong>{{ netGrossMarginPercent() | number: '1.2-2' }}%</strong>
       </div>
     </article>
 
@@ -180,7 +197,7 @@
       [showCurrentPageReport]="true"
       currentPageReportTemplate="{first} - {last} de {totalRecords}"
       responsiveLayout="scroll"
-      [tableStyle]="{ 'min-width': '94rem' }"
+      [tableStyle]="{ 'min-width': '110rem' }"
     >
       <ng-template pTemplate="header">
         <tr>
@@ -190,9 +207,11 @@
           <th pSortableColumn="documentType">Tipo <p-sortIcon field="documentType"></p-sortIcon></th>
           <th pSortableColumn="status">Estado venta <p-sortIcon field="status"></p-sortIcon></th>
           <th pSortableColumn="documentStatus">Estado SRI <p-sortIcon field="documentStatus"></p-sortIcon></th>
-          <th pSortableColumn="total" class="numeric-column total-column">Total <p-sortIcon field="total"></p-sortIcon></th>
-          <th pSortableColumn="grossProfit" class="numeric-column profit-column">Utilidad <p-sortIcon field="grossProfit"></p-sortIcon></th>
-          <th pSortableColumn="grossMarginPercent" class="numeric-column margin-column">Margen <p-sortIcon field="grossMarginPercent"></p-sortIcon></th>
+          <th pSortableColumn="total" class="numeric-column total-column">Total original <p-sortIcon field="total"></p-sortIcon></th>
+          <th pSortableColumn="creditNoteImpact.authorizedCreditNoteTotal" class="numeric-column total-column">NC <p-sortIcon field="creditNoteImpact.authorizedCreditNoteTotal"></p-sortIcon></th>
+          <th pSortableColumn="creditNoteImpact.netTotal" class="numeric-column total-column">Neto <p-sortIcon field="creditNoteImpact.netTotal"></p-sortIcon></th>
+          <th pSortableColumn="creditNoteImpact.netGrossProfit" class="numeric-column profit-column">Utilidad neta <p-sortIcon field="creditNoteImpact.netGrossProfit"></p-sortIcon></th>
+          <th pSortableColumn="creditNoteImpact.netGrossMarginPercent" class="numeric-column margin-column">Margen neto <p-sortIcon field="creditNoteImpact.netGrossMarginPercent"></p-sortIcon></th>
           <th pSortableColumn="username" class="user-column">Usuario <p-sortIcon field="username"></p-sortIcon></th>
           <th class="action-column">Accion</th>
         </tr>
@@ -231,8 +250,19 @@
           <td class="numeric-column total-column">
             <strong [class.voided-total]="sale.status === 2">{{ sale.total | currency: 'USD' }}</strong>
           </td>
-          <td class="numeric-column profit-column">{{ sale.grossProfit | currency: 'USD' }}</td>
-          <td class="numeric-column margin-column">{{ sale.grossMarginPercent | number: '1.2-2' }}%</td>
+          <td class="numeric-column total-column">
+            <span class="credit-note-stack">
+              {{ sale.creditNoteImpact.authorizedCreditNoteTotal | currency: 'USD' }}
+              @if (sale.creditNoteImpact.authorizedCreditNoteCount > 0) {
+                <p-tag [value]="sale.creditNoteImpact.authorizedCreditNoteCount + ' NC'" severity="info"></p-tag>
+              }
+            </span>
+          </td>
+          <td class="numeric-column total-column" [class.negative-amount]="sale.creditNoteImpact.netTotal < 0">
+            <strong>{{ sale.creditNoteImpact.netTotal | currency: 'USD' }}</strong>
+          </td>
+          <td class="numeric-column profit-column" [class.negative-amount]="sale.creditNoteImpact.netGrossProfit < 0">{{ sale.creditNoteImpact.netGrossProfit | currency: 'USD' }}</td>
+          <td class="numeric-column margin-column">{{ sale.creditNoteImpact.netGrossMarginPercent | number: '1.2-2' }}%</td>
           <td class="user-column">{{ sale.username || ('userId ' + sale.userId) }}</td>
           <td class="action-column">
             <p-button
@@ -248,7 +278,7 @@
 
       <ng-template pTemplate="emptymessage">
         <tr>
-          <td colspan="11">
+          <td colspan="13">
             <div class="empty-state">
               <i class="pi pi-inbox"></i>
               <strong>No hay ventas para los filtros aplicados.</strong>
@@ -385,6 +415,25 @@
       <div><span>Costo total</span><strong>{{ sale.totalCost | currency: 'USD' }}</strong></div>
       <div class="totals-grid__profit"><span>Utilidad bruta</span><strong>{{ sale.grossProfit | currency: 'USD' }}</strong></div>
       <div><span>Margen bruto</span><strong>{{ sale.grossMarginPercent | number: '1.2-2' }}%</strong></div>
+    </section>
+
+    <section class="credit-note-impact" aria-label="Impacto de notas de crédito">
+      <h3>Impacto de notas de crédito</h3>
+      <dl class="impact-grid">
+        <div><dt>NC autorizadas</dt><dd>{{ sale.creditNoteImpact.authorizedCreditNoteCount }}</dd></div>
+        <div><dt>Total original</dt><dd>{{ sale.total | currency: 'USD' }}</dd></div>
+        <div><dt>Total acreditado</dt><dd>{{ sale.creditNoteImpact.authorizedCreditNoteTotal | currency: 'USD' }}</dd></div>
+        <div><dt>Total neto</dt><dd>{{ sale.creditNoteImpact.netTotal | currency: 'USD' }}</dd></div>
+        <div><dt>Costo original</dt><dd>{{ sale.totalCost | currency: 'USD' }}</dd></div>
+        <div><dt>Costo revertido</dt><dd>{{ sale.creditNoteImpact.returnedCost | currency: 'USD' }}</dd></div>
+        <div><dt>Costo neto</dt><dd>{{ sale.creditNoteImpact.netCost | currency: 'USD' }}</dd></div>
+        <div><dt>Utilidad original</dt><dd>{{ sale.grossProfit | currency: 'USD' }}</dd></div>
+        <div><dt>Utilidad neta</dt><dd>{{ sale.creditNoteImpact.netGrossProfit | currency: 'USD' }}</dd></div>
+        <div><dt>Margen neto</dt><dd>{{ sale.creditNoteImpact.netGrossMarginPercent | number: '1.2-2' }}%</dd></div>
+      </dl>
+      @if (sale.creditNoteImpact.authorizedCreditNoteCount > 0) {
+        <p>El costo solo se revierte cuando la devolución física fue registrada.</p>
+      }
     </section>
 
     @if (sale.notes) {

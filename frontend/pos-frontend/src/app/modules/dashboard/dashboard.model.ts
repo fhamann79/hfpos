@@ -11,7 +11,19 @@ export interface DashboardSummary {
   alerts: DashboardAlert[];
 }
 
-export interface DashboardSalesToday {
+export interface DashboardNetSales {
+  creditNoteCount: number;
+  creditNoteTotal: number;
+  creditNoteSubtotal: number;
+  returnedCost: number;
+  netSales: number;
+  netSubtotal: number;
+  netCost: number;
+  netGrossProfit: number;
+  netGrossMarginPercent: number;
+}
+
+export interface DashboardSalesToday extends DashboardNetSales {
   count: number;
   totalSold: number;
   totalCost: number;
@@ -23,7 +35,7 @@ export interface DashboardSalesToday {
   authorizedSriInvoiceCount: number;
 }
 
-export interface DashboardSalesLastSevenDays {
+export interface DashboardSalesLastSevenDays extends DashboardNetSales {
   count: number;
   totalSold: number;
   totalCost: number;
@@ -32,7 +44,7 @@ export interface DashboardSalesLastSevenDays {
   days: DashboardDailySales[];
 }
 
-export interface DashboardDailySales {
+export interface DashboardDailySales extends DashboardNetSales {
   date: string;
   count: number;
   totalSold: number;

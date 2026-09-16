@@ -101,16 +101,25 @@ export class SalesReportPage implements OnInit {
   readonly totalSold = computed(() =>
     this.reportableSales().reduce((total, sale) => total + sale.total, 0)
   );
-  readonly totalCost = computed(() =>
-    this.reportableSales().reduce((total, sale) => total + sale.totalCost, 0)
+  readonly creditNoteTotal = computed(() =>
+    this.reportableSales().reduce((total, sale) => total + sale.creditNoteImpact.authorizedCreditNoteTotal, 0)
   );
-  readonly totalGrossProfit = computed(() =>
-    this.reportableSales().reduce((total, sale) => total + sale.grossProfit, 0)
+  readonly creditNoteCount = computed(() =>
+    this.reportableSales().reduce((total, sale) => total + sale.creditNoteImpact.authorizedCreditNoteCount, 0)
   );
-  readonly grossMarginPercent = computed(() => {
-    const marginBase = this.totalCost() + this.totalGrossProfit();
+  readonly netTotal = computed(() =>
+    this.reportableSales().reduce((total, sale) => total + sale.creditNoteImpact.netTotal, 0)
+  );
+  readonly netCost = computed(() =>
+    this.reportableSales().reduce((total, sale) => total + sale.creditNoteImpact.netCost, 0)
+  );
+  readonly netGrossProfit = computed(() =>
+    this.reportableSales().reduce((total, sale) => total + sale.creditNoteImpact.netGrossProfit, 0)
+  );
+  readonly netGrossMarginPercent = computed(() => {
+    const marginBase = this.reportableSales().reduce((total, sale) => total + sale.creditNoteImpact.netSubtotal, 0);
 
-    return marginBase > 0 ? (this.totalGrossProfit() / marginBase) * 100 : 0;
+    return marginBase > 0 ? (this.netGrossProfit() / marginBase) * 100 : 0;
   });
   readonly invoiceCount = computed(() => this.sales().filter((sale) => sale.documentType === SaleDocumentType.Invoice).length);
   readonly ticketCount = computed(() => this.sales().filter((sale) => sale.documentType === SaleDocumentType.Ticket).length);
@@ -205,10 +214,17 @@ export class SalesReportPage implements OnInit {
       'Tipo documento',
       'Estado venta',
       'Estado fiscal',
-      'Total',
-      'Costo total',
-      'Utilidad bruta',
+      'Total original',
+      'Notas de crédito autorizadas',
+      'Cantidad NC',
+      'Total neto',
+      'Costo original',
+      'Costo revertido',
+      'Costo neto',
+      'Utilidad original',
       'Margen bruto %',
+      'Utilidad neta',
+      'Margen neto %',
       'Usuario',
       'Notas',
     ];
@@ -224,9 +240,16 @@ export class SalesReportPage implements OnInit {
       this.saleStatusLabel(sale),
       this.fiscalStatusLabel(sale),
       this.csvMoneyValue(sale.total),
+      this.csvMoneyValue(sale.creditNoteImpact.authorizedCreditNoteTotal),
+      sale.creditNoteImpact.authorizedCreditNoteCount,
+      this.csvMoneyValue(sale.creditNoteImpact.netTotal),
       this.csvMoneyValue(sale.totalCost),
+      this.csvMoneyValue(sale.creditNoteImpact.returnedCost),
+      this.csvMoneyValue(sale.creditNoteImpact.netCost),
       this.csvMoneyValue(sale.grossProfit),
       this.csvPercentValue(sale.grossMarginPercent),
+      this.csvMoneyValue(sale.creditNoteImpact.netGrossProfit),
+      this.csvPercentValue(sale.creditNoteImpact.netGrossMarginPercent),
       sale.username ?? '',
       sale.notes ?? '',
     ]);
