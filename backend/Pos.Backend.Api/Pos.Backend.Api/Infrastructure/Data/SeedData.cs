@@ -359,39 +359,31 @@ public static class SeedData
 
         async Task EnsureDemoUserAsync(string username, string email, string password, Role role)
         {
-            var user = await context.Users
-                .FirstOrDefaultAsync(u => u.Username == username);
-
-            if (user is null)
+            // Demo identities never take ownership of an existing global username or email.
+            if (await context.Users.AnyAsync(u => u.Username == username))
             {
-                if (await context.Users.AnyAsync(u => u.Email == email))
-                {
-                    throw new InvalidOperationException("Demo email is already reserved.");
-                }
-
-                user = new User
-                {
-                    Username = username,
-                    Email = email,
-                    CompanyId = company.Id,
-                    RoleId = role.Id,
-                    EstablishmentId = establishment.Id,
-                    EmissionPointId = emissionPoint.Id,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow
-                };
-                user.PasswordHash = hasher.HashPassword(user, password);
-                context.Users.Add(user);
-                await context.SaveChangesAsync();
                 return;
             }
 
-            if (user.CompanyId != company.Id)
+            if (await context.Users.AnyAsync(u => u.Email == email))
             {
-                throw new InvalidOperationException("Demo username is already reserved outside the demo company.");
+                return;
             }
 
-            // Existing assignments and activation state belong to tenant administration.
+            var user = new User
+            {
+                Username = username,
+                Email = email,
+                CompanyId = company.Id,
+                RoleId = role.Id,
+                EstablishmentId = establishment.Id,
+                EmissionPointId = emissionPoint.Id,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            user.PasswordHash = hasher.HashPassword(user, password);
+            context.Users.Add(user);
+            await context.SaveChangesAsync();
         }
 
         await EnsureDemoUserAsync(adminUsername, adminEmail, adminPassword, adminRole);
