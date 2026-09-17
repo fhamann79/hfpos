@@ -19,37 +19,8 @@ public class AuthService
         _logger = logger;
     }
 
-    public async Task<(bool Ok, string Error)> RegisterAsync(RegisterDto dto)
-    {
-        var exists = await _context.Users.AnyAsync(u =>
-            u.Username == dto.Username || u.Email == dto.Email);
-
-        if (exists)
-            return (false, "UsernameOrEmailAlreadyExists");
-
-        var defaultRole = await _context.Roles
-            .FirstOrDefaultAsync(r => r.Code == "CASHIER" && r.IsActive);
-
-        if (defaultRole is null)
-            return (false, "ROLE_NOT_FOUND");
-
-        var user = new User
-        {
-            Username = dto.Username,
-            Email = dto.Email,
-            CompanyId = dto.CompanyId,
-            RoleId = defaultRole.Id,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        user.PasswordHash = _hasher.HashPassword(user, dto.Password);
-
-        _context.Users.Add(user);
-        await _context.SaveChangesAsync();
-
-        return (true, "");
-    }
+    public Task<(bool Ok, string Error)> RegisterAsync(RegisterDto dto)
+        => Task.FromResult((false, "PUBLIC_REGISTRATION_NOT_SUPPORTED"));
 
     public async Task<(User? User, string Error)> ValidateLoginAsync(LoginDto dto)
     {
@@ -124,6 +95,17 @@ public class AuthService
                 user.Id,
                 "EMISSION_POINT_INACTIVE_OR_NOT_FOUND");
             return (null, "EMISSION_POINT_INACTIVE_OR_NOT_FOUND");
+        }
+
+        if (user.Role is null || !user.Role.IsActive || user.Role.CompanyId != user.CompanyId)
+        {
+            return (null, "ROLE_INACTIVE_OR_INVALID");
+        }
+
+        if (user.Establishment.CompanyId != user.CompanyId
+            || user.EmissionPoint.EstablishmentId != user.EstablishmentId)
+        {
+            return (null, "CONTEXT_MISMATCH");
         }
 
         // 8) Validación password hash

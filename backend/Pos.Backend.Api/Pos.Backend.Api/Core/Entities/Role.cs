@@ -5,6 +5,8 @@ namespace Pos.Backend.Api.Core.Entities;
 public class Role
 {
     public int Id { get; set; }
+    public int CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
 
     [Required]
     [MaxLength(30)]

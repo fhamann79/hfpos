@@ -16,16 +16,13 @@ export interface CreateUserRequest {
   email: string;
   password: string;
   roleId: number;
-  companyId: number;
   establishmentId: number;
   emissionPointId: number;
 }
 
 export interface UpdateUserRequest {
-  username: string;
   email: string;
   roleId: number;
-  companyId: number;
   establishmentId: number;
   emissionPointId: number;
   isActive: boolean;

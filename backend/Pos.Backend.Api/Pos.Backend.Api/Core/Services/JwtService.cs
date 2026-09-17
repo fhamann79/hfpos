@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using Pos.Backend.Api.Configuration;
 using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Security;
+using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Infrastructure.Data;
 
 namespace Pos.Backend.Api.Core.Services;
@@ -24,20 +25,16 @@ public class JwtService
 
     public string GenerateToken(User user)
     {
-        var roleCode = user.Role?.Code;
-
-        if (string.IsNullOrWhiteSpace(roleCode) && user.RoleId > 0)
-        {
-            roleCode = _context.Roles
-                .AsNoTracking()
-                .Where(r => r.Id == user.RoleId)
-                .Select(r => r.Code)
-                .FirstOrDefault();
-        }
+        var roleCode = _context.Roles
+            .AsNoTracking()
+            .Where(r => r.Id == user.RoleId && r.CompanyId == user.CompanyId && r.IsActive)
+            .Select(r => r.Code)
+            .FirstOrDefault()
+            ?? throw new OperationalContextException("ROLE_INACTIVE_OR_INVALID", StatusCodes.Status401Unauthorized);
 
         var permissions = _context.RolePermissions
             .AsNoTracking()
-            .Where(rp => rp.RoleId == user.RoleId && rp.Permission.IsActive)
+            .Where(rp => rp.RoleId == user.RoleId && rp.Role.CompanyId == user.CompanyId && rp.Permission.IsActive)
             .Select(rp => rp.Permission.Code)
             .Distinct()
             .ToList();

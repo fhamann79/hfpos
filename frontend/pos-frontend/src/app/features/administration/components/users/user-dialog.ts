@@ -6,10 +6,8 @@ import { CheckboxModule } from 'primeng/checkbox';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
-import { Company } from '../../../operational-structure/models/company.model';
 import { EmissionPoint } from '../../../operational-structure/models/emission-point.model';
 import { Establishment } from '../../../operational-structure/models/establishment.model';
-import { CompanyService } from '../../../operational-structure/services/company.service';
 import { EmissionPointService } from '../../../operational-structure/services/emission-point.service';
 import { EstablishmentService } from '../../../operational-structure/services/establishment.service';
 import { Role } from '../../models/role.model';
@@ -38,7 +36,6 @@ export type UserDialogSubmit =
 export class UserDialog implements OnChanges {
   private readonly fb = inject(FormBuilder);
   private readonly roleService = inject(RoleService);
-  private readonly companyService = inject(CompanyService);
   private readonly establishmentService = inject(EstablishmentService);
   private readonly emissionPointService = inject(EmissionPointService);
 
@@ -48,7 +45,6 @@ export class UserDialog implements OnChanges {
   @Output() submitForm = new EventEmitter<UserDialogSubmit>();
 
   readonly roles = signal<Role[]>([]);
-  readonly companies = signal<Company[]>([]);
   readonly establishments = signal<Establishment[]>([]);
   readonly emissionPoints = signal<EmissionPoint[]>([]);
 
@@ -57,7 +53,6 @@ export class UserDialog implements OnChanges {
     email: ['', [Validators.required, Validators.email]],
     password: [''],
     roleId: [0, [Validators.required, Validators.min(1)]],
-    companyId: [0, [Validators.required, Validators.min(1)]],
     establishmentId: [0, [Validators.required, Validators.min(1)]],
     emissionPointId: [0, [Validators.required, Validators.min(1)]],
     isActive: [true],
@@ -80,16 +75,6 @@ export class UserDialog implements OnChanges {
 
   hide(): void {
     this.visibleChange.emit(false);
-  }
-
-  onCompanyChange(companyId: number): void {
-    this.form.patchValue({ establishmentId: 0, emissionPointId: 0 });
-    this.establishments.set([]);
-    this.emissionPoints.set([]);
-
-    if (companyId > 0) {
-      this.loadEstablishments(companyId);
-    }
   }
 
   onEstablishmentChange(establishmentId: number): void {
@@ -122,10 +107,8 @@ export class UserDialog implements OnChanges {
         mode: 'edit',
         id: this.user.id,
         payload: {
-          username: values.username.trim(),
           email: values.email.trim(),
           roleId: values.roleId,
-          companyId: values.companyId,
           establishmentId: values.establishmentId,
           emissionPointId: values.emissionPointId,
           isActive: values.isActive,
@@ -141,7 +124,6 @@ export class UserDialog implements OnChanges {
         email: values.email.trim(),
         password: values.password.trim(),
         roleId: values.roleId,
-        companyId: values.companyId,
         establishmentId: values.establishmentId,
         emissionPointId: values.emissionPointId,
       },
@@ -149,15 +131,11 @@ export class UserDialog implements OnChanges {
   }
 
   private loadInitialCatalogs(): void {
-    this.roleService.getAll().subscribe({ next: (roles) => this.roles.set(roles), error: () => this.roles.set([]) });
-    this.companyService.getAll().subscribe({
-      next: (companies) => this.companies.set(companies.filter((company) => company.isActive)),
-      error: () => this.companies.set([]),
-    });
+    this.roleService.getAll().subscribe({ next: (roles) => this.roles.set(roles.filter((role) => role.isActive)), error: () => this.roles.set([]) });
   }
 
-  private loadEstablishments(companyId: number): void {
-    this.establishmentService.getAll(companyId).subscribe({
+  private loadEstablishments(): void {
+    this.establishmentService.getAll().subscribe({
       next: (establishments) => this.establishments.set(establishments.filter((item) => item.isActive)),
       error: () => this.establishments.set([]),
     });
@@ -181,12 +159,11 @@ export class UserDialog implements OnChanges {
         email: this.user.email,
         password: '',
         roleId: this.user.roleId,
-        companyId: this.user.companyId,
         establishmentId: this.user.establishmentId,
         emissionPointId: this.user.emissionPointId,
         isActive: this.user.isActive,
       });
-      this.loadEstablishments(this.user.companyId);
+      this.loadEstablishments();
       this.loadEmissionPoints(this.user.establishmentId);
       return;
     }
@@ -196,12 +173,11 @@ export class UserDialog implements OnChanges {
       email: '',
       password: '',
       roleId: 0,
-      companyId: 0,
       establishmentId: 0,
       emissionPointId: 0,
       isActive: true,
     });
-    this.establishments.set([]);
+    this.loadEstablishments();
     this.emissionPoints.set([]);
   }
 }

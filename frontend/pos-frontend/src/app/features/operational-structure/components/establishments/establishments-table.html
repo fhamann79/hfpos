@@ -5,9 +5,9 @@
         <h3>Establecimientos</h3>
         <small>
           @if (selectedCompany) {
-            Company: <strong>{{ selectedCompany.name }}</strong>
+            Empresa: <strong>{{ selectedCompany.name }}</strong>
           } @else {
-            Selecciona una compañía para cargar establecimientos.
+            Empresa actual no disponible.
           }
         </small>
       </div>
@@ -20,7 +20,7 @@
   </p-toolbar>
 
   @if (!selectedCompany) {
-    <p-message severity="info" text="Selecciona una compañía para comenzar."></p-message>
+    <p-message severity="info" text="Empresa actual no disponible."></p-message>
   } @else {
     @if (errorMessage()) {
       <p-message severity="error" [text]="errorMessage()"></p-message>
@@ -72,7 +72,6 @@
 <app-establishment-dialog
   [visible]="dialogVisible"
   [establishment]="editingEstablishment"
-  [companyId]="selectedCompany?.id ?? null"
   (visibleChange)="onDialogVisibleChange($event)"
   (submitForm)="submitDialog($event)"
 ></app-establishment-dialog>

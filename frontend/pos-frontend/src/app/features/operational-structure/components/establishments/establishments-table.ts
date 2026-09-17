@@ -68,7 +68,7 @@ export class EstablishmentsTable implements OnChanges {
     this.loading.set(true);
     this.errorMessage.set('');
 
-    this.establishmentService.getAll(this.selectedCompany.id).subscribe({
+    this.establishmentService.getAll().subscribe({
       next: (establishments) => {
         this.establishments.set(establishments);
         if (this.selectedEstablishment) {

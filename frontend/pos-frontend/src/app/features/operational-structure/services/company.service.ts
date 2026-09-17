@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { environment } from '../../../../environments/environment';
-import { Company, CreateCompanyRequest, UpdateCompanyRequest } from '../models/company.model';
+import { Company, UpdateCompanyRequest } from '../models/company.model';
 
 @Injectable({ providedIn: 'root' })
 export class CompanyService {
@@ -12,15 +12,9 @@ export class CompanyService {
     return this.http.get<Company[]>(this.baseUrl);
   }
 
-  create(payload: CreateCompanyRequest) {
-    return this.http.post<Company>(this.baseUrl, payload);
-  }
-
   update(id: number, payload: UpdateCompanyRequest) {
-    return this.http.put<Company>(`${this.baseUrl}/${id}`, payload);
+    const { name, timeZoneId } = payload;
+    return this.http.put<void>(`${this.baseUrl}/${id}`, { name, timeZoneId });
   }
 
-  delete(id: number) {
-    return this.http.delete<void>(`${this.baseUrl}/${id}`);
-  }
 }

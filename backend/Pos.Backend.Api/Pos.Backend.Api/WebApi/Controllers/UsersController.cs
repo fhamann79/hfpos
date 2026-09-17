@@ -7,29 +7,39 @@ using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Infrastructure.Data;
+using Pos.Backend.Api.Core.Services;
+using Pos.Backend.Api.WebApi.Filters;
 
 namespace Pos.Backend.Api.WebApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
+[RequireOperationalContext]
 public class UsersController : ControllerBase
 {
     private readonly PosDbContext _context;
     private readonly PasswordHasher<User> _hasher = new();
 
-    public UsersController(PosDbContext context)
+    private readonly IOperationalContextAccessor _operationalContext;
+    private readonly TenantAdministrationGuard _administrationGuard;
+
+    public UsersController(PosDbContext context, IOperationalContextAccessor operationalContext, TenantAdministrationGuard administrationGuard)
     {
         _context = context;
+        _operationalContext = operationalContext;
+        _administrationGuard = administrationGuard;
     }
 
     [HttpGet]
     [Authorize(Policy = AppPermissions.AdminUsersRead)]
     public async Task<ActionResult<IEnumerable<UserListDto>>> Get()
     {
+        var tenant = await _operationalContext.GetRequiredContextAsync();
         var users = await _context.Users
             .AsNoTracking()
             .Include(u => u.Role)
+            .Where(u => u.CompanyId == tenant.CompanyId)
             .OrderBy(u => u.Username)
             .Select(u => new UserListDto
             {
@@ -53,9 +63,11 @@ public class UsersController : ControllerBase
     [Authorize(Policy = AppPermissions.AdminUsersRead)]
     public async Task<ActionResult<UserDetailDto>> GetById(int id)
     {
+        var tenant = await _operationalContext.GetRequiredContextAsync();
         var user = await _context.Users
             .AsNoTracking()
             .Include(u => u.Role)
+            .Where(u => u.CompanyId == tenant.CompanyId)
             .Where(u => u.Id == id)
             .Select(u => new UserDetailDto
             {
@@ -84,7 +96,9 @@ public class UsersController : ControllerBase
     [Authorize(Policy = AppPermissions.AdminUsersWrite)]
     public async Task<ActionResult<UserDetailDto>> Create([FromBody] UserCreateDto dto)
     {
-        var validationError = await ValidateUserDataAsync(dto.Username, dto.Email, dto.RoleId, dto.CompanyId, dto.EstablishmentId, dto.EmissionPointId);
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        var validationError = await ValidateUserDataAsync(dto.Username, dto.Email, dto.RoleId, tenant.CompanyId, dto.EstablishmentId, dto.EmissionPointId);
         if (validationError is not null)
         {
             return validationError;
@@ -100,7 +114,7 @@ public class UsersController : ControllerBase
             Username = dto.Username.Trim(),
             Email = dto.Email.Trim(),
             RoleId = dto.RoleId,
-            CompanyId = dto.CompanyId,
+            CompanyId = tenant.CompanyId,
             EstablishmentId = dto.EstablishmentId,
             EmissionPointId = dto.EmissionPointId,
             IsActive = dto.IsActive,
@@ -111,10 +125,12 @@ public class UsersController : ControllerBase
 
         _context.Users.Add(user);
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
 
         var created = await _context.Users
             .AsNoTracking()
             .Include(u => u.Role)
+            .Where(u => u.CompanyId == tenant.CompanyId)
             .Where(u => u.Id == user.Id)
             .Select(u => new UserDetailDto
             {
@@ -138,13 +154,15 @@ public class UsersController : ControllerBase
     [Authorize(Policy = AppPermissions.AdminUsersWrite)]
     public async Task<IActionResult> Update(int id, [FromBody] UserUpdateDto dto)
     {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id && u.CompanyId == tenant.CompanyId);
         if (user is null)
         {
             return NotFound(new ApiErrorResponse { Error = "USER_NOT_FOUND" });
         }
 
-        var validationError = await ValidateUserDataAsync(user.Username, dto.Email, dto.RoleId, dto.CompanyId, dto.EstablishmentId, dto.EmissionPointId, id);
+        var validationError = await ValidateUserDataAsync(user.Username, dto.Email, dto.RoleId, tenant.CompanyId, dto.EstablishmentId, dto.EmissionPointId, id);
         if (validationError is not null)
         {
             return validationError;
@@ -152,12 +170,16 @@ public class UsersController : ControllerBase
 
         user.Email = dto.Email.Trim();
         user.RoleId = dto.RoleId;
-        user.CompanyId = dto.CompanyId;
         user.EstablishmentId = dto.EstablishmentId;
         user.EmissionPointId = dto.EmissionPointId;
         user.IsActive = dto.IsActive;
 
         await _context.SaveChangesAsync();
+        if (!await _administrationGuard.HasActiveAdministratorAsync(tenant.CompanyId))
+        {
+            return Conflict(new ApiErrorResponse { Error = "LAST_ACTIVE_ADMIN_REQUIRED" });
+        }
+        await tx.CommitAsync();
 
         return NoContent();
     }
@@ -166,19 +188,22 @@ public class UsersController : ControllerBase
     [Authorize(Policy = AppPermissions.AdminUsersWrite)]
     public async Task<IActionResult> ChangePassword(int id, [FromBody] ChangeUserPasswordDto dto)
     {
-        if (string.IsNullOrWhiteSpace(dto?.NewPassword))
-        {
-            return BadRequest(new ApiErrorResponse { Error = "NEW_PASSWORD_REQUIRED" });
-        }
-
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id && u.CompanyId == tenant.CompanyId);
         if (user is null)
         {
             return NotFound(new ApiErrorResponse { Error = "USER_NOT_FOUND" });
         }
 
+        if (string.IsNullOrWhiteSpace(dto?.NewPassword))
+        {
+            return BadRequest(new ApiErrorResponse { Error = "NEW_PASSWORD_REQUIRED" });
+        }
+
         user.PasswordHash = _hasher.HashPassword(user, dto.NewPassword);
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return NoContent();
     }
@@ -187,7 +212,9 @@ public class UsersController : ControllerBase
     [Authorize(Policy = AppPermissions.AdminUsersWrite)]
     public async Task<IActionResult> Delete(int id)
     {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id && u.CompanyId == tenant.CompanyId);
         if (user is null)
         {
             return NotFound(new ApiErrorResponse { Error = "USER_NOT_FOUND" });
@@ -195,7 +222,13 @@ public class UsersController : ControllerBase
 
         // Decisión explícita: soft-delete lógico.
         user.IsActive = false;
+
         await _context.SaveChangesAsync();
+        if (!await _administrationGuard.HasActiveAdministratorAsync(tenant.CompanyId))
+        {
+            return Conflict(new ApiErrorResponse { Error = "LAST_ACTIVE_ADMIN_REQUIRED" });
+        }
+        await tx.CommitAsync();
 
         return NoContent();
     }
@@ -243,10 +276,10 @@ public class UsersController : ControllerBase
             return Conflict(new ApiErrorResponse { Error = "EMAIL_ALREADY_EXISTS" });
         }
 
-        var role = await _context.Roles.FirstOrDefaultAsync(r => r.Id == roleId);
+        var role = await _context.Roles.FirstOrDefaultAsync(r => r.Id == roleId && r.CompanyId == companyId);
         if (role is null)
         {
-            return BadRequest(new ApiErrorResponse { Error = "ROLE_NOT_FOUND" });
+            return BadRequest(new ApiErrorResponse { Error = "ROLE_NOT_IN_COMPANY" });
         }
 
         if (!role.IsActive)
@@ -254,36 +287,19 @@ public class UsersController : ControllerBase
             return BadRequest(new ApiErrorResponse { Error = "ROLE_INACTIVE" });
         }
 
-        var company = await _context.Companies.FirstOrDefaultAsync(c => c.Id == companyId);
-        if (company is null)
-        {
-            return BadRequest(new ApiErrorResponse { Error = "COMPANY_NOT_FOUND" });
-        }
-
-        var establishment = await _context.Establishments
-            .FirstOrDefaultAsync(e => e.Id == establishmentId.Value);
-
-        if (establishment is null)
+        var establishmentExists = await _context.Establishments.AnyAsync(e =>
+            e.Id == establishmentId.Value && e.CompanyId == companyId);
+        if (!establishmentExists)
         {
             return BadRequest(new ApiErrorResponse { Error = "ESTABLISHMENT_NOT_FOUND" });
         }
 
-        if (establishment.CompanyId != companyId)
-        {
-            return BadRequest(new ApiErrorResponse { Error = "ESTABLISHMENT_NOT_IN_COMPANY" });
-        }
-
-        var emissionPoint = await _context.EmissionPoints
-            .FirstOrDefaultAsync(ep => ep.Id == emissionPointId);
-
-        if (emissionPoint is null)
+        var emissionPointExists = await _context.EmissionPoints.AnyAsync(ep =>
+            ep.Id == emissionPointId && ep.EstablishmentId == establishmentId.Value
+            && ep.Establishment.CompanyId == companyId);
+        if (!emissionPointExists)
         {
             return BadRequest(new ApiErrorResponse { Error = "EMISSION_POINT_NOT_FOUND" });
-        }
-
-        if (emissionPoint.EstablishmentId != establishment.Id)
-        {
-            return BadRequest(new ApiErrorResponse { Error = "EMISSION_POINT_NOT_IN_ESTABLISHMENT" });
         }
 
         return null;

@@ -2,20 +2,18 @@ import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
-import { CheckboxModule } from 'primeng/checkbox';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
-import { Company, CreateCompanyRequest, UpdateCompanyRequest } from '../../models/company.model';
+import { Company, UpdateCompanyRequest } from '../../models/company.model';
 
 export type CompanyDialogSubmit =
-  | { mode: 'create'; payload: CreateCompanyRequest }
   | { mode: 'edit'; id: number; payload: UpdateCompanyRequest };
 
 @Component({
   selector: 'app-company-dialog',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, DialogModule, InputTextModule, SelectModule, CheckboxModule, ButtonModule],
+  imports: [CommonModule, ReactiveFormsModule, DialogModule, InputTextModule, SelectModule, ButtonModule],
   templateUrl: './company-dialog.html',
   styleUrl: './company-dialog.scss',
 })
@@ -41,7 +39,6 @@ export class CompanyDialog implements OnChanges {
   readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.minLength(2)]],
     timeZoneId: ['America/Guayaquil', [Validators.required]],
-    isActive: [true],
   });
 
   get isEditMode() {
@@ -73,19 +70,11 @@ export class CompanyDialog implements OnChanges {
         payload: {
           name: values.name.trim(),
           timeZoneId: values.timeZoneId,
-          isActive: values.isActive,
         },
       });
       return;
     }
 
-    this.submitForm.emit({
-      mode: 'create',
-      payload: {
-        name: values.name.trim(),
-        timeZoneId: values.timeZoneId,
-      },
-    });
   }
 
   private syncForm(): void {
@@ -97,11 +86,10 @@ export class CompanyDialog implements OnChanges {
       this.form.setValue({
         name: this.company.name,
         timeZoneId: this.company.timeZoneId,
-        isActive: this.company.isActive,
       });
       return;
     }
 
-    this.form.reset({ name: '', timeZoneId: 'America/Guayaquil', isActive: true });
+    this.form.reset({ name: '', timeZoneId: 'America/Guayaquil' });
   }
 }

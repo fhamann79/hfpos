@@ -44,12 +44,14 @@ public class OperationalContextAccessor : IOperationalContextAccessor
             ?? principal.FindFirstValue(JwtRegisteredClaimNames.Sub);
 
         var username = principal.FindFirstValue(AppClaims.Username);
+        var roleCode = principal.FindFirstValue(ClaimTypes.Role);
         var companyIdValue = principal.FindFirstValue(AppClaims.CompanyId);
         var establishmentIdValue = principal.FindFirstValue(AppClaims.EstablishmentId);
         var emissionPointIdValue = principal.FindFirstValue(AppClaims.EmissionPointId);
 
         if (string.IsNullOrWhiteSpace(userIdValue)
             || string.IsNullOrWhiteSpace(username)
+            || string.IsNullOrWhiteSpace(roleCode)
             || string.IsNullOrWhiteSpace(companyIdValue)
             || string.IsNullOrWhiteSpace(establishmentIdValue)
             || string.IsNullOrWhiteSpace(emissionPointIdValue)
@@ -71,18 +73,27 @@ public class OperationalContextAccessor : IOperationalContextAccessor
                 u.IsActive,
                 u.CompanyId,
                 u.EstablishmentId,
-                u.EmissionPointId
+                u.EmissionPointId,
+                RoleCode = u.Role.Code,
+                RoleCompanyId = u.Role.CompanyId,
+                RoleIsActive = u.Role.IsActive
             })
             .FirstOrDefaultAsync();
 
         if (user is null || !user.IsActive)
         {
-            throw LogAndCreateException("CONTEXT_MISMATCH", StatusCodes.Status403Forbidden, userId, companyId, establishmentId, emissionPointId, username);
+            throw LogAndCreateException("CONTEXT_MISMATCH", StatusCodes.Status401Unauthorized, userId, companyId, establishmentId, emissionPointId, username);
         }
 
-        if (!string.Equals(user.Username, username, StringComparison.Ordinal))
+        if (!string.Equals(user.Username, username, StringComparison.Ordinal)
+            || user.CompanyId != companyId
+            || user.EstablishmentId != establishmentId
+            || user.EmissionPointId != emissionPointId
+            || !user.RoleIsActive
+            || user.RoleCompanyId != user.CompanyId
+            || !string.Equals(user.RoleCode, roleCode, StringComparison.Ordinal))
         {
-            throw LogAndCreateException("CONTEXT_MISMATCH", StatusCodes.Status403Forbidden, userId, companyId, establishmentId, emissionPointId, username);
+            throw LogAndCreateException("CONTEXT_MISMATCH", StatusCodes.Status401Unauthorized, userId, companyId, establishmentId, emissionPointId, username);
         }
 
         var company = await _dbContext.Companies
@@ -109,7 +120,7 @@ public class OperationalContextAccessor : IOperationalContextAccessor
 
         if (establishment.CompanyId != companyId)
         {
-            throw LogAndCreateException("CONTEXT_MISMATCH", StatusCodes.Status403Forbidden, userId, companyId, establishmentId, emissionPointId, username);
+            throw LogAndCreateException("CONTEXT_MISMATCH", StatusCodes.Status401Unauthorized, userId, companyId, establishmentId, emissionPointId, username);
         }
 
         var emissionPoint = await _dbContext.EmissionPoints
@@ -128,7 +139,7 @@ public class OperationalContextAccessor : IOperationalContextAccessor
             || user.EstablishmentId != establishmentId
             || user.EmissionPointId != emissionPointId)
         {
-            throw LogAndCreateException("CONTEXT_MISMATCH", StatusCodes.Status403Forbidden, userId, companyId, establishmentId, emissionPointId, username);
+            throw LogAndCreateException("CONTEXT_MISMATCH", StatusCodes.Status401Unauthorized, userId, companyId, establishmentId, emissionPointId, username);
         }
 
         var operationalContext = new OperationalContext

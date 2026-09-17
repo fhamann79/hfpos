@@ -2,25 +2,28 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Pos.Backend.Api.Core.DTOs;
-using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.Infrastructure.Data;
+using Pos.Backend.Api.WebApi.Filters;
 
 namespace Pos.Backend.Api.WebApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
+[RequireOperationalContext]
 public class CompaniesController : ControllerBase
 {
     private readonly PosDbContext _context;
+    private readonly IOperationalContextAccessor _operationalContext;
     private readonly IBusinessClockService _businessClock;
 
-    public CompaniesController(PosDbContext context, IBusinessClockService businessClock)
+    public CompaniesController(PosDbContext context, IOperationalContextAccessor operationalContext, IBusinessClockService businessClock)
     {
         _context = context;
+        _operationalContext = operationalContext;
         _businessClock = businessClock;
     }
 
@@ -28,7 +31,9 @@ public class CompaniesController : ControllerBase
     [Authorize(Policy = AppPermissions.OpStructureRead)]
     public async Task<ActionResult<IEnumerable<CompanyDto>>> Get()
     {
+        var tenant = await _operationalContext.GetRequiredContextAsync();
         var companies = await _context.Companies
+            .Where(c => c.Id == tenant.CompanyId)
             .OrderBy(c => c.Name)
             .Select(c => new CompanyDto
             {
@@ -44,53 +49,20 @@ public class CompaniesController : ControllerBase
 
     [HttpPost]
     [Authorize(Policy = AppPermissions.OpStructureWrite)]
-    public async Task<ActionResult<CompanyDto>> Create([FromBody] CompanyCreateDto dto)
+    public async Task<IActionResult> Create()
     {
-        if (string.IsNullOrWhiteSpace(dto?.Name))
-        {
-            return BadRequest(new ApiErrorResponse { Error = "NAME_REQUIRED" });
-        }
-
-        var normalizedName = dto.Name.Trim();
-        var timeZoneValidation = ValidateTimeZoneId(dto.TimeZoneId);
-        if (timeZoneValidation.Result is not null)
-        {
-            return timeZoneValidation.Result;
-        }
-
-        var nameExists = await _context.Companies.AnyAsync(c => c.Name == normalizedName);
-        if (nameExists)
-        {
-            return Conflict(new ApiErrorResponse { Error = "COMPANY_ALREADY_EXISTS" });
-        }
-
-        var company = new Company
-        {
-            Name = normalizedName,
-            Ruc = $"AUTO-{Guid.NewGuid():N}"[..17],
-            TimeZoneId = timeZoneValidation.TimeZoneId,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _context.Companies.Add(company);
-        await _context.SaveChangesAsync();
-
-        return CreatedAtAction(nameof(GetById), new { id = company.Id }, new CompanyDto
-        {
-            Id = company.Id,
-            Name = company.Name,
-            TimeZoneId = company.TimeZoneId,
-            IsActive = company.IsActive
-        });
+        await _operationalContext.GetRequiredContextAsync();
+        return StatusCode(StatusCodes.Status403Forbidden,
+            new ApiErrorResponse { Error = "PLATFORM_OPERATION_REQUIRED" });
     }
 
     [HttpGet("{id:int}")]
     [Authorize(Policy = AppPermissions.OpStructureRead)]
     public async Task<ActionResult<CompanyDto>> GetById(int id)
     {
+        var tenant = await _operationalContext.GetRequiredContextAsync();
         var company = await _context.Companies
-            .Where(c => c.Id == id)
+            .Where(c => c.Id == id && c.Id == tenant.CompanyId)
             .Select(c => new CompanyDto
             {
                 Id = c.Id,
@@ -112,15 +84,16 @@ public class CompaniesController : ControllerBase
     [Authorize(Policy = AppPermissions.OpStructureWrite)]
     public async Task<IActionResult> Update(int id, [FromBody] CompanyUpdateDto dto)
     {
-        if (string.IsNullOrWhiteSpace(dto?.Name))
-        {
-            return BadRequest(new ApiErrorResponse { Error = "NAME_REQUIRED" });
-        }
-
-        var company = await _context.Companies.FirstOrDefaultAsync(c => c.Id == id);
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        var company = await _context.Companies.FirstOrDefaultAsync(c => c.Id == id && c.Id == tenant.CompanyId);
         if (company is null)
         {
             return NotFound(new ApiErrorResponse { Error = "COMPANY_NOT_FOUND" });
+        }
+
+        if (string.IsNullOrWhiteSpace(dto?.Name))
+        {
+            return BadRequest(new ApiErrorResponse { Error = "NAME_REQUIRED" });
         }
 
         var normalizedName = dto.Name.Trim();
@@ -130,15 +103,8 @@ public class CompaniesController : ControllerBase
             return timeZoneValidation.Result;
         }
 
-        var duplicateName = await _context.Companies.AnyAsync(c => c.Id != id && c.Name == normalizedName);
-        if (duplicateName)
-        {
-            return Conflict(new ApiErrorResponse { Error = "COMPANY_ALREADY_EXISTS" });
-        }
-
         company.Name = normalizedName;
         company.TimeZoneId = timeZoneValidation.TimeZoneId;
-        company.IsActive = dto.IsActive;
 
         await _context.SaveChangesAsync();
         return NoContent();
@@ -172,21 +138,8 @@ public class CompaniesController : ControllerBase
     [Authorize(Policy = AppPermissions.OpStructureWrite)]
     public async Task<IActionResult> Delete(int id)
     {
-        var company = await _context.Companies.FirstOrDefaultAsync(c => c.Id == id);
-        if (company is null)
-        {
-            return NotFound(new ApiErrorResponse { Error = "COMPANY_NOT_FOUND" });
-        }
-
-        var hasEstablishments = await _context.Establishments.AnyAsync(e => e.CompanyId == id);
-        if (hasEstablishments)
-        {
-            return Conflict(new ApiErrorResponse { Error = "COMPANY_HAS_ESTABLISHMENTS" });
-        }
-
-        _context.Companies.Remove(company);
-        await _context.SaveChangesAsync();
-
-        return NoContent();
+        await _operationalContext.GetRequiredContextAsync();
+        return StatusCode(StatusCodes.Status403Forbidden,
+            new ApiErrorResponse { Error = "PLATFORM_OPERATION_REQUIRED" });
     }
 }

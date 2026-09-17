@@ -46,6 +46,23 @@ public class PosDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
+        modelBuilder.Entity<Role>(entity =>
+        {
+            entity.HasIndex(r => r.CompanyId);
+            entity.HasIndex(r => new { r.CompanyId, r.Code }).IsUnique();
+            entity.HasAlternateKey(r => new { r.CompanyId, r.Id });
+            entity.HasOne(r => r.Company).WithMany()
+                .HasForeignKey(r => r.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<User>(entity =>
+        {
+            entity.HasOne(u => u.Role).WithMany()
+                .HasForeignKey(u => new { u.CompanyId, u.RoleId })
+                .HasPrincipalKey(r => new { r.CompanyId, r.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
         modelBuilder.Entity<Permission>(entity =>
         {
             entity.HasIndex(p => p.Code).IsUnique();

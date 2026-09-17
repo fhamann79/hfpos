@@ -6,32 +6,46 @@ using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Infrastructure.Data;
+using Pos.Backend.Api.Core.Services;
+using Pos.Backend.Api.WebApi.Filters;
 
 namespace Pos.Backend.Api.WebApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
+[RequireOperationalContext]
 public class EmissionPointsController : ControllerBase
 {
     private readonly PosDbContext _context;
+    private readonly IOperationalContextAccessor _operationalContext;
+    private readonly TenantAdministrationGuard _administrationGuard;
 
-    public EmissionPointsController(PosDbContext context)
+    public EmissionPointsController(PosDbContext context, IOperationalContextAccessor operationalContext, TenantAdministrationGuard administrationGuard)
     {
         _context = context;
+        _operationalContext = operationalContext;
+        _administrationGuard = administrationGuard;
     }
 
     [HttpGet]
     [Authorize(Policy = AppPermissions.OpStructureRead)]
     public async Task<ActionResult<IEnumerable<EmissionPointDto>>> Get([FromQuery] int establishmentId)
     {
+        var tenant = await _operationalContext.GetRequiredContextAsync();
         if (establishmentId <= 0)
         {
             return BadRequest(new ApiErrorResponse { Error = "ESTABLISHMENT_ID_REQUIRED" });
         }
 
+        if (!await _context.Establishments.AnyAsync(e =>
+            e.Id == establishmentId && e.CompanyId == tenant.CompanyId))
+        {
+            return NotFound(new ApiErrorResponse { Error = "ESTABLISHMENT_NOT_FOUND" });
+        }
+
         var emissionPoints = await _context.EmissionPoints
-            .Where(ep => ep.EstablishmentId == establishmentId)
+            .Where(ep => ep.EstablishmentId == establishmentId && ep.Establishment.CompanyId == tenant.CompanyId)
             .OrderBy(ep => ep.Code)
             .Select(ep => new EmissionPointDto
             {
@@ -50,6 +64,7 @@ public class EmissionPointsController : ControllerBase
     [Authorize(Policy = AppPermissions.OpStructureWrite)]
     public async Task<ActionResult<EmissionPointDto>> Create([FromBody] EmissionPointCreateDto dto)
     {
+        var tenant = await _operationalContext.GetRequiredContextAsync();
         if (dto is null || dto.EstablishmentId <= 0)
         {
             return BadRequest(new ApiErrorResponse { Error = "ESTABLISHMENT_ID_REQUIRED" });
@@ -65,7 +80,7 @@ public class EmissionPointsController : ControllerBase
             return BadRequest(new ApiErrorResponse { Error = "NAME_REQUIRED" });
         }
 
-        var establishmentExists = await _context.Establishments.AnyAsync(e => e.Id == dto.EstablishmentId);
+        var establishmentExists = await _context.Establishments.AnyAsync(e => e.Id == dto.EstablishmentId && e.CompanyId == tenant.CompanyId);
         if (!establishmentExists)
         {
             return BadRequest(new ApiErrorResponse { Error = "ESTABLISHMENT_NOT_FOUND" });
@@ -106,8 +121,9 @@ public class EmissionPointsController : ControllerBase
     [Authorize(Policy = AppPermissions.OpStructureRead)]
     public async Task<ActionResult<EmissionPointDto>> GetById(int id)
     {
+        var tenant = await _operationalContext.GetRequiredContextAsync();
         var emissionPoint = await _context.EmissionPoints
-            .Where(ep => ep.Id == id)
+            .Where(ep => ep.Id == id && ep.Establishment.CompanyId == tenant.CompanyId)
             .Select(ep => new EmissionPointDto
             {
                 Id = ep.Id,
@@ -130,6 +146,14 @@ public class EmissionPointsController : ControllerBase
     [Authorize(Policy = AppPermissions.OpStructureWrite)]
     public async Task<IActionResult> Update(int id, [FromBody] EmissionPointUpdateDto dto)
     {
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        var emissionPoint = await _context.EmissionPoints.FirstOrDefaultAsync(ep => ep.Id == id && ep.Establishment.CompanyId == tenant.CompanyId);
+        if (emissionPoint is null)
+        {
+            return NotFound(new ApiErrorResponse { Error = "EMISSION_POINT_NOT_FOUND" });
+        }
+
         if (string.IsNullOrWhiteSpace(dto?.Code))
         {
             return BadRequest(new ApiErrorResponse { Error = "CODE_REQUIRED" });
@@ -138,12 +162,6 @@ public class EmissionPointsController : ControllerBase
         if (string.IsNullOrWhiteSpace(dto.Name))
         {
             return BadRequest(new ApiErrorResponse { Error = "NAME_REQUIRED" });
-        }
-
-        var emissionPoint = await _context.EmissionPoints.FirstOrDefaultAsync(ep => ep.Id == id);
-        if (emissionPoint is null)
-        {
-            return NotFound(new ApiErrorResponse { Error = "EMISSION_POINT_NOT_FOUND" });
         }
 
         var normalizedCode = dto.Code.Trim();
@@ -160,6 +178,11 @@ public class EmissionPointsController : ControllerBase
         emissionPoint.IsActive = dto.IsActive;
 
         await _context.SaveChangesAsync();
+        if (!await _administrationGuard.HasActiveAdministratorAsync(tenant.CompanyId))
+        {
+            return Conflict(new ApiErrorResponse { Error = "LAST_ACTIVE_ADMIN_REQUIRED" });
+        }
+        await tx.CommitAsync();
 
         return NoContent();
     }
@@ -168,7 +191,9 @@ public class EmissionPointsController : ControllerBase
     [Authorize(Policy = AppPermissions.OpStructureWrite)]
     public async Task<IActionResult> Delete(int id)
     {
-        var emissionPoint = await _context.EmissionPoints.FirstOrDefaultAsync(ep => ep.Id == id);
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        var emissionPoint = await _context.EmissionPoints.FirstOrDefaultAsync(ep => ep.Id == id && ep.Establishment.CompanyId == tenant.CompanyId);
         if (emissionPoint is null)
         {
             return NotFound(new ApiErrorResponse { Error = "EMISSION_POINT_NOT_FOUND" });
@@ -176,6 +201,11 @@ public class EmissionPointsController : ControllerBase
 
         _context.EmissionPoints.Remove(emissionPoint);
         await _context.SaveChangesAsync();
+        if (!await _administrationGuard.HasActiveAdministratorAsync(tenant.CompanyId))
+        {
+            return Conflict(new ApiErrorResponse { Error = "LAST_ACTIVE_ADMIN_REQUIRED" });
+        }
+        await tx.CommitAsync();
 
         return NoContent();
     }

@@ -11,7 +11,7 @@
   <form class="user-form" [formGroup]="form" (ngSubmit)="save()">
     <div class="field-grid">
       <label for="username">Username</label>
-      <input id="username" type="text" pInputText formControlName="username" />
+      <input id="username" type="text" pInputText formControlName="username" [readonly]="isEditMode" />
       @if (form.controls.username.invalid && form.controls.username.touched) {
         <small class="p-error">Username es obligatorio.</small>
       }
@@ -48,19 +48,6 @@
     </div>
 
     <div class="field-grid">
-      <label for="company">Company</label>
-      <p-select
-        inputId="company"
-        [options]="companies()"
-        optionLabel="name"
-        optionValue="id"
-        formControlName="companyId"
-        placeholder="Selecciona company"
-        (onChange)="onCompanyChange($event.value)"
-      ></p-select>
-    </div>
-
-    <div class="field-grid">
       <label for="establishment">Establishment</label>
       <p-select
         inputId="establishment"
@@ -69,7 +56,6 @@
         optionValue="id"
         formControlName="establishmentId"
         placeholder="Selecciona establishment"
-        [disabled]="!form.controls.companyId.value"
         (onChange)="onEstablishmentChange($event.value)"
       ></p-select>
     </div>

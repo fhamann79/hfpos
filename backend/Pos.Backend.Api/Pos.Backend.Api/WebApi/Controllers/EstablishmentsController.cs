@@ -6,32 +6,35 @@ using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Infrastructure.Data;
+using Pos.Backend.Api.Core.Services;
+using Pos.Backend.Api.WebApi.Filters;
 
 namespace Pos.Backend.Api.WebApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
+[RequireOperationalContext]
 public class EstablishmentsController : ControllerBase
 {
     private readonly PosDbContext _context;
+    private readonly IOperationalContextAccessor _operationalContext;
+    private readonly TenantAdministrationGuard _administrationGuard;
 
-    public EstablishmentsController(PosDbContext context)
+    public EstablishmentsController(PosDbContext context, IOperationalContextAccessor operationalContext, TenantAdministrationGuard administrationGuard)
     {
         _context = context;
+        _operationalContext = operationalContext;
+        _administrationGuard = administrationGuard;
     }
 
     [HttpGet]
     [Authorize(Policy = AppPermissions.OpStructureRead)]
-    public async Task<ActionResult<IEnumerable<EstablishmentDto>>> Get([FromQuery] int companyId)
+    public async Task<ActionResult<IEnumerable<EstablishmentDto>>> Get()
     {
-        if (companyId <= 0)
-        {
-            return BadRequest(new ApiErrorResponse { Error = "COMPANY_ID_REQUIRED" });
-        }
-
+        var tenant = await _operationalContext.GetRequiredContextAsync();
         var establishments = await _context.Establishments
-            .Where(e => e.CompanyId == companyId)
+            .Where(e => e.CompanyId == tenant.CompanyId)
             .OrderBy(e => e.Name)
             .Select(e => new EstablishmentDto
             {
@@ -49,27 +52,17 @@ public class EstablishmentsController : ControllerBase
     [Authorize(Policy = AppPermissions.OpStructureWrite)]
     public async Task<ActionResult<EstablishmentDto>> Create([FromBody] EstablishmentCreateDto dto)
     {
-        if (dto is null || dto.CompanyId <= 0)
-        {
-            return BadRequest(new ApiErrorResponse { Error = "COMPANY_ID_REQUIRED" });
-        }
-
-        if (string.IsNullOrWhiteSpace(dto.Name))
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        if (string.IsNullOrWhiteSpace(dto?.Name))
         {
             return BadRequest(new ApiErrorResponse { Error = "NAME_REQUIRED" });
         }
 
-        var companyExists = await _context.Companies.AnyAsync(c => c.Id == dto.CompanyId);
-        if (!companyExists)
-        {
-            return BadRequest(new ApiErrorResponse { Error = "COMPANY_NOT_FOUND" });
-        }
-
-        var generatedCode = await GenerateNextEstablishmentCodeAsync(dto.CompanyId);
+        var generatedCode = await GenerateNextEstablishmentCodeAsync(tenant.CompanyId);
 
         var establishment = new Establishment
         {
-            CompanyId = dto.CompanyId,
+            CompanyId = tenant.CompanyId,
             Code = generatedCode,
             Name = dto.Name.Trim(),
             Address = "N/A",
@@ -93,8 +86,9 @@ public class EstablishmentsController : ControllerBase
     [Authorize(Policy = AppPermissions.OpStructureRead)]
     public async Task<ActionResult<EstablishmentDto>> GetById(int id)
     {
+        var tenant = await _operationalContext.GetRequiredContextAsync();
         var establishment = await _context.Establishments
-            .Where(e => e.Id == id)
+            .Where(e => e.Id == id && e.CompanyId == tenant.CompanyId)
             .Select(e => new EstablishmentDto
             {
                 Id = e.Id,
@@ -116,21 +110,28 @@ public class EstablishmentsController : ControllerBase
     [Authorize(Policy = AppPermissions.OpStructureWrite)]
     public async Task<IActionResult> Update(int id, [FromBody] EstablishmentUpdateDto dto)
     {
-        if (string.IsNullOrWhiteSpace(dto?.Name))
-        {
-            return BadRequest(new ApiErrorResponse { Error = "NAME_REQUIRED" });
-        }
-
-        var establishment = await _context.Establishments.FirstOrDefaultAsync(e => e.Id == id);
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        var establishment = await _context.Establishments.FirstOrDefaultAsync(e => e.Id == id && e.CompanyId == tenant.CompanyId);
         if (establishment is null)
         {
             return NotFound(new ApiErrorResponse { Error = "ESTABLISHMENT_NOT_FOUND" });
+        }
+
+        if (string.IsNullOrWhiteSpace(dto?.Name))
+        {
+            return BadRequest(new ApiErrorResponse { Error = "NAME_REQUIRED" });
         }
 
         establishment.Name = dto.Name.Trim();
         establishment.IsActive = dto.IsActive;
 
         await _context.SaveChangesAsync();
+        if (!await _administrationGuard.HasActiveAdministratorAsync(tenant.CompanyId))
+        {
+            return Conflict(new ApiErrorResponse { Error = "LAST_ACTIVE_ADMIN_REQUIRED" });
+        }
+        await tx.CommitAsync();
 
         return NoContent();
     }
@@ -139,7 +140,9 @@ public class EstablishmentsController : ControllerBase
     [Authorize(Policy = AppPermissions.OpStructureWrite)]
     public async Task<IActionResult> Delete(int id)
     {
-        var establishment = await _context.Establishments.FirstOrDefaultAsync(e => e.Id == id);
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        var establishment = await _context.Establishments.FirstOrDefaultAsync(e => e.Id == id && e.CompanyId == tenant.CompanyId);
         if (establishment is null)
         {
             return NotFound(new ApiErrorResponse { Error = "ESTABLISHMENT_NOT_FOUND" });
@@ -153,6 +156,11 @@ public class EstablishmentsController : ControllerBase
 
         _context.Establishments.Remove(establishment);
         await _context.SaveChangesAsync();
+        if (!await _administrationGuard.HasActiveAdministratorAsync(tenant.CompanyId))
+        {
+            return Conflict(new ApiErrorResponse { Error = "LAST_ACTIVE_ADMIN_REQUIRED" });
+        }
+        await tx.CommitAsync();
 
         return NoContent();
     }
