@@ -27,7 +27,6 @@ export class EstablishmentDialog implements OnChanges {
 
   @Input({ required: true }) visible = false;
   @Input() establishment: Establishment | null = null;
-  @Input({ required: true }) companyId: number | null = null;
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() submitForm = new EventEmitter<EstablishmentDialogSubmit>();
 
@@ -51,7 +50,7 @@ export class EstablishmentDialog implements OnChanges {
   }
 
   save(): void {
-    if (this.form.invalid || !this.companyId) {
+    if (this.form.invalid) {
       this.form.markAllAsTouched();
       return;
     }
@@ -63,7 +62,6 @@ export class EstablishmentDialog implements OnChanges {
         mode: 'edit',
         id: this.establishment.id,
         payload: {
-          companyId: this.companyId,
           name: values.name.trim(),
           isActive: values.isActive,
         },
@@ -74,7 +72,6 @@ export class EstablishmentDialog implements OnChanges {
     this.submitForm.emit({
       mode: 'create',
       payload: {
-        companyId: this.companyId,
         name: values.name.trim(),
       },
     });

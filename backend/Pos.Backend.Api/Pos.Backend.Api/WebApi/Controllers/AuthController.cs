@@ -1,13 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Core.Services;
-using Pos.Backend.Api.Infrastructure.Data;
+using Pos.Backend.Api.WebApi.Filters;
 using System.Security.Claims;
-using System.IdentityModel.Tokens.Jwt;
 
 namespace Pos.Backend.Api.WebApi.Controllers;
 
@@ -17,13 +15,13 @@ public class AuthController : ControllerBase
 {
     private readonly AuthService _auth;
     private readonly JwtService _jwt;
-    private readonly PosDbContext _context;
+    private readonly IOperationalContextAccessor _operationalContext;
 
-    public AuthController(AuthService auth, JwtService jwt, PosDbContext context)
+    public AuthController(AuthService auth, JwtService jwt, IOperationalContextAccessor operationalContext)
     {
         _auth = auth;
         _jwt = jwt;
-        _context = context;
+        _operationalContext = operationalContext;
     }
 
     [HttpPost("register")]
@@ -53,58 +51,20 @@ public class AuthController : ControllerBase
 
     [HttpGet("me")]
     [Authorize]
+    [RequireOperationalContext]
     public async Task<IActionResult> Me()
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
-
-        var username = User.FindFirst(AppClaims.Username)?.Value;
-        var companyIdValue = User.FindFirst(AppClaims.CompanyId)?.Value;
-        var establishmentIdValue = User.FindFirst(AppClaims.EstablishmentId)?.Value;
-        var emissionPointIdValue = User.FindFirst(AppClaims.EmissionPointId)?.Value;
-        var roleCode = User.FindFirstValue(ClaimTypes.Role);
-        var permissions = User.FindAll(AppClaims.Permission)
-            .Select(claim => claim.Value)
-            .Distinct()
-            .ToArray();
-
-        if (string.IsNullOrWhiteSpace(userId)
-            || string.IsNullOrWhiteSpace(companyIdValue)
-            || string.IsNullOrWhiteSpace(establishmentIdValue)
-            || string.IsNullOrWhiteSpace(emissionPointIdValue)
-            || string.IsNullOrWhiteSpace(roleCode))
-        {
-            return Unauthorized(Error("INVALID_CLAIMS"));
-        }
-
-        if (!int.TryParse(companyIdValue, out var companyId)
-            || !int.TryParse(establishmentIdValue, out var establishmentId)
-            || !int.TryParse(emissionPointIdValue, out var emissionPointId))
-        {
-            return Unauthorized(Error("INVALID_CLAIMS"));
-        }
-
-        var companyTimeZoneId = await _context.Companies
-            .AsNoTracking()
-            .Where(c => c.Id == companyId && c.IsActive)
-            .Select(c => c.TimeZoneId)
-            .FirstOrDefaultAsync();
-
-        if (string.IsNullOrWhiteSpace(companyTimeZoneId))
-        {
-            return Unauthorized(Error("COMPANY_INACTIVE_OR_NOT_FOUND"));
-        }
-
+        var context = await _operationalContext.GetRequiredContextAsync();
         return Ok(new
         {
-            userId,
-            username,
-            companyId,
-            companyTimeZoneId,
-            establishmentId,
-            emissionPointId,
-            roleCode,
-            permissions
+            userId = context.UserId.ToString(),
+            username = context.Username,
+            companyId = context.CompanyId,
+            companyTimeZoneId = context.CompanyTimeZoneId,
+            establishmentId = context.EstablishmentId,
+            emissionPointId = context.EmissionPointId,
+            roleCode = User.FindFirstValue(ClaimTypes.Role),
+            permissions = User.FindAll(AppClaims.Permission).Select(c => c.Value).Distinct().ToArray()
         });
     }
 

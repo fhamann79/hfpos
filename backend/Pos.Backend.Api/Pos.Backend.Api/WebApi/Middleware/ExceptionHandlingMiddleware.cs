@@ -62,7 +62,7 @@ public class ExceptionHandlingMiddleware
         return exception switch
         {
             OperationalContextException operationalContextException => (
-                StatusCodes.Status400BadRequest,
+                operationalContextException.StatusCode,
                 CreateErrorResponse(
                     operationalContextException.ErrorCode,
                     operationalContextException.Details)),

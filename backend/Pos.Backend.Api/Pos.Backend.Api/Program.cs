@@ -81,6 +81,7 @@ builder.Services.AddDbContext<PosDbContext>(options =>
 
 //Auth
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<TenantAdministrationGuard>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<IOperationalContextAccessor, OperationalContextAccessor>();
 builder.Services.AddSingleton<IBusinessClockService, BusinessClockService>();
@@ -275,6 +276,7 @@ app.UseHttpsRedirection();
 app.UseCors("AllowAngular");
 
 app.UseAuthentication();
+app.UseMiddleware<OperationalSessionMiddleware>();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions

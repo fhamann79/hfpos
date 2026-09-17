@@ -22,11 +22,13 @@ export class UserService {
   }
 
   create(payload: CreateUserRequest) {
-    return this.http.post<User>(this.baseUrl, payload);
+    const { username, email, password, roleId, establishmentId, emissionPointId } = payload;
+    return this.http.post<User>(this.baseUrl, { username, email, password, roleId, establishmentId, emissionPointId });
   }
 
   update(id: number, payload: UpdateUserRequest) {
-    return this.http.put<User>(`${this.baseUrl}/${id}`, payload);
+    const { email, roleId, establishmentId, emissionPointId, isActive } = payload;
+    return this.http.put<void>(`${this.baseUrl}/${id}`, { email, roleId, establishmentId, emissionPointId, isActive });
   }
 
   updatePassword(id: number, payload: ChangeUserPasswordRequest) {

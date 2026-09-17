@@ -6,12 +6,10 @@ export interface Establishment {
 }
 
 export interface CreateEstablishmentRequest {
-  companyId: number;
   name: string;
 }
 
 export interface UpdateEstablishmentRequest {
-  companyId: number;
   name: string;
   isActive: boolean;
 }

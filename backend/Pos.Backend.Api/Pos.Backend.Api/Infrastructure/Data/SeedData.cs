@@ -23,40 +23,84 @@ public static class SeedData
         const string cashierEmail = "cashier@demo.local";
         const string cashierPassword = "cashier123";
 
-        var roleDefinitions = new[]
-        {
-            new { Code = AppRoles.Admin, Name = "Administrador" },
-            new { Code = AppRoles.Supervisor, Name = "Supervisor" },
-            new { Code = AppRoles.Cashier, Name = "Cajero" }
-        };
+        var company = await context.Companies
+            .FirstOrDefaultAsync(c => c.Ruc == companyRuc);
 
-        foreach (var roleDefinition in roleDefinitions)
+        if (company is null)
         {
-            var exists = await context.Roles
-                .AnyAsync(r => r.Code == roleDefinition.Code);
-
-            if (!exists)
+            company = new Company
             {
-                context.Roles.Add(new Role
-                {
-                    Code = roleDefinition.Code,
-                    Name = roleDefinition.Name,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow
-                });
+                Name = companyName,
+                Ruc = companyRuc,
+                TradeName = "HF POS Demo",
+                MatrixAddress = "Direccion matriz demo",
+                Email = "demo@example.com",
+                Phone = "0999999999",
+                TimeZoneId = "America/Guayaquil",
+                IsAccountingRequired = false,
+                TaxpayerRegime = "GENERAL",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            context.Companies.Add(company);
+            await context.SaveChangesAsync();
+        }
+        else
+        {
+            var companyNeedsUpdate = false;
+
+            if (string.IsNullOrWhiteSpace(company.MatrixAddress))
+            {
+                company.MatrixAddress = "Direccion matriz demo";
+                companyNeedsUpdate = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(company.TimeZoneId))
+            {
+                company.TimeZoneId = "America/Guayaquil";
+                companyNeedsUpdate = true;
+            }
+
+            if (companyNeedsUpdate)
+            {
+                await context.SaveChangesAsync();
             }
         }
 
-        await context.SaveChangesAsync();
+        var establishment = await context.Establishments
+            .FirstOrDefaultAsync(e => e.CompanyId == company.Id && e.Code == establishmentCode);
 
-        var adminRole = await context.Roles
-            .FirstAsync(r => r.Code == AppRoles.Admin);
+        if (establishment is null)
+        {
+            establishment = new Establishment
+            {
+                CompanyId = company.Id,
+                Code = establishmentCode,
+                Name = "Matriz",
+                Address = "Direccion principal",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            context.Establishments.Add(establishment);
+            await context.SaveChangesAsync();
+        }
 
-        var supervisorRole = await context.Roles
-            .FirstAsync(r => r.Code == AppRoles.Supervisor);
+        var emissionPoint = await context.EmissionPoints
+            .FirstOrDefaultAsync(e => e.EstablishmentId == establishment.Id && e.Code == emissionPointCode);
 
-        var cashierRole = await context.Roles
-            .FirstAsync(r => r.Code == AppRoles.Cashier);
+        if (emissionPoint is null)
+        {
+            emissionPoint = new EmissionPoint
+            {
+                EstablishmentId = establishment.Id,
+                Code = emissionPointCode,
+                Name = "Caja Principal",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            context.EmissionPoints.Add(emissionPoint);
+            await context.SaveChangesAsync();
+        }
 
         var permissionDefinitions = new[]
         {
@@ -131,6 +175,42 @@ public static class SeedData
             .ToListAsync();
 
         var permissionByCode = permissions.ToDictionary(p => p.Code, p => p);
+
+        var roleDefinitions = new[]
+        {
+            new { Code = AppRoles.Admin, Name = "Administrador" },
+            new { Code = AppRoles.Supervisor, Name = "Supervisor" },
+            new { Code = AppRoles.Cashier, Name = "Cajero" }
+        };
+
+        foreach (var roleDefinition in roleDefinitions)
+        {
+            var exists = await context.Roles
+                .AnyAsync(r => r.CompanyId == company.Id && r.Code == roleDefinition.Code);
+
+            if (!exists)
+            {
+                context.Roles.Add(new Role
+                {
+                    CompanyId = company.Id,
+                    Code = roleDefinition.Code,
+                    Name = roleDefinition.Name,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+        }
+
+        await context.SaveChangesAsync();
+
+        var adminRole = await context.Roles
+            .FirstAsync(r => r.CompanyId == company.Id && r.Code == AppRoles.Admin);
+
+        var supervisorRole = await context.Roles
+            .FirstAsync(r => r.CompanyId == company.Id && r.Code == AppRoles.Supervisor);
+
+        var cashierRole = await context.Roles
+            .FirstAsync(r => r.CompanyId == company.Id && r.Code == AppRoles.Cashier);
 
         var rolePermissionMap = new Dictionary<int, string[]>
         {
@@ -258,85 +338,6 @@ public static class SeedData
 
         await context.SaveChangesAsync();
 
-        var company = await context.Companies
-            .FirstOrDefaultAsync(c => c.Ruc == companyRuc);
-
-        if (company is null)
-        {
-            company = new Company
-            {
-                Name = companyName,
-                Ruc = companyRuc,
-                TradeName = "HF POS Demo",
-                MatrixAddress = "Direccion matriz demo",
-                Email = "demo@example.com",
-                Phone = "0999999999",
-                TimeZoneId = "America/Guayaquil",
-                IsAccountingRequired = false,
-                TaxpayerRegime = "GENERAL",
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow
-            };
-            context.Companies.Add(company);
-            await context.SaveChangesAsync();
-        }
-        else
-        {
-            var companyNeedsUpdate = false;
-
-            if (string.IsNullOrWhiteSpace(company.MatrixAddress))
-            {
-                company.MatrixAddress = "Direccion matriz demo";
-                companyNeedsUpdate = true;
-            }
-
-            if (string.IsNullOrWhiteSpace(company.TimeZoneId))
-            {
-                company.TimeZoneId = "America/Guayaquil";
-                companyNeedsUpdate = true;
-            }
-
-            if (companyNeedsUpdate)
-            {
-                await context.SaveChangesAsync();
-            }
-        }
-
-        var establishment = await context.Establishments
-            .FirstOrDefaultAsync(e => e.CompanyId == company.Id && e.Code == establishmentCode);
-
-        if (establishment is null)
-        {
-            establishment = new Establishment
-            {
-                CompanyId = company.Id,
-                Code = establishmentCode,
-                Name = "Matriz",
-                Address = "Direccion principal",
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow
-            };
-            context.Establishments.Add(establishment);
-            await context.SaveChangesAsync();
-        }
-
-        var emissionPoint = await context.EmissionPoints
-            .FirstOrDefaultAsync(e => e.EstablishmentId == establishment.Id && e.Code == emissionPointCode);
-
-        if (emissionPoint is null)
-        {
-            emissionPoint = new EmissionPoint
-            {
-                EstablishmentId = establishment.Id,
-                Code = emissionPointCode,
-                Name = "Caja Principal",
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow
-            };
-            context.EmissionPoints.Add(emissionPoint);
-            await context.SaveChangesAsync();
-        }
-
         var sriSettings = await context.CompanySriSettings
             .FirstOrDefaultAsync(s => s.CompanyId == company.Id);
 
@@ -358,70 +359,31 @@ public static class SeedData
 
         async Task EnsureDemoUserAsync(string username, string email, string password, Role role)
         {
-            var user = await context.Users
-                .FirstOrDefaultAsync(u => u.Username == username);
-
-            if (user is null)
+            // Demo identities never take ownership of an existing global username or email.
+            if (await context.Users.AnyAsync(u => u.Username == username))
             {
-                user = new User
-                {
-                    Username = username,
-                    Email = email,
-                    CompanyId = company.Id,
-                    RoleId = role.Id,
-                    EstablishmentId = establishment.Id,
-                    EmissionPointId = emissionPoint.Id,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow
-                };
-                user.PasswordHash = hasher.HashPassword(user, password);
-                context.Users.Add(user);
-                await context.SaveChangesAsync();
                 return;
             }
 
-            var needsUpdate = false;
-
-            if (string.IsNullOrWhiteSpace(user.Email))
+            if (await context.Users.AnyAsync(u => u.Email == email))
             {
-                user.Email = email;
-                needsUpdate = true;
+                return;
             }
 
-            if (user.CompanyId <= 0)
+            var user = new User
             {
-                user.CompanyId = company.Id;
-                needsUpdate = true;
-            }
-
-            if (user.RoleId != role.Id)
-            {
-                user.RoleId = role.Id;
-                needsUpdate = true;
-            }
-
-            if (user.EstablishmentId is null)
-            {
-                user.EstablishmentId = establishment.Id;
-                needsUpdate = true;
-            }
-
-            if (user.EmissionPointId <= 0)
-            {
-                user.EmissionPointId = emissionPoint.Id;
-                needsUpdate = true;
-            }
-
-            if (!user.IsActive)
-            {
-                user.IsActive = true;
-                needsUpdate = true;
-            }
-
-            if (needsUpdate)
-            {
-                await context.SaveChangesAsync();
-            }
+                Username = username,
+                Email = email,
+                CompanyId = company.Id,
+                RoleId = role.Id,
+                EstablishmentId = establishment.Id,
+                EmissionPointId = emissionPoint.Id,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            user.PasswordHash = hasher.HashPassword(user, password);
+            context.Users.Add(user);
+            await context.SaveChangesAsync();
         }
 
         await EnsureDemoUserAsync(adminUsername, adminEmail, adminPassword, adminRole);

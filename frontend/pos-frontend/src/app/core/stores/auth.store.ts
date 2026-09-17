@@ -1,4 +1,5 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../services/auth';
 import { MeResponse } from '../models/me';
 import { catchError, of, tap } from 'rxjs';
@@ -44,8 +45,12 @@ export class AuthStore {
         this.auth.saveContext(res);
         this._loaded.set(true);
       }),
-      catchError(() => {
-        this.clear();
+      catchError((error: unknown) => {
+        if (error instanceof HttpErrorResponse && error.status === 401) {
+          this.clear();
+        } else {
+          this._loaded.set(true);
+        }
         return of(null);
       })
     );

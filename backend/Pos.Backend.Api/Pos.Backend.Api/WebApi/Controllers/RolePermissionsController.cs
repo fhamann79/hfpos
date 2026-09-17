@@ -6,26 +6,35 @@ using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Infrastructure.Data;
+using Pos.Backend.Api.Core.Services;
+using Pos.Backend.Api.WebApi.Filters;
 
 namespace Pos.Backend.Api.WebApi.Controllers;
 
 [ApiController]
 [Route("api/Roles/{roleId:int}/permissions")]
 [Authorize]
+[RequireOperationalContext]
 public class RolePermissionsController : ControllerBase
 {
     private readonly PosDbContext _context;
 
-    public RolePermissionsController(PosDbContext context)
+    private readonly IOperationalContextAccessor _operationalContext;
+    private readonly TenantAdministrationGuard _administrationGuard;
+
+    public RolePermissionsController(PosDbContext context, IOperationalContextAccessor operationalContext, TenantAdministrationGuard administrationGuard)
     {
         _context = context;
+        _operationalContext = operationalContext;
+        _administrationGuard = administrationGuard;
     }
 
     [HttpGet]
     [Authorize(Policy = AppPermissions.AdminRolesRead)]
     public async Task<ActionResult<IEnumerable<PermissionDto>>> Get(int roleId)
     {
-        var roleExists = await _context.Roles.AnyAsync(r => r.Id == roleId);
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        var roleExists = await _context.Roles.AnyAsync(r => r.Id == roleId && r.CompanyId == tenant.CompanyId);
         if (!roleExists)
         {
             return NotFound(new ApiErrorResponse { Error = "ROLE_NOT_FOUND" });
@@ -33,7 +42,7 @@ public class RolePermissionsController : ControllerBase
 
         var assignedPermissionIds = await _context.RolePermissions
             .AsNoTracking()
-            .Where(rp => rp.RoleId == roleId)
+            .Where(rp => rp.RoleId == roleId && rp.Role.CompanyId == tenant.CompanyId)
             .Select(rp => rp.PermissionId)
             .ToListAsync();
 
@@ -58,7 +67,9 @@ public class RolePermissionsController : ControllerBase
     [Authorize(Policy = AppPermissions.AdminRolesWrite)]
     public async Task<IActionResult> Replace(int roleId, [FromBody] UpdateRolePermissionsDto dto)
     {
-        var roleExists = await _context.Roles.AnyAsync(r => r.Id == roleId);
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        var roleExists = await _context.Roles.AnyAsync(r => r.Id == roleId && r.CompanyId == tenant.CompanyId);
         if (!roleExists)
         {
             return NotFound(new ApiErrorResponse { Error = "ROLE_NOT_FOUND" });
@@ -74,13 +85,12 @@ public class RolePermissionsController : ControllerBase
             return BadRequest(new ApiErrorResponse { Error = "INVALID_PERMISSION_IDS" });
         }
 
-        await using var tx = await _context.Database.BeginTransactionAsync();
-
         var existingRolePermissions = await _context.RolePermissions
-            .Where(rp => rp.RoleId == roleId)
+            .Where(rp => rp.RoleId == roleId && rp.Role.CompanyId == tenant.CompanyId)
             .ToListAsync();
 
         _context.RolePermissions.RemoveRange(existingRolePermissions);
+        await _context.SaveChangesAsync();
 
         var newRolePermissions = permissionIds.Select(permissionId => new RolePermission
         {
