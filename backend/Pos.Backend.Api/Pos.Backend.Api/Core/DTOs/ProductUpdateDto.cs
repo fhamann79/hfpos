@@ -12,5 +12,4 @@ public class ProductUpdateDto
     public decimal Cost { get; set; }
     public decimal MinimumStock { get; set; } = 3m;
     public ProductVatCategory? VatCategory { get; set; }
-    public bool IsActive { get; set; }
 }

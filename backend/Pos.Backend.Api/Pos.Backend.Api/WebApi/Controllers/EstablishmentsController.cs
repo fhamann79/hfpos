@@ -20,12 +20,15 @@ public class EstablishmentsController : ControllerBase
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContext;
     private readonly TenantAdministrationGuard _administrationGuard;
+    private readonly IMasterDataLifecycleService _lifecycle;
 
-    public EstablishmentsController(PosDbContext context, IOperationalContextAccessor operationalContext, TenantAdministrationGuard administrationGuard)
+    public EstablishmentsController(PosDbContext context, IOperationalContextAccessor operationalContext,
+        TenantAdministrationGuard administrationGuard, IMasterDataLifecycleService lifecycle)
     {
         _context = context;
         _operationalContext = operationalContext;
         _administrationGuard = administrationGuard;
+        _lifecycle = lifecycle;
     }
 
     [HttpGet]
@@ -124,7 +127,6 @@ public class EstablishmentsController : ControllerBase
         }
 
         establishment.Name = dto.Name.Trim();
-        establishment.IsActive = dto.IsActive;
 
         await _context.SaveChangesAsync();
         if (!await _administrationGuard.HasActiveAdministratorAsync(tenant.CompanyId))
@@ -137,30 +139,12 @@ public class EstablishmentsController : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
+    [HttpPost("{id:int}/deactivate")]
     [Authorize(Policy = AppPermissions.OpStructureWrite)]
-    public async Task<IActionResult> Delete(int id)
+    public async Task<IActionResult> Deactivate(int id)
     {
         var tenant = await _operationalContext.GetRequiredContextAsync();
-        await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
-        var establishment = await _context.Establishments.FirstOrDefaultAsync(e => e.Id == id && e.CompanyId == tenant.CompanyId);
-        if (establishment is null)
-        {
-            return NotFound(new ApiErrorResponse { Error = "ESTABLISHMENT_NOT_FOUND" });
-        }
-
-        var hasEmissionPoints = await _context.EmissionPoints.AnyAsync(ep => ep.EstablishmentId == id);
-        if (hasEmissionPoints)
-        {
-            return Conflict(new ApiErrorResponse { Error = "ESTABLISHMENT_HAS_EMISSION_POINTS" });
-        }
-
-        _context.Establishments.Remove(establishment);
-        await _context.SaveChangesAsync();
-        if (!await _administrationGuard.HasActiveAdministratorAsync(tenant.CompanyId))
-        {
-            return Conflict(new ApiErrorResponse { Error = "LAST_ACTIVE_ADMIN_REQUIRED" });
-        }
-        await tx.CommitAsync();
+        await _lifecycle.SetEstablishmentActiveAsync(tenant.CompanyId, id, false);
 
         return NoContent();
     }
@@ -178,5 +162,14 @@ public class EstablishmentsController : ControllerBase
             .Max();
 
         return (maxCode + 1).ToString("D3");
+    }
+
+    [HttpPost("{id:int}/activate")]
+    [Authorize(Policy = AppPermissions.OpStructureWrite)]
+    public async Task<IActionResult> Activate(int id)
+    {
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        await _lifecycle.SetEstablishmentActiveAsync(tenant.CompanyId, id, true);
+        return NoContent();
     }
 }

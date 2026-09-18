@@ -3,7 +3,6 @@ import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, injec
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { SelectModule } from 'primeng/select';
 import { ButtonModule } from 'primeng/button';
-import { CheckboxModule } from 'primeng/checkbox';
 import { DialogModule } from 'primeng/dialog';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
@@ -26,7 +25,6 @@ export type ProductDialogSubmit =
     InputTextModule,
     SelectModule,
     InputNumberModule,
-    CheckboxModule,
     ButtonModule,
   ],
   templateUrl: './product-dialog.html',
@@ -53,7 +51,6 @@ export class ProductDialog implements OnChanges {
     cost: [0, [Validators.required, Validators.min(0)]],
     minimumStock: [3, [Validators.required, Validators.min(0)]],
     vatCategory: [DEFAULT_VAT_CATEGORY, [Validators.required]],
-    isActive: [true],
   });
 
   get isEditMode() {
@@ -96,7 +93,6 @@ export class ProductDialog implements OnChanges {
           cost: values.cost,
           minimumStock: values.minimumStock,
           vatCategory: values.vatCategory,
-          isActive: values.isActive,
         },
       });
       return;
@@ -119,7 +115,7 @@ export class ProductDialog implements OnChanges {
 
   private loadCategories(): void {
     this.categoryService.getAll().subscribe({
-      next: (categories) => this.categories.set(categories.filter((category) => category.isActive)),
+      next: (categories) => this.categories.set(categories.filter((category) => category.isActive || (!this.product?.isActive && category.id === this.product?.categoryId))),
       error: () => this.categories.set([]),
     });
   }
@@ -139,7 +135,6 @@ export class ProductDialog implements OnChanges {
         cost: this.product.cost,
         minimumStock: this.product.minimumStock,
         vatCategory: normalizeVatCategory(this.product.vatCategory),
-        isActive: this.product.isActive,
       });
       return;
     }
@@ -153,7 +148,6 @@ export class ProductDialog implements OnChanges {
       cost: 0,
       minimumStock: 3,
       vatCategory: DEFAULT_VAT_CATEGORY,
-      isActive: true,
     });
   }
 

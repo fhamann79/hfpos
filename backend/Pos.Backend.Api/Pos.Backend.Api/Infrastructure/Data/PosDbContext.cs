@@ -57,6 +57,12 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<User>(entity =>
         {
+            entity.HasOne(u => u.Company).WithMany()
+                .HasForeignKey(u => u.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(u => u.Establishment).WithMany()
+                .HasForeignKey(u => u.EstablishmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(u => u.EmissionPoint).WithMany()
+                .HasForeignKey(u => u.EmissionPointId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(u => u.Role).WithMany()
                 .HasForeignKey(u => new { u.CompanyId, u.RoleId })
                 .HasPrincipalKey(r => new { r.CompanyId, r.Id })
@@ -74,10 +80,12 @@ public class PosDbContext : DbContext
             entity.HasIndex(rp => new { rp.RoleId, rp.PermissionId }).IsUnique();
             entity.HasOne(rp => rp.Role)
                 .WithMany(r => r.RolePermissions)
-                .HasForeignKey(rp => rp.RoleId);
+                .HasForeignKey(rp => rp.RoleId)
+                .OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(rp => rp.Permission)
                 .WithMany(p => p.RolePermissions)
-                .HasForeignKey(rp => rp.PermissionId);
+                .HasForeignKey(rp => rp.PermissionId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Company>(entity =>
@@ -186,11 +194,13 @@ public class PosDbContext : DbContext
 
             entity.HasOne(s => s.Company)
                 .WithMany()
-                .HasForeignKey(s => s.CompanyId);
+                .HasForeignKey(s => s.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(s => s.LastUpdatedByUser)
                 .WithMany()
-                .HasForeignKey(s => s.LastUpdatedByUserId);
+                .HasForeignKey(s => s.LastUpdatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<CompanySriCertificate>(entity =>
@@ -252,11 +262,15 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<Establishment>(entity =>
         {
+            entity.HasOne(e => e.Company).WithMany(c => c.Establishments)
+                .HasForeignKey(e => e.CompanyId).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(e => new { e.CompanyId, e.Code }).IsUnique();
         });
 
         modelBuilder.Entity<EmissionPoint>(entity =>
         {
+            entity.HasOne(ep => ep.Establishment).WithMany(e => e.EmissionPoints)
+                .HasForeignKey(ep => ep.EstablishmentId).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(ep => new { ep.EstablishmentId, ep.Code }).IsUnique();
         });
         modelBuilder.Entity<Category>(entity =>
@@ -267,7 +281,8 @@ public class PosDbContext : DbContext
 
             entity.HasOne(c => c.Company)
                 .WithMany()
-                .HasForeignKey(c => c.CompanyId);
+                .HasForeignKey(c => c.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(c => new { c.CompanyId, c.Name }).IsUnique();
         });
@@ -298,7 +313,8 @@ public class PosDbContext : DbContext
 
             entity.HasOne(c => c.Company)
                 .WithMany()
-                .HasForeignKey(c => c.CompanyId);
+                .HasForeignKey(c => c.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(c => c.CompanyId);
             entity.HasIndex(c => new { c.CompanyId, c.Name });
@@ -328,7 +344,8 @@ public class PosDbContext : DbContext
 
             entity.HasOne(s => s.Company)
                 .WithMany()
-                .HasForeignKey(s => s.CompanyId);
+                .HasForeignKey(s => s.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(s => s.CompanyId);
             entity.HasIndex(s => new { s.CompanyId, s.Identification })
@@ -452,15 +469,18 @@ public class PosDbContext : DbContext
 
             entity.HasOne(ps => ps.Product)
                 .WithMany()
-                .HasForeignKey(ps => ps.ProductId);
+                .HasForeignKey(ps => ps.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(ps => ps.Company)
                 .WithMany()
-                .HasForeignKey(ps => ps.CompanyId);
+                .HasForeignKey(ps => ps.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(ps => ps.Establishment)
                 .WithMany()
-                .HasForeignKey(ps => ps.EstablishmentId);
+                .HasForeignKey(ps => ps.EstablishmentId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<InventoryMovement>(entity =>
@@ -498,19 +518,23 @@ public class PosDbContext : DbContext
 
             entity.HasOne(im => im.Product)
                 .WithMany()
-                .HasForeignKey(im => im.ProductId);
+                .HasForeignKey(im => im.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(im => im.Company)
                 .WithMany()
-                .HasForeignKey(im => im.CompanyId);
+                .HasForeignKey(im => im.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(im => im.Establishment)
                 .WithMany()
-                .HasForeignKey(im => im.EstablishmentId);
+                .HasForeignKey(im => im.EstablishmentId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(im => im.User)
                 .WithMany()
-                .HasForeignKey(im => im.UserId);
+                .HasForeignKey(im => im.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Product>(entity =>
@@ -542,11 +566,13 @@ public class PosDbContext : DbContext
 
             entity.HasOne(p => p.Company)
                 .WithMany()
-                .HasForeignKey(p => p.CompanyId);
+                .HasForeignKey(p => p.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(p => p.Category)
                 .WithMany(c => c.Products)
-                .HasForeignKey(p => p.CategoryId);
+                .HasForeignKey(p => p.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(p => p.CompanyId);
             entity.HasIndex(p => p.CategoryId);
@@ -568,15 +594,18 @@ public class PosDbContext : DbContext
 
             entity.HasOne(ds => ds.Company)
                 .WithMany()
-                .HasForeignKey(ds => ds.CompanyId);
+                .HasForeignKey(ds => ds.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(ds => ds.Establishment)
                 .WithMany()
-                .HasForeignKey(ds => ds.EstablishmentId);
+                .HasForeignKey(ds => ds.EstablishmentId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(ds => ds.EmissionPoint)
                 .WithMany()
-                .HasForeignKey(ds => ds.EmissionPointId);
+                .HasForeignKey(ds => ds.EmissionPointId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<DocumentSequenceAudit>(entity =>
@@ -593,23 +622,28 @@ public class PosDbContext : DbContext
 
             entity.HasOne(a => a.DocumentSequence)
                 .WithMany()
-                .HasForeignKey(a => a.DocumentSequenceId);
+                .HasForeignKey(a => a.DocumentSequenceId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(a => a.Company)
                 .WithMany()
-                .HasForeignKey(a => a.CompanyId);
+                .HasForeignKey(a => a.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(a => a.Establishment)
                 .WithMany()
-                .HasForeignKey(a => a.EstablishmentId);
+                .HasForeignKey(a => a.EstablishmentId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(a => a.EmissionPoint)
                 .WithMany()
-                .HasForeignKey(a => a.EmissionPointId);
+                .HasForeignKey(a => a.EmissionPointId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(a => a.User)
                 .WithMany()
-                .HasForeignKey(a => a.UserId);
+                .HasForeignKey(a => a.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<CashSession>(entity =>
@@ -896,11 +930,13 @@ public class PosDbContext : DbContext
 
             entity.HasOne(s => s.User)
                 .WithMany()
-                .HasForeignKey(s => s.UserId);
+                .HasForeignKey(s => s.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(s => s.Customer)
                 .WithMany()
-                .HasForeignKey(s => s.CustomerId);
+                .HasForeignKey(s => s.CustomerId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(s => s.CashSession)
                 .WithMany(c => c.Sales)
@@ -909,15 +945,18 @@ public class PosDbContext : DbContext
 
             entity.HasOne(s => s.Company)
                 .WithMany()
-                .HasForeignKey(s => s.CompanyId);
+                .HasForeignKey(s => s.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(s => s.Establishment)
                 .WithMany()
-                .HasForeignKey(s => s.EstablishmentId);
+                .HasForeignKey(s => s.EstablishmentId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(s => s.EmissionPoint)
                 .WithMany()
-                .HasForeignKey(s => s.EmissionPointId);
+                .HasForeignKey(s => s.EmissionPointId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<CreditNote>(entity =>
@@ -1441,11 +1480,13 @@ public class PosDbContext : DbContext
 
             entity.HasOne(si => si.Sale)
                 .WithMany(s => s.Items)
-                .HasForeignKey(si => si.SaleId);
+                .HasForeignKey(si => si.SaleId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasOne(si => si.Product)
                 .WithMany()
-                .HasForeignKey(si => si.ProductId);
+                .HasForeignKey(si => si.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(si => si.SaleId);
             entity.HasIndex(si => si.ProductId);

@@ -14,7 +14,7 @@
     </ng-template>
     <ng-template #end>
       @if (canWrite && selectedCompany) {
-        <p-button label="Nuevo Establishment" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
+        <p-button label="Nuevo establecimiento" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
       }
     </ng-template>
   </p-toolbar>
@@ -32,7 +32,7 @@
           <th>Id</th>
           <th>Nombre</th>
           <th>Estado</th>
-          <th style="width: 10rem">Acciones</th>
+          <th style="width: 14rem">Acciones</th>
         </tr>
       </ng-template>
       <ng-template #body let-establishment>
@@ -50,10 +50,11 @@
               <div class="actions">
                 <p-button icon="pi pi-pencil" [text]="true" (onClick)="openEditDialog(establishment)"></p-button>
                 <p-button
-                  icon="pi pi-trash"
-                  severity="danger"
+                  [icon]="establishment.isActive ? 'pi pi-ban' : 'pi pi-check-circle'"
+                  [label]="establishment.isActive ? 'Desactivar' : 'Activar'"
+                  [severity]="establishment.isActive ? 'warn' : 'success'"
                   [text]="true"
-                  (onClick)="confirmDelete(establishment)"
+                  (onClick)="confirmLifecycle(establishment)"
                 ></p-button>
               </div>
             }

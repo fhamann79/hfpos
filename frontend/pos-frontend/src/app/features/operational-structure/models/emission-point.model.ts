@@ -16,5 +16,4 @@ export interface UpdateEmissionPointRequest {
   establishmentId: number;
   code: string;
   name: string;
-  isActive: boolean;
 }

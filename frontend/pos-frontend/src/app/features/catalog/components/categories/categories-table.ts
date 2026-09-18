@@ -124,24 +124,29 @@ export class CategoriesTable implements OnInit {
     });
   }
 
-  confirmDelete(category: Category): void {
+  confirmLifecycle(category: Category): void {
     if (!this.canWrite) {
       return;
     }
 
+    const active = category.isActive;
+    const action = active ? 'Desactivar' : 'Activar';
     this.confirmationService.confirm({
-      header: 'Eliminar categoría',
-      message: `¿Deseas eliminar la categoría "${category.name}"?`,
+      header: `${action} categoría`,
+      message: `¿Deseas ${action.toLowerCase()} la categoría "${category.name}"?`
+        + (active ? ' Su historial se conservará.' : ''),
       icon: 'pi pi-exclamation-triangle',
-      acceptLabel: 'Eliminar',
+      acceptLabel: action,
       rejectLabel: 'Cancelar',
-      acceptButtonProps: {
-        severity: 'danger',
-      },
+      acceptButtonProps: { severity: active ? 'warn' : 'success' },
       accept: () => {
-        this.categoryService.delete(category.id).subscribe({
+        const request = active
+          ? this.categoryService.deactivate(category.id)
+          : this.categoryService.activate(category.id);
+        request.subscribe({
           next: () => {
-            this.messageService.add({ severity: 'success', summary: 'Éxito', detail: 'Eliminado' });
+            this.messageService.add({ severity: 'success', summary: 'Éxito',
+              detail: active ? 'Categoría desactivada.' : 'Categoría activada.' });
             this.loadCategories();
           },
           error: (error: HttpErrorResponse) => {
@@ -151,5 +156,4 @@ export class CategoriesTable implements OnInit {
       },
     });
   }
-
 }

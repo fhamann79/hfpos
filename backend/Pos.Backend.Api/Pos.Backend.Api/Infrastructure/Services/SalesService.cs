@@ -25,6 +25,7 @@ public class SalesService : ISalesService
     private readonly IBusinessClockService _businessClock;
     private readonly ISriInvoiceXmlValidator _sriInvoiceXmlValidator;
     private readonly SriOptions _sriOptions;
+    private readonly TenantAdministrationGuard _administrationGuard;
 
     public SalesService(
         PosDbContext context,
@@ -38,7 +39,8 @@ public class SalesService : ISalesService
         ISriFiscalClock sriFiscalClock,
         IBusinessClockService businessClock,
         ISriInvoiceXmlValidator sriInvoiceXmlValidator,
-        IOptions<SriOptions> sriOptions)
+        IOptions<SriOptions> sriOptions,
+        TenantAdministrationGuard administrationGuard)
     {
         _context = context;
         _logger = logger;
@@ -52,6 +54,7 @@ public class SalesService : ISalesService
         _businessClock = businessClock;
         _sriInvoiceXmlValidator = sriInvoiceXmlValidator;
         _sriOptions = sriOptions.Value;
+        _administrationGuard = administrationGuard;
     }
 
     public async Task<IReadOnlyList<SaleListItemDto>> GetSalesAsync(
@@ -436,6 +439,7 @@ public class SalesService : ISalesService
             ApplySaleTaxTotals(sale, dto.DiscountAmount ?? 0m);
 
             await using var transaction = await _context.Database.BeginTransactionAsync();
+            await _administrationGuard.LockOperationalWriteAsync(operationalContext);
 
             var numberAssignment = await _fiscalDocumentNumberService.AssignNextAsync(
                 operationalContext,

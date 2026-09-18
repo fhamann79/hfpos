@@ -64,7 +64,7 @@ export class EmissionPointsTable implements OnChanges {
   }
 
   openCreateDialog(): void {
-    if (!this.canWrite || !this.selectedEstablishment) {
+    if (!this.canWrite || !this.selectedEstablishment?.isActive) {
       return;
     }
 
@@ -119,22 +119,29 @@ export class EmissionPointsTable implements OnChanges {
     });
   }
 
-  confirmDelete(emissionPoint: EmissionPoint): void {
+  confirmLifecycle(emissionPoint: EmissionPoint): void {
     if (!this.canWrite) {
       return;
     }
 
+    const active = emissionPoint.isActive;
+    const action = active ? 'Desactivar' : 'Activar';
     this.confirmationService.confirm({
-      header: 'Eliminar punto de emisión',
-      message: `¿Deseas eliminar el punto "${emissionPoint.name}"?`,
+      header: `${action} punto de emisión`,
+      message: `¿Deseas ${action.toLowerCase()} el punto de emisión "${emissionPoint.name}"?`
+        + (active ? ' Su historial se conservará.' : ''),
       icon: 'pi pi-exclamation-triangle',
-      acceptLabel: 'Eliminar',
+      acceptLabel: action,
       rejectLabel: 'Cancelar',
-      acceptButtonProps: { severity: 'danger' },
+      acceptButtonProps: { severity: active ? 'warn' : 'success' },
       accept: () => {
-        this.emissionPointService.delete(emissionPoint.id).subscribe({
+        const request = active
+          ? this.emissionPointService.deactivate(emissionPoint.id)
+          : this.emissionPointService.activate(emissionPoint.id);
+        request.subscribe({
           next: () => {
-            this.messageService.add({ severity: 'success', summary: 'Éxito', detail: 'Punto de emisión eliminado.' });
+            this.messageService.add({ severity: 'success', summary: 'Éxito',
+              detail: active ? 'Punto de emisión desactivado.' : 'Punto de emisión activado.' });
             this.loadEmissionPoints();
           },
           error: (error: HttpErrorResponse) => {
@@ -144,5 +151,4 @@ export class EmissionPointsTable implements OnChanges {
       },
     });
   }
-
 }

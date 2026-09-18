@@ -33,5 +33,4 @@ export interface UpdateProductRequest {
   cost: number;
   minimumStock: number;
   vatCategory: ProductVatCategory;
-  isActive: boolean;
 }

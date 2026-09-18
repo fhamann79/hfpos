@@ -15,17 +15,20 @@ public class InventoryService : IInventoryService
     private readonly ILogger<InventoryService> _logger;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly IBusinessClockService _businessClock;
+    private readonly TenantAdministrationGuard _administrationGuard;
 
     public InventoryService(
         PosDbContext context,
         ILogger<InventoryService> logger,
         IOperationalContextAccessor operationalContextAccessor,
-        IBusinessClockService businessClock)
+        IBusinessClockService businessClock,
+        TenantAdministrationGuard administrationGuard)
     {
         _context = context;
         _logger = logger;
         _operationalContextAccessor = operationalContextAccessor;
         _businessClock = businessClock;
+        _administrationGuard = administrationGuard;
     }
 
     public async Task<IReadOnlyList<InventoryStockListItemDto>> GetStocksAsync(string? search, int? productId, bool onlyPositive)
@@ -282,7 +285,8 @@ public class InventoryService : IInventoryService
             dto.Reference,
             dto.Notes,
             null,
-            null);
+            null,
+            requireActiveProduct: false);
     }
 
     public Task<InventoryMovementDto> RegisterExitAsync(InventoryExitDto dto)
@@ -300,7 +304,8 @@ public class InventoryService : IInventoryService
             dto.Reference,
             dto.Notes,
             null,
-            null);
+            null,
+            requireActiveProduct: false);
     }
 
     public Task<InventoryMovementDto> RegisterAdjustmentAsync(InventoryAdjustDto dto)
@@ -318,7 +323,8 @@ public class InventoryService : IInventoryService
             dto.Reference,
             dto.Notes,
             null,
-            null);
+            null,
+            requireActiveProduct: false);
     }
 
     public Task<InventoryMovementDto> RegisterSaleAsync(int productId, decimal quantity, int saleId, int saleItemId, string? notes)
@@ -354,7 +360,8 @@ public class InventoryService : IInventoryService
             $"VOID-SALE-{saleId}",
             notes,
             saleId,
-            saleItemId);
+            saleItemId,
+            requireActiveProduct: false);
     }
 
     public Task<InventoryMovementDto> RegisterPurchaseReceiptAsync(
@@ -450,9 +457,6 @@ public class InventoryService : IInventoryService
         bool requireActiveProduct = true)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-        var product = requireActiveProduct
-            ? await GetValidProductAsync(productId, operationalContext.CompanyId)
-            : await GetProductInCompanyAsync(productId, operationalContext.CompanyId);
 
         try
         {
@@ -460,6 +464,11 @@ public class InventoryService : IInventoryService
             await using var transaction = hasAmbientTransaction
                 ? null
                 : await _context.Database.BeginTransactionAsync();
+
+            await _administrationGuard.LockOperationalWriteAsync(operationalContext);
+            var product = requireActiveProduct
+                ? await GetValidProductAsync(productId, operationalContext.CompanyId)
+                : await GetProductInCompanyAsync(productId, operationalContext.CompanyId);
 
             var productStock = await GetLockedProductStockAsync(
                 product.Id,
