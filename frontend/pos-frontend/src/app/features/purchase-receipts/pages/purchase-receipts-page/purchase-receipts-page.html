@@ -390,7 +390,19 @@
             <td class="numeric-column">{{ item.unitCost | currency: 'USD' : 'symbol' : '1.4-4' }}</td>
             <td class="numeric-column">{{ item.lineTotal | currency: 'USD' : 'symbol' : '1.2-2' }}</td>
             <td class="numeric-column">{{ item.previousProductCost | currency: 'USD' : 'symbol' : '1.4-4' }}</td>
-            <td class="numeric-column">{{ item.appliedProductCost | currency: 'USD' : 'symbol' : '1.4-4' }}</td>
+            <td class="numeric-column">
+              {{ item.appliedProductCost | currency: 'USD' : 'symbol' : '1.4-4' }}
+              @if (isCanceled(receipt) && item.productCostAfterCancellation !== null) {
+                <small class="row-hint cost-resolution">
+                  @if (item.productCostChangedOnCancellation) {
+                    Restaurado a
+                  } @else {
+                    Costo vigente preservado:
+                  }
+                  {{ item.productCostAfterCancellation | currency: 'USD' : 'symbol' : '1.4-4' }}
+                </small>
+              }
+            </td>
           </tr>
         </ng-template>
       </p-table>
@@ -427,7 +439,11 @@
   <div class="cancel-dialog">
     <div class="warning-callout">
       <i class="pi pi-exclamation-triangle"></i>
-      <span>La cancelacion revertira el stock ingresado. No se eliminara el historial.</span>
+      <span>
+        Se cancelará la recepción y se revertirá el inventario. El costo vigente solo se
+        restaurará cuando esta recepción continúe siendo su origen; cualquier costo posterior
+        se conservará. El historial no se eliminará.
+      </span>
     </div>
 
     <label class="field">

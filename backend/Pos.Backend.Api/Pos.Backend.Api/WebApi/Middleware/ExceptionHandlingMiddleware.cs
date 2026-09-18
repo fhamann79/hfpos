@@ -65,6 +65,10 @@ public class ExceptionHandlingMiddleware
                 StatusCodes.Status409Conflict,
                 CreateErrorResponse(lifecycleException.Message, null)),
 
+            ProductCostIntegrityException productCostIntegrityException => (
+                StatusCodes.Status409Conflict,
+                CreateErrorResponse(productCostIntegrityException.Message, null)),
+
             OperationalContextException operationalContextException => (
                 operationalContextException.StatusCode,
                 CreateErrorResponse(

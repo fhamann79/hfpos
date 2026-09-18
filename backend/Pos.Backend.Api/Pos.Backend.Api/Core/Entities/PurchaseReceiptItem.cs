@@ -20,5 +20,9 @@ public class PurchaseReceiptItem
 
     public decimal AppliedProductCost { get; set; }
 
+    public bool? ProductCostChangedOnCancellation { get; set; }
+
+    public decimal? ProductCostAfterCancellation { get; set; }
+
     public string? Notes { get; set; }
 }

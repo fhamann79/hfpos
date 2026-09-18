@@ -28,6 +28,7 @@ public class PosDbContext : DbContext
     public DbSet<Supplier> Suppliers { get; set; }
     public DbSet<PurchaseReceipt> PurchaseReceipts { get; set; }
     public DbSet<PurchaseReceiptItem> PurchaseReceiptItems { get; set; }
+    public DbSet<ProductCostEvent> ProductCostEvents { get; set; }
     public DbSet<ProductStock> ProductStocks { get; set; }
     public DbSet<InventoryMovement> InventoryMovements { get; set; }
     public DbSet<DocumentSequence> DocumentSequences { get; set; }
@@ -440,6 +441,9 @@ public class PosDbContext : DbContext
             entity.Property(i => i.AppliedProductCost)
                 .HasPrecision(18, 4);
 
+            entity.Property(i => i.ProductCostAfterCancellation)
+                .HasPrecision(18, 4);
+
             entity.Property(i => i.Notes)
                 .HasMaxLength(300);
 
@@ -455,6 +459,50 @@ public class PosDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(i => i.ProductId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ProductCostEvent>(entity =>
+        {
+            entity.Property(e => e.PreviousCost)
+                .HasPrecision(18, 4);
+
+            entity.Property(e => e.Cost)
+                .HasPrecision(18, 4);
+
+            entity.Property(e => e.SourceType)
+                .HasConversion<int>();
+
+            entity.HasIndex(e => new { e.ProductId, e.Revision })
+                .IsUnique();
+
+            entity.HasIndex(e => e.PurchaseReceiptItemId)
+                .IsUnique()
+                .HasFilter(@"""PurchaseReceiptItemId"" IS NOT NULL");
+
+            entity.HasOne(e => e.Company)
+                .WithMany()
+                .HasForeignKey(e => e.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.Product)
+                .WithMany()
+                .HasForeignKey(e => e.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.PurchaseReceiptItem)
+                .WithMany()
+                .HasForeignKey(e => e.PurchaseReceiptItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(e => e.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_ProductCostEvents_Source",
+                "(\"SourceType\" = 2 AND \"PurchaseReceiptItemId\" IS NOT NULL) OR "
+                + "(\"SourceType\" IN (0, 1) AND \"PurchaseReceiptItemId\" IS NULL)"));
         });
 
 
@@ -556,6 +604,9 @@ public class PosDbContext : DbContext
                 .HasPrecision(18, 4)
                 .HasDefaultValue(0m);
 
+            entity.Property(p => p.LastCostRevision)
+                .HasDefaultValue(0L);
+
             entity.Property(p => p.MinimumStock)
                 .HasPrecision(18, 4)
                 .HasDefaultValue(3m);
@@ -574,8 +625,16 @@ public class PosDbContext : DbContext
                 .HasForeignKey(p => p.CategoryId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            entity.HasOne(p => p.CurrentCostEvent)
+                .WithMany()
+                .HasForeignKey(p => p.CurrentCostEventId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             entity.HasIndex(p => p.CompanyId);
             entity.HasIndex(p => p.CategoryId);
+            entity.HasIndex(p => p.CurrentCostEventId)
+                .IsUnique()
+                .HasFilter(@"""CurrentCostEventId"" IS NOT NULL");
             entity.HasIndex(p => new { p.CompanyId, p.Barcode })
                 .IsUnique()
                 .HasFilter(@"""Barcode"" IS NOT NULL");

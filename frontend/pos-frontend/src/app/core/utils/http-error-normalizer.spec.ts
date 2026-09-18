@@ -20,3 +20,14 @@ describe('Master data dependency messages', () => {
     expect(resolveHttpErrorMessage(error)).toContain(fragment);
   });
 });
+
+describe('Purchase cost integrity message', () => {
+  it('explains a provenance conflict without exposing database details', () => {
+    const error = new HttpErrorResponse({
+      status: 409,
+      error: { error: 'PRODUCT_COST_PROVENANCE_INVALID' },
+    });
+
+    expect(resolveHttpErrorMessage(error)).toContain('procedencia del costo');
+  });
+});

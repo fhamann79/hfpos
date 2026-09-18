@@ -360,7 +360,7 @@ export class PurchaseReceiptsPage implements OnInit {
         this.messageService.add({
           severity: 'success',
           summary: 'Recepción cancelada',
-          detail: 'El stock ingresado fue revertido con movimientos auditables.',
+          detail: 'El inventario y el costo vigente se resolvieron según su procedencia, sin borrar el historial.',
         });
         this.loadReceipts();
       },

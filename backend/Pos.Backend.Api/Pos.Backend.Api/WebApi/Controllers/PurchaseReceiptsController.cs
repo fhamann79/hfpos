@@ -23,19 +23,22 @@ public class PurchaseReceiptsController : ControllerBase
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly IBusinessClockService _businessClock;
     private readonly TenantAdministrationGuard _administrationGuard;
+    private readonly IProductCostService _productCostService;
 
     public PurchaseReceiptsController(
         PosDbContext context,
         IInventoryService inventoryService,
         IOperationalContextAccessor operationalContextAccessor,
         IBusinessClockService businessClock,
-        TenantAdministrationGuard administrationGuard)
+        TenantAdministrationGuard administrationGuard,
+        IProductCostService productCostService)
     {
         _context = context;
         _inventoryService = inventoryService;
         _operationalContextAccessor = operationalContextAccessor;
         _businessClock = businessClock;
         _administrationGuard = administrationGuard;
+        _productCostService = productCostService;
     }
 
     [HttpGet]
@@ -163,6 +166,8 @@ public class PurchaseReceiptsController : ControllerBase
                         LineTotal = i.LineTotal,
                         PreviousProductCost = i.PreviousProductCost,
                         AppliedProductCost = i.AppliedProductCost,
+                        ProductCostChangedOnCancellation = i.ProductCostChangedOnCancellation,
+                        ProductCostAfterCancellation = i.ProductCostAfterCancellation,
                         Notes = i.Notes
                     })
                     .ToList()
@@ -208,67 +213,70 @@ public class PurchaseReceiptsController : ControllerBase
 
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
-        var supplierExists = await _context.Suppliers.AnyAsync(s =>
-            s.Id == dto.SupplierId
-            && s.CompanyId == operationalContext.CompanyId
-            && s.IsActive);
-
-        if (!supplierExists)
-        {
-            return NotFound(new ApiErrorResponse { Error = "SUPPLIER_NOT_FOUND" });
-        }
-
-        var productIds = dto.Items
-            .Select(i => i.ProductId)
-            .Distinct()
-            .ToArray();
-
-        var productById = await _context.Products
-            .Where(p => productIds.Contains(p.Id) && p.CompanyId == operationalContext.CompanyId)
-            .ToDictionaryAsync(p => p.Id);
-
-        if (productById.Count != productIds.Length)
-        {
-            return NotFound(new ApiErrorResponse { Error = "PRODUCT_NOT_FOUND" });
-        }
-
-        if (productById.Values.Any(p => !p.IsActive))
-        {
-            return BadRequest(new ApiErrorResponse { Error = "PRODUCT_INACTIVE" });
-        }
-
-        var now = _businessClock.UtcNow;
-        var businessDate = dto.ReceiptDate == default
-            ? _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId)
-            : DateOnly.FromDateTime(dto.ReceiptDate);
-        var receiptDate = _businessClock.GetBusinessDateStartUtc(businessDate, operationalContext.CompanyTimeZoneId);
-        var receiptItems = new List<PurchaseReceiptItem>();
-
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
         try
         {
             await _administrationGuard.LockOperationalWriteAsync(operationalContext);
+
+            var supplierExists = await _context.Suppliers.AnyAsync(s =>
+                s.Id == dto.SupplierId
+                && s.CompanyId == operationalContext.CompanyId
+                && s.IsActive);
+
+            if (!supplierExists)
+            {
+                return NotFound(new ApiErrorResponse { Error = "SUPPLIER_NOT_FOUND" });
+            }
+
+            var productIds = dto.Items
+                .Select(item => item.ProductId)
+                .Distinct()
+                .ToArray();
+            var productById = await _productCostService.LockProductsAsync(
+                operationalContext.CompanyId,
+                productIds);
+
+            if (productById.Count != productIds.Length)
+            {
+                return NotFound(new ApiErrorResponse { Error = "PRODUCT_NOT_FOUND" });
+            }
+
+            if (productById.Values.Any(product => !product.IsActive))
+            {
+                return BadRequest(new ApiErrorResponse { Error = "PRODUCT_INACTIVE" });
+            }
+
+            var now = _businessClock.UtcNow;
+            var businessDate = dto.ReceiptDate == default
+                ? _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId)
+                : DateOnly.FromDateTime(dto.ReceiptDate);
+            var receiptDate = _businessClock.GetBusinessDateStartUtc(
+                businessDate,
+                operationalContext.CompanyTimeZoneId);
+            var receiptItems = new List<PurchaseReceiptItem>();
+
             foreach (var itemDto in dto.Items)
             {
                 var product = productById[itemDto.ProductId];
                 var unitCost = RoundMoney(itemDto.UnitCost);
                 var quantity = RoundQuantity(itemDto.Quantity);
                 var lineTotal = RoundMoney(quantity * unitCost);
-                var previousCost = product.Cost;
-
-                product.Cost = unitCost;
-
-                receiptItems.Add(new PurchaseReceiptItem
+                var receiptItem = new PurchaseReceiptItem
                 {
                     ProductId = product.Id,
                     Quantity = quantity,
                     UnitCost = unitCost,
                     LineTotal = lineTotal,
-                    PreviousProductCost = previousCost,
-                    AppliedProductCost = unitCost,
                     Notes = NormalizeOptionalText(itemDto.Notes)
-                });
+                };
+
+                receiptItems.Add(receiptItem);
+                _productCostService.ApplyPurchaseReceiptCost(
+                    product,
+                    receiptItem,
+                    operationalContext.UserId,
+                    now);
             }
 
             var receipt = new PurchaseReceipt
@@ -293,7 +301,7 @@ public class PurchaseReceiptsController : ControllerBase
             _context.PurchaseReceipts.Add(receipt);
             await _context.SaveChangesAsync();
 
-            foreach (var item in receipt.Items)
+            foreach (var item in receipt.Items.OrderBy(item => item.ProductId).ThenBy(item => item.Id))
             {
                 await _inventoryService.RegisterPurchaseReceiptAsync(
                     item.ProductId,
@@ -339,6 +347,16 @@ public class PurchaseReceiptsController : ControllerBase
 
         try
         {
+            await _administrationGuard.LockOperationalWriteAsync(operationalContext);
+            await _context.Database.ExecuteSqlInterpolatedAsync($"""
+                SELECT 1
+                FROM "PurchaseReceipts"
+                WHERE "Id" = {id}
+                  AND "CompanyId" = {operationalContext.CompanyId}
+                  AND "EstablishmentId" = {operationalContext.EstablishmentId}
+                FOR UPDATE
+                """);
+
             var receipt = await _context.PurchaseReceipts
                 .Include(r => r.Items)
                 .FirstOrDefaultAsync(r => r.Id == id
@@ -355,7 +373,31 @@ public class PurchaseReceiptsController : ControllerBase
                 return Conflict(new ApiErrorResponse { Error = "PURCHASE_RECEIPT_ALREADY_CANCELED" });
             }
 
-            foreach (var item in receipt.Items.OrderBy(i => i.Id))
+            var productIds = receipt.Items
+                .Select(item => item.ProductId)
+                .Distinct()
+                .ToArray();
+            var productById = await _productCostService.LockProductsAsync(
+                operationalContext.CompanyId,
+                productIds);
+
+            if (productById.Count != productIds.Length)
+            {
+                return Conflict(new ApiErrorResponse { Error = "PRODUCT_COST_PROVENANCE_INVALID" });
+            }
+
+            foreach (var productItems in receipt.Items
+                .GroupBy(item => item.ProductId)
+                .OrderBy(group => group.Key))
+            {
+                await _productCostService.ResolveCancellationAsync(
+                    operationalContext.CompanyId,
+                    receipt,
+                    productById[productItems.Key],
+                    productItems.ToArray());
+            }
+
+            foreach (var item in receipt.Items.OrderBy(item => item.ProductId).ThenBy(item => item.Id))
             {
                 await _inventoryService.RegisterPurchaseReceiptCancelAsync(
                     item.ProductId,
@@ -426,6 +468,8 @@ public class PurchaseReceiptsController : ControllerBase
                         LineTotal = i.LineTotal,
                         PreviousProductCost = i.PreviousProductCost,
                         AppliedProductCost = i.AppliedProductCost,
+                        ProductCostChangedOnCancellation = i.ProductCostChangedOnCancellation,
+                        ProductCostAfterCancellation = i.ProductCostAfterCancellation,
                         Notes = i.Notes
                     })
                     .ToList()
