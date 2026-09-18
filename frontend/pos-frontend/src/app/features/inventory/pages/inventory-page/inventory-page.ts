@@ -128,7 +128,7 @@ export class InventoryPage implements OnInit {
 
   readonly productOptions = computed<SelectOption<number>[]>(() =>
     this.stocks().map((stock) => ({
-      label: `${stock.productId} - ${stock.productName}`,
+      label: `${stock.productId} - ${stock.productName}${stock.isActive ? '' : ' (Inactivo)'}`,
       value: stock.productId,
     }))
   );
@@ -654,11 +654,6 @@ export class InventoryPage implements OnInit {
   private validateOperationForm(kind: InventoryOperationKind, form: InventoryOperationForm): string {
     if (form.productId === null) {
       return 'Selecciona un producto.';
-    }
-
-    const stock = this.stocks().find((item) => item.productId === form.productId);
-    if (stock && !stock.isActive) {
-      return 'El producto seleccionado está inactivo.';
     }
 
     if (form.quantity === null || !Number.isFinite(form.quantity)) {

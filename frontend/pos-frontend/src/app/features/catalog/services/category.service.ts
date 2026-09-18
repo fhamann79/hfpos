@@ -21,10 +21,15 @@ export class CategoryService {
   }
 
   update(id: number, payload: UpdateCategoryRequest) {
-    return this.http.put<Category>(`${this.baseUrl}/${id}`, payload);
+    const { name } = payload;
+    return this.http.put<void>(`${this.baseUrl}/${id}`, { name });
   }
 
-  delete(id: number) {
-    return this.http.delete<void>(`${this.baseUrl}/${id}`);
+  activate(id: number) {
+    return this.http.post<void>(`${this.baseUrl}/${id}/activate`, {});
+  }
+
+  deactivate(id: number) {
+    return this.http.post<void>(`${this.baseUrl}/${id}/deactivate`, {});
   }
 }

@@ -24,6 +24,7 @@ public class CreditNoteService : ICreditNoteService
     private readonly ISriFiscalClock _sriFiscalClock;
     private readonly SriOptions _sriOptions;
     private readonly ILogger<CreditNoteService> _logger;
+    private readonly TenantAdministrationGuard _administrationGuard;
 
     public CreditNoteService(
         PosDbContext context,
@@ -35,7 +36,8 @@ public class CreditNoteService : ICreditNoteService
         ISriCreditNoteXmlValidator sriCreditNoteXmlValidator,
         ISriFiscalClock sriFiscalClock,
         IOptions<SriOptions> sriOptions,
-        ILogger<CreditNoteService> logger)
+        ILogger<CreditNoteService> logger,
+        TenantAdministrationGuard administrationGuard)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
@@ -47,6 +49,7 @@ public class CreditNoteService : ICreditNoteService
         _sriFiscalClock = sriFiscalClock;
         _sriOptions = sriOptions.Value;
         _logger = logger;
+        _administrationGuard = administrationGuard;
     }
 
     public async Task<CreditNoteEligibilityDto> GetEligibilityAsync(int originalSaleId)
@@ -93,6 +96,7 @@ public class CreditNoteService : ICreditNoteService
             var (reason, notes) = ValidateDraftRequest(dto);
 
             await using var transaction = await _context.Database.BeginTransactionAsync();
+            await _administrationGuard.LockOperationalWriteAsync(operationalContext);
 
             var originalSale = await LockOriginalSaleAsync(dto.OriginalSaleId, operationalContext);
             var aggregates = await GetActiveCreditNoteItemAggregatesAsync(
@@ -209,7 +213,7 @@ public class CreditNoteService : ICreditNoteService
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationalContextException)
         {
             _logger.LogError(
                 ex,

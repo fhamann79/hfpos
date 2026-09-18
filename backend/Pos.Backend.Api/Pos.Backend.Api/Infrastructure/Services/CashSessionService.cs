@@ -16,17 +16,20 @@ public class CashSessionService : ICashSessionService
     private readonly ILogger<CashSessionService> _logger;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly IBusinessClockService _businessClock;
+    private readonly TenantAdministrationGuard _administrationGuard;
 
     public CashSessionService(
         PosDbContext context,
         ILogger<CashSessionService> logger,
         IOperationalContextAccessor operationalContextAccessor,
-        IBusinessClockService businessClock)
+        IBusinessClockService businessClock,
+        TenantAdministrationGuard administrationGuard)
     {
         _context = context;
         _logger = logger;
         _operationalContextAccessor = operationalContextAccessor;
         _businessClock = businessClock;
+        _administrationGuard = administrationGuard;
     }
 
     public async Task<CashSessionDto?> GetCurrentAsync()
@@ -121,6 +124,8 @@ public class CashSessionService : ICashSessionService
 
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        await _administrationGuard.LockOperationalWriteAsync(operationalContext);
         var alreadyOpen = await _context.CashSessions.AnyAsync(s =>
             s.CompanyId == operationalContext.CompanyId
             && s.EstablishmentId == operationalContext.EstablishmentId
@@ -162,6 +167,7 @@ public class CashSessionService : ICashSessionService
         {
             throw new InvalidOperationException("CASH_SESSION_ALREADY_OPEN", ex);
         }
+        await transaction.CommitAsync();
 
         _logger.LogInformation(
             "Cash session opened. CashSessionId {CashSessionId} UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",

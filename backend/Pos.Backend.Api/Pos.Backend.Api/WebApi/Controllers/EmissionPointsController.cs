@@ -20,12 +20,15 @@ public class EmissionPointsController : ControllerBase
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContext;
     private readonly TenantAdministrationGuard _administrationGuard;
+    private readonly IMasterDataLifecycleService _lifecycle;
 
-    public EmissionPointsController(PosDbContext context, IOperationalContextAccessor operationalContext, TenantAdministrationGuard administrationGuard)
+    public EmissionPointsController(PosDbContext context, IOperationalContextAccessor operationalContext,
+        TenantAdministrationGuard administrationGuard, IMasterDataLifecycleService lifecycle)
     {
         _context = context;
         _operationalContext = operationalContext;
         _administrationGuard = administrationGuard;
+        _lifecycle = lifecycle;
     }
 
     [HttpGet]
@@ -80,11 +83,14 @@ public class EmissionPointsController : ControllerBase
             return BadRequest(new ApiErrorResponse { Error = "NAME_REQUIRED" });
         }
 
-        var establishmentExists = await _context.Establishments.AnyAsync(e => e.Id == dto.EstablishmentId && e.CompanyId == tenant.CompanyId);
-        if (!establishmentExists)
+        await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        var establishment = await _context.Establishments.SingleOrDefaultAsync(e => e.Id == dto.EstablishmentId && e.CompanyId == tenant.CompanyId);
+        if (establishment is null)
         {
             return BadRequest(new ApiErrorResponse { Error = "ESTABLISHMENT_NOT_FOUND" });
         }
+        if (!establishment.IsActive)
+            return Conflict(new ApiErrorResponse { Error = "ESTABLISHMENT_INACTIVE" });
 
         var normalizedCode = dto.Code.Trim();
         var codeExists = await _context.EmissionPoints.AnyAsync(ep =>
@@ -106,6 +112,7 @@ public class EmissionPointsController : ControllerBase
 
         _context.EmissionPoints.Add(emissionPoint);
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return CreatedAtAction(nameof(GetById), new { id = emissionPoint.Id }, new EmissionPointDto
         {
@@ -175,7 +182,6 @@ public class EmissionPointsController : ControllerBase
 
         emissionPoint.Code = normalizedCode;
         emissionPoint.Name = dto.Name.Trim();
-        emissionPoint.IsActive = dto.IsActive;
 
         await _context.SaveChangesAsync();
         if (!await _administrationGuard.HasActiveAdministratorAsync(tenant.CompanyId))
@@ -188,25 +194,22 @@ public class EmissionPointsController : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
+    [HttpPost("{id:int}/deactivate")]
     [Authorize(Policy = AppPermissions.OpStructureWrite)]
-    public async Task<IActionResult> Delete(int id)
+    public async Task<IActionResult> Deactivate(int id)
     {
         var tenant = await _operationalContext.GetRequiredContextAsync();
-        await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
-        var emissionPoint = await _context.EmissionPoints.FirstOrDefaultAsync(ep => ep.Id == id && ep.Establishment.CompanyId == tenant.CompanyId);
-        if (emissionPoint is null)
-        {
-            return NotFound(new ApiErrorResponse { Error = "EMISSION_POINT_NOT_FOUND" });
-        }
+        await _lifecycle.SetEmissionPointActiveAsync(tenant.CompanyId, id, false);
 
-        _context.EmissionPoints.Remove(emissionPoint);
-        await _context.SaveChangesAsync();
-        if (!await _administrationGuard.HasActiveAdministratorAsync(tenant.CompanyId))
-        {
-            return Conflict(new ApiErrorResponse { Error = "LAST_ACTIVE_ADMIN_REQUIRED" });
-        }
-        await tx.CommitAsync();
+        return NoContent();
+    }
 
+    [HttpPost("{id:int}/activate")]
+    [Authorize(Policy = AppPermissions.OpStructureWrite)]
+    public async Task<IActionResult> Activate(int id)
+    {
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        await _lifecycle.SetEmissionPointActiveAsync(tenant.CompanyId, id, true);
         return NoContent();
     }
 }

@@ -146,26 +146,29 @@ export class EstablishmentsTable implements OnChanges {
     });
   }
 
-  confirmDelete(establishment: Establishment): void {
+  confirmLifecycle(establishment: Establishment): void {
     if (!this.canWrite) {
       return;
     }
 
+    const active = establishment.isActive;
+    const action = active ? 'Desactivar' : 'Activar';
     this.confirmationService.confirm({
-      header: 'Eliminar establecimiento',
-      message: `¿Deseas eliminar el establecimiento "${establishment.name}"?`,
+      header: `${action} establecimiento`,
+      message: `¿Deseas ${action.toLowerCase()} el establecimiento "${establishment.name}"?`
+        + (active ? ' Su historial se conservará.' : ''),
       icon: 'pi pi-exclamation-triangle',
-      acceptLabel: 'Eliminar',
+      acceptLabel: action,
       rejectLabel: 'Cancelar',
-      acceptButtonProps: { severity: 'danger' },
+      acceptButtonProps: { severity: active ? 'warn' : 'success' },
       accept: () => {
-        this.establishmentService.delete(establishment.id).subscribe({
+        const request = active
+          ? this.establishmentService.deactivate(establishment.id)
+          : this.establishmentService.activate(establishment.id);
+        request.subscribe({
           next: () => {
-            if (this.selectedEstablishment?.id === establishment.id) {
-              this.selectedEstablishment = null;
-              this.establishmentSelected.emit(null);
-            }
-            this.messageService.add({ severity: 'success', summary: 'Éxito', detail: 'Establecimiento eliminado.' });
+            this.messageService.add({ severity: 'success', summary: 'Éxito',
+              detail: active ? 'Establecimiento desactivado.' : 'Establecimiento activado.' });
             this.loadEstablishments();
           },
           error: (error: HttpErrorResponse) => {
@@ -175,7 +178,6 @@ export class EstablishmentsTable implements OnChanges {
       },
     });
   }
-
   isSelected(establishment: Establishment): boolean {
     return this.selectedEstablishment?.id === establishment.id;
   }

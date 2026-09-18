@@ -22,17 +22,20 @@ public class PurchaseReceiptsController : ControllerBase
     private readonly IInventoryService _inventoryService;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly IBusinessClockService _businessClock;
+    private readonly TenantAdministrationGuard _administrationGuard;
 
     public PurchaseReceiptsController(
         PosDbContext context,
         IInventoryService inventoryService,
         IOperationalContextAccessor operationalContextAccessor,
-        IBusinessClockService businessClock)
+        IBusinessClockService businessClock,
+        TenantAdministrationGuard administrationGuard)
     {
         _context = context;
         _inventoryService = inventoryService;
         _operationalContextAccessor = operationalContextAccessor;
         _businessClock = businessClock;
+        _administrationGuard = administrationGuard;
     }
 
     [HttpGet]
@@ -245,6 +248,7 @@ public class PurchaseReceiptsController : ControllerBase
 
         try
         {
+            await _administrationGuard.LockOperationalWriteAsync(operationalContext);
             foreach (var itemDto in dto.Items)
             {
                 var product = productById[itemDto.ProductId];

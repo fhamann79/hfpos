@@ -70,7 +70,13 @@
           <td>
             <div class="actions">
               <p-button icon="pi pi-pencil" [rounded]="true" [text]="true" (onClick)="openEditDialog(category)"></p-button>
-              <p-button icon="pi pi-trash" severity="danger" [rounded]="true" [text]="true" (onClick)="confirmDelete(category)"></p-button>
+              <p-button
+                  [icon]="category.isActive ? 'pi pi-ban' : 'pi pi-check-circle'"
+                  [label]="category.isActive ? 'Desactivar' : 'Activar'"
+                  [severity]="category.isActive ? 'warn' : 'success'"
+                  [text]="true"
+                  (onClick)="confirmLifecycle(category)"
+                ></p-button>
             </div>
           </td>
         }

@@ -19,11 +19,14 @@ public class CategoriesController : ControllerBase
 {
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
+    private readonly IMasterDataLifecycleService _lifecycle;
 
-    public CategoriesController(PosDbContext context, IOperationalContextAccessor operationalContextAccessor)
+    public CategoriesController(PosDbContext context, IOperationalContextAccessor operationalContextAccessor,
+        IMasterDataLifecycleService lifecycle)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
+        _lifecycle = lifecycle;
     }
 
     [HttpGet]
@@ -139,7 +142,6 @@ public class CategoriesController : ControllerBase
         }
 
         category.Name = dto.Name.Trim();
-        category.IsActive = dto.IsActive;
 
         await _context.SaveChangesAsync();
 
@@ -147,24 +149,25 @@ public class CategoriesController : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
+    [HttpPost("{id:int}/deactivate")]
     [Authorize(Policy = AppPermissions.CatalogCategoriesWrite)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> Delete(int id)
+    public async Task<IActionResult> Deactivate(int id)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
-        var category = await _context.Categories
-            .FirstOrDefaultAsync(c => c.Id == id && c.CompanyId == operationalContext.CompanyId);
+        await _lifecycle.SetCategoryActiveAsync(operationalContext.CompanyId, id, false);
 
-        if (category is null)
-        {
-            return NotFound(new ApiErrorResponse { Error = "CATEGORY_NOT_FOUND" });
-        }
+        return NoContent();
+    }
 
-        _context.Categories.Remove(category);
-        await _context.SaveChangesAsync();
-
+    [HttpPost("{id:int}/activate")]
+    [Authorize(Policy = AppPermissions.CatalogCategoriesWrite)]
+    public async Task<IActionResult> Activate(int id)
+    {
+        var tenant = await _operationalContextAccessor.GetRequiredContextAsync();
+        await _lifecycle.SetCategoryActiveAsync(tenant.CompanyId, id, true);
         return NoContent();
     }
 }

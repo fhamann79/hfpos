@@ -20,11 +20,16 @@ public class ProductsController : ControllerBase
 {
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
+    private readonly IMasterDataLifecycleService _lifecycle;
+    private readonly TenantAdministrationGuard _administrationGuard;
 
-    public ProductsController(PosDbContext context, IOperationalContextAccessor operationalContextAccessor)
+    public ProductsController(PosDbContext context, IOperationalContextAccessor operationalContextAccessor,
+        IMasterDataLifecycleService lifecycle, TenantAdministrationGuard administrationGuard)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
+        _lifecycle = lifecycle;
+        _administrationGuard = administrationGuard;
     }
 
     [HttpGet]
@@ -78,13 +83,16 @@ public class ProductsController : ControllerBase
 
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
-        var categoryExists = await _context.Categories.AnyAsync(c =>
+        await using var transaction = await _administrationGuard.BeginChangeAsync(operationalContext.CompanyId);
+        var category = await _context.Categories.SingleOrDefaultAsync(c =>
             c.Id == dto.CategoryId && c.CompanyId == operationalContext.CompanyId);
 
-        if (!categoryExists)
+        if (category is null)
         {
             return BadRequest(new ApiErrorResponse { Error = "CATEGORY_NOT_FOUND" });
         }
+        if (!category.IsActive)
+            return Conflict(new ApiErrorResponse { Error = "CATEGORY_INACTIVE" });
 
         var barcode = NormalizeOptionalIdentifier(dto.Barcode);
         var internalCode = NormalizeOptionalIdentifier(dto.InternalCode);
@@ -122,6 +130,7 @@ public class ProductsController : ControllerBase
 
         _context.Products.Add(product);
         await _context.SaveChangesAsync();
+        await transaction.CommitAsync();
 
         var response = new ProductDto
         {
@@ -196,6 +205,7 @@ public class ProductsController : ControllerBase
 
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
+        await using var transaction = await _administrationGuard.BeginChangeAsync(operationalContext.CompanyId);
         var product = await _context.Products
             .FirstOrDefaultAsync(p => p.Id == id && p.CompanyId == operationalContext.CompanyId);
 
@@ -204,13 +214,15 @@ public class ProductsController : ControllerBase
             return NotFound(new ApiErrorResponse { Error = "PRODUCT_NOT_FOUND" });
         }
 
-        var categoryExists = await _context.Categories.AnyAsync(c =>
+        var category = await _context.Categories.SingleOrDefaultAsync(c =>
             c.Id == dto.CategoryId && c.CompanyId == operationalContext.CompanyId);
 
-        if (!categoryExists)
+        if (category is null)
         {
             return BadRequest(new ApiErrorResponse { Error = "CATEGORY_NOT_FOUND" });
         }
+        if (!category.IsActive && (product.IsActive || product.CategoryId != dto.CategoryId))
+            return Conflict(new ApiErrorResponse { Error = "CATEGORY_INACTIVE" });
 
         var barcode = NormalizeOptionalIdentifier(dto.Barcode);
         var internalCode = NormalizeOptionalIdentifier(dto.InternalCode);
@@ -239,9 +251,9 @@ public class ProductsController : ControllerBase
         product.Cost = dto.Cost;
         product.MinimumStock = dto.MinimumStock;
         product.VatCategory = dto.VatCategory ?? product.VatCategory;
-        product.IsActive = dto.IsActive;
 
         await _context.SaveChangesAsync();
+        await transaction.CommitAsync();
 
         return NoContent();
     }
@@ -285,24 +297,25 @@ public class ProductsController : ControllerBase
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     [HttpDelete("{id:int}")]
+    [HttpPost("{id:int}/deactivate")]
     [Authorize(Policy = AppPermissions.CatalogProductsWrite)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> Delete(int id)
+    public async Task<IActionResult> Deactivate(int id)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
-        var product = await _context.Products
-            .FirstOrDefaultAsync(p => p.Id == id && p.CompanyId == operationalContext.CompanyId);
+        await _lifecycle.SetProductActiveAsync(operationalContext.CompanyId, id, false);
 
-        if (product is null)
-        {
-            return NotFound(new ApiErrorResponse { Error = "PRODUCT_NOT_FOUND" });
-        }
+        return NoContent();
+    }
 
-        _context.Products.Remove(product);
-        await _context.SaveChangesAsync();
-
+    [HttpPost("{id:int}/activate")]
+    [Authorize(Policy = AppPermissions.CatalogProductsWrite)]
+    public async Task<IActionResult> Activate(int id)
+    {
+        var tenant = await _operationalContextAccessor.GetRequiredContextAsync();
+        await _lifecycle.SetProductActiveAsync(tenant.CompanyId, id, true);
         return NoContent();
     }
 }

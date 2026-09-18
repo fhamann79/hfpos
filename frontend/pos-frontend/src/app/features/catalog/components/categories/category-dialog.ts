@@ -2,7 +2,6 @@ import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
-import { CheckboxModule } from 'primeng/checkbox';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { Category, CreateCategoryRequest, UpdateCategoryRequest } from '../../models/category.model';
@@ -14,7 +13,7 @@ export type CategoryDialogSubmit =
 @Component({
   selector: 'app-category-dialog',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, DialogModule, InputTextModule, CheckboxModule, ButtonModule],
+  imports: [CommonModule, ReactiveFormsModule, DialogModule, InputTextModule, ButtonModule],
   templateUrl: './category-dialog.html',
   styleUrl: './category-dialog.scss',
 })
@@ -28,7 +27,6 @@ export class CategoryDialog implements OnChanges {
 
   readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.minLength(2)]],
-    isActive: [true],
   });
 
   get isEditMode() {
@@ -59,7 +57,6 @@ export class CategoryDialog implements OnChanges {
         id: this.category.id,
         payload: {
           name: values.name.trim(),
-          isActive: values.isActive,
         },
       });
       return;
@@ -81,14 +78,12 @@ export class CategoryDialog implements OnChanges {
     if (this.category) {
       this.form.setValue({
         name: this.category.name,
-        isActive: this.category.isActive,
       });
       return;
     }
 
     this.form.reset({
       name: '',
-      isActive: true,
     });
   }
 }

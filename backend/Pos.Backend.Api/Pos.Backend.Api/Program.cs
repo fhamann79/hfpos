@@ -82,6 +82,7 @@ builder.Services.AddDbContext<PosDbContext>(options =>
 //Auth
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TenantAdministrationGuard>();
+builder.Services.AddScoped<IMasterDataLifecycleService, MasterDataLifecycleService>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<IOperationalContextAccessor, OperationalContextAccessor>();
 builder.Services.AddSingleton<IBusinessClockService, BusinessClockService>();

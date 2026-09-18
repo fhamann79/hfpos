@@ -61,6 +61,10 @@ public class ExceptionHandlingMiddleware
     {
         return exception switch
         {
+            MasterDataLifecycleException lifecycleException => (
+                StatusCodes.Status409Conflict,
+                CreateErrorResponse(lifecycleException.Message, null)),
+
             OperationalContextException operationalContextException => (
                 operationalContextException.StatusCode,
                 CreateErrorResponse(

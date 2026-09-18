@@ -21,11 +21,15 @@ export class EstablishmentService {
   }
 
   update(id: number, payload: UpdateEstablishmentRequest) {
-    const { name, isActive } = payload;
-    return this.http.put<void>(`${this.baseUrl}/${id}`, { name, isActive });
+    const { name } = payload;
+    return this.http.put<void>(`${this.baseUrl}/${id}`, { name });
   }
 
-  delete(id: number) {
-    return this.http.delete<void>(`${this.baseUrl}/${id}`);
+  activate(id: number) {
+    return this.http.post<void>(`${this.baseUrl}/${id}/activate`, {});
+  }
+
+  deactivate(id: number) {
+    return this.http.post<void>(`${this.baseUrl}/${id}/deactivate`, {});
   }
 }

@@ -168,7 +168,7 @@ public class CreditNoteInventoryReturnService : ICreditNoteInventoryReturnServic
                 ex.Message);
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationalContextException)
         {
             _logger.LogError(
                 ex,

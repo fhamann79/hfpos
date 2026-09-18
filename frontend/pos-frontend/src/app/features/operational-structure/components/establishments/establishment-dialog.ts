@@ -2,7 +2,6 @@ import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
-import { CheckboxModule } from 'primeng/checkbox';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import {
@@ -18,7 +17,7 @@ export type EstablishmentDialogSubmit =
 @Component({
   selector: 'app-establishment-dialog',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, DialogModule, InputTextModule, CheckboxModule, ButtonModule],
+  imports: [CommonModule, ReactiveFormsModule, DialogModule, InputTextModule, ButtonModule],
   templateUrl: './establishment-dialog.html',
   styleUrl: './establishment-dialog.scss',
 })
@@ -32,7 +31,6 @@ export class EstablishmentDialog implements OnChanges {
 
   readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.minLength(2)]],
-    isActive: [true],
   });
 
   get isEditMode() {
@@ -63,7 +61,6 @@ export class EstablishmentDialog implements OnChanges {
         id: this.establishment.id,
         payload: {
           name: values.name.trim(),
-          isActive: values.isActive,
         },
       });
       return;
@@ -85,11 +82,10 @@ export class EstablishmentDialog implements OnChanges {
     if (this.establishment) {
       this.form.setValue({
         name: this.establishment.name,
-        isActive: this.establishment.isActive,
       });
       return;
     }
 
-    this.form.reset({ name: '', isActive: true });
+    this.form.reset({ name: '' });
   }
 }

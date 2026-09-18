@@ -108,7 +108,13 @@
           <td>
             <div class="actions">
               <p-button icon="pi pi-pencil" [rounded]="true" [text]="true" (onClick)="openEditDialog(product)"></p-button>
-              <p-button icon="pi pi-trash" severity="danger" [rounded]="true" [text]="true" (onClick)="confirmDelete(product)"></p-button>
+              <p-button
+                  [icon]="product.isActive ? 'pi pi-ban' : 'pi pi-check-circle'"
+                  [label]="product.isActive ? 'Desactivar' : 'Activar'"
+                  [severity]="product.isActive ? 'warn' : 'success'"
+                  [text]="true"
+                  (onClick)="confirmLifecycle(product)"
+                ></p-button>
             </div>
           </td>
         }

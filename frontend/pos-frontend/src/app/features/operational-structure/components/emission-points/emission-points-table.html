@@ -5,7 +5,7 @@
         <h3>Puntos de emisión</h3>
         <small>
           @if (selectedEstablishment) {
-            Establishment: <strong>{{ selectedEstablishment.name }}</strong>
+            Establecimiento: <strong>{{ selectedEstablishment.name }}</strong>
           } @else {
             Selecciona un establecimiento para cargar puntos de emisión.
           }
@@ -13,8 +13,8 @@
       </div>
     </ng-template>
     <ng-template #end>
-      @if (canWrite && selectedEstablishment) {
-        <p-button label="Nuevo EmissionPoint" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
+      @if (canWrite && selectedEstablishment?.isActive) {
+        <p-button label="Nuevo punto de emisión" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
       }
     </ng-template>
   </p-toolbar>
@@ -33,7 +33,7 @@
           <th>Código</th>
           <th>Nombre</th>
           <th>Estado</th>
-          <th style="width: 10rem">Acciones</th>
+          <th style="width: 14rem">Acciones</th>
         </tr>
       </ng-template>
       <ng-template #body let-emissionPoint>
@@ -52,10 +52,11 @@
               <div class="actions">
                 <p-button icon="pi pi-pencil" [text]="true" (onClick)="openEditDialog(emissionPoint)"></p-button>
                 <p-button
-                  icon="pi pi-trash"
-                  severity="danger"
+                  [icon]="emissionPoint.isActive ? 'pi pi-ban' : 'pi pi-check-circle'"
+                  [label]="emissionPoint.isActive ? 'Desactivar' : 'Activar'"
+                  [severity]="emissionPoint.isActive ? 'warn' : 'success'"
                   [text]="true"
-                  (onClick)="confirmDelete(emissionPoint)"
+                  (onClick)="confirmLifecycle(emissionPoint)"
                 ></p-button>
               </div>
             }

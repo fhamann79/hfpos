@@ -2,7 +2,6 @@ import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
-import { CheckboxModule } from 'primeng/checkbox';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import {
@@ -18,7 +17,7 @@ export type EmissionPointDialogSubmit =
 @Component({
   selector: 'app-emission-point-dialog',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, DialogModule, InputTextModule, CheckboxModule, ButtonModule],
+  imports: [CommonModule, ReactiveFormsModule, DialogModule, InputTextModule, ButtonModule],
   templateUrl: './emission-point-dialog.html',
   styleUrl: './emission-point-dialog.scss',
 })
@@ -34,7 +33,6 @@ export class EmissionPointDialog implements OnChanges {
   readonly form = this.fb.nonNullable.group({
     code: ['', [Validators.required, Validators.minLength(1)]],
     name: ['', [Validators.required, Validators.minLength(2)]],
-    isActive: [true],
   });
 
   get isEditMode() {
@@ -67,7 +65,6 @@ export class EmissionPointDialog implements OnChanges {
           establishmentId: this.establishmentId,
           code: values.code.trim(),
           name: values.name.trim(),
-          isActive: values.isActive,
         },
       });
       return;
@@ -92,11 +89,10 @@ export class EmissionPointDialog implements OnChanges {
       this.form.setValue({
         code: this.emissionPoint.code,
         name: this.emissionPoint.name,
-        isActive: this.emissionPoint.isActive,
       });
       return;
     }
 
-    this.form.reset({ code: '', name: '', isActive: true });
+    this.form.reset({ code: '', name: '' });
   }
 }

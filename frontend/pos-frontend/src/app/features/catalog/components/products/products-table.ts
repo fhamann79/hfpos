@@ -150,24 +150,29 @@ export class ProductsTable implements OnInit {
     });
   }
 
-  confirmDelete(product: Product): void {
+  confirmLifecycle(product: Product): void {
     if (!this.canWrite) {
       return;
     }
 
+    const active = product.isActive;
+    const action = active ? 'Desactivar' : 'Activar';
     this.confirmationService.confirm({
-      header: 'Eliminar producto',
-      message: `¿Deseas eliminar el producto "${product.name}"?`,
+      header: `${action} producto`,
+      message: `¿Deseas ${action.toLowerCase()} el producto "${product.name}"?`
+        + (active ? ' No podrá utilizarse en nuevas ventas o compras. Su historial e inventario se conservarán.' : ''),
       icon: 'pi pi-exclamation-triangle',
-      acceptLabel: 'Eliminar',
+      acceptLabel: action,
       rejectLabel: 'Cancelar',
-      acceptButtonProps: {
-        severity: 'danger',
-      },
+      acceptButtonProps: { severity: active ? 'warn' : 'success' },
       accept: () => {
-        this.productService.delete(product.id).subscribe({
+        const request = active
+          ? this.productService.deactivate(product.id)
+          : this.productService.activate(product.id);
+        request.subscribe({
           next: () => {
-            this.messageService.add({ severity: 'success', summary: 'Éxito', detail: 'Eliminado' });
+            this.messageService.add({ severity: 'success', summary: 'Éxito',
+              detail: active ? 'Producto desactivado.' : 'Producto activado.' });
             this.loadCatalogData();
           },
           error: (error: HttpErrorResponse) => {
@@ -177,5 +182,4 @@ export class ProductsTable implements OnInit {
       },
     });
   }
-
 }

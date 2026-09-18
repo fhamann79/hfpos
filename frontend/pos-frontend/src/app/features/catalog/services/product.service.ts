@@ -21,10 +21,15 @@ export class ProductService {
   }
 
   update(id: number, payload: UpdateProductRequest) {
-    return this.http.put<Product>(`${this.baseUrl}/${id}`, payload);
+    const { categoryId, name, barcode, internalCode, price, cost, minimumStock, vatCategory } = payload;
+    return this.http.put<void>(`${this.baseUrl}/${id}`, { categoryId, name, barcode, internalCode, price, cost, minimumStock, vatCategory });
   }
 
-  delete(id: number) {
-    return this.http.delete<void>(`${this.baseUrl}/${id}`);
+  activate(id: number) {
+    return this.http.post<void>(`${this.baseUrl}/${id}/activate`, {});
+  }
+
+  deactivate(id: number) {
+    return this.http.post<void>(`${this.baseUrl}/${id}/deactivate`, {});
   }
 }

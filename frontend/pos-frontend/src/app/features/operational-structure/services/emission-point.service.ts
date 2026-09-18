@@ -22,10 +22,15 @@ export class EmissionPointService {
   }
 
   update(id: number, payload: UpdateEmissionPointRequest) {
-    return this.http.put<EmissionPoint>(`${this.baseUrl}/${id}`, payload);
+    const { code, name } = payload;
+    return this.http.put<void>(`${this.baseUrl}/${id}`, { code, name });
   }
 
-  delete(id: number) {
-    return this.http.delete<void>(`${this.baseUrl}/${id}`);
+  activate(id: number) {
+    return this.http.post<void>(`${this.baseUrl}/${id}/activate`, {});
+  }
+
+  deactivate(id: number) {
+    return this.http.post<void>(`${this.baseUrl}/${id}/deactivate`, {});
   }
 }

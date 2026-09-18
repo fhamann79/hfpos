@@ -287,20 +287,25 @@ public class UsersController : ControllerBase
             return BadRequest(new ApiErrorResponse { Error = "ROLE_INACTIVE" });
         }
 
-        var establishmentExists = await _context.Establishments.AnyAsync(e =>
+        var establishment = await _context.Establishments.SingleOrDefaultAsync(e =>
             e.Id == establishmentId.Value && e.CompanyId == companyId);
-        if (!establishmentExists)
+        if (establishment is null)
         {
             return BadRequest(new ApiErrorResponse { Error = "ESTABLISHMENT_NOT_FOUND" });
         }
 
-        var emissionPointExists = await _context.EmissionPoints.AnyAsync(ep =>
+        if (!establishment.IsActive)
+            return BadRequest(new ApiErrorResponse { Error = "ESTABLISHMENT_INACTIVE" });
+
+        var emissionPoint = await _context.EmissionPoints.SingleOrDefaultAsync(ep =>
             ep.Id == emissionPointId && ep.EstablishmentId == establishmentId.Value
             && ep.Establishment.CompanyId == companyId);
-        if (!emissionPointExists)
+        if (emissionPoint is null)
         {
             return BadRequest(new ApiErrorResponse { Error = "EMISSION_POINT_NOT_FOUND" });
         }
+        if (!emissionPoint.IsActive)
+            return BadRequest(new ApiErrorResponse { Error = "EMISSION_POINT_INACTIVE" });
 
         return null;
     }
