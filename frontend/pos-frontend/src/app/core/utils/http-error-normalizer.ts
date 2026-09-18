@@ -99,6 +99,7 @@ const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
   PURCHASE_RECEIPT_ALREADY_CANCELED: 'La recepción de compra ya está cancelada.',
   PURCHASE_RECEIPT_CANCEL_REASON_REQUIRED: 'Ingresa una razón para cancelar la recepción.',
   PURCHASE_RECEIPT_CANCEL_INSUFFICIENT_STOCK: 'No hay stock suficiente para revertir esta recepción.',
+  PRODUCT_COST_PROVENANCE_INVALID: 'No se pudo resolver de forma segura la procedencia del costo del producto.',
   CASH_SESSION_REQUIRED: 'Debes abrir caja antes de vender.',
   CASH_SESSION_ALREADY_OPEN: 'Ya tienes una caja abierta para este punto de emisión.',
   CASH_SESSION_NOT_FOUND: 'La caja no existe.',

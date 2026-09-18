@@ -22,14 +22,17 @@ public class ProductsController : ControllerBase
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly IMasterDataLifecycleService _lifecycle;
     private readonly TenantAdministrationGuard _administrationGuard;
+    private readonly IProductCostService _productCostService;
 
     public ProductsController(PosDbContext context, IOperationalContextAccessor operationalContextAccessor,
-        IMasterDataLifecycleService lifecycle, TenantAdministrationGuard administrationGuard)
+        IMasterDataLifecycleService lifecycle, TenantAdministrationGuard administrationGuard,
+        IProductCostService productCostService)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
         _lifecycle = lifecycle;
         _administrationGuard = administrationGuard;
+        _productCostService = productCostService;
     }
 
     [HttpGet]
@@ -113,6 +116,7 @@ public class ProductsController : ControllerBase
             return duplicateIdentifierError;
         }
 
+        var now = DateTime.UtcNow;
         var product = new Product
         {
             CompanyId = operationalContext.CompanyId,
@@ -125,10 +129,12 @@ public class ProductsController : ControllerBase
             MinimumStock = dto.MinimumStock,
             VatCategory = vatCategory,
             IsActive = true,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = now
         };
 
         _context.Products.Add(product);
+        await _context.SaveChangesAsync();
+        _productCostService.InitializeManualCost(product, operationalContext.UserId, now);
         await _context.SaveChangesAsync();
         await transaction.CommitAsync();
 
@@ -248,9 +254,13 @@ public class ProductsController : ControllerBase
         product.Barcode = barcode;
         product.InternalCode = internalCode;
         product.Price = dto.Price;
-        product.Cost = dto.Cost;
         product.MinimumStock = dto.MinimumStock;
         product.VatCategory = dto.VatCategory ?? product.VatCategory;
+        _productCostService.ApplyManualCost(
+            product,
+            dto.Cost,
+            operationalContext.UserId,
+            DateTime.UtcNow);
 
         await _context.SaveChangesAsync();
         await transaction.CommitAsync();

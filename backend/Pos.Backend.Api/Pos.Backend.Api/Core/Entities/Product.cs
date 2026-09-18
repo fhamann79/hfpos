@@ -27,6 +27,11 @@ public class Product
 
     public decimal Cost { get; set; }
 
+    public long LastCostRevision { get; set; }
+
+    public int? CurrentCostEventId { get; set; }
+    public ProductCostEvent? CurrentCostEvent { get; set; }
+
     public decimal MinimumStock { get; set; } = 3m;
 
     public ProductVatCategory VatCategory { get; set; }

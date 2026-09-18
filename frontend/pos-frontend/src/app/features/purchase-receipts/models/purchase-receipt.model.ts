@@ -36,6 +36,8 @@ export interface PurchaseReceiptItem {
   lineTotal: number;
   previousProductCost: number;
   appliedProductCost: number;
+  productCostChangedOnCancellation: boolean | null;
+  productCostAfterCancellation: number | null;
   notes: string | null;
 }
 
