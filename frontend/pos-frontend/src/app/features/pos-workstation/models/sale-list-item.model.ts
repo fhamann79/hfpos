@@ -1,4 +1,5 @@
 import { SaleDocumentStatus, SaleDocumentType } from './sale-document.model';
+import { SalePaymentMethod } from './sale-payment-method.model';
 
 export interface SaleListItem {
   id: number;
@@ -6,6 +7,7 @@ export interface SaleListItem {
   timeZoneIdSnapshot: string | null;
   createdAt: string;
   status: string;
+  paymentMethod: SalePaymentMethod;
   documentType: SaleDocumentType;
   documentStatus: SaleDocumentStatus;
   number: string | null;

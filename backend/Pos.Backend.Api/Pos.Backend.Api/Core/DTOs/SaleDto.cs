@@ -28,6 +28,8 @@ public class SaleDto
 
     public SalePaymentMethod PaymentMethod { get; set; }
 
+    public int? CashSessionId { get; set; }
+
     public SaleDocumentType DocumentType { get; set; }
 
     public SaleDocumentStatus DocumentStatus { get; set; }
@@ -123,6 +125,24 @@ public class SaleDto
     public string TimeZoneIdSnapshot { get; set; } = string.Empty;
 
     public DateTime CreatedAt { get; set; }
+
+    public DateTime? VoidedAt { get; set; }
+
+    public int? VoidedByUserId { get; set; }
+
+    public string? VoidedByUsername { get; set; }
+
+    public string? VoidReason { get; set; }
+
+    public DateOnly? VoidBusinessDate { get; set; }
+
+    public string? VoidTimeZoneIdSnapshot { get; set; }
+
+    public SaleVoidCashEffect? VoidCashEffect { get; set; }
+
+    public int? VoidCashSessionId { get; set; }
+
+    public int? VoidCashMovementId { get; set; }
 
     public List<SaleItemDto> Items { get; set; } = new();
 }

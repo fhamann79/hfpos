@@ -2596,6 +2596,18 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       },
       error: (error: HttpErrorResponse) => {
         this.voidLoading.set(false);
+
+        if (this.workstationService.isBusinessError(error, 'SALE_VOID_CASH_SESSION_REQUIRED')) {
+          this.currentCashSession.set(null);
+          this.loadCurrentCashSession();
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Caja requerida para devolución',
+            detail: this.workstationService.resolveBusinessError(error),
+          });
+          return;
+        }
+
         this.messageService.add({
           severity: 'error',
           summary: 'No se pudo anular',

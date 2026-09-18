@@ -1,2 +1,28 @@
-textarea { width:100%; margin-top:.5rem; }
+.sale-reference {
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  gap:.3rem .75rem;
+  margin-bottom:.75rem;
+}
+.sale-reference span { color:#64748b; }
+.sale-reference strong { min-width:0; overflow-wrap:anywhere; }
+.void-impact {
+  margin-bottom:.9rem;
+  padding:.75rem;
+  border:1px solid #fed7aa;
+  border-radius:6px;
+  background:#fff7ed;
+  color:#7c2d12;
+}
+.void-impact ul { margin:.4rem 0 0; padding-left:1.2rem; display:grid; gap:.35rem; line-height:1.4; }
+label { display:block; font-weight:700; }
+textarea { width:100%; margin-top:.4rem; }
+.reason-counter { display:block; margin-top:.2rem; color:#64748b; text-align:right; }
 .actions { margin-top:.8rem; display:flex; justify-content:flex-end; gap:.5rem; }
+
+@media (max-width: 520px) {
+  .sale-reference { grid-template-columns:1fr; gap:.15rem; }
+  .sale-reference strong { margin-bottom:.35rem; }
+  .actions { flex-direction:column-reverse; }
+  .actions p-button { width:100%; }
+}

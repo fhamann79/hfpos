@@ -2,19 +2,45 @@
   header="Anular venta"
   [visible]="visible"
   [modal]="true"
-  [style]="{ width: '32rem' }"
+  [style]="{ width: '36rem', maxWidth: '96vw' }"
   (visibleChange)="onVisibleChange($event)"
 >
-  <p>Esta acción no se puede deshacer. Ingresa un motivo.</p>
-  <textarea pTextarea rows="4" [(ngModel)]="reason" placeholder="Motivo de anulación"></textarea>
+  @if (sale) {
+    <div class="sale-reference">
+      <span>Venta</span>
+      <strong>{{ sale.number || ('#' + sale.id) }}</strong>
+      <span>Método de pago</span>
+      <strong>{{ paymentMethodLabel() }}</strong>
+    </div>
+
+    <div class="void-impact" role="note">
+      <strong>Al confirmar</strong>
+      <ul>
+        <li>La venta quedará anulada y el inventario será restaurado.</li>
+        <li>{{ cashEffectExplanation() }}</li>
+        <li>Una factura autorizada por el SRI requiere nota de crédito y no admite anulación local.</li>
+      </ul>
+    </div>
+  }
+
+  <label for="void-reason">Motivo de anulación</label>
+  <textarea
+    id="void-reason"
+    pTextarea
+    rows="4"
+    maxlength="500"
+    [(ngModel)]="reason"
+    placeholder="Describe por qué se anula la venta"
+  ></textarea>
+  <small class="reason-counter">{{ reason.length }}/500</small>
 
   <div class="actions">
-    <p-button label="Cancelar" severity="secondary" [outlined]="true" (onClick)="visibleChange.emit(false)"></p-button>
+    <p-button label="Cancelar" severity="secondary" [outlined]="true" (onClick)="onVisibleChange(false)"></p-button>
     <p-button
       label="Confirmar anulación"
       severity="danger"
       [loading]="loading"
-      [disabled]="!reason.trim().length"
+      [disabled]="!reason.trim().length || reason.trim().length > 500"
       (onClick)="confirmVoid.emit(reason.trim())"
     ></p-button>
   </div>

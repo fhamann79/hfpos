@@ -31,3 +31,14 @@ describe('Purchase cost integrity message', () => {
     expect(resolveHttpErrorMessage(error)).toContain('procedencia del costo');
   });
 });
+
+describe('Sale void cash-session messages', () => {
+  it.each([
+    ['SALE_VOID_CASH_SESSION_REQUIRED', 'abrir una caja'],
+    ['SALE_VOID_CASH_INTEGRITY_INVALID', 'efecto de caja'],
+    ['SALE_ALREADY_VOIDED', 'ya fue anulada'],
+  ])('explains %s without exposing technical details', (code, fragment) => {
+    const error = new HttpErrorResponse({ status: 409, error: { error: code } });
+    expect(resolveHttpErrorMessage(error)).toContain(fragment);
+  });
+});

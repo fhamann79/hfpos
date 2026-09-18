@@ -262,6 +262,7 @@ public class CashSessionService : ICashSessionService
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
+        await _administrationGuard.LockOperationalWriteAsync(operationalContext);
 
         var session = await GetLockedSessionAsync(id);
         EnsureSessionExistsAndMatchesContext(session, operationalContext, requireCurrentUser: true);
@@ -313,17 +314,23 @@ public class CashSessionService : ICashSessionService
 
     public async Task<CashSession> GetRequiredOpenSessionForCurrentContextAsync()
     {
+        if (_context.Database.CurrentTransaction is null)
+        {
+            throw new InvalidOperationException("CASH_SESSION_TRANSACTION_REQUIRED");
+        }
+
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
         var session = await _context.CashSessions
-            .AsNoTracking()
-            .Where(s => s.CompanyId == operationalContext.CompanyId
-                && s.EstablishmentId == operationalContext.EstablishmentId
-                && s.EmissionPointId == operationalContext.EmissionPointId
-                && s.OpenedByUserId == operationalContext.UserId
-                && s.Status == CashSessionStatus.Open)
-            .OrderByDescending(s => s.OpenedAt)
-            .FirstOrDefaultAsync();
+            .FromSqlInterpolated($@"
+                SELECT * FROM ""CashSessions""
+                WHERE ""CompanyId"" = {operationalContext.CompanyId}
+                  AND ""EstablishmentId"" = {operationalContext.EstablishmentId}
+                  AND ""EmissionPointId"" = {operationalContext.EmissionPointId}
+                  AND ""OpenedByUserId"" = {operationalContext.UserId}
+                  AND ""Status"" = {(int)CashSessionStatus.Open}
+                FOR UPDATE")
+            .SingleOrDefaultAsync();
 
         return session ?? throw new InvalidOperationException("CASH_SESSION_REQUIRED");
     }
@@ -349,6 +356,38 @@ public class CashSessionService : ICashSessionService
             throw new InvalidOperationException("CREDIT_NOTE_REFUND_FAILED");
         }
 
+        return await RegisterCurrentCashOutAsync(amount, normalizedReason, "CASH_SESSION_REQUIRED");
+    }
+
+    public async Task<CashMovement> RegisterSaleVoidCashOutAsync(
+        int saleId, decimal amount, string reason)
+    {
+        amount = RoundMoney(amount);
+        if (amount <= 0m)
+        {
+            throw new InvalidOperationException("CASH_MOVEMENT_AMOUNT_INVALID");
+        }
+
+        var normalizedReason = NormalizeOptionalText(reason);
+        if (normalizedReason is null || normalizedReason.Length > 300)
+        {
+            throw new InvalidOperationException("CASH_MOVEMENT_REASON_REQUIRED");
+        }
+
+        if (saleId <= 0 || _context.Database.CurrentTransaction is null)
+        {
+            throw new InvalidOperationException("SALE_VOID_CASH_INTEGRITY_INVALID");
+        }
+
+        return await RegisterCurrentCashOutAsync(
+            amount, normalizedReason, "SALE_VOID_CASH_SESSION_REQUIRED");
+    }
+
+    private async Task<CashMovement> RegisterCurrentCashOutAsync(
+        decimal amount,
+        string reason,
+        string missingSessionError)
+    {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
         var session = await _context.CashSessions
             .FromSqlInterpolated($@"
@@ -363,7 +402,7 @@ public class CashSessionService : ICashSessionService
 
         if (session is null)
         {
-            throw new InvalidOperationException("CASH_SESSION_REQUIRED");
+            throw new InvalidOperationException(missingSessionError);
         }
 
         EnsureSessionExistsAndMatchesContext(session, operationalContext, requireCurrentUser: true);
@@ -382,7 +421,7 @@ public class CashSessionService : ICashSessionService
             UserId = operationalContext.UserId,
             Type = CashMovementType.CashOut,
             Amount = amount,
-            Reason = normalizedReason,
+            Reason = reason,
             CreatedAt = now,
             BusinessDate = _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId),
             TimeZoneIdSnapshot = operationalContext.CompanyTimeZoneId

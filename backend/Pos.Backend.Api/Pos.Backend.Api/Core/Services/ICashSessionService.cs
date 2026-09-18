@@ -26,4 +26,7 @@ public interface ICashSessionService
 
     Task<CashMovement> RegisterCreditNoteRefundCashOutAsync(
         int creditNoteId, decimal amount, string reason);
+
+    Task<CashMovement> RegisterSaleVoidCashOutAsync(
+        int saleId, decimal amount, string reason);
 }
