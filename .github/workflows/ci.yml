@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (.NET 8 + PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: hfpos_ci
+          POSTGRES_USER: hfpos_test
+          POSTGRES_PASSWORD: hfpos_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hfpos_test -d hfpos_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ASPNETCORE_ENVIRONMENT: Testing
+      SeedDemoData: false
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=hfpos_ci;Username=hfpos_test;Password=hfpos_test_password;Include Error Detail=true
+      HF_POS_TEST_CONNECTION_STRING: Host=localhost;Port=5432;Database=hfpos_ci;Username=hfpos_test;Password=hfpos_test_password;Include Error Detail=true
+      Jwt__Key: hfpos-ci-only-jwt-key-that-is-long-enough-for-tests-and-never-used-outside-ci
+      Jwt__Issuer: hfpos-ci
+      Jwt__Audience: hfpos-ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore backend
+        run: dotnet restore backend/Pos.Backend.Api/Pos.Backend.Api.sln
+
+      - name: Build backend
+        run: >-
+          dotnet build backend/Pos.Backend.Api/Pos.Backend.Api.sln
+          --configuration Release
+          --no-restore
+          --disable-build-servers
+          -p:UseSharedCompilation=false
+
+      - name: Run backend tests
+        run: >-
+          dotnet test backend/Pos.Backend.Api/Pos.Backend.Api.sln
+          --configuration Release
+          --no-build
+          --logger "console;verbosity=normal"
+
+      - name: Install EF CLI
+        run: dotnet tool install --global dotnet-ef --version 8.0.4
+
+      - name: List migrations
+        run: >-
+          dotnet ef migrations list
+          --project backend/Pos.Backend.Api/Pos.Backend.Api
+          --startup-project backend/Pos.Backend.Api/Pos.Backend.Api
+          --configuration Release
+          --no-build
+
+      - name: Verify model has no pending changes
+        run: >-
+          dotnet ef migrations has-pending-model-changes
+          --project backend/Pos.Backend.Api/Pos.Backend.Api
+          --startup-project backend/Pos.Backend.Api/Pos.Backend.Api
+          --configuration Release
+          --no-build
+
+  frontend:
+    name: Frontend (Angular 21)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend/pos-frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/pos-frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Run frontend tests
+        run: npm test -- --watch=false
