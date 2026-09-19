@@ -405,6 +405,7 @@
   <app-void-sale-dialog
     [visible]="voidVisible()"
     [loading]="voidLoading()"
+    [sale]="saleToVoid()"
     (visibleChange)="voidVisible.set($event)"
     (confirmVoid)="confirmVoid($event)"
   ></app-void-sale-dialog>

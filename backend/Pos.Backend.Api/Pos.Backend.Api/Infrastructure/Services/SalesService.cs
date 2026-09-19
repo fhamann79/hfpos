@@ -134,6 +134,7 @@ public class SalesService : ISalesService
                 CustomerName = s.BuyerNameSnapshot ?? (s.Customer != null ? s.Customer.Name : null),
                 CustomerIdentification = s.BuyerIdentificationSnapshot ?? (s.Customer != null ? s.Customer.Identification : null),
                 CustomerEmail = s.BuyerEmailSnapshot ?? (s.Customer != null ? s.Customer.Email : null),
+                PaymentMethod = s.PaymentMethod,
                 DocumentType = s.DocumentType,
                 DocumentStatus = s.DocumentStatus,
                 AccessKey = s.AccessKey,
@@ -196,6 +197,7 @@ public class SalesService : ISalesService
                 BuyerAddressSnapshot = s.BuyerAddressSnapshot,
                 BuyerEmailSnapshot = s.BuyerEmailSnapshot,
                 PaymentMethod = s.PaymentMethod,
+                CashSessionId = s.CashSessionId,
                 DocumentType = s.DocumentType,
                 DocumentStatus = s.DocumentStatus,
                 Number = s.Number,
@@ -243,6 +245,15 @@ public class SalesService : ISalesService
                 BusinessDate = s.BusinessDate,
                 TimeZoneIdSnapshot = s.TimeZoneIdSnapshot,
                 CreatedAt = s.CreatedAt,
+                VoidedAt = s.VoidedAt,
+                VoidedByUserId = s.VoidedByUserId,
+                VoidedByUsername = s.VoidedByUser != null ? s.VoidedByUser.Username : null,
+                VoidReason = s.VoidReason,
+                VoidBusinessDate = s.VoidBusinessDate,
+                VoidTimeZoneIdSnapshot = s.VoidTimeZoneIdSnapshot,
+                VoidCashEffect = s.VoidCashEffect,
+                VoidCashSessionId = s.VoidCashSessionId,
+                VoidCashMovementId = s.VoidCashMovementId,
                 Items = s.Items
                     .OrderBy(i => i.Id)
                     .Select(i => new SaleItemDto
@@ -308,7 +319,6 @@ public class SalesService : ISalesService
             }
 
             operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-            var cashSession = await _cashSessionService.GetRequiredOpenSessionForCurrentContextAsync();
 
             var paymentMethod = dto.PaymentMethod ?? SalePaymentMethod.Cash;
             var documentType = dto.DocumentType ?? SaleDocumentType.Ticket;
@@ -322,6 +332,11 @@ public class SalesService : ISalesService
             {
                 throw new InvalidOperationException("INVALID_SALE_DOCUMENT_TYPE");
             }
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            // Stable create order: Company -> CashSession -> DocumentSequence -> ProductStock.
+            await _administrationGuard.LockOperationalWriteAsync(operationalContext);
+            var cashSession = await _cashSessionService.GetRequiredOpenSessionForCurrentContextAsync();
 
             Customer? customer = null;
 
@@ -438,9 +453,6 @@ public class SalesService : ISalesService
 
             ApplySaleTaxTotals(sale, dto.DiscountAmount ?? 0m);
 
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-            await _administrationGuard.LockOperationalWriteAsync(operationalContext);
-
             var numberAssignment = await _fiscalDocumentNumberService.AssignNextAsync(
                 operationalContext,
                 ToFiscalDocumentType(documentType));
@@ -520,9 +532,22 @@ public class SalesService : ISalesService
 
         try
         {
+            var voidReason = dto?.Reason?.Trim();
+            if (string.IsNullOrWhiteSpace(voidReason))
+            {
+                throw new InvalidOperationException("SALE_VOID_REASON_REQUIRED");
+            }
+
+            if (voidReason.Length > 500)
+            {
+                throw new InvalidOperationException("SALE_VOID_REASON_TOO_LONG");
+            }
+
             operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
             await using var transaction = await _context.Database.BeginTransactionAsync();
+            // Stable void order: Company -> Sale -> CashSession -> ProductStock.
+            await _administrationGuard.LockOperationalWriteAsync(operationalContext);
 
             var sale = await _context.Sales
                 .FromSqlInterpolated($@"
@@ -556,9 +581,33 @@ public class SalesService : ISalesService
 
             EnsureSaleCanBeVoidedLocally(sale);
 
-            var voidNotes = string.IsNullOrWhiteSpace(dto.Reason)
-                ? "Void sale"
-                : dto.Reason.Trim();
+            var originalCashSession = await GetLockedOriginalCashSessionAsync(sale);
+            CashMovement? voidCashMovement = null;
+            int? voidCashSessionId = null;
+            SaleVoidCashEffect voidCashEffect;
+
+            if (originalCashSession?.Status == CashSessionStatus.Open)
+            {
+                voidCashEffect = SaleVoidCashEffect.OriginalOpenSessionRecalculated;
+                voidCashSessionId = originalCashSession.Id;
+            }
+            else if (sale.PaymentMethod == SalePaymentMethod.Cash && RoundMoney(sale.Total) > 0m)
+            {
+                var saleReference = string.IsNullOrWhiteSpace(sale.Number)
+                    ? $"#{sale.Id}"
+                    : sale.Number;
+
+                voidCashMovement = await _cashSessionService.RegisterSaleVoidCashOutAsync(
+                    sale.Id,
+                    sale.Total,
+                    $"Devolución por anulación de venta {saleReference}");
+                voidCashEffect = SaleVoidCashEffect.CurrentSessionCashOut;
+                voidCashSessionId = voidCashMovement.CashSessionId;
+            }
+            else
+            {
+                voidCashEffect = SaleVoidCashEffect.NoCashMovement;
+            }
 
             foreach (var item in sale.Items.OrderBy(i => i.ProductId))
             {
@@ -567,30 +616,34 @@ public class SalesService : ISalesService
                     item.Quantity,
                     sale.Id,
                     item.Id,
-                    voidNotes);
+                    voidReason);
             }
 
+            var now = _businessClock.UtcNow;
             sale.Status = SaleStatus.Voided;
-            sale.VoidedAt = DateTime.UtcNow;
-            sale.UpdatedAt = DateTime.UtcNow;
-
-            if (!string.IsNullOrWhiteSpace(dto.Reason))
-            {
-                sale.Notes = string.IsNullOrWhiteSpace(sale.Notes)
-                    ? $"VOID: {voidNotes}"
-                    : $"{sale.Notes} | VOID: {voidNotes}";
-            }
+            sale.VoidedAt = now;
+            sale.VoidedByUserId = operationalContext.UserId;
+            sale.VoidReason = voidReason;
+            sale.VoidBusinessDate = _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId);
+            sale.VoidTimeZoneIdSnapshot = operationalContext.CompanyTimeZoneId;
+            sale.VoidCashEffect = voidCashEffect;
+            sale.VoidCashSessionId = voidCashSessionId;
+            sale.VoidCashMovementId = voidCashMovement?.Id;
+            sale.UpdatedAt = now;
 
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
             _logger.LogInformation(
-                "Sale voided successfully. SaleId {SaleId} UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
+                "Sale voided successfully. SaleId {SaleId} UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId} CashEffect {CashEffect} VoidCashSessionId {VoidCashSessionId} VoidCashMovementId {VoidCashMovementId}",
                 sale.Id,
                 operationalContext.UserId,
                 operationalContext.CompanyId,
                 operationalContext.EstablishmentId,
-                operationalContext.EmissionPointId);
+                operationalContext.EmissionPointId,
+                sale.VoidCashEffect,
+                sale.VoidCashSessionId,
+                sale.VoidCashMovementId);
 
             var response = await GetByIdAsync(sale.Id);
             return response ?? throw new KeyNotFoundException("SALE_NOT_FOUND");
@@ -620,6 +673,34 @@ public class SalesService : ISalesService
                 operationalContext?.EmissionPointId);
             throw;
         }
+    }
+
+    private async Task<CashSession?> GetLockedOriginalCashSessionAsync(Sale sale)
+    {
+        if (!sale.CashSessionId.HasValue)
+        {
+            return null;
+        }
+
+        var session = await _context.CashSessions
+            .FromSqlInterpolated($@"
+                SELECT *
+                FROM ""CashSessions""
+                WHERE ""Id"" = {sale.CashSessionId.Value}
+                  AND ""CompanyId"" = {sale.CompanyId}
+                  AND ""EstablishmentId"" = {sale.EstablishmentId}
+                  AND ""EmissionPointId"" = {sale.EmissionPointId}
+                FOR UPDATE")
+            .SingleOrDefaultAsync();
+
+        if (session is null
+            || session.OpenedByUserId != sale.UserId
+            || session.Status is not (CashSessionStatus.Open or CashSessionStatus.Closed))
+        {
+            throw new InvalidOperationException("SALE_VOID_CASH_INTEGRITY_INVALID");
+        }
+
+        return session;
     }
 
     private static void EnsureSaleCanBeVoidedLocally(Sale sale)

@@ -16,6 +16,8 @@ public class SaleListItemDto
 
     public string? CustomerEmail { get; set; }
 
+    public SalePaymentMethod PaymentMethod { get; set; }
+
     public SaleDocumentType DocumentType { get; set; }
 
     public SaleDocumentStatus DocumentStatus { get; set; }

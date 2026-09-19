@@ -1,5 +1,7 @@
 import { SaleItem } from './sale-item.model';
 import { SaleDocumentStatus, SaleDocumentType } from './sale-document.model';
+import { SalePaymentMethod } from './sale-payment-method.model';
+import { SaleVoidCashEffect } from './sale-void-cash-effect.model';
 
 export interface Sale {
   id: number;
@@ -7,6 +9,8 @@ export interface Sale {
   timeZoneIdSnapshot: string | null;
   createdAt: string;
   status: string;
+  paymentMethod: SalePaymentMethod;
+  cashSessionId: number | null;
   documentType: SaleDocumentType;
   documentStatus: SaleDocumentStatus;
   number: string | null;
@@ -54,5 +58,14 @@ export interface Sale {
   total: number;
   createdBy: string | null;
   isVoided: boolean;
+  voidedAt: string | null;
+  voidedByUserId: number | null;
+  voidedByUsername: string | null;
+  voidReason: string | null;
+  voidBusinessDate: string | null;
+  voidTimeZoneIdSnapshot: string | null;
+  voidCashEffect: SaleVoidCashEffect | null;
+  voidCashSessionId: number | null;
+  voidCashMovementId: number | null;
   items: SaleItem[];
 }

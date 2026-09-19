@@ -128,6 +128,23 @@ public class Sale
 
     public DateTime? VoidedAt { get; set; }
 
+    public int? VoidedByUserId { get; set; }
+    public User? VoidedByUser { get; set; }
+
+    public string? VoidReason { get; set; }
+
+    public DateOnly? VoidBusinessDate { get; set; }
+
+    public string? VoidTimeZoneIdSnapshot { get; set; }
+
+    public SaleVoidCashEffect? VoidCashEffect { get; set; }
+
+    public int? VoidCashSessionId { get; set; }
+    public CashSession? VoidCashSession { get; set; }
+
+    public int? VoidCashMovementId { get; set; }
+    public CashMovement? VoidCashMovement { get; set; }
+
     public ICollection<SaleItem> Items { get; set; } = new List<SaleItem>();
 
     public ICollection<SriSubmissionAttempt> SriSubmissionAttempts { get; set; } = new List<SriSubmissionAttempt>();

@@ -18,6 +18,8 @@ import {
 } from '../../models/sale-document.model';
 import { SaleItem } from '../../models/sale-item.model';
 import { Sale } from '../../models/sale.model';
+import { salePaymentMethodLabel } from '../../models/sale-payment-method.model';
+import { saleVoidCashEffectLabel } from '../../models/sale-void-cash-effect.model';
 import {
   sriAuthorizationStatusLabel,
   sriAuthorizationStatusSeverity,
@@ -117,6 +119,21 @@ export class SaleDetailDialog {
 
   createdAtLabel(sale: Sale): string {
     return this.formatTechnicalInstant(sale.createdAt);
+  }
+
+  paymentMethodLabel(sale: Sale): string {
+    return salePaymentMethodLabel(sale.paymentMethod);
+  }
+
+  voidedAtLabel(sale: Sale): string {
+    return formatBusinessDateTime(
+      sale.voidedAt,
+      sale.voidTimeZoneIdSnapshot || this.companyTimeZoneId
+    ) || '-';
+  }
+
+  voidCashEffectLabel(sale: Sale): string {
+    return saleVoidCashEffectLabel(sale.voidCashEffect);
   }
 
   documentIssuedAtLabel(sale: Sale): string {

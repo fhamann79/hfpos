@@ -844,11 +844,24 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<Sale>(entity =>
         {
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint(
+                    "CK_Sales_VoidAuditComplete",
+                    "(\"VoidCashEffect\" IS NULL OR (\"Status\" = 2 AND \"VoidedAt\" IS NOT NULL AND \"VoidedByUserId\" IS NOT NULL AND \"VoidReason\" IS NOT NULL AND \"VoidBusinessDate\" IS NOT NULL AND \"VoidTimeZoneIdSnapshot\" IS NOT NULL))");
+                table.HasCheckConstraint(
+                    "CK_Sales_VoidCashLinks",
+                    "((\"VoidCashEffect\" IS NULL AND \"VoidCashSessionId\" IS NULL AND \"VoidCashMovementId\" IS NULL) OR (\"VoidCashEffect\" = 1 AND \"VoidCashSessionId\" IS NOT NULL AND \"VoidCashMovementId\" IS NULL) OR (\"VoidCashEffect\" = 2 AND \"VoidCashSessionId\" IS NOT NULL AND \"VoidCashMovementId\" IS NOT NULL) OR (\"VoidCashEffect\" = 3 AND \"VoidCashSessionId\" IS NULL AND \"VoidCashMovementId\" IS NULL))");
+            });
+
             entity.Property(s => s.Status)
                 .HasConversion<int>()
                 .HasDefaultValue(SaleStatus.Completed);
 
             entity.Property(s => s.PaymentMethod)
+                .HasConversion<int>();
+
+            entity.Property(s => s.VoidCashEffect)
                 .HasConversion<int>();
 
             entity.Property(s => s.DocumentType)
@@ -972,11 +985,25 @@ public class PosDbContext : DbContext
             entity.Property(s => s.Notes)
                 .HasMaxLength(500);
 
+            entity.Property(s => s.VoidReason)
+                .HasMaxLength(500);
+
+            entity.Property(s => s.VoidBusinessDate)
+                .HasColumnType("date");
+
+            entity.Property(s => s.VoidTimeZoneIdSnapshot)
+                .HasMaxLength(100);
+
             entity.HasIndex(s => s.CompanyId);
             entity.HasIndex(s => s.EstablishmentId);
             entity.HasIndex(s => s.EmissionPointId);
             entity.HasIndex(s => s.CustomerId);
             entity.HasIndex(s => s.CashSessionId);
+            entity.HasIndex(s => s.VoidedByUserId);
+            entity.HasIndex(s => s.VoidCashSessionId);
+            entity.HasIndex(s => s.VoidCashMovementId)
+                .IsUnique()
+                .HasFilter("\"VoidCashMovementId\" IS NOT NULL");
             entity.HasIndex(s => s.CreatedAt);
             entity.HasIndex(s => s.Status);
             entity.HasIndex(s => s.Number);
@@ -992,6 +1019,11 @@ public class PosDbContext : DbContext
                 .HasForeignKey(s => s.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            entity.HasOne(s => s.VoidedByUser)
+                .WithMany()
+                .HasForeignKey(s => s.VoidedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             entity.HasOne(s => s.Customer)
                 .WithMany()
                 .HasForeignKey(s => s.CustomerId)
@@ -1000,6 +1032,16 @@ public class PosDbContext : DbContext
             entity.HasOne(s => s.CashSession)
                 .WithMany(c => c.Sales)
                 .HasForeignKey(s => s.CashSessionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.VoidCashSession)
+                .WithMany()
+                .HasForeignKey(s => s.VoidCashSessionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.VoidCashMovement)
+                .WithMany()
+                .HasForeignKey(s => s.VoidCashMovementId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(s => s.Company)

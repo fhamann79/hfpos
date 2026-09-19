@@ -14,10 +14,38 @@
       <span><strong>Estado:</strong> <span class="status" [class.status--voided]="sale.isVoided">{{ sale.isVoided ? 'Anulada' : sale.status }}</span></span>
       <span><strong>Fecha:</strong> {{ createdAtLabel(sale) }}</span>
       <span><strong>Usuario:</strong> {{ sale.createdBy || 'N/A' }}</span>
+      <span><strong>Método de pago:</strong> {{ paymentMethodLabel(sale) }}</span>
       <span><strong>Cliente:</strong> {{ sale.customerName || 'Sin cliente' }}</span>
       <span><strong>Identificacion:</strong> {{ sale.customerIdentification || 'Sin identificacion' }}</span>
       <span><strong>Notas:</strong> {{ sale.notes || 'Sin notas' }}</span>
     </div>
+
+    @if (sale.isVoided) {
+      <section class="void-audit">
+        <div class="void-audit__header">
+          <span class="section-kicker">Auditoría de anulación</span>
+          <h3>{{ voidCashEffectLabel(sale) }}</h3>
+        </div>
+
+        @if (sale.voidCashEffect !== null) {
+          <div class="void-audit__grid">
+            <div><span>Anulada por</span><strong>{{ sale.voidedByUsername || '-' }}</strong></div>
+            <div><span>Fecha y hora</span><strong>{{ voidedAtLabel(sale) }}</strong></div>
+            <div><span>Fecha de negocio</span><strong>{{ sale.voidBusinessDate || '-' }}</strong></div>
+            <div><span>Zona horaria</span><strong>{{ sale.voidTimeZoneIdSnapshot || '-' }}</strong></div>
+            <div class="void-audit__wide"><span>Motivo</span><strong>{{ sale.voidReason || '-' }}</strong></div>
+            @if (sale.voidCashSessionId !== null) {
+              <div><span>Caja afectada</span><strong>#{{ sale.voidCashSessionId }}</strong></div>
+            }
+            @if (sale.voidCashMovementId !== null) {
+              <div><span>Movimiento de efectivo</span><strong>#{{ sale.voidCashMovementId }}</strong></div>
+            }
+          </div>
+        } @else {
+          <p>Esta anulación es histórica y no dispone de auditoría estructurada de caja.</p>
+        }
+      </section>
+    }
 
     <section class="buyer-data-block">
       <div class="buyer-data-block__header">

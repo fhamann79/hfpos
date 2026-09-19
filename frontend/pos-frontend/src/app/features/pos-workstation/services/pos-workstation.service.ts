@@ -14,6 +14,8 @@ import {
 import { Sale } from '../models/sale.model';
 import { SaleItem } from '../models/sale-item.model';
 import { SaleListItem } from '../models/sale-list-item.model';
+import { normalizeSalePaymentMethod } from '../models/sale-payment-method.model';
+import { normalizeSaleVoidCashEffect } from '../models/sale-void-cash-effect.model';
 import { SriRide } from '../models/sri-ride.model';
 import {
   normalizeSriSubmissionAttemptStatus,
@@ -39,8 +41,10 @@ export class PosWorkstationService {
     return this.http.post<unknown>(this.salesUrl, payload).pipe(map((row) => this.toSale(row)));
   }
 
-  voidSale(id: number, payload: VoidSaleRequest): Observable<unknown> {
-    return this.http.post<unknown>(`${this.salesUrl}/${id}/void`, payload);
+  voidSale(id: number, payload: VoidSaleRequest): Observable<Sale> {
+    return this.http.post<unknown>(`${this.salesUrl}/${id}/void`, payload).pipe(
+      map((row) => this.toSale(row))
+    );
   }
 
   signInvoiceXml(id: number): Observable<Sale> {
@@ -127,6 +131,7 @@ export class PosWorkstationService {
       timeZoneIdSnapshot: this.readString(row, ['timeZoneIdSnapshot'], null),
       createdAt: this.readString(row, ['createdAt', 'createdOn', 'date'], ''),
       status: isVoided ? 'Anulada' : status,
+      paymentMethod: normalizeSalePaymentMethod(row?.['paymentMethod']),
       documentType: normalizeSaleDocumentType(row?.['documentType']),
       documentStatus: normalizeSaleDocumentStatus(row?.['documentStatus']),
       number: this.readString(row, ['number'], null),
@@ -162,6 +167,8 @@ export class PosWorkstationService {
       timeZoneIdSnapshot: this.readString(row, ['timeZoneIdSnapshot'], null),
       createdAt: this.readString(row, ['createdAt', 'createdOn', 'date'], ''),
       status: isVoided ? 'Anulada' : status,
+      paymentMethod: normalizeSalePaymentMethod(row?.['paymentMethod']),
+      cashSessionId: this.readOptionalNumber(row, ['cashSessionId']),
       documentType: normalizeSaleDocumentType(row?.['documentType']),
       documentStatus: normalizeSaleDocumentStatus(row?.['documentStatus']),
       number: this.readString(row, ['number'], null),
@@ -209,6 +216,15 @@ export class PosWorkstationService {
       total: this.readNumber(row, ['total', 'grandTotal'], 0),
       createdBy: this.readString(row, ['createdBy', 'username', 'userName'], null),
       isVoided,
+      voidedAt: this.readString(row, ['voidedAt'], null),
+      voidedByUserId: this.readOptionalNumber(row, ['voidedByUserId']),
+      voidedByUsername: this.readString(row, ['voidedByUsername'], null),
+      voidReason: this.readString(row, ['voidReason'], null),
+      voidBusinessDate: this.readString(row, ['voidBusinessDate'], null),
+      voidTimeZoneIdSnapshot: this.readString(row, ['voidTimeZoneIdSnapshot'], null),
+      voidCashEffect: normalizeSaleVoidCashEffect(row?.['voidCashEffect']),
+      voidCashSessionId: this.readOptionalNumber(row, ['voidCashSessionId']),
+      voidCashMovementId: this.readOptionalNumber(row, ['voidCashMovementId']),
       items,
     };
   }
