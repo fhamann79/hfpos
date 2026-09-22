@@ -90,6 +90,7 @@ builder.Services.AddSingleton<IBusinessClockService, BusinessClockService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<ICashSessionService, CashSessionService>();
+builder.Services.AddScoped<IPurchaseReceiptQueryService, PurchaseReceiptQueryService>();
 builder.Services.AddScoped<ICreditNoteService, CreditNoteService>();
 builder.Services.AddScoped<ICreditNoteInventoryReturnService, CreditNoteInventoryReturnService>();
 builder.Services.AddScoped<ICreditNoteRefundService, CreditNoteRefundService>();

@@ -57,58 +57,115 @@ public class SalesService : ISalesService
         _administrationGuard = administrationGuard;
     }
 
-    public async Task<IReadOnlyList<SaleListItemDto>> GetSalesAsync(
-        DateTime? from,
-        DateTime? to,
-        SaleStatus? status,
-        string? search,
-        int? userId,
-        SaleDocumentType? documentType,
-        SaleDocumentStatus? documentStatus)
+    public async Task<SaleListResultDto> GetSalesAsync(SaleListQueryDto request)
     {
+        request ??= new SaleListQueryDto();
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var page = Math.Max(request.Page, 1);
+        var pageSize = Math.Clamp(request.PageSize, 1, 200);
+        var query = BuildFilteredSalesQuery(operationalContext, request);
+        SaleReportSummaryDto? summary = null;
+        int totalItems;
 
+        if (request.IncludeSummary)
+        {
+            summary = await BuildSalesSummaryAsync(query, operationalContext);
+            totalItems = summary.SalesCount;
+        }
+        else
+        {
+            totalItems = await query.CountAsync();
+        }
+
+        var sales = await ProjectSaleListItems(ApplySalesOrdering(query, request.SortBy, request.SortDirection))
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        await ApplyCreditNoteImpactAsync(sales, operationalContext);
+
+        return new SaleListResultDto
+        {
+            Items = sales,
+            Page = page,
+            PageSize = pageSize,
+            TotalItems = totalItems,
+            TotalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize),
+            Summary = summary
+        };
+    }
+
+    public async Task<SaleCsvExportDto> ExportSalesAsync(SaleListQueryDto request)
+    {
+        request ??= new SaleListQueryDto();
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var query = BuildFilteredSalesQuery(operationalContext, request);
+        var sales = await ProjectSaleListItems(ApplySalesOrdering(query, request.SortBy, request.SortDirection))
+            .ToListAsync();
+
+        var creditNotes = await CreditNoteReporting.LoadBySaleAsync(
+            _context,
+            operationalContext,
+            query.Select(s => s.Id));
+        ApplyCreditNoteImpact(sales, creditNotes);
+        var businessDate = _businessClock.GetBusinessDate(
+            _businessClock.UtcNow,
+            operationalContext.CompanyTimeZoneId);
+
+        return new SaleCsvExportDto
+        {
+            Content = SaleCsvExportBuilder.Build(
+                sales,
+                _businessClock.ResolveTimeZone(operationalContext.CompanyTimeZoneId)),
+            FileName = $"reporte-ventas-{businessDate:yyyy-MM-dd}.csv"
+        };
+    }
+
+    private IQueryable<Sale> BuildFilteredSalesQuery(
+        OperationalContext operationalContext,
+        SaleListQueryDto request)
+    {
         var query = _context.Sales
             .AsNoTracking()
             .Where(s => s.CompanyId == operationalContext.CompanyId
                 && s.EstablishmentId == operationalContext.EstablishmentId
                 && s.EmissionPointId == operationalContext.EmissionPointId);
 
-        if (from.HasValue)
+        if (request.From.HasValue)
         {
-            var fromDate = DateOnly.FromDateTime(from.Value);
+            var fromDate = DateOnly.FromDateTime(request.From.Value);
             query = query.Where(s => s.BusinessDate >= fromDate);
         }
 
-        if (to.HasValue)
+        if (request.To.HasValue)
         {
-            var toDate = DateOnly.FromDateTime(to.Value);
+            var toDate = DateOnly.FromDateTime(request.To.Value);
             query = query.Where(s => s.BusinessDate <= toDate);
         }
 
-        if (status.HasValue)
+        if (request.Status.HasValue)
         {
-            query = query.Where(s => s.Status == status.Value);
+            query = query.Where(s => s.Status == request.Status.Value);
         }
 
-        if (documentType.HasValue)
+        if (request.DocumentType.HasValue)
         {
-            query = query.Where(s => s.DocumentType == documentType.Value);
+            query = query.Where(s => s.DocumentType == request.DocumentType.Value);
         }
 
-        if (documentStatus.HasValue)
+        if (request.DocumentStatus.HasValue)
         {
-            query = query.Where(s => s.DocumentStatus == documentStatus.Value);
+            query = query.Where(s => s.DocumentStatus == request.DocumentStatus.Value);
         }
 
-        if (userId.HasValue)
+        if (request.UserId.HasValue)
         {
-            query = query.Where(s => s.UserId == userId.Value);
+            query = query.Where(s => s.UserId == request.UserId.Value);
         }
 
-        if (!string.IsNullOrWhiteSpace(search))
+        if (!string.IsNullOrWhiteSpace(request.Search))
         {
-            var term = search.Trim().ToLower();
+            var term = request.Search.Trim().ToLower();
             query = query.Where(s =>
                 (s.Notes != null && s.Notes.ToLower().Contains(term))
                 || (s.Number != null && s.Number.ToLower().Contains(term))
@@ -123,54 +180,158 @@ public class SalesService : ISalesService
                 || s.Id.ToString().Contains(term));
         }
 
-        var sales = await query
-            .OrderByDescending(s => s.CreatedAt)
-            .ThenByDescending(s => s.Id)
-            .Select(s => new SaleListItemDto
-            {
-                Id = s.Id,
-                Status = s.Status,
-                Number = s.Number,
-                CustomerName = s.BuyerNameSnapshot ?? (s.Customer != null ? s.Customer.Name : null),
-                CustomerIdentification = s.BuyerIdentificationSnapshot ?? (s.Customer != null ? s.Customer.Identification : null),
-                CustomerEmail = s.BuyerEmailSnapshot ?? (s.Customer != null ? s.Customer.Email : null),
-                PaymentMethod = s.PaymentMethod,
-                DocumentType = s.DocumentType,
-                DocumentStatus = s.DocumentStatus,
-                AccessKey = s.AccessKey,
-                HasSriXmlDraft = s.SriXmlDraft != null,
-                SriSignedAt = s.SriSignedAt,
-                HasSriSignedXml = s.SriSignedXml != null,
-                SriSubmittedAt = s.SriSubmittedAt,
-                SriReceptionStatus = s.SriReceptionStatus,
-                SriAuthorizationStatus = s.SriAuthorizationStatus,
-                SriLastSubmissionError = s.SriLastSubmissionError,
-                SriLastCheckedAt = s.SriLastCheckedAt,
-                Total = s.Total,
-                Subtotal = s.Subtotal,
-                TotalCost = s.TotalCost,
-                GrossProfit = s.GrossProfit,
-                GrossMarginPercent = s.GrossMarginPercent,
-                ItemsCount = s.Items.Count,
-                BusinessDate = s.BusinessDate,
-                TimeZoneIdSnapshot = s.TimeZoneIdSnapshot,
-                CreatedAt = s.CreatedAt,
-                UserId = s.UserId,
-                Username = s.User.Username,
-                Notes = s.Notes
-            })
-            .ToListAsync();
+        return query;
+    }
 
+    private static IOrderedQueryable<Sale> ApplySalesOrdering(
+        IQueryable<Sale> query,
+        string? sortBy,
+        string? sortDirection)
+    {
+        var ascending = string.Equals(sortDirection?.Trim(), "asc", StringComparison.OrdinalIgnoreCase);
+
+        return sortBy?.Trim().ToLowerInvariant() switch
+        {
+            "number" => ascending
+                ? query.OrderBy(s => s.Number).ThenBy(s => s.Id)
+                : query.OrderByDescending(s => s.Number).ThenByDescending(s => s.Id),
+            "customername" => ascending
+                ? query.OrderBy(s => s.BuyerNameSnapshot ?? (s.Customer != null ? s.Customer.Name : null)).ThenBy(s => s.Id)
+                : query.OrderByDescending(s => s.BuyerNameSnapshot ?? (s.Customer != null ? s.Customer.Name : null)).ThenByDescending(s => s.Id),
+            "documenttype" => ascending
+                ? query.OrderBy(s => s.DocumentType).ThenBy(s => s.Id)
+                : query.OrderByDescending(s => s.DocumentType).ThenByDescending(s => s.Id),
+            "status" => ascending
+                ? query.OrderBy(s => s.Status).ThenBy(s => s.Id)
+                : query.OrderByDescending(s => s.Status).ThenByDescending(s => s.Id),
+            "documentstatus" => ascending
+                ? query.OrderBy(s => s.DocumentStatus).ThenBy(s => s.Id)
+                : query.OrderByDescending(s => s.DocumentStatus).ThenByDescending(s => s.Id),
+            "total" => ascending
+                ? query.OrderBy(s => s.Total).ThenBy(s => s.Id)
+                : query.OrderByDescending(s => s.Total).ThenByDescending(s => s.Id),
+            "username" => ascending
+                ? query.OrderBy(s => s.User.Username).ThenBy(s => s.Id)
+                : query.OrderByDescending(s => s.User.Username).ThenByDescending(s => s.Id),
+            "createdat" when ascending => query.OrderBy(s => s.CreatedAt).ThenBy(s => s.Id),
+            _ => query.OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.Id)
+        };
+    }
+
+    private static IQueryable<SaleListItemDto> ProjectSaleListItems(IQueryable<Sale> query)
+        => query.Select(s => new SaleListItemDto
+        {
+            Id = s.Id,
+            Status = s.Status,
+            Number = s.Number,
+            CustomerName = s.BuyerNameSnapshot ?? (s.Customer != null ? s.Customer.Name : null),
+            CustomerIdentification = s.BuyerIdentificationSnapshot ?? (s.Customer != null ? s.Customer.Identification : null),
+            CustomerEmail = s.BuyerEmailSnapshot ?? (s.Customer != null ? s.Customer.Email : null),
+            PaymentMethod = s.PaymentMethod,
+            DocumentType = s.DocumentType,
+            DocumentStatus = s.DocumentStatus,
+            AccessKey = s.AccessKey,
+            HasSriXmlDraft = s.SriXmlDraft != null,
+            SriSignedAt = s.SriSignedAt,
+            HasSriSignedXml = s.SriSignedXml != null,
+            SriSubmittedAt = s.SriSubmittedAt,
+            SriReceptionStatus = s.SriReceptionStatus,
+            SriAuthorizationStatus = s.SriAuthorizationStatus,
+            SriLastSubmissionError = s.SriLastSubmissionError,
+            SriLastCheckedAt = s.SriLastCheckedAt,
+            Total = s.Total,
+            Subtotal = s.Subtotal,
+            TotalCost = s.TotalCost,
+            GrossProfit = s.GrossProfit,
+            GrossMarginPercent = s.GrossMarginPercent,
+            ItemsCount = s.Items.Count,
+            BusinessDate = s.BusinessDate,
+            TimeZoneIdSnapshot = s.TimeZoneIdSnapshot,
+            CreatedAt = s.CreatedAt,
+            UserId = s.UserId,
+            Username = s.User.Username,
+            Notes = s.Notes
+        });
+
+    private async Task ApplyCreditNoteImpactAsync(
+        IReadOnlyList<SaleListItemDto> sales,
+        OperationalContext operationalContext)
+    {
         var creditNotes = await CreditNoteReporting.LoadBySaleAsync(
-            _context, operationalContext, sales.Select(s => s.Id).ToArray());
+            _context,
+            operationalContext,
+            sales.Select(s => s.Id).ToArray());
 
+        ApplyCreditNoteImpact(sales, creditNotes);
+    }
+
+    private static void ApplyCreditNoteImpact(
+        IReadOnlyList<SaleListItemDto> sales,
+        IReadOnlyDictionary<int, CreditNoteReporting.Totals> creditNotes)
+    {
         foreach (var sale in sales)
         {
             sale.CreditNoteImpact = CreditNoteReporting.Calculate(
-                sale.Total, sale.Subtotal, sale.TotalCost, creditNotes.GetValueOrDefault(sale.Id));
+                sale.Total,
+                sale.Subtotal,
+                sale.TotalCost,
+                creditNotes.GetValueOrDefault(sale.Id));
+        }
+    }
+
+    private async Task<SaleReportSummaryDto> BuildSalesSummaryAsync(
+        IQueryable<Sale> query,
+        OperationalContext operationalContext)
+    {
+        var aggregate = await query
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                SalesCount = g.Count(),
+                TotalSold = g.Sum(s => s.Status != SaleStatus.Voided ? s.Total : 0m),
+                Subtotal = g.Sum(s => s.Status != SaleStatus.Voided ? s.Subtotal : 0m),
+                TotalCost = g.Sum(s => s.Status != SaleStatus.Voided ? s.TotalCost : 0m),
+                InvoiceCount = g.Count(s => s.DocumentType == SaleDocumentType.Invoice),
+                TicketCount = g.Count(s => s.DocumentType == SaleDocumentType.Ticket),
+                VoidedCount = g.Count(s => s.Status == SaleStatus.Voided),
+                AuthorizedCount = g.Count(s =>
+                    s.DocumentType == SaleDocumentType.Invoice
+                    && (s.DocumentStatus == SaleDocumentStatus.Authorized
+                        || (s.SriAuthorizationStatus != null
+                            && s.SriAuthorizationStatus.Trim().ToUpper() == "AUTORIZADO")))
+            })
+            .SingleOrDefaultAsync();
+
+        if (aggregate is null)
+        {
+            return new SaleReportSummaryDto();
         }
 
-        return sales;
+        var creditNotes = await CreditNoteReporting.LoadAggregateAsync(
+            _context,
+            operationalContext,
+            query.Where(s => s.Status != SaleStatus.Voided).Select(s => s.Id));
+        var netImpact = CreditNoteReporting.Calculate(
+            aggregate.TotalSold,
+            aggregate.Subtotal,
+            aggregate.TotalCost,
+            creditNotes);
+
+        return new SaleReportSummaryDto
+        {
+            SalesCount = aggregate.SalesCount,
+            TotalSold = RoundMoney(aggregate.TotalSold),
+            AuthorizedCreditNoteTotal = netImpact.AuthorizedCreditNoteTotal,
+            AuthorizedCreditNoteCount = netImpact.AuthorizedCreditNoteCount,
+            NetTotal = netImpact.NetTotal,
+            NetCost = netImpact.NetCost,
+            NetGrossProfit = netImpact.NetGrossProfit,
+            NetGrossMarginPercent = netImpact.NetGrossMarginPercent,
+            InvoiceCount = aggregate.InvoiceCount,
+            TicketCount = aggregate.TicketCount,
+            VoidedCount = aggregate.VoidedCount,
+            AuthorizedCount = aggregate.AuthorizedCount
+        };
     }
 
     public async Task<SaleDto?> GetByIdAsync(int id)

@@ -50,54 +50,173 @@ public class CashSessionService : ICashSessionService
         return session is null ? null : await ToDtoAsync(session);
     }
 
-    public async Task<IReadOnlyList<CashSessionListItemDto>> GetListAsync(
-        DateTime? from,
-        DateTime? to,
-        CashSessionStatus? status,
-        int? userId)
+    public async Task<CashSessionListResultDto> GetListAsync(CashSessionListQueryDto request)
     {
+        request ??= new CashSessionListQueryDto();
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var page = Math.Max(request.Page, 1);
+        var pageSize = Math.Clamp(request.PageSize, 1, 200);
 
         IQueryable<CashSession> query = BuildBaseSessionQuery(operationalContext)
-            .AsNoTracking()
-            .Include(s => s.OpenedByUser)
-            .Include(s => s.ClosedByUser);
+            .AsNoTracking();
 
-        if (from.HasValue)
+        if (request.From.HasValue)
         {
-            var fromDate = DateOnly.FromDateTime(from.Value);
+            var fromDate = DateOnly.FromDateTime(request.From.Value);
             query = query.Where(s => s.OpenBusinessDate >= fromDate);
         }
 
-        if (to.HasValue)
+        if (request.To.HasValue)
         {
-            var toDate = DateOnly.FromDateTime(to.Value);
+            var toDate = DateOnly.FromDateTime(request.To.Value);
             query = query.Where(s => s.OpenBusinessDate <= toDate);
         }
 
-        if (status.HasValue)
+        if (request.Status.HasValue)
         {
-            query = query.Where(s => s.Status == status.Value);
+            query = query.Where(s => s.Status == request.Status.Value);
         }
 
-        if (userId.HasValue)
+        if (request.UserId.HasValue)
         {
-            query = query.Where(s => s.OpenedByUserId == userId.Value);
+            query = query.Where(s => s.OpenedByUserId == request.UserId.Value);
         }
+
+        var aggregate = await query
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                TotalItems = g.Count(),
+                OpenCount = g.Count(s => s.Status == CashSessionStatus.Open),
+                ClosedCount = g.Count(s => s.Status == CashSessionStatus.Closed)
+            })
+            .SingleOrDefaultAsync();
+        var totalItems = aggregate?.TotalItems ?? 0;
 
         var sessions = await query
             .OrderByDescending(s => s.OpenBusinessDate)
             .ThenByDescending(s => s.OpenedAt)
             .ThenByDescending(s => s.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(s => new CashSessionListItemDto
+            {
+                Id = s.Id,
+                OpenedByUserId = s.OpenedByUserId,
+                OpenedByUsername = s.OpenedByUser.Username,
+                ClosedByUserId = s.ClosedByUserId,
+                ClosedByUsername = s.ClosedByUser != null ? s.ClosedByUser.Username : null,
+                Status = s.Status,
+                OpeningAmount = s.OpeningAmount,
+                ExpectedCashAmount = s.ExpectedCashAmount,
+                CountedCashAmount = s.CountedCashAmount,
+                DifferenceAmount = s.DifferenceAmount,
+                CashSalesAmount = s.CashSalesAmount,
+                CardSalesAmount = s.CardSalesAmount,
+                TransferSalesAmount = s.TransferSalesAmount,
+                OtherSalesAmount = s.OtherSalesAmount,
+                CashInAmount = s.CashInAmount,
+                CashOutAmount = s.CashOutAmount,
+                OpenedAt = s.OpenedAt,
+                OpenBusinessDate = s.OpenBusinessDate,
+                OpenTimeZoneIdSnapshot = s.OpenTimeZoneIdSnapshot,
+                ClosedAt = s.ClosedAt,
+                ClosedBusinessDate = s.ClosedBusinessDate,
+                ClosedTimeZoneIdSnapshot = s.ClosedTimeZoneIdSnapshot,
+                OpeningNotes = s.OpeningNotes,
+                ClosingNotes = s.ClosingNotes
+            })
             .ToListAsync();
 
-        var result = new List<CashSessionListItemDto>();
-        foreach (var session in sessions)
+        await ApplyLiveTotalsForPageAsync(sessions, operationalContext);
+
+        return new CashSessionListResultDto
         {
-            result.Add(await ToListItemDtoAsync(session));
+            Items = sessions,
+            Page = page,
+            PageSize = pageSize,
+            TotalItems = totalItems,
+            TotalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize),
+            Summary = new CashSessionSummaryDto
+            {
+                OpenCount = aggregate?.OpenCount ?? 0,
+                ClosedCount = aggregate?.ClosedCount ?? 0
+            }
+        };
+    }
+
+    private async Task ApplyLiveTotalsForPageAsync(
+        IReadOnlyList<CashSessionListItemDto> sessions,
+        OperationalContext operationalContext)
+    {
+        var openSessions = sessions
+            .Where(s => s.Status == CashSessionStatus.Open)
+            .ToArray();
+
+        if (openSessions.Length == 0)
+        {
+            return;
         }
 
-        return result;
+        var openSessionIds = openSessions.Select(s => s.Id).ToArray();
+        var saleRows = await _context.Sales
+            .AsNoTracking()
+            .Where(s => s.CompanyId == operationalContext.CompanyId
+                && s.EstablishmentId == operationalContext.EstablishmentId
+                && s.EmissionPointId == operationalContext.EmissionPointId
+                && s.CashSessionId.HasValue
+                && openSessionIds.Contains(s.CashSessionId.Value)
+                && s.Status == SaleStatus.Completed)
+            .GroupBy(s => new { CashSessionId = s.CashSessionId!.Value, s.PaymentMethod })
+            .Select(g => new
+            {
+                g.Key.CashSessionId,
+                g.Key.PaymentMethod,
+                Amount = g.Sum(s => s.Total)
+            })
+            .ToListAsync();
+        var movementRows = await _context.CashMovements
+            .AsNoTracking()
+            .Where(m => m.CompanyId == operationalContext.CompanyId
+                && m.EstablishmentId == operationalContext.EstablishmentId
+                && m.EmissionPointId == operationalContext.EmissionPointId
+                && openSessionIds.Contains(m.CashSessionId))
+            .GroupBy(m => new { m.CashSessionId, m.Type })
+            .Select(g => new
+            {
+                g.Key.CashSessionId,
+                g.Key.Type,
+                Amount = g.Sum(m => m.Amount)
+            })
+            .ToListAsync();
+
+        var salesBySession = saleRows.ToDictionary(
+            row => (row.CashSessionId, row.PaymentMethod),
+            row => row.Amount);
+        var movementsBySession = movementRows.ToDictionary(
+            row => (row.CashSessionId, row.Type),
+            row => row.Amount);
+
+        foreach (var session in openSessions)
+        {
+            session.CashSalesAmount = RoundMoney(
+                salesBySession.GetValueOrDefault((session.Id, SalePaymentMethod.Cash)));
+            session.CardSalesAmount = RoundMoney(
+                salesBySession.GetValueOrDefault((session.Id, SalePaymentMethod.Card)));
+            session.TransferSalesAmount = RoundMoney(
+                salesBySession.GetValueOrDefault((session.Id, SalePaymentMethod.Transfer)));
+            session.OtherSalesAmount = RoundMoney(
+                salesBySession.GetValueOrDefault((session.Id, SalePaymentMethod.Other)));
+            session.CashInAmount = RoundMoney(
+                movementsBySession.GetValueOrDefault((session.Id, CashMovementType.CashIn)));
+            session.CashOutAmount = RoundMoney(
+                movementsBySession.GetValueOrDefault((session.Id, CashMovementType.CashOut)));
+            session.ExpectedCashAmount = RoundMoney(
+                session.OpeningAmount
+                + session.CashSalesAmount
+                + session.CashInAmount
+                - session.CashOutAmount);
+        }
     }
 
     public async Task<CashSessionDto?> GetByIdAsync(int id)
@@ -570,39 +689,6 @@ public class CashSessionService : ICashSessionService
                 .ThenByDescending(m => m.Id)
                 .Select(ToMovementDto)
                 .ToList()
-        };
-    }
-
-    private async Task<CashSessionListItemDto> ToListItemDtoAsync(CashSession session)
-    {
-        var totals = await CalculateDisplayTotalsAsync(session);
-
-        return new CashSessionListItemDto
-        {
-            Id = session.Id,
-            OpenedByUserId = session.OpenedByUserId,
-            OpenedByUsername = session.OpenedByUser.Username,
-            ClosedByUserId = session.ClosedByUserId,
-            ClosedByUsername = session.ClosedByUser?.Username,
-            Status = session.Status,
-            OpeningAmount = session.OpeningAmount,
-            ExpectedCashAmount = totals.ExpectedCashAmount,
-            CountedCashAmount = session.CountedCashAmount,
-            DifferenceAmount = session.DifferenceAmount,
-            CashSalesAmount = totals.CashSalesAmount,
-            CardSalesAmount = totals.CardSalesAmount,
-            TransferSalesAmount = totals.TransferSalesAmount,
-            OtherSalesAmount = totals.OtherSalesAmount,
-            CashInAmount = totals.CashInAmount,
-            CashOutAmount = totals.CashOutAmount,
-            OpenedAt = session.OpenedAt,
-            OpenBusinessDate = session.OpenBusinessDate,
-            OpenTimeZoneIdSnapshot = session.OpenTimeZoneIdSnapshot,
-            ClosedAt = session.ClosedAt,
-            ClosedBusinessDate = session.ClosedBusinessDate,
-            ClosedTimeZoneIdSnapshot = session.ClosedTimeZoneIdSnapshot,
-            OpeningNotes = session.OpeningNotes,
-            ClosingNotes = session.ClosingNotes
         };
     }
 

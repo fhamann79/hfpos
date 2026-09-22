@@ -39,24 +39,21 @@ public class SalesController : ControllerBase
     [Authorize(Policy = AppPermissions.ReportsSalesRead)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<IEnumerable<SaleListItemDto>>> Get(
-        [FromQuery] DateTime? from,
-        [FromQuery] DateTime? to,
-        [FromQuery] SaleStatus? status,
-        [FromQuery] string? search,
-        [FromQuery] int? userId,
-        [FromQuery] SaleDocumentType? documentType,
-        [FromQuery] SaleDocumentStatus? documentStatus)
+    public async Task<ActionResult<SaleListResultDto>> Get([FromQuery] SaleListQueryDto query)
     {
-        var sales = await _salesService.GetSalesAsync(
-            from,
-            to,
-            status,
-            search,
-            userId,
-            documentType,
-            documentStatus);
-        return Ok(sales);
+        return Ok(await _salesService.GetSalesAsync(query));
+    }
+
+    [HttpGet("export")]
+    [Authorize(Policy = AppPermissions.ReportsSalesRead)]
+    [Produces("text/csv")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult> Export([FromQuery] SaleListQueryDto query)
+    {
+        var export = await _salesService.ExportSalesAsync(query);
+        return File(export.Content, export.ContentType, export.FileName);
     }
 
     [HttpGet("{id:int}")]

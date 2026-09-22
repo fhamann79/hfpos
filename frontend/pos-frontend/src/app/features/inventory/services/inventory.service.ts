@@ -7,7 +7,7 @@ import { InventoryMovement } from '../models/inventory-movement.model';
 import { InventoryMovementFilters, InventoryStockFilters } from '../models/inventory-filters.model';
 import { InventoryStock } from '../models/inventory-stock.model';
 import { InventoryOperationRequest } from '../models/inventory-operation.model';
-import { PagedResult } from '../models/paged-result.model';
+import { PagedResult } from '../../../core/models/paged-result.model';
 
 @Injectable({ providedIn: 'root' })
 export class InventoryService {

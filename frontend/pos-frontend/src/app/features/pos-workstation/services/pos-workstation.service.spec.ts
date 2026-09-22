@@ -18,13 +18,22 @@ describe('PosWorkstationService sale void mapping', () => {
   afterEach(() => http.verify());
 
   it('keeps payment method in the recent-sales list', () => {
-    service.getSales().subscribe((sales) => {
-      expect(sales[0].paymentMethod).toBe(SalePaymentMethod.Transfer);
+    service.getSales().subscribe((result) => {
+      expect(result.items[0].paymentMethod).toBe(SalePaymentMethod.Transfer);
+      expect(result.totalItems).toBe(81);
     });
 
-    http.expectOne((request) => request.url.endsWith('/api/Sales')).flush([
-      { id: 10, status: 1, paymentMethod: SalePaymentMethod.Transfer },
-    ]);
+    const request = http.expectOne((candidate) => candidate.url.endsWith('/api/Sales'));
+    expect(request.request.params.get('page')).toBe('1');
+    expect(request.request.params.get('pageSize')).toBe('50');
+    expect(request.request.params.has('includeSummary')).toBe(false);
+    request.flush({
+      items: [{ id: 10, status: 1, paymentMethod: SalePaymentMethod.Transfer }],
+      page: 1,
+      pageSize: 50,
+      totalItems: 81,
+      totalPages: 2,
+    });
   });
 
   it('maps structured void audit and cash links from sale detail', () => {

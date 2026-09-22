@@ -105,6 +105,15 @@ header {
   padding: 1rem 0;
 }
 
+.bounded-note {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border-left: 3px solid #0284c7;
+  color: #475569;
+  background: #f0f9ff;
+  font-size: 0.85rem;
+}
+
 .status {
   color: #0e7490;
   font-weight: 800;

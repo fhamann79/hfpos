@@ -1,11 +1,13 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
+import { PagedResultWithSummary } from '../../../core/models/paged-result.model';
 import { environment } from '../../../../environments/environment';
 import {
   CashSession,
   CashSessionFilters,
   CashSessionListItem,
+  CashSessionSummary,
   CloseCashSessionRequest,
   CreateCashMovementRequest,
   OpenCashSessionRequest,
@@ -20,8 +22,12 @@ export class CashSessionService {
     return this.http.get<CashSession | null>(`${this.baseUrl}/current`);
   }
 
-  getAll(filters: CashSessionFilters = {}): Observable<CashSessionListItem[]> {
-    let params = new HttpParams();
+  getAll(
+    filters: CashSessionFilters = {}
+  ): Observable<PagedResultWithSummary<CashSessionListItem, CashSessionSummary>> {
+    let params = new HttpParams()
+      .set('page', filters.page ?? 1)
+      .set('pageSize', filters.pageSize ?? 50);
 
     if (filters.from) {
       params = params.set('from', filters.from);
@@ -39,7 +45,7 @@ export class CashSessionService {
       params = params.set('userId', filters.userId);
     }
 
-    return this.http.get<CashSessionListItem[]>(this.baseUrl, { params });
+    return this.http.get<PagedResultWithSummary<CashSessionListItem, CashSessionSummary>>(this.baseUrl, { params });
   }
 
   getById(id: number): Observable<CashSession> {

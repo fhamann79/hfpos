@@ -37,6 +37,8 @@ internal sealed class TestServiceScope : IAsyncDisposable
             businessClock,
             administrationGuard);
 
+        PurchaseReceipts = new PurchaseReceiptQueryService(DbContext, contextAccessor);
+
         var documentNumbers = new FiscalDocumentNumberService(
             DbContext,
             NullLogger<FiscalDocumentNumberService>.Instance,
@@ -63,6 +65,8 @@ internal sealed class TestServiceScope : IAsyncDisposable
     public InventoryService Inventory { get; }
 
     public CashSessionService CashSessions { get; }
+
+    public PurchaseReceiptQueryService PurchaseReceipts { get; }
 
     public SalesService Sales { get; }
 

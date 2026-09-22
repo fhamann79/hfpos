@@ -8,16 +8,25 @@ import { SupplierService } from '../../../suppliers/services/supplier.service';
 import {
   PurchaseReceipt,
   PurchaseReceiptStatus,
+  PurchaseReceiptSummary,
 } from '../../models/purchase-receipt.model';
 import { PurchaseReceiptService } from '../../services/purchase-receipt.service';
 import { PurchaseReceiptsPage } from './purchase-receipts-page';
 
-describe('Purchase receipt cancellation cost result', () => {
+const summary: PurchaseReceiptSummary = {
+  postedCount: 22,
+  canceledCount: 4,
+  totalReceived: 345.67,
+};
+
+describe('PurchaseReceiptsPage', () => {
   let fixture: ComponentFixture<PurchaseReceiptsPage>;
   let component: PurchaseReceiptsPage;
 
   const purchaseReceiptService = {
-    getAll: vi.fn(() => of([])),
+    getAll: vi.fn(() =>
+      of({ items: [], page: 1, pageSize: 15, totalItems: 26, totalPages: 2, summary })
+    ),
     getById: vi.fn(),
     create: vi.fn(),
     cancel: vi.fn(),
@@ -41,6 +50,33 @@ describe('Purchase receipt cancellation cost result', () => {
     component = fixture.componentInstance;
     fixture.detectChanges();
     await fixture.whenStable();
+  });
+
+  it('loads a server page and renders summary values from the complete filtered dataset', () => {
+    expect(purchaseReceiptService.getAll).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 1, pageSize: 15 })
+    );
+    expect(component.totalItems()).toBe(26);
+    expect(component.totalPages()).toBe(2);
+    expect(component.postedCount()).toBe(22);
+    expect(component.canceledCount()).toBe(4);
+    expect(component.totalReceived()).toBe(345.67);
+  });
+
+  it('loads the requested lazy page and resets to page one when filters change', () => {
+    component.onReceiptsLazyLoad({ first: 30, rows: 15 });
+    expect(purchaseReceiptService.getAll).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 3, pageSize: 15 })
+    );
+
+    component.currentPage.set(3);
+    component.first = 30;
+    component.search = 'proveedor';
+    component.applyFilters();
+    expect(purchaseReceiptService.getAll).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1, pageSize: 15, search: 'proveedor' })
+    );
+    expect(component.first).toBe(0);
   });
 
   it('explains inventory reversal and provenance-aware cost resolution before canceling', async () => {

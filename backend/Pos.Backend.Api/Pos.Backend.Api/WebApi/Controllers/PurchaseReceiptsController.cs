@@ -24,6 +24,7 @@ public class PurchaseReceiptsController : ControllerBase
     private readonly IBusinessClockService _businessClock;
     private readonly TenantAdministrationGuard _administrationGuard;
     private readonly IProductCostService _productCostService;
+    private readonly IPurchaseReceiptQueryService _purchaseReceiptQueryService;
 
     public PurchaseReceiptsController(
         PosDbContext context,
@@ -31,7 +32,8 @@ public class PurchaseReceiptsController : ControllerBase
         IOperationalContextAccessor operationalContextAccessor,
         IBusinessClockService businessClock,
         TenantAdministrationGuard administrationGuard,
-        IProductCostService productCostService)
+        IProductCostService productCostService,
+        IPurchaseReceiptQueryService purchaseReceiptQueryService)
     {
         _context = context;
         _inventoryService = inventoryService;
@@ -39,83 +41,17 @@ public class PurchaseReceiptsController : ControllerBase
         _businessClock = businessClock;
         _administrationGuard = administrationGuard;
         _productCostService = productCostService;
+        _purchaseReceiptQueryService = purchaseReceiptQueryService;
     }
 
     [HttpGet]
     [Authorize(Policy = AppPermissions.PurchasesRead)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<IEnumerable<PurchaseReceiptListItemDto>>> Get(
-        [FromQuery] DateTime? from,
-        [FromQuery] DateTime? to,
-        [FromQuery] PurchaseReceiptStatus? status,
-        [FromQuery] string? search)
+    public async Task<ActionResult<PurchaseReceiptListResultDto>> Get(
+        [FromQuery] PurchaseReceiptListQueryDto query)
     {
-        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-
-        var query = _context.PurchaseReceipts
-            .AsNoTracking()
-            .Where(r => r.CompanyId == operationalContext.CompanyId
-                && r.EstablishmentId == operationalContext.EstablishmentId);
-
-        if (from.HasValue)
-        {
-            var fromDate = DateOnly.FromDateTime(from.Value);
-            query = query.Where(r => r.ReceiptBusinessDate >= fromDate);
-        }
-
-        if (to.HasValue)
-        {
-            var toDate = DateOnly.FromDateTime(to.Value);
-            query = query.Where(r => r.ReceiptBusinessDate <= toDate);
-        }
-
-        if (status.HasValue)
-        {
-            query = query.Where(r => r.Status == status.Value);
-        }
-
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var term = search.Trim().ToLower();
-            query = query.Where(r =>
-                r.Supplier.Name.ToLower().Contains(term)
-                || (r.ReceiptNumber != null && r.ReceiptNumber.ToLower().Contains(term))
-                || (r.SupplierDocumentNumber != null && r.SupplierDocumentNumber.ToLower().Contains(term))
-                || (r.Notes != null && r.Notes.ToLower().Contains(term)));
-        }
-
-        var receipts = await query
-            .OrderByDescending(r => r.ReceiptBusinessDate)
-            .ThenByDescending(r => r.ReceiptDate)
-            .ThenByDescending(r => r.Id)
-            .Select(r => new PurchaseReceiptListItemDto
-            {
-                Id = r.Id,
-                SupplierId = r.SupplierId,
-                SupplierName = r.Supplier.Name,
-                ReceiptNumber = r.ReceiptNumber,
-                SupplierDocumentNumber = r.SupplierDocumentNumber,
-                ReceiptDate = r.ReceiptDate,
-                ReceiptBusinessDate = r.ReceiptBusinessDate,
-                ReceiptTimeZoneIdSnapshot = r.ReceiptTimeZoneIdSnapshot,
-                Status = r.Status,
-                Subtotal = r.Subtotal,
-                Notes = r.Notes,
-                CreatedAt = r.CreatedAt,
-                CreatedByUserId = r.CreatedByUserId,
-                CreatedByUsername = r.CreatedByUser.Username,
-                PostedAt = r.PostedAt,
-                CanceledAt = r.CanceledAt,
-                CanceledBusinessDate = r.CanceledBusinessDate,
-                CanceledTimeZoneIdSnapshot = r.CanceledTimeZoneIdSnapshot,
-                CanceledByUserId = r.CanceledByUserId,
-                CanceledByUsername = r.CanceledByUser != null ? r.CanceledByUser.Username : null,
-                CancelReason = r.CancelReason
-            })
-            .ToListAsync();
-
-        return Ok(receipts);
+        return Ok(await _purchaseReceiptQueryService.GetListAsync(query));
     }
 
     [HttpGet("{id:int}")]

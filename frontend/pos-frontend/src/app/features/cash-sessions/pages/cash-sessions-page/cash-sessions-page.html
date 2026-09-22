@@ -103,11 +103,11 @@
         <div class="filters">
           <label class="filter-field">
             <span>Desde</span>
-            <input pInputText type="date" [(ngModel)]="from" />
+            <input pInputText type="date" [(ngModel)]="from" (keyup.enter)="applyFilters()" />
           </label>
           <label class="filter-field">
             <span>Hasta</span>
-            <input pInputText type="date" [(ngModel)]="to" />
+            <input pInputText type="date" [(ngModel)]="to" (keyup.enter)="applyFilters()" />
           </label>
           <label class="filter-field">
             <span>Estado</span>
@@ -123,14 +123,14 @@
           </label>
           <label class="filter-field filter-field--compact">
             <span>Usuario ID</span>
-            <input pInputText type="number" min="1" [(ngModel)]="userId" />
+            <input pInputText type="number" min="1" [(ngModel)]="userId" (keyup.enter)="applyFilters()" />
           </label>
         </div>
       </ng-template>
 
       <ng-template #end>
         <div class="toolbar-actions">
-          <p-button label="Buscar" icon="pi pi-search" [loading]="loading()" (onClick)="loadSessions()"></p-button>
+          <p-button label="Buscar" icon="pi pi-search" [loading]="loading()" (onClick)="applyFilters()"></p-button>
           <p-button
             label="Limpiar"
             icon="pi pi-filter-slash"
@@ -151,10 +151,17 @@
       [value]="sessions()"
       [loading]="loading()"
       [paginator]="true"
-      [rows]="15"
+      [lazy]="true"
+      [lazyLoadOnInit]="false"
+      [first]="first"
+      [rows]="rows"
+      [totalRecords]="totalItems()"
       [rowsPerPageOptions]="[15, 30, 50]"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} cajas"
       responsiveLayout="scroll"
       [tableStyle]="{ 'min-width': '82rem' }"
+      (onLazyLoad)="onSessionsLazyLoad($event)"
     >
       <ng-template pTemplate="header">
         <tr>

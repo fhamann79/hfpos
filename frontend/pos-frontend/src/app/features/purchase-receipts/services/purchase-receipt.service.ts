@@ -1,12 +1,15 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
+import { Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import { PagedResultWithSummary } from '../../../core/models/paged-result.model';
 import {
   CancelPurchaseReceiptRequest,
   CreatePurchaseReceiptRequest,
   PurchaseReceipt,
   PurchaseReceiptFilters,
   PurchaseReceiptListItem,
+  PurchaseReceiptSummary,
 } from '../models/purchase-receipt.model';
 
 @Injectable({ providedIn: 'root' })
@@ -14,8 +17,12 @@ export class PurchaseReceiptService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiUrl}/api/PurchaseReceipts`;
 
-  getAll(filters: PurchaseReceiptFilters = {}) {
-    let params = new HttpParams();
+  getAll(
+    filters: PurchaseReceiptFilters = {}
+  ): Observable<PagedResultWithSummary<PurchaseReceiptListItem, PurchaseReceiptSummary>> {
+    let params = new HttpParams()
+      .set('page', filters.page ?? 1)
+      .set('pageSize', filters.pageSize ?? 50);
 
     const search = filters.search?.trim();
     if (search) {
@@ -34,7 +41,10 @@ export class PurchaseReceiptService {
       params = params.set('status', filters.status);
     }
 
-    return this.http.get<PurchaseReceiptListItem[]>(this.baseUrl, { params });
+    return this.http.get<PagedResultWithSummary<PurchaseReceiptListItem, PurchaseReceiptSummary>>(
+      this.baseUrl,
+      { params }
+    );
   }
 
   getById(id: number) {

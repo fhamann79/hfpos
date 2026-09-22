@@ -62,6 +62,49 @@ internal static class CreditNoteReporting
             .ToDictionaryAsync(n => n.SaleId, n => new Totals(n.Count, n.Total, n.Subtotal, n.ReturnedCost));
     }
 
+    public static async Task<Dictionary<int, Totals>> LoadBySaleAsync(
+        PosDbContext context,
+        OperationalContext scope,
+        IQueryable<int> saleIds)
+    {
+        return await AuthorizedInContext(context, scope)
+            .Where(n => saleIds.Contains(n.SaleId))
+            .GroupBy(n => n.SaleId)
+            .Select(g => new
+            {
+                SaleId = g.Key,
+                Count = g.Count(),
+                Total = g.Sum(n => n.Total),
+                Subtotal = g.Sum(n => n.Subtotal),
+                ReturnedCost = g.Sum(n => n.ReturnedCost)
+            })
+            .ToDictionaryAsync(
+                n => n.SaleId,
+                n => new Totals(n.Count, n.Total, n.Subtotal, n.ReturnedCost));
+    }
+
+    public static async Task<Totals> LoadAggregateAsync(
+        PosDbContext context,
+        OperationalContext scope,
+        IQueryable<int> saleIds)
+    {
+        var aggregate = await AuthorizedInContext(context, scope)
+            .Where(n => saleIds.Contains(n.SaleId))
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Count = g.Count(),
+                Total = g.Sum(n => n.Total),
+                Subtotal = g.Sum(n => n.Subtotal),
+                ReturnedCost = g.Sum(n => n.ReturnedCost)
+            })
+            .SingleOrDefaultAsync();
+
+        return aggregate is null
+            ? new Totals(0, 0m, 0m, 0m)
+            : new Totals(aggregate.Count, aggregate.Total, aggregate.Subtotal, aggregate.ReturnedCost);
+    }
+
     public static async Task<Dictionary<DateOnly, Totals>> LoadByDateAsync(
         PosDbContext context, OperationalContext scope, DateOnly firstDay, DateOnly lastDay)
     {

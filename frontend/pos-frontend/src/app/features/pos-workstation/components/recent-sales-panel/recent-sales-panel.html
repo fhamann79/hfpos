@@ -13,6 +13,9 @@
   } @else if (!sales.length) {
     <div class="state">No hay ventas registradas.</div>
   } @else {
+    @if (totalItems > sales.length) {
+      <p class="bounded-note">Mostrando las últimas {{ sales.length }} de {{ totalItems | number: '1.0-0' }} ventas.</p>
+    }
     <ul class="sales-list">
       @for (sale of sales; track sale.id) {
         <li [class.sale-voided]="sale.isVoided">

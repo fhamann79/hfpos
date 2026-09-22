@@ -17,7 +17,8 @@
       <p-button
         label="Exportar CSV"
         icon="pi pi-download"
-        [disabled]="sales().length === 0"
+        [disabled]="salesCount() === 0"
+        [loading]="exporting()"
         (onClick)="exportCsv()"
       ></p-button>
     </div>
@@ -130,7 +131,13 @@
         <span>Busqueda</span>
         <span class="input-shell">
           <i class="pi pi-search"></i>
-          <input pInputText type="text" [(ngModel)]="search" placeholder="Documento, cliente, ID o notas" />
+          <input
+            pInputText
+            type="text"
+            [(ngModel)]="search"
+            placeholder="Documento, cliente, ID o notas"
+            (keyup.enter)="applyFilters()"
+          />
         </span>
       </label>
 
@@ -171,7 +178,7 @@
       </label>
 
       <div class="filter-actions">
-        <p-button label="Buscar" icon="pi pi-search" [loading]="loading()" (onClick)="loadSales()"></p-button>
+        <p-button label="Buscar" icon="pi pi-search" [loading]="loading()" (onClick)="applyFilters()"></p-button>
         <p-button
           label="Limpiar"
           icon="pi pi-filter-slash"
@@ -191,13 +198,20 @@
       [value]="sales()"
       [loading]="loading()"
       [paginator]="true"
-      [rows]="15"
+      [lazy]="true"
+      [lazyLoadOnInit]="false"
+      [first]="first"
+      [rows]="rows"
+      [totalRecords]="totalItems()"
       [rowsPerPageOptions]="[15, 30, 50, 100]"
-      [sortMode]="'multiple'"
+      sortMode="single"
+      [sortField]="sortField"
+      [sortOrder]="sortOrder"
       [showCurrentPageReport]="true"
       currentPageReportTemplate="{first} - {last} de {totalRecords}"
       responsiveLayout="scroll"
       [tableStyle]="{ 'min-width': '110rem' }"
+      (onLazyLoad)="onSalesLazyLoad($event)"
     >
       <ng-template pTemplate="header">
         <tr>
@@ -208,10 +222,10 @@
           <th pSortableColumn="status">Estado venta <p-sortIcon field="status"></p-sortIcon></th>
           <th pSortableColumn="documentStatus">Estado SRI <p-sortIcon field="documentStatus"></p-sortIcon></th>
           <th pSortableColumn="total" class="numeric-column total-column">Total original <p-sortIcon field="total"></p-sortIcon></th>
-          <th pSortableColumn="creditNoteImpact.authorizedCreditNoteTotal" class="numeric-column total-column">NC <p-sortIcon field="creditNoteImpact.authorizedCreditNoteTotal"></p-sortIcon></th>
-          <th pSortableColumn="creditNoteImpact.netTotal" class="numeric-column total-column">Neto <p-sortIcon field="creditNoteImpact.netTotal"></p-sortIcon></th>
-          <th pSortableColumn="creditNoteImpact.netGrossProfit" class="numeric-column profit-column">Utilidad neta <p-sortIcon field="creditNoteImpact.netGrossProfit"></p-sortIcon></th>
-          <th pSortableColumn="creditNoteImpact.netGrossMarginPercent" class="numeric-column margin-column">Margen neto <p-sortIcon field="creditNoteImpact.netGrossMarginPercent"></p-sortIcon></th>
+          <th class="numeric-column total-column">NC</th>
+          <th class="numeric-column total-column">Neto</th>
+          <th class="numeric-column profit-column">Utilidad neta</th>
+          <th class="numeric-column margin-column">Margen neto</th>
           <th pSortableColumn="username" class="user-column">Usuario <p-sortIcon field="username"></p-sortIcon></th>
           <th class="action-column">Accion</th>
         </tr>

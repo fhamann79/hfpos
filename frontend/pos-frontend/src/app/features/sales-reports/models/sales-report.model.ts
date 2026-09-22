@@ -23,6 +23,42 @@ export interface SalesReportFilters {
   search?: string | null;
   documentType?: SaleDocumentType | null;
   documentStatus?: SaleDocumentStatus | null;
+  userId?: number | null;
+}
+
+export type SalesReportSortField =
+  | 'createdAt'
+  | 'number'
+  | 'customerName'
+  | 'documentType'
+  | 'status'
+  | 'documentStatus'
+  | 'total'
+  | 'username';
+
+export type SalesReportSortDirection = 'asc' | 'desc';
+
+export interface SalesReportQuery extends SalesReportFilters {
+  page: number;
+  pageSize: number;
+  includeSummary: boolean;
+  sortBy: SalesReportSortField;
+  sortDirection: SalesReportSortDirection;
+}
+
+export interface SalesReportSummary {
+  salesCount: number;
+  totalSold: number;
+  authorizedCreditNoteTotal: number;
+  authorizedCreditNoteCount: number;
+  netTotal: number;
+  netCost: number;
+  netGrossProfit: number;
+  netGrossMarginPercent: number;
+  invoiceCount: number;
+  ticketCount: number;
+  voidedCount: number;
+  authorizedCount: number;
 }
 
 export interface SaleCreditNoteImpact {
