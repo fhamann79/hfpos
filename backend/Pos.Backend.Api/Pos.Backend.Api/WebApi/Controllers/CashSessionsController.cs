@@ -37,13 +37,10 @@ public class CashSessionsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<IEnumerable<CashSessionListItemDto>>> Get(
-        [FromQuery] DateTime? from,
-        [FromQuery] DateTime? to,
-        [FromQuery] CashSessionStatus? status,
-        [FromQuery] int? userId)
+    public async Task<ActionResult<CashSessionListResultDto>> Get(
+        [FromQuery] CashSessionListQueryDto query)
     {
-        return Ok(await _cashSessionService.GetListAsync(from, to, status, userId));
+        return Ok(await _cashSessionService.GetListAsync(query));
     }
 
     [HttpGet("{id:int}")]

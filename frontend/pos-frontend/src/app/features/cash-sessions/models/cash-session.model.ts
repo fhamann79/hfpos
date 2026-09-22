@@ -60,6 +60,13 @@ export interface CashSessionFilters {
   to?: string | null;
   status?: CashSessionStatus | null;
   userId?: number | null;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface CashSessionSummary {
+  openCount: number;
+  closedCount: number;
 }
 
 export interface OpenCashSessionRequest {

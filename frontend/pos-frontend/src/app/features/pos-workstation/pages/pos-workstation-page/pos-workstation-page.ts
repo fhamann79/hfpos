@@ -138,6 +138,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly checkoutLoading = signal(false);
 
   readonly sales = signal<SaleListItem[]>([]);
+  readonly recentSalesTotalItems = signal(0);
   readonly salesLoading = signal(false);
   readonly salesError = signal('');
   readonly saleDetailVisible = signal(false);
@@ -322,8 +323,9 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.salesError.set('');
 
     this.workstationService.getSales().subscribe({
-      next: (sales) => {
-        this.sales.set(sales.sort((a, b) => b.id - a.id));
+      next: (result) => {
+        this.sales.set(result.items);
+        this.recentSalesTotalItems.set(result.totalItems);
         this.salesLoading.set(false);
       },
       error: () => {

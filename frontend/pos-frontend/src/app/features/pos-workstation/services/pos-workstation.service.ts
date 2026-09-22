@@ -1,7 +1,8 @@
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { catchError, from, map, mergeMap, Observable, throwError } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import { PagedResult } from '../../../core/models/paged-result.model';
 import { hasHttpBusinessError, resolveHttpErrorMessage } from '../../../core/utils/http-error-normalizer';
 import { normalizeVatCategory } from '../../../core/utils/vat-category';
 import { CheckoutRequest } from '../models/checkout-request.model';
@@ -29,8 +30,24 @@ export class PosWorkstationService {
   private readonly http = inject(HttpClient);
   private readonly salesUrl = `${environment.apiUrl}/api/Sales`;
 
-  getSales(): Observable<SaleListItem[]> {
-    return this.http.get<unknown[]>(this.salesUrl).pipe(map((rows) => rows.map((row) => this.toSaleListItem(row))));
+  getSales(): Observable<PagedResult<SaleListItem>> {
+    const params = new HttpParams().set('page', 1).set('pageSize', 50);
+
+    return this.http.get<unknown>(this.salesUrl, { params }).pipe(
+      map((source) => {
+        const result = this.asRecord(source);
+        const rawItems = result?.['items'];
+        const items = Array.isArray(rawItems) ? rawItems.map((row) => this.toSaleListItem(row)) : [];
+
+        return {
+          items,
+          page: this.readNumber(result, ['page'], 1),
+          pageSize: this.readNumber(result, ['pageSize'], 50),
+          totalItems: this.readNumber(result, ['totalItems'], items.length),
+          totalPages: this.readNumber(result, ['totalPages'], items.length > 0 ? 1 : 0),
+        };
+      })
+    );
   }
 
   getSaleDetail(id: number): Observable<Sale> {

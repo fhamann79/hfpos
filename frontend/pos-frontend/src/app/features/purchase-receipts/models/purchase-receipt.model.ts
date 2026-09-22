@@ -70,4 +70,12 @@ export interface PurchaseReceiptFilters {
   from?: string | null;
   to?: string | null;
   status?: PurchaseReceiptStatus | null;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PurchaseReceiptSummary {
+  postedCount: number;
+  canceledCount: number;
+  totalReceived: number;
 }

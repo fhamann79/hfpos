@@ -1,18 +1,11 @@
 using Pos.Backend.Api.Core.DTOs;
-using Pos.Backend.Api.Core.Enums;
-
 namespace Pos.Backend.Api.Core.Services;
 
 public interface ISalesService
 {
-    Task<IReadOnlyList<SaleListItemDto>> GetSalesAsync(
-        DateTime? from,
-        DateTime? to,
-        SaleStatus? status,
-        string? search,
-        int? userId,
-        SaleDocumentType? documentType,
-        SaleDocumentStatus? documentStatus);
+    Task<SaleListResultDto> GetSalesAsync(SaleListQueryDto query);
+
+    Task<SaleCsvExportDto> ExportSalesAsync(SaleListQueryDto query);
 
     Task<SaleDto?> GetByIdAsync(int id);
     Task<string?> GetSriXmlDraftAsync(int id);

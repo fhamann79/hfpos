@@ -7,7 +7,7 @@ import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { SelectModule } from 'primeng/select';
-import { TableModule } from 'primeng/table';
+import { TableLazyLoadEvent, TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import {
   SaleDocumentStatus,
@@ -15,8 +15,10 @@ import {
   SaleStatus,
   SalesReportDetail,
   SalesReportDetailItem,
-  SalesReportFilters,
+  SalesReportQuery,
   SalesReportRow,
+  SalesReportSortField,
+  SalesReportSummary,
   getVatCategoryOption,
   saleDocumentStatusLabel,
   saleDocumentStatusSeverity,
@@ -36,6 +38,21 @@ interface SelectOption<T> {
   label: string;
   value: T;
 }
+
+const EMPTY_SUMMARY: SalesReportSummary = {
+  salesCount: 0,
+  totalSold: 0,
+  authorizedCreditNoteTotal: 0,
+  authorizedCreditNoteCount: 0,
+  netTotal: 0,
+  netCost: 0,
+  netGrossProfit: 0,
+  netGrossMarginPercent: 0,
+  invoiceCount: 0,
+  ticketCount: 0,
+  voidedCount: 0,
+  authorizedCount: 0,
+};
 
 @Component({
   selector: 'app-sales-report-page',
@@ -60,7 +77,12 @@ export class SalesReportPage implements OnInit {
   private readonly authStore = inject(AuthStore);
 
   readonly sales = signal<SalesReportRow[]>([]);
+  readonly summary = signal<SalesReportSummary>(EMPTY_SUMMARY);
+  readonly totalItems = signal(0);
+  readonly totalPages = signal(0);
+  readonly currentPage = signal(1);
   readonly loading = signal(false);
+  readonly exporting = signal(false);
   readonly errorMessage = signal('');
 
   readonly detailVisible = signal(false);
@@ -75,6 +97,10 @@ export class SalesReportPage implements OnInit {
   status: SaleStatus | null = null;
   documentType: SaleDocumentType | null = null;
   documentStatus: SaleDocumentStatus | null = null;
+  first = 0;
+  rows = 15;
+  sortField: SalesReportSortField = 'createdAt';
+  sortOrder = -1;
 
   readonly statusOptions: SelectOption<SaleStatus>[] = [
     { label: 'Completada', value: SaleStatus.Completed },
@@ -96,53 +122,42 @@ export class SalesReportPage implements OnInit {
     { label: 'Cancelado', value: SaleDocumentStatus.Cancelled },
   ];
 
-  readonly salesCount = computed(() => this.sales().length);
-  readonly reportableSales = computed(() => this.sales().filter((sale) => sale.status !== SaleStatus.Voided));
-  readonly totalSold = computed(() =>
-    this.reportableSales().reduce((total, sale) => total + sale.total, 0)
-  );
-  readonly creditNoteTotal = computed(() =>
-    this.reportableSales().reduce((total, sale) => total + sale.creditNoteImpact.authorizedCreditNoteTotal, 0)
-  );
-  readonly creditNoteCount = computed(() =>
-    this.reportableSales().reduce((total, sale) => total + sale.creditNoteImpact.authorizedCreditNoteCount, 0)
-  );
-  readonly netTotal = computed(() =>
-    this.reportableSales().reduce((total, sale) => total + sale.creditNoteImpact.netTotal, 0)
-  );
-  readonly netCost = computed(() =>
-    this.reportableSales().reduce((total, sale) => total + sale.creditNoteImpact.netCost, 0)
-  );
-  readonly netGrossProfit = computed(() =>
-    this.reportableSales().reduce((total, sale) => total + sale.creditNoteImpact.netGrossProfit, 0)
-  );
-  readonly netGrossMarginPercent = computed(() => {
-    const marginBase = this.reportableSales().reduce((total, sale) => total + sale.creditNoteImpact.netSubtotal, 0);
-
-    return marginBase > 0 ? (this.netGrossProfit() / marginBase) * 100 : 0;
-  });
-  readonly invoiceCount = computed(() => this.sales().filter((sale) => sale.documentType === SaleDocumentType.Invoice).length);
-  readonly ticketCount = computed(() => this.sales().filter((sale) => sale.documentType === SaleDocumentType.Ticket).length);
-  readonly voidedCount = computed(() => this.sales().filter((sale) => sale.status === SaleStatus.Voided).length);
-  readonly authorizedCount = computed(() =>
-    this.sales().filter((sale) =>
-      sale.documentType === SaleDocumentType.Invoice
-      && (sale.documentStatus === SaleDocumentStatus.Authorized || this.normalizeSriStatus(sale.sriAuthorizationStatus) === 'AUTORIZADO')
-    ).length
-  );
+  readonly salesCount = computed(() => this.summary().salesCount);
+  readonly totalSold = computed(() => this.summary().totalSold);
+  readonly creditNoteTotal = computed(() => this.summary().authorizedCreditNoteTotal);
+  readonly creditNoteCount = computed(() => this.summary().authorizedCreditNoteCount);
+  readonly netTotal = computed(() => this.summary().netTotal);
+  readonly netCost = computed(() => this.summary().netCost);
+  readonly netGrossProfit = computed(() => this.summary().netGrossProfit);
+  readonly netGrossMarginPercent = computed(() => this.summary().netGrossMarginPercent);
+  readonly invoiceCount = computed(() => this.summary().invoiceCount);
+  readonly ticketCount = computed(() => this.summary().ticketCount);
+  readonly voidedCount = computed(() => this.summary().voidedCount);
+  readonly authorizedCount = computed(() => this.summary().authorizedCount);
   readonly companyTimeZoneId = computed(() => this.authStore.companyTimeZoneId());
 
   ngOnInit(): void {
-    this.loadSales();
+    this.loadSales(1, this.rows);
   }
 
-  loadSales(): void {
+  loadSales(page = this.currentPage(), pageSize = this.rows): void {
     this.loading.set(true);
     this.errorMessage.set('');
 
-    this.salesReportService.getSales(this.currentFilters()).subscribe({
-      next: (sales) => {
-        this.sales.set(sales);
+    this.salesReportService.getSales(this.currentQuery(page, pageSize, true)).subscribe({
+      next: (result) => {
+        if (result.totalPages > 0 && result.page > result.totalPages) {
+          this.loadSales(result.totalPages, result.pageSize);
+          return;
+        }
+
+        this.sales.set(result.items);
+        this.summary.set(result.summary ?? EMPTY_SUMMARY);
+        this.totalItems.set(result.totalItems);
+        this.totalPages.set(result.totalPages);
+        this.rows = result.pageSize;
+        this.first = result.totalItems === 0 ? 0 : (result.page - 1) * result.pageSize;
+        this.currentPage.set(result.totalItems === 0 ? 1 : result.page);
         this.loading.set(false);
       },
       error: (error: HttpErrorResponse) => {
@@ -152,6 +167,28 @@ export class SalesReportPage implements OnInit {
     });
   }
 
+  onSalesLazyLoad(event: TableLazyLoadEvent): void {
+    const rows = event.rows ?? this.rows;
+    const requestedSort = typeof event.sortField === 'string' && this.isSortField(event.sortField)
+      ? event.sortField
+      : this.sortField;
+    const requestedOrder = event.sortOrder === 1 || event.sortOrder === -1
+      ? event.sortOrder
+      : this.sortOrder;
+    const sortChanged = requestedSort !== this.sortField || requestedOrder !== this.sortOrder;
+
+    this.sortField = requestedSort;
+    this.sortOrder = requestedOrder;
+    const first = sortChanged ? 0 : (event.first ?? this.first);
+    this.loadSales(Math.floor(first / rows) + 1, rows);
+  }
+
+  applyFilters(): void {
+    this.first = 0;
+    this.currentPage.set(1);
+    this.loadSales(1, this.rows);
+  }
+
   clearFilters(): void {
     this.from = '';
     this.to = '';
@@ -159,7 +196,7 @@ export class SalesReportPage implements OnInit {
     this.status = null;
     this.documentType = null;
     this.documentStatus = null;
-    this.loadSales();
+    this.applyFilters();
   }
 
   openDetail(row: SalesReportRow): void {
@@ -198,68 +235,22 @@ export class SalesReportPage implements OnInit {
   }
 
   exportCsv(): void {
-    const rows = this.sales();
-
-    if (rows.length === 0) {
+    if (this.salesCount() === 0 || this.exporting()) {
       return;
     }
 
-    const headers = [
-      'ID',
-      'Fecha',
-      'Documento',
-      'Cliente',
-      'Identificacion cliente',
-      'Email cliente',
-      'Tipo documento',
-      'Estado venta',
-      'Estado fiscal',
-      'Total original',
-      'Notas de crédito autorizadas',
-      'Cantidad NC',
-      'Total neto',
-      'Costo original',
-      'Costo revertido',
-      'Costo neto',
-      'Utilidad original',
-      'Margen bruto %',
-      'Utilidad neta',
-      'Margen neto %',
-      'Usuario',
-      'Notas',
-    ];
-
-    const csvRows = rows.map((sale) => [
-      sale.id,
-      this.formatBusinessDateTime(sale.createdAt),
-      sale.number ?? '',
-      sale.customerName ?? '',
-      sale.customerIdentification ?? '',
-      sale.customerEmail ?? '',
-      this.documentTypeLabel(sale),
-      this.saleStatusLabel(sale),
-      this.fiscalStatusLabel(sale),
-      this.csvMoneyValue(sale.total),
-      this.csvMoneyValue(sale.creditNoteImpact.authorizedCreditNoteTotal),
-      sale.creditNoteImpact.authorizedCreditNoteCount,
-      this.csvMoneyValue(sale.creditNoteImpact.netTotal),
-      this.csvMoneyValue(sale.totalCost),
-      this.csvMoneyValue(sale.creditNoteImpact.returnedCost),
-      this.csvMoneyValue(sale.creditNoteImpact.netCost),
-      this.csvMoneyValue(sale.grossProfit),
-      this.csvPercentValue(sale.grossMarginPercent),
-      this.csvMoneyValue(sale.creditNoteImpact.netGrossProfit),
-      this.csvPercentValue(sale.creditNoteImpact.netGrossMarginPercent),
-      sale.username ?? '',
-      sale.notes ?? '',
-    ]);
-
-    const csvSeparator = ';';
-    const csv = [headers, ...csvRows]
-      .map((row) => row.map((value) => this.csvValue(value)).join(csvSeparator))
-      .join('\r\n');
-
-    this.downloadCsv(csv);
+    this.exporting.set(true);
+    this.errorMessage.set('');
+    this.salesReportService.exportSales(this.currentQuery(1, this.rows, false)).subscribe({
+      next: (blob) => {
+        this.downloadCsv(blob);
+        this.exporting.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        this.exporting.set(false);
+        this.errorMessage.set(this.resolveError(error, 'No se pudo exportar el reporte de ventas.'));
+      },
+    });
   }
 
   saleStatusLabel(sale: SalesReportRow | SalesReportDetail): string {
@@ -365,7 +356,7 @@ export class SalesReportPage implements OnInit {
     return formatBusinessDateTimeValue(value, this.companyTimeZoneId());
   }
 
-  private currentFilters(): SalesReportFilters {
+  private currentQuery(page: number, pageSize: number, includeSummary: boolean): SalesReportQuery {
     return {
       from: this.from || null,
       to: this.to || null,
@@ -373,6 +364,11 @@ export class SalesReportPage implements OnInit {
       status: this.status,
       documentType: this.documentType,
       documentStatus: this.documentStatus,
+      page,
+      pageSize,
+      includeSummary,
+      sortBy: this.sortField,
+      sortDirection: this.sortOrder === 1 ? 'asc' : 'desc',
     };
   }
 
@@ -389,24 +385,7 @@ export class SalesReportPage implements OnInit {
     return fallback;
   }
 
-  private csvValue(value: string | number): string {
-    const text = String(value);
-    const escaped = text.replace(/"/g, '""');
-
-    return /[";\r\n]/.test(escaped) ? `"${escaped}"` : escaped;
-  }
-
-  private csvMoneyValue(value: number): string {
-    return value.toFixed(2).replace('.', ',');
-  }
-
-  private csvPercentValue(value: number): string {
-    return value.toFixed(2).replace('.', ',');
-  }
-
-  private downloadCsv(csv: string): void {
-    const utf8Bom = '\uFEFF';
-    const blob = new Blob([`${utf8Bom}${csv}`], { type: 'text/csv;charset=utf-8' });
+  private downloadCsv(blob: Blob): void {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     const today = new Date().toISOString().slice(0, 10);
@@ -418,6 +397,19 @@ export class SalesReportPage implements OnInit {
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
+  }
+
+  private isSortField(value: string): value is SalesReportSortField {
+    return [
+      'createdAt',
+      'number',
+      'customerName',
+      'documentType',
+      'status',
+      'documentStatus',
+      'total',
+      'username',
+    ].includes(value);
   }
 
   private normalizeSriStatus(status: string | null | undefined): string {

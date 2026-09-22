@@ -8,7 +8,7 @@ import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { SelectModule } from 'primeng/select';
-import { TableModule } from 'primeng/table';
+import { TableLazyLoadEvent, TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { TextareaModule } from 'primeng/textarea';
 import { ToastModule } from 'primeng/toast';
@@ -31,6 +31,7 @@ import {
   PurchaseReceipt,
   PurchaseReceiptListItem,
   PurchaseReceiptStatus,
+  PurchaseReceiptSummary,
 } from '../../models/purchase-receipt.model';
 import { PurchaseReceiptService } from '../../services/purchase-receipt.service';
 
@@ -46,6 +47,12 @@ interface ReceiptDraftItem {
   unitCost: number | null;
   notes: string;
 }
+
+const EMPTY_SUMMARY: PurchaseReceiptSummary = {
+  postedCount: 0,
+  canceledCount: 0,
+  totalReceived: 0,
+};
 
 @Component({
   selector: 'app-purchase-receipts-page',
@@ -78,6 +85,10 @@ export class PurchaseReceiptsPage implements OnInit {
   private readonly messageService = inject(MessageService);
 
   readonly receipts = signal<PurchaseReceiptListItem[]>([]);
+  readonly summary = signal<PurchaseReceiptSummary>(EMPTY_SUMMARY);
+  readonly totalItems = signal(0);
+  readonly totalPages = signal(0);
+  readonly currentPage = signal(1);
   readonly suppliers = signal<Supplier[]>([]);
   readonly products = signal<Product[]>([]);
   readonly selectedReceipt = signal<PurchaseReceipt | null>(null);
@@ -95,13 +106,9 @@ export class PurchaseReceiptsPage implements OnInit {
   readonly canWrite = computed(() => this.permissionService.hasPermission(PERMISSIONS.purchasesWrite));
   readonly activeSuppliers = computed(() => this.suppliers().filter((supplier) => supplier.isActive));
   readonly activeProducts = computed(() => this.products().filter((product) => product.isActive));
-  readonly totalReceived = computed(() =>
-    this.receipts()
-      .filter((receipt) => receipt.status === PurchaseReceiptStatus.Posted)
-      .reduce((sum, receipt) => sum + receipt.subtotal, 0)
-  );
-  readonly postedCount = computed(() => this.receipts().filter((receipt) => receipt.status === PurchaseReceiptStatus.Posted).length);
-  readonly canceledCount = computed(() => this.receipts().filter((receipt) => receipt.status === PurchaseReceiptStatus.Canceled).length);
+  readonly totalReceived = computed(() => this.summary().totalReceived);
+  readonly postedCount = computed(() => this.summary().postedCount);
+  readonly canceledCount = computed(() => this.summary().canceledCount);
   readonly subtotal = computed(() => this.draftItems().reduce((sum, item) => sum + this.lineTotal(item), 0));
   readonly companyTimeZoneId = computed(() => this.authStore.companyTimeZoneId());
 
@@ -137,10 +144,12 @@ export class PurchaseReceiptsPage implements OnInit {
   receiptDate = this.todayBusinessDateInput();
   notes = '';
   cancelReason = '';
+  first = 0;
+  rows = 15;
 
   ngOnInit(): void {
     this.loadReferenceData();
-    this.loadReceipts();
+    this.loadReceipts(1, this.rows);
   }
 
   loadReferenceData(): void {
@@ -173,7 +182,7 @@ export class PurchaseReceiptsPage implements OnInit {
     });
   }
 
-  loadReceipts(): void {
+  loadReceipts(page = this.currentPage(), pageSize = this.rows): void {
     this.loading.set(true);
     this.errorMessage.set('');
 
@@ -183,10 +192,23 @@ export class PurchaseReceiptsPage implements OnInit {
         from: this.from,
         to: this.to,
         status: this.status,
+        page,
+        pageSize,
       })
       .subscribe({
-        next: (receipts) => {
-          this.receipts.set(receipts);
+        next: (result) => {
+          if (result.totalPages > 0 && result.page > result.totalPages) {
+            this.loadReceipts(result.totalPages, result.pageSize);
+            return;
+          }
+
+          this.receipts.set(result.items);
+          this.summary.set(result.summary ?? EMPTY_SUMMARY);
+          this.totalItems.set(result.totalItems);
+          this.totalPages.set(result.totalPages);
+          this.rows = result.pageSize;
+          this.first = result.totalItems === 0 ? 0 : (result.page - 1) * result.pageSize;
+          this.currentPage.set(result.totalItems === 0 ? 1 : result.page);
           this.loading.set(false);
         },
         error: (error: HttpErrorResponse) => {
@@ -196,12 +218,24 @@ export class PurchaseReceiptsPage implements OnInit {
       });
   }
 
+  onReceiptsLazyLoad(event: TableLazyLoadEvent): void {
+    const rows = event.rows ?? this.rows;
+    const first = event.first ?? this.first;
+    this.loadReceipts(Math.floor(first / rows) + 1, rows);
+  }
+
+  applyFilters(): void {
+    this.first = 0;
+    this.currentPage.set(1);
+    this.loadReceipts(1, this.rows);
+  }
+
   clearFilters(): void {
     this.search = '';
     this.from = '';
     this.to = '';
     this.status = null;
-    this.loadReceipts();
+    this.applyFilters();
   }
 
   openCreateDialog(): void {

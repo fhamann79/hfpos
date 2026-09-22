@@ -29,6 +29,7 @@ import {
 })
 export class RecentSalesPanel {
   @Input({ required: true }) sales: SaleListItem[] = [];
+  @Input() totalItems = 0;
   @Input({ required: true }) loading = false;
   @Input() errorMessage = '';
   @Input() canVoid = false;

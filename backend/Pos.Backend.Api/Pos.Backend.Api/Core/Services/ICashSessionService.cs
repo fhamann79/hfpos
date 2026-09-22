@@ -8,11 +8,7 @@ public interface ICashSessionService
 {
     Task<CashSessionDto?> GetCurrentAsync();
 
-    Task<IReadOnlyList<CashSessionListItemDto>> GetListAsync(
-        DateTime? from,
-        DateTime? to,
-        CashSessionStatus? status,
-        int? userId);
+    Task<CashSessionListResultDto> GetListAsync(CashSessionListQueryDto query);
 
     Task<CashSessionDto?> GetByIdAsync(int id);
 

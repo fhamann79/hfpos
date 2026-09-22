@@ -161,6 +161,7 @@
   >
     <app-recent-sales-panel
       [sales]="sales()"
+      [totalItems]="recentSalesTotalItems()"
       [loading]="salesLoading()"
       [errorMessage]="salesError()"
       [canVoid]="canVoid"

@@ -2,11 +2,13 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, map } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import { PagedResultWithSummary } from '../../../core/models/paged-result.model';
 import {
   SalesReportDetail,
   SalesReportDetailItem,
-  SalesReportFilters,
+  SalesReportQuery,
   SalesReportRow,
+  SalesReportSummary,
   normalizeSaleDocumentStatus,
   normalizeSaleDocumentType,
   normalizeSaleStatus,
@@ -18,17 +20,24 @@ export class SalesReportService {
   private readonly http = inject(HttpClient);
   private readonly salesUrl = `${environment.apiUrl}/api/Sales`;
 
-  getSales(filters: SalesReportFilters): Observable<SalesReportRow[]> {
-    return this.http.get<unknown[]>(this.salesUrl, { params: this.buildParams(filters) }).pipe(
-      map((rows) => rows.map((row) => this.toSalesReportRow(row)))
+  getSales(query: SalesReportQuery): Observable<PagedResultWithSummary<SalesReportRow, SalesReportSummary>> {
+    return this.http.get<unknown>(this.salesUrl, { params: this.buildParams(query, true) }).pipe(
+      map((response) => this.toPagedResult(response))
     );
+  }
+
+  exportSales(query: SalesReportQuery): Observable<Blob> {
+    return this.http.get(`${this.salesUrl}/export`, {
+      params: this.buildParams(query, false),
+      responseType: 'blob',
+    });
   }
 
   getSaleDetail(id: number): Observable<SalesReportDetail> {
     return this.http.get<unknown>(`${this.salesUrl}/${id}`).pipe(map((row) => this.toSalesReportDetail(row)));
   }
 
-  private buildParams(filters: SalesReportFilters): HttpParams {
+  private buildParams(filters: SalesReportQuery, includePagination: boolean): HttpParams {
     let params = new HttpParams();
     const search = filters.search?.trim();
 
@@ -52,11 +61,63 @@ export class SalesReportService {
       params = params.set('documentStatus', String(filters.documentStatus));
     }
 
+    if (filters.userId !== null && filters.userId !== undefined) {
+      params = params.set('userId', String(filters.userId));
+    }
+
     if (search) {
       params = params.set('search', search);
     }
 
+    params = params
+      .set('sortBy', filters.sortBy)
+      .set('sortDirection', filters.sortDirection);
+
+    if (includePagination) {
+      params = params
+        .set('page', filters.page)
+        .set('pageSize', filters.pageSize)
+        .set('includeSummary', filters.includeSummary);
+    }
+
     return params;
+  }
+
+  private toPagedResult(source: unknown): PagedResultWithSummary<SalesReportRow, SalesReportSummary> {
+    const result = this.asRecord(source);
+    const rawItems = result?.['items'];
+    const items = Array.isArray(rawItems) ? rawItems.map((row) => this.toSalesReportRow(row)) : [];
+
+    return {
+      items,
+      page: this.readNumber(result, ['page'], 1),
+      pageSize: this.readNumber(result, ['pageSize'], 50),
+      totalItems: this.readNumber(result, ['totalItems'], items.length),
+      totalPages: this.readNumber(result, ['totalPages'], items.length > 0 ? 1 : 0),
+      summary: this.toSummary(result?.['summary']),
+    };
+  }
+
+  private toSummary(source: unknown): SalesReportSummary | null {
+    const summary = this.asRecord(source);
+    if (!summary) {
+      return null;
+    }
+
+    return {
+      salesCount: this.readNumber(summary, ['salesCount'], 0),
+      totalSold: this.readNumber(summary, ['totalSold'], 0),
+      authorizedCreditNoteTotal: this.readNumber(summary, ['authorizedCreditNoteTotal'], 0),
+      authorizedCreditNoteCount: this.readNumber(summary, ['authorizedCreditNoteCount'], 0),
+      netTotal: this.readNumber(summary, ['netTotal'], 0),
+      netCost: this.readNumber(summary, ['netCost'], 0),
+      netGrossProfit: this.readNumber(summary, ['netGrossProfit'], 0),
+      netGrossMarginPercent: this.readNumber(summary, ['netGrossMarginPercent'], 0),
+      invoiceCount: this.readNumber(summary, ['invoiceCount'], 0),
+      ticketCount: this.readNumber(summary, ['ticketCount'], 0),
+      voidedCount: this.readNumber(summary, ['voidedCount'], 0),
+      authorizedCount: this.readNumber(summary, ['authorizedCount'], 0),
+    };
   }
 
   private toSalesReportRow(source: unknown): SalesReportRow {

@@ -5,3 +5,7 @@ export interface PagedResult<T> {
   totalItems: number;
   totalPages: number;
 }
+
+export interface PagedResultWithSummary<T, TSummary> extends PagedResult<T> {
+  summary: TSummary | null;
+}

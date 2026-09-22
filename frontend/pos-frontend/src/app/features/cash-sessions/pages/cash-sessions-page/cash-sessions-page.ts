@@ -8,7 +8,7 @@ import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { SelectModule } from 'primeng/select';
-import { TableModule } from 'primeng/table';
+import { TableLazyLoadEvent, TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { TextareaModule } from 'primeng/textarea';
 import { ToastModule } from 'primeng/toast';
@@ -27,6 +27,7 @@ import {
   CashSession,
   CashSessionListItem,
   CashSessionStatus,
+  CashSessionSummary,
 } from '../../models/cash-session.model';
 import { CashSessionService } from '../../services/cash-session.service';
 
@@ -34,6 +35,11 @@ interface SelectOption<T> {
   label: string;
   value: T;
 }
+
+const EMPTY_SUMMARY: CashSessionSummary = {
+  openCount: 0,
+  closedCount: 0,
+};
 
 @Component({
   selector: 'app-cash-sessions-page',
@@ -65,6 +71,10 @@ export class CashSessionsPage implements OnInit {
 
   readonly currentSession = signal<CashSession | null>(null);
   readonly sessions = signal<CashSessionListItem[]>([]);
+  readonly summary = signal<CashSessionSummary>(EMPTY_SUMMARY);
+  readonly totalItems = signal(0);
+  readonly totalPages = signal(0);
+  readonly currentPage = signal(1);
   readonly selectedSession = signal<CashSession | null>(null);
   readonly currentLoading = signal(false);
   readonly loading = signal(false);
@@ -77,8 +87,8 @@ export class CashSessionsPage implements OnInit {
   readonly canWrite = computed(() => this.permissionService.hasPermission(PERMISSIONS.cashSessionsWrite));
   readonly companyTimeZoneId = computed(() => this.authStore.companyTimeZoneId());
 
-  readonly totalOpenSessions = computed(() => this.sessions().filter((session) => session.status === CashSessionStatus.Open).length);
-  readonly totalClosedSessions = computed(() => this.sessions().filter((session) => session.status === CashSessionStatus.Closed).length);
+  readonly totalOpenSessions = computed(() => this.summary().openCount);
+  readonly totalClosedSessions = computed(() => this.summary().closedCount);
 
   readonly statusOptions: SelectOption<CashSessionStatus>[] = [
     { label: 'Abiertas', value: CashSessionStatus.Open },
@@ -105,6 +115,8 @@ export class CashSessionsPage implements OnInit {
   movementReason = '';
   countedCashAmount: number | null = null;
   closingNotes = '';
+  first = 0;
+  rows = 15;
 
   ngOnInit(): void {
     this.refreshAll();
@@ -134,7 +146,7 @@ export class CashSessionsPage implements OnInit {
     });
   }
 
-  loadSessions(): void {
+  loadSessions(page = this.currentPage(), pageSize = this.rows): void {
     this.loading.set(true);
     this.errorMessage.set('');
 
@@ -144,10 +156,23 @@ export class CashSessionsPage implements OnInit {
         to: this.to,
         status: this.status,
         userId: this.userId,
+        page,
+        pageSize,
       })
       .subscribe({
-        next: (sessions) => {
-          this.sessions.set(sessions);
+        next: (result) => {
+          if (result.totalPages > 0 && result.page > result.totalPages) {
+            this.loadSessions(result.totalPages, result.pageSize);
+            return;
+          }
+
+          this.sessions.set(result.items);
+          this.summary.set(result.summary ?? EMPTY_SUMMARY);
+          this.totalItems.set(result.totalItems);
+          this.totalPages.set(result.totalPages);
+          this.rows = result.pageSize;
+          this.first = result.totalItems === 0 ? 0 : (result.page - 1) * result.pageSize;
+          this.currentPage.set(result.totalItems === 0 ? 1 : result.page);
           this.loading.set(false);
         },
         error: (error: HttpErrorResponse) => {
@@ -157,12 +182,24 @@ export class CashSessionsPage implements OnInit {
       });
   }
 
+  onSessionsLazyLoad(event: TableLazyLoadEvent): void {
+    const rows = event.rows ?? this.rows;
+    const first = event.first ?? this.first;
+    this.loadSessions(Math.floor(first / rows) + 1, rows);
+  }
+
+  applyFilters(): void {
+    this.first = 0;
+    this.currentPage.set(1);
+    this.loadSessions(1, this.rows);
+  }
+
   clearFilters(): void {
     this.from = '';
     this.to = '';
     this.status = null;
     this.userId = null;
-    this.loadSessions();
+    this.applyFilters();
   }
 
   openCashDialog(): void {
