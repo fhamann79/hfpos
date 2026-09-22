@@ -1,6 +1,7 @@
 <section class="documents-page">
   <header class="page-header">
-    <div>
+    <div class="header-copy">
+      <span class="eyebrow">Fiscal</span>
       <h1>Documentos electrónicos</h1>
       <p>Consulta y gestiona el ciclo fiscal de facturas y notas de crédito.</p>
     </div>
@@ -10,6 +11,7 @@
       icon="pi pi-refresh"
       label="Actualizar"
       severity="secondary"
+      [outlined]="true"
       [loading]="loading()"
       (click)="loadDocuments(currentPage(), rows)"
     ></button>
@@ -23,95 +25,104 @@
   }
 
   <div class="summary-grid" aria-label="Resumen documental">
-    <article class="summary-item">
-      <span>Total documentos</span>
-      <strong>{{ summary().totalDocuments }}</strong>
+    <article class="metric-card metric-card--total">
+      <span class="metric-icon"><i class="pi pi-list" aria-hidden="true"></i></span>
+      <div><small>Total documentos</small><strong>{{ summary().totalDocuments }}</strong></div>
     </article>
-    <article class="summary-item">
-      <span>Facturas</span>
-      <strong>{{ summary().invoiceCount }}</strong>
+    <article class="metric-card metric-card--invoice">
+      <span class="metric-icon"><i class="pi pi-file" aria-hidden="true"></i></span>
+      <div><small>Facturas</small><strong>{{ summary().invoiceCount }}</strong></div>
     </article>
-    <article class="summary-item">
-      <span>Notas de crédito</span>
-      <strong>{{ summary().creditNoteCount }}</strong>
+    <article class="metric-card metric-card--credit-note">
+      <span class="metric-icon"><i class="pi pi-undo" aria-hidden="true"></i></span>
+      <div><small>Notas de crédito</small><strong>{{ summary().creditNoteCount }}</strong></div>
     </article>
-    <article class="summary-item">
-      <span>Pendientes</span>
-      <strong>{{ summary().pendingAuthorizationCount }}</strong>
+    <article class="metric-card metric-card--pending">
+      <span class="metric-icon"><i class="pi pi-clock" aria-hidden="true"></i></span>
+      <div><small>Pendientes</small><strong>{{ summary().pendingAuthorizationCount }}</strong></div>
     </article>
-    <article class="summary-item summary-success">
-      <span>Autorizados</span>
-      <strong>{{ summary().authorizedCount }}</strong>
+    <article class="metric-card metric-card--authorized">
+      <span class="metric-icon"><i class="pi pi-verified" aria-hidden="true"></i></span>
+      <div><small>Autorizados</small><strong>{{ summary().authorizedCount }}</strong></div>
     </article>
-    <article class="summary-item summary-danger">
-      <span>Con error SRI</span>
-      <strong>{{ summary().withSriErrorCount }}</strong>
+    <article class="metric-card metric-card--error">
+      <span class="metric-icon"><i class="pi pi-exclamation-triangle" aria-hidden="true"></i></span>
+      <div><small>Con error SRI</small><strong>{{ summary().withSriErrorCount }}</strong></div>
     </article>
   </div>
 
-  <section class="filters" aria-label="Filtros documentales">
-    <label>
-      <span>Desde</span>
-      <input type="date" pInputText [(ngModel)]="from" />
-    </label>
-    <label>
-      <span>Hasta</span>
-      <input type="date" pInputText [(ngModel)]="to" />
-    </label>
-    <label>
-      <span>Tipo</span>
-      <p-select
-        [options]="kindOptions"
-        [(ngModel)]="kind"
-        optionLabel="label"
-        optionValue="value"
-        placeholder="Todos"
-        [showClear]="true"
-      ></p-select>
-    </label>
-    <label>
-      <span>Estado</span>
-      <p-select
-        [options]="documentStatusOptions"
-        [(ngModel)]="documentStatus"
-        optionLabel="label"
-        optionValue="value"
-        placeholder="Todos"
-        [showClear]="true"
-      ></p-select>
-    </label>
-    <label class="search-field">
-      <span>Búsqueda</span>
-      <input
-        type="search"
-        pInputText
-        [(ngModel)]="search"
-        placeholder="Número, clave, autorización o comprador"
-        (keydown.enter)="applyFilters()"
-      />
-    </label>
-    <label class="error-filter" for="onlyWithSriError">
-      <p-checkbox
-        inputId="onlyWithSriError"
-        [(ngModel)]="onlyWithSriError"
-        [binary]="true"
-      ></p-checkbox>
-      <span>Solo con error SRI</span>
-    </label>
-    <div class="filter-actions">
-      <button pButton type="button" icon="pi pi-search" label="Buscar" (click)="applyFilters()"></button>
-      <button
-        pButton
-        type="button"
-        icon="pi pi-filter-slash"
-        label="Limpiar"
-        severity="secondary"
-        [outlined]="true"
-        (click)="clearFilters()"
-      ></button>
-    </div>
-  </section>
+  <section class="documents-section">
+    <section class="filters" aria-label="Filtros documentales">
+      <div class="filter-fields">
+        <label class="filter-field">
+          <span>Desde</span>
+          <input type="date" pInputText [(ngModel)]="from" />
+        </label>
+        <label class="filter-field">
+          <span>Hasta</span>
+          <input type="date" pInputText [(ngModel)]="to" />
+        </label>
+        <label class="filter-field">
+          <span>Tipo</span>
+          <p-select
+            [options]="kindOptions"
+            [(ngModel)]="kind"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="Todos"
+            [showClear]="true"
+          ></p-select>
+        </label>
+        <label class="filter-field">
+          <span>Estado</span>
+          <p-select
+            [options]="documentStatusOptions"
+            [(ngModel)]="documentStatus"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="Todos"
+            [showClear]="true"
+          ></p-select>
+        </label>
+        <label class="filter-field search-field">
+          <span>Búsqueda</span>
+          <span class="input-shell">
+            <i class="pi pi-search" aria-hidden="true"></i>
+            <input
+              type="search"
+              pInputText
+              [(ngModel)]="search"
+              placeholder="Número, clave, autorización o comprador"
+              (keydown.enter)="applyFilters()"
+            />
+          </span>
+        </label>
+      </div>
+      <div class="filter-footer">
+        <label class="error-filter" for="onlyWithSriError">
+          <p-checkbox
+            inputId="onlyWithSriError"
+            [(ngModel)]="onlyWithSriError"
+            [binary]="true"
+          ></p-checkbox>
+          <span>Solo con error SRI</span>
+        </label>
+        <div class="filter-actions">
+          <button pButton type="button" icon="pi pi-search" label="Buscar" (click)="applyFilters()"></button>
+          <button
+            pButton
+            type="button"
+            icon="pi pi-filter-slash"
+            label="Limpiar"
+            severity="secondary"
+            [outlined]="true"
+            (click)="clearFilters()"
+          ></button>
+        </div>
+      </div>
+    </section>
 
+  <div class="table-scroll-shell" role="region" aria-label="Listado de documentos electrónicos" tabindex="0">
   <p-table
     [value]="documents()"
     dataKey="key"
@@ -127,42 +138,44 @@
     [sortOrder]="sortOrder"
     [showCurrentPageReport]="true"
     currentPageReportTemplate="{first} - {last} de {totalRecords}"
-    styleClass="p-datatable-sm"
+    styleClass="professional-table documents-table"
+    responsiveLayout="scroll"
+    [tableStyle]="{ 'min-width': '110rem' }"
     (onLazyLoad)="onLazyLoad($event)"
   >
     <ng-template pTemplate="header">
       <tr>
-        <th pSortableColumn="documentDate">Fecha <p-sortIcon field="documentDate"></p-sortIcon></th>
-        <th pSortableColumn="kind">Tipo <p-sortIcon field="kind"></p-sortIcon></th>
-        <th pSortableColumn="number">Número <p-sortIcon field="number"></p-sortIcon></th>
-        <th pSortableColumn="buyerName">Comprador <p-sortIcon field="buyerName"></p-sortIcon></th>
-        <th>Identificación</th>
-        <th pSortableColumn="documentStatus">Estado <p-sortIcon field="documentStatus"></p-sortIcon></th>
-        <th>Recepción SRI</th>
-        <th>Autorización SRI</th>
+        <th pSortableColumn="documentDate" class="date-column">Fecha <p-sortIcon field="documentDate"></p-sortIcon></th>
+        <th pSortableColumn="kind" class="kind-column">Tipo <p-sortIcon field="kind"></p-sortIcon></th>
+        <th pSortableColumn="number" class="number-column">Número <p-sortIcon field="number"></p-sortIcon></th>
+        <th pSortableColumn="buyerName" class="buyer-column">Comprador <p-sortIcon field="buyerName"></p-sortIcon></th>
+        <th class="identification-column">Identificación</th>
+        <th pSortableColumn="documentStatus" class="status-column">Estado <p-sortIcon field="documentStatus"></p-sortIcon></th>
+        <th class="reception-column">Recepción SRI</th>
+        <th class="authorization-column">Autorización SRI</th>
         <th pSortableColumn="total" class="amount-column">Total <p-sortIcon field="total"></p-sortIcon></th>
-        <th>Origen NC</th>
+        <th class="origin-column">Origen NC</th>
         <th class="action-column">Acción</th>
       </tr>
     </ng-template>
     <ng-template pTemplate="body" let-document>
       <tr>
-        <td>
+        <td class="date-column">
           <span class="primary-cell">{{ formatDate(document.documentIssuedAt || document.businessDate) }}</span>
           <small>{{ formatDateTime(document.documentIssuedAt || document.createdAt) }}</small>
         </td>
-        <td><p-tag [value]="kindLabel(document.kind)" [severity]="kindSeverity(document.kind)"></p-tag></td>
-        <td><span class="document-number">{{ document.number || ('#' + document.id) }}</span></td>
-        <td>
+        <td class="kind-column"><p-tag [value]="kindLabel(document.kind)" [severity]="kindSeverity(document.kind)"></p-tag></td>
+        <td class="number-column"><span class="document-number">{{ document.number || ('#' + document.id) }}</span></td>
+        <td class="buyer-column">
           <span class="primary-cell">{{ document.buyerName || 'Consumidor final' }}</span>
           @if (document.buyerEmail) { <small>{{ document.buyerEmail }}</small> }
         </td>
-        <td>{{ document.buyerIdentification || '-' }}</td>
-        <td><p-tag [value]="statusLabel(document.documentStatus)" [severity]="statusSeverity(document.documentStatus)"></p-tag></td>
-        <td><p-tag [value]="receptionLabel(document.sriReceptionStatus)" [severity]="receptionSeverity(document.sriReceptionStatus)"></p-tag></td>
-        <td><p-tag [value]="authorizationLabel(document.sriAuthorizationStatus)" [severity]="authorizationSeverity(document.sriAuthorizationStatus)"></p-tag></td>
+        <td class="identification-column">{{ document.buyerIdentification || '-' }}</td>
+        <td class="status-column"><p-tag [value]="statusLabel(document.documentStatus)" [severity]="statusSeverity(document.documentStatus)"></p-tag></td>
+        <td class="reception-column"><p-tag [value]="receptionLabel(document.sriReceptionStatus)" [severity]="receptionSeverity(document.sriReceptionStatus)"></p-tag></td>
+        <td class="authorization-column"><p-tag [value]="authorizationLabel(document.sriAuthorizationStatus)" [severity]="authorizationSeverity(document.sriAuthorizationStatus)"></p-tag></td>
         <td class="amount-column">{{ document.total | currency: 'USD' : 'symbol' : '1.2-2' }}</td>
-        <td>
+        <td class="origin-column">
           @if (document.originalSaleNumber) {
             <span class="document-number">{{ document.originalSaleNumber }}</span>
           } @else {
@@ -174,8 +187,9 @@
             pButton
             type="button"
             icon="pi pi-eye"
+            label="Detalle"
             severity="secondary"
-            [text]="true"
+            [outlined]="true"
             pTooltip="Abrir detalle fiscal"
             tooltipPosition="left"
             (click)="openDetail(document)"
@@ -187,6 +201,8 @@
       <tr><td colspan="11" class="empty-state">No hay documentos electrónicos para los filtros seleccionados.</td></tr>
     </ng-template>
   </p-table>
+  </div>
+  </section>
 </section>
 
 <p-dialog
@@ -214,26 +230,29 @@
       <p-tag [value]="statusLabel(document.documentStatus)" [severity]="statusSeverity(document.documentStatus)"></p-tag>
     </div>
 
-    <div class="detail-grid">
-      <div><span>Fecha emisión</span><strong>{{ formatDateTime(document.documentIssuedAt || document.createdAt) }}</strong></div>
-      <div><span>Fecha negocio</span><strong>{{ formatDate(document.businessDate) }}</strong></div>
-      <div><span>Comprador</span><strong>{{ document.buyerName || 'Consumidor final' }}</strong></div>
-      <div><span>Identificación</span><strong>{{ document.buyerIdentification || '-' }}</strong></div>
-      <div><span>Email</span><strong>{{ document.buyerEmail || '-' }}</strong></div>
-      <div><span>Dirección</span><strong>{{ document.buyerAddress || '-' }}</strong></div>
-      <div><span>Total</span><strong>{{ document.total | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
-      <div><span>Ambiente</span><strong>{{ environmentLabel(document.sriEnvironment) }}</strong></div>
-      <div><span>Recepción SRI</span><strong>{{ receptionLabel(document.sriReceptionStatus) }}</strong></div>
-      <div><span>Autorización SRI</span><strong>{{ authorizationLabel(document.sriAuthorizationStatus) }}</strong></div>
-      <div><span>Firmado</span><strong>{{ formatDateTime(document.sriSignedAt) }}</strong></div>
-      <div><span>Enviado</span><strong>{{ formatDateTime(document.sriSubmittedAt) }}</strong></div>
-      <div><span>Autorizado</span><strong>{{ formatDateTime(document.authorizedAt) }}</strong></div>
-      <div><span>Última consulta</span><strong>{{ formatDateTime(document.sriLastCheckedAt) }}</strong></div>
-      @if (document.kind === ElectronicDocumentKind.CreditNote) {
-        <div><span>Factura original</span><strong>{{ document.originalSaleNumber || ('#' + document.originalSaleId) }}</strong></div>
-        <div class="wide-detail"><span>Motivo fiscal</span><strong>{{ document.reason || '-' }}</strong></div>
-      }
-    </div>
+    <section class="detail-overview">
+      <h3>Datos del documento</h3>
+      <div class="detail-grid">
+        <div><span>Fecha emisión</span><strong>{{ formatDateTime(document.documentIssuedAt || document.createdAt) }}</strong></div>
+        <div><span>Fecha negocio</span><strong>{{ formatDate(document.businessDate) }}</strong></div>
+        <div><span>Comprador</span><strong>{{ document.buyerName || 'Consumidor final' }}</strong></div>
+        <div><span>Identificación</span><strong>{{ document.buyerIdentification || '-' }}</strong></div>
+        <div><span>Email</span><strong>{{ document.buyerEmail || '-' }}</strong></div>
+        <div><span>Dirección</span><strong>{{ document.buyerAddress || '-' }}</strong></div>
+        <div><span>Total</span><strong>{{ document.total | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+        <div><span>Ambiente</span><strong>{{ environmentLabel(document.sriEnvironment) }}</strong></div>
+        <div><span>Recepción SRI</span><strong>{{ receptionLabel(document.sriReceptionStatus) }}</strong></div>
+        <div><span>Autorización SRI</span><strong>{{ authorizationLabel(document.sriAuthorizationStatus) }}</strong></div>
+        <div><span>Firmado</span><strong>{{ formatDateTime(document.sriSignedAt) }}</strong></div>
+        <div><span>Enviado</span><strong>{{ formatDateTime(document.sriSubmittedAt) }}</strong></div>
+        <div><span>Autorizado</span><strong>{{ formatDateTime(document.authorizedAt) }}</strong></div>
+        <div><span>Última consulta</span><strong>{{ formatDateTime(document.sriLastCheckedAt) }}</strong></div>
+        @if (document.kind === ElectronicDocumentKind.CreditNote) {
+          <div><span>Factura original</span><strong>{{ document.originalSaleNumber || ('#' + document.originalSaleId) }}</strong></div>
+          <div class="wide-detail"><span>Motivo fiscal</span><strong>{{ document.reason || '-' }}</strong></div>
+        }
+      </div>
+    </section>
 
     <section class="technical-section">
       <h3>Identificación fiscal</h3>
