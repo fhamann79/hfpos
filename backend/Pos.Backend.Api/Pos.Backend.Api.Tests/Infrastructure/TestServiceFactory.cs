@@ -38,6 +38,7 @@ internal sealed class TestServiceScope : IAsyncDisposable
             administrationGuard);
 
         PurchaseReceipts = new PurchaseReceiptQueryService(DbContext, contextAccessor);
+        ElectronicDocuments = new ElectronicDocumentQueryService(DbContext, contextAccessor);
 
         var documentNumbers = new FiscalDocumentNumberService(
             DbContext,
@@ -67,6 +68,8 @@ internal sealed class TestServiceScope : IAsyncDisposable
     public CashSessionService CashSessions { get; }
 
     public PurchaseReceiptQueryService PurchaseReceipts { get; }
+
+    public ElectronicDocumentQueryService ElectronicDocuments { get; }
 
     public SalesService Sales { get; }
 

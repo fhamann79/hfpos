@@ -1,0 +1,385 @@
+<section class="documents-page">
+  <header class="page-header">
+    <div>
+      <h1>Documentos electrónicos</h1>
+      <p>Consulta y gestiona el ciclo fiscal de facturas y notas de crédito.</p>
+    </div>
+    <button
+      pButton
+      type="button"
+      icon="pi pi-refresh"
+      label="Actualizar"
+      severity="secondary"
+      [loading]="loading()"
+      (click)="loadDocuments(currentPage(), rows)"
+    ></button>
+  </header>
+
+  @if (errorMessage()) {
+    <p-message severity="error" [text]="errorMessage()"></p-message>
+  }
+  @if (successMessage()) {
+    <p-message severity="success" [text]="successMessage()"></p-message>
+  }
+
+  <div class="summary-grid" aria-label="Resumen documental">
+    <article class="summary-item">
+      <span>Total documentos</span>
+      <strong>{{ summary().totalDocuments }}</strong>
+    </article>
+    <article class="summary-item">
+      <span>Facturas</span>
+      <strong>{{ summary().invoiceCount }}</strong>
+    </article>
+    <article class="summary-item">
+      <span>Notas de crédito</span>
+      <strong>{{ summary().creditNoteCount }}</strong>
+    </article>
+    <article class="summary-item">
+      <span>Pendientes</span>
+      <strong>{{ summary().pendingAuthorizationCount }}</strong>
+    </article>
+    <article class="summary-item summary-success">
+      <span>Autorizados</span>
+      <strong>{{ summary().authorizedCount }}</strong>
+    </article>
+    <article class="summary-item summary-danger">
+      <span>Con error SRI</span>
+      <strong>{{ summary().withSriErrorCount }}</strong>
+    </article>
+  </div>
+
+  <section class="filters" aria-label="Filtros documentales">
+    <label>
+      <span>Desde</span>
+      <input type="date" pInputText [(ngModel)]="from" />
+    </label>
+    <label>
+      <span>Hasta</span>
+      <input type="date" pInputText [(ngModel)]="to" />
+    </label>
+    <label>
+      <span>Tipo</span>
+      <p-select
+        [options]="kindOptions"
+        [(ngModel)]="kind"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Todos"
+        [showClear]="true"
+      ></p-select>
+    </label>
+    <label>
+      <span>Estado</span>
+      <p-select
+        [options]="documentStatusOptions"
+        [(ngModel)]="documentStatus"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Todos"
+        [showClear]="true"
+      ></p-select>
+    </label>
+    <label class="search-field">
+      <span>Búsqueda</span>
+      <input
+        type="search"
+        pInputText
+        [(ngModel)]="search"
+        placeholder="Número, clave, autorización o comprador"
+        (keydown.enter)="applyFilters()"
+      />
+    </label>
+    <label class="error-filter" for="onlyWithSriError">
+      <p-checkbox
+        inputId="onlyWithSriError"
+        [(ngModel)]="onlyWithSriError"
+        [binary]="true"
+      ></p-checkbox>
+      <span>Solo con error SRI</span>
+    </label>
+    <div class="filter-actions">
+      <button pButton type="button" icon="pi pi-search" label="Buscar" (click)="applyFilters()"></button>
+      <button
+        pButton
+        type="button"
+        icon="pi pi-filter-slash"
+        label="Limpiar"
+        severity="secondary"
+        [outlined]="true"
+        (click)="clearFilters()"
+      ></button>
+    </div>
+  </section>
+
+  <p-table
+    [value]="documents()"
+    dataKey="key"
+    [lazy]="true"
+    [lazyLoadOnInit]="false"
+    [loading]="loading()"
+    [paginator]="true"
+    [rows]="rows"
+    [first]="first"
+    [totalRecords]="totalItems()"
+    [rowsPerPageOptions]="[15, 30, 50, 100]"
+    [sortField]="sortField"
+    [sortOrder]="sortOrder"
+    [showCurrentPageReport]="true"
+    currentPageReportTemplate="{first} - {last} de {totalRecords}"
+    styleClass="p-datatable-sm"
+    (onLazyLoad)="onLazyLoad($event)"
+  >
+    <ng-template pTemplate="header">
+      <tr>
+        <th pSortableColumn="documentDate">Fecha <p-sortIcon field="documentDate"></p-sortIcon></th>
+        <th pSortableColumn="kind">Tipo <p-sortIcon field="kind"></p-sortIcon></th>
+        <th pSortableColumn="number">Número <p-sortIcon field="number"></p-sortIcon></th>
+        <th pSortableColumn="buyerName">Comprador <p-sortIcon field="buyerName"></p-sortIcon></th>
+        <th>Identificación</th>
+        <th pSortableColumn="documentStatus">Estado <p-sortIcon field="documentStatus"></p-sortIcon></th>
+        <th>Recepción SRI</th>
+        <th>Autorización SRI</th>
+        <th pSortableColumn="total" class="amount-column">Total <p-sortIcon field="total"></p-sortIcon></th>
+        <th>Origen NC</th>
+        <th class="action-column">Acción</th>
+      </tr>
+    </ng-template>
+    <ng-template pTemplate="body" let-document>
+      <tr>
+        <td>
+          <span class="primary-cell">{{ formatDate(document.documentIssuedAt || document.businessDate) }}</span>
+          <small>{{ formatDateTime(document.documentIssuedAt || document.createdAt) }}</small>
+        </td>
+        <td><p-tag [value]="kindLabel(document.kind)" [severity]="kindSeverity(document.kind)"></p-tag></td>
+        <td><span class="document-number">{{ document.number || ('#' + document.id) }}</span></td>
+        <td>
+          <span class="primary-cell">{{ document.buyerName || 'Consumidor final' }}</span>
+          @if (document.buyerEmail) { <small>{{ document.buyerEmail }}</small> }
+        </td>
+        <td>{{ document.buyerIdentification || '-' }}</td>
+        <td><p-tag [value]="statusLabel(document.documentStatus)" [severity]="statusSeverity(document.documentStatus)"></p-tag></td>
+        <td><p-tag [value]="receptionLabel(document.sriReceptionStatus)" [severity]="receptionSeverity(document.sriReceptionStatus)"></p-tag></td>
+        <td><p-tag [value]="authorizationLabel(document.sriAuthorizationStatus)" [severity]="authorizationSeverity(document.sriAuthorizationStatus)"></p-tag></td>
+        <td class="amount-column">{{ document.total | currency: 'USD' : 'symbol' : '1.2-2' }}</td>
+        <td>
+          @if (document.originalSaleNumber) {
+            <span class="document-number">{{ document.originalSaleNumber }}</span>
+          } @else {
+            <span>-</span>
+          }
+        </td>
+        <td class="action-column">
+          <button
+            pButton
+            type="button"
+            icon="pi pi-eye"
+            severity="secondary"
+            [text]="true"
+            pTooltip="Abrir detalle fiscal"
+            tooltipPosition="left"
+            (click)="openDetail(document)"
+          ></button>
+        </td>
+      </tr>
+    </ng-template>
+    <ng-template pTemplate="emptymessage">
+      <tr><td colspan="11" class="empty-state">No hay documentos electrónicos para los filtros seleccionados.</td></tr>
+    </ng-template>
+  </p-table>
+</section>
+
+<p-dialog
+  header="Detalle fiscal"
+  [visible]="detailVisible()"
+  [modal]="true"
+  [draggable]="false"
+  [resizable]="false"
+  [closable]="!actionLoadingKey()"
+  [closeOnEscape]="!actionLoadingKey()"
+  [style]="{ width: 'min(76rem, 96vw)' }"
+  [contentStyle]="{ 'max-height': '78vh', overflow: 'auto' }"
+  (visibleChange)="$event ? null : closeDetail()"
+>
+  @if (detailLoading()) {
+    <div class="dialog-loading"><i class="pi pi-spin pi-spinner"></i><span>Cargando detalle fiscal...</span></div>
+  } @else if (detailError()) {
+    <p-message severity="error" [text]="detailError()"></p-message>
+  } @else if (selectedDocument(); as document) {
+    <div class="detail-heading">
+      <div>
+        <p-tag [value]="kindLabel(document.kind)" [severity]="kindSeverity(document.kind)"></p-tag>
+        <h2>{{ document.number || ('#' + document.id) }}</h2>
+      </div>
+      <p-tag [value]="statusLabel(document.documentStatus)" [severity]="statusSeverity(document.documentStatus)"></p-tag>
+    </div>
+
+    <div class="detail-grid">
+      <div><span>Fecha emisión</span><strong>{{ formatDateTime(document.documentIssuedAt || document.createdAt) }}</strong></div>
+      <div><span>Fecha negocio</span><strong>{{ formatDate(document.businessDate) }}</strong></div>
+      <div><span>Comprador</span><strong>{{ document.buyerName || 'Consumidor final' }}</strong></div>
+      <div><span>Identificación</span><strong>{{ document.buyerIdentification || '-' }}</strong></div>
+      <div><span>Email</span><strong>{{ document.buyerEmail || '-' }}</strong></div>
+      <div><span>Dirección</span><strong>{{ document.buyerAddress || '-' }}</strong></div>
+      <div><span>Total</span><strong>{{ document.total | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+      <div><span>Ambiente</span><strong>{{ environmentLabel(document.sriEnvironment) }}</strong></div>
+      <div><span>Recepción SRI</span><strong>{{ receptionLabel(document.sriReceptionStatus) }}</strong></div>
+      <div><span>Autorización SRI</span><strong>{{ authorizationLabel(document.sriAuthorizationStatus) }}</strong></div>
+      <div><span>Firmado</span><strong>{{ formatDateTime(document.sriSignedAt) }}</strong></div>
+      <div><span>Enviado</span><strong>{{ formatDateTime(document.sriSubmittedAt) }}</strong></div>
+      <div><span>Autorizado</span><strong>{{ formatDateTime(document.authorizedAt) }}</strong></div>
+      <div><span>Última consulta</span><strong>{{ formatDateTime(document.sriLastCheckedAt) }}</strong></div>
+      @if (document.kind === ElectronicDocumentKind.CreditNote) {
+        <div><span>Factura original</span><strong>{{ document.originalSaleNumber || ('#' + document.originalSaleId) }}</strong></div>
+        <div class="wide-detail"><span>Motivo fiscal</span><strong>{{ document.reason || '-' }}</strong></div>
+      }
+    </div>
+
+    <section class="technical-section">
+      <h3>Identificación fiscal</h3>
+      <dl>
+        <div><dt>Clave de acceso</dt><dd>{{ document.accessKey || '-' }}</dd></div>
+        <div><dt>Número de autorización</dt><dd>{{ document.authorizationNumber || '-' }}</dd></div>
+        <div><dt>Certificado firmante</dt><dd>{{ document.sriSigningCertificateSubject || '-' }}</dd></div>
+        <div><dt>Huella certificado</dt><dd>{{ document.sriSigningCertificateThumbprint || '-' }}</dd></div>
+        <div><dt>Serie certificado</dt><dd>{{ document.sriSigningCertificateSerialNumber || '-' }}</dd></div>
+        <div><dt>Hash firma</dt><dd>{{ document.sriSignatureHash || '-' }}</dd></div>
+      </dl>
+    </section>
+
+    @if (document.sriLastSubmissionError) {
+      <p-message severity="error" [text]="document.sriLastSubmissionError"></p-message>
+    }
+    @if (document.kind === 2 && !canReadCreditNoteArtifacts()) {
+      <p-message
+        severity="info"
+        text="Los artefactos e historiales de nota de crédito conservan la política POS_SALES_VOID vigente."
+      ></p-message>
+    }
+
+    <div class="action-groups">
+      <div class="action-group">
+        <span>Procesamiento SRI</span>
+        @if (canPrepare(document)) {
+          <button pButton type="button" icon="pi pi-file-plus" label="Preparar XML" [loading]="isActionLoading(document, 'prepare')" (click)="prepareSriDraft(document)"></button>
+        }
+        @if (canSign(document)) {
+          <button pButton type="button" icon="pi pi-pencil" label="Firmar" [loading]="isActionLoading(document, 'sign')" (click)="signSri(document)"></button>
+        }
+        @if (canSubmit(document)) {
+          <button pButton type="button" icon="pi pi-send" label="Enviar al SRI" [loading]="isActionLoading(document, 'submit')" (click)="submitSri(document)"></button>
+        }
+        @if (canCheck(document)) {
+          <button pButton type="button" icon="pi pi-sync" label="Consultar autorización" [loading]="isActionLoading(document, 'check')" (click)="checkAuthorization(document)"></button>
+        }
+      </div>
+
+      @if (canReadArtifacts(document)) {
+        <div class="action-group">
+          <span>Archivos</span>
+          @if (document.hasSriXmlDraft) {
+            <button pButton type="button" icon="pi pi-download" label="XML draft" severity="secondary" [outlined]="true" [loading]="isActionLoading(document, 'xml-draft')" (click)="downloadDraft(document)"></button>
+          }
+          @if (document.hasSriSignedXml) {
+            <button pButton type="button" icon="pi pi-download" label="XML firmado" severity="secondary" [outlined]="true" [loading]="isActionLoading(document, 'signed-xml')" (click)="downloadSigned(document)"></button>
+          }
+          @if (isAuthorized(document)) {
+            <button pButton type="button" icon="pi pi-download" label="XML autorizado" severity="secondary" [outlined]="true" [loading]="isActionLoading(document, 'authorized-xml')" (click)="downloadAuthorized(document)"></button>
+            <button pButton type="button" icon="pi pi-eye" label="Ver RIDE" severity="secondary" [outlined]="true" [loading]="isActionLoading(document, 'ride')" (click)="viewRide(document)"></button>
+            <button pButton type="button" icon="pi pi-file-pdf" label="RIDE PDF" severity="secondary" [outlined]="true" [loading]="isActionLoading(document, 'ride')" (click)="downloadRidePdf(document)"></button>
+          }
+        </div>
+        <div class="action-group">
+          <span>Auditoría</span>
+          <button pButton type="button" icon="pi pi-history" label="Intentos SRI" severity="secondary" [outlined]="true" (click)="openAttempts(document)"></button>
+          <button pButton type="button" icon="pi pi-envelope" label="Historial email" severity="secondary" [outlined]="true" (click)="openDeliveries(document)"></button>
+        </div>
+      }
+
+      @if (canEmail(document)) {
+        <div class="action-group">
+          <span>Entrega</span>
+          <button pButton type="button" icon="pi pi-send" label="Enviar por email" severity="success" (click)="openEmail(document)"></button>
+        </div>
+      }
+    </div>
+  }
+</p-dialog>
+
+<p-dialog
+  header="Intentos SRI"
+  [visible]="attemptsVisible()"
+  [modal]="true"
+  [style]="{ width: 'min(68rem, 96vw)' }"
+  (visibleChange)="attemptsVisible.set($event)"
+>
+  @if (attemptsError()) { <p-message severity="error" [text]="attemptsError()"></p-message> }
+  <p-table [value]="attempts()" [loading]="attemptsLoading()" styleClass="p-datatable-sm">
+    <ng-template pTemplate="header"><tr><th>Fecha</th><th>Tipo</th><th>Estado</th><th>Recepción</th><th>Autorización</th><th>Mensaje</th></tr></ng-template>
+    <ng-template pTemplate="body" let-attempt><tr>
+      <td>{{ formatDateTime(attempt.createdAt) }}</td>
+      <td>{{ attemptTypeLabel(attempt) }}</td>
+      <td><p-tag [value]="attemptStatusLabel(attempt)" [severity]="attemptStatusSeverity(attempt)"></p-tag></td>
+      <td>{{ receptionLabel(attempt.receptionStatus) }}</td>
+      <td>{{ authorizationLabel(attempt.authorizationStatus) }}</td>
+      <td class="wrap-cell">{{ attemptMessage(attempt) }}</td>
+    </tr></ng-template>
+    <ng-template pTemplate="emptymessage"><tr><td colspan="6" class="empty-state">No existen intentos registrados.</td></tr></ng-template>
+  </p-table>
+</p-dialog>
+
+<p-dialog
+  header="Historial de email"
+  [visible]="deliveriesVisible()"
+  [modal]="true"
+  [style]="{ width: 'min(68rem, 96vw)' }"
+  (visibleChange)="deliveriesVisible.set($event)"
+>
+  @if (deliveriesError()) { <p-message severity="error" [text]="deliveriesError()"></p-message> }
+  <p-table [value]="deliveries()" [loading]="deliveriesLoading()" styleClass="p-datatable-sm">
+    <ng-template pTemplate="header"><tr><th>Fecha</th><th>Destinatario</th><th>Copia</th><th>Asunto</th><th>Estado</th><th>Error</th></tr></ng-template>
+    <ng-template pTemplate="body" let-delivery><tr>
+      <td>{{ formatDateTime(delivery.sentAt || delivery.createdAt) }}</td>
+      <td>{{ delivery.toEmail }}</td>
+      <td>{{ delivery.ccEmail || '-' }}</td>
+      <td class="wrap-cell">{{ delivery.subject }}</td>
+      <td><p-tag [value]="deliveryStatusLabel(delivery)" [severity]="deliveryStatusSeverity(delivery)"></p-tag></td>
+      <td class="wrap-cell">{{ delivery.errorMessage || delivery.errorCode || '-' }}</td>
+    </tr></ng-template>
+    <ng-template pTemplate="emptymessage"><tr><td colspan="6" class="empty-state">No existen envíos registrados.</td></tr></ng-template>
+  </p-table>
+</p-dialog>
+
+<p-dialog
+  header="Enviar documento por email"
+  [visible]="emailVisible()"
+  [modal]="true"
+  [closable]="!emailSending()"
+  [style]="{ width: 'min(34rem, 94vw)' }"
+  (visibleChange)="emailVisible.set($event)"
+>
+  @if (emailError()) { <p-message severity="error" [text]="emailError()"></p-message> }
+  <div class="email-form">
+    <label><span>Destinatario</span><input pInputText type="email" maxlength="320" [(ngModel)]="emailTo" [class.ng-invalid]="emailToInvalid()" /></label>
+    @if (emailToInvalid()) { <small class="field-error">Ingresa un email válido.</small> }
+    <label><span>Copia</span><input pInputText type="email" maxlength="320" [(ngModel)]="emailCc" [class.ng-invalid]="emailCcInvalid()" /></label>
+    @if (emailCcInvalid()) { <small class="field-error">Ingresa un email válido.</small> }
+    <label><span>Asunto opcional</span><input pInputText maxlength="180" [(ngModel)]="emailSubject" /></label>
+    <label><span>Mensaje opcional</span><textarea pTextarea rows="4" [(ngModel)]="emailMessage"></textarea></label>
+  </div>
+  <ng-template pTemplate="footer">
+    <button pButton type="button" label="Cancelar" severity="secondary" [text]="true" [disabled]="emailSending()" (click)="emailVisible.set(false)"></button>
+    @if (selectedDocument(); as document) {
+      <button pButton type="button" icon="pi pi-send" label="Enviar" [loading]="emailSending()" (click)="sendEmail(document)"></button>
+    }
+  </ng-template>
+</p-dialog>
+
+<app-sri-ride-dialog
+  [visible]="rideVisible()"
+  [ride]="ride()"
+  [loading]="rideLoading()"
+  [errorMessage]="rideError()"
+  [companyTimeZoneId]="companyTimeZoneId()"
+  (visibleChange)="rideVisible.set($event)"
+></app-sri-ride-dialog>
