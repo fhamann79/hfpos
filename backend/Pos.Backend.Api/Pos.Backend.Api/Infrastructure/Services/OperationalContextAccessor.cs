@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -48,6 +49,16 @@ public class OperationalContextAccessor : IOperationalContextAccessor
         var companyIdValue = principal.FindFirstValue(AppClaims.CompanyId);
         var establishmentIdValue = principal.FindFirstValue(AppClaims.EstablishmentId);
         var emissionPointIdValue = principal.FindFirstValue(AppClaims.EmissionPointId);
+        var userVersionValue = principal.FindFirstValue(AppClaims.UserSessionVersion);
+        var roleVersionValue = principal.FindFirstValue(AppClaims.RoleAuthorizationVersion);
+
+        if (!long.TryParse(userVersionValue, NumberStyles.None, CultureInfo.InvariantCulture, out var userVersion)
+            || !long.TryParse(roleVersionValue, NumberStyles.None, CultureInfo.InvariantCulture, out var roleVersion)
+            || userVersion <= 0
+            || roleVersion <= 0)
+        {
+            throw LogAndCreateException("SESSION_STALE", StatusCodes.Status401Unauthorized);
+        }
 
         if (string.IsNullOrWhiteSpace(userIdValue)
             || string.IsNullOrWhiteSpace(username)
@@ -74,18 +85,26 @@ public class OperationalContextAccessor : IOperationalContextAccessor
                 u.CompanyId,
                 u.EstablishmentId,
                 u.EmissionPointId,
+                u.SessionVersion,
                 RoleCode = u.Role.Code,
                 RoleCompanyId = u.Role.CompanyId,
-                RoleIsActive = u.Role.IsActive
+                RoleIsActive = u.Role.IsActive,
+                RoleAuthorizationVersion = u.Role.AuthorizationVersion
             })
             .FirstOrDefaultAsync();
 
-        if (user is null || !user.IsActive)
+        if (user is null)
         {
             throw LogAndCreateException("CONTEXT_MISMATCH", StatusCodes.Status401Unauthorized, userId, companyId, establishmentId, emissionPointId, username);
         }
 
-        if (!string.Equals(user.Username, username, StringComparison.Ordinal)
+        if (user.SessionVersion != userVersion || user.RoleAuthorizationVersion != roleVersion)
+        {
+            throw LogAndCreateException("SESSION_STALE", StatusCodes.Status401Unauthorized, userId, companyId, establishmentId, emissionPointId, username);
+        }
+
+        if (!user.IsActive
+            || !string.Equals(user.Username, username, StringComparison.Ordinal)
             || user.CompanyId != companyId
             || user.EstablishmentId != establishmentId
             || user.EmissionPointId != emissionPointId

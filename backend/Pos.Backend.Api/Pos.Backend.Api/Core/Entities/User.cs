@@ -19,6 +19,8 @@ public class User
 
     public DateTime CreatedAt { get; set; }
 
+    public long SessionVersion { get; set; } = 1;
+
     public int RoleId { get; set; }
     public Role Role { get; set; }
 

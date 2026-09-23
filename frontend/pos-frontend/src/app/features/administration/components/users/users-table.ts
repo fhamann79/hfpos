@@ -47,6 +47,7 @@ export class UsersTable implements OnInit {
   readonly roles = signal<Role[]>([]);
   readonly loading = signal(false);
   readonly errorMessage = signal('');
+  readonly revokingUserId = signal<number | null>(null);
 
   globalFilter = '';
   userDialogVisible = false;
@@ -188,6 +189,36 @@ export class UsersTable implements OnInit {
             this.loadUsers();
           },
           error: (error: HttpErrorResponse) => {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
+          },
+        });
+      },
+    });
+  }
+
+  confirmRevokeSessions(user: User): void {
+    if (!this.canWrite || this.revokingUserId() !== null) {
+      return;
+    }
+
+    this.confirmationService.confirm({
+      header: 'Cerrar sesiones',
+      message: `Los tokens emitidos para "${user.username}" dejarán de ser válidos. Esto no desactiva ni elimina al usuario, ni cambia su contraseña. ¿Continuar?`,
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Cerrar sesiones',
+      rejectLabel: 'Cancelar',
+      accept: () => {
+        if (!this.canWrite || this.revokingUserId() !== null) {
+          return;
+        }
+        this.revokingUserId.set(user.id);
+        this.userService.revokeSessions(user.id).subscribe({
+          next: () => {
+            this.revokingUserId.set(null);
+            this.messageService.add({ severity: 'success', summary: 'Sesiones cerradas', detail: 'Los tokens anteriores ya no son válidos.' });
+          },
+          error: (error: HttpErrorResponse) => {
+            this.revokingUserId.set(null);
             this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
           },
         });

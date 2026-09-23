@@ -35,6 +35,10 @@ export class UserService {
     return this.http.put<void>(`${this.baseUrl}/${id}/password`, payload);
   }
 
+  revokeSessions(id: number) {
+    return this.http.post<void>(`${this.baseUrl}/${id}/revoke-sessions`, null);
+  }
+
   delete(id: number) {
     return this.http.delete<void>(`${this.baseUrl}/${id}`);
   }

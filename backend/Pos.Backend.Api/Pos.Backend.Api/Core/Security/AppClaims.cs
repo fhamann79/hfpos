@@ -7,4 +7,6 @@ public static class AppClaims
     public const string CompanyId = "companyId";
     public const string EstablishmentId = "establishmentId";
     public const string EmissionPointId = "emissionPointId";
+    public const string UserSessionVersion = "user_session_version";
+    public const string RoleAuthorizationVersion = "role_authorization_version";
 }

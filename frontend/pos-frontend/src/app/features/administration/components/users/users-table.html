@@ -34,7 +34,7 @@
     [globalFilterFields]="['id', 'username', 'email', 'roleName', 'companyId', 'establishmentId', 'emissionPointId']"
     [sortMode]="'multiple'"
     responsiveLayout="scroll"
-    [tableStyle]="{ 'min-width': '76rem' }"
+    [tableStyle]="{ 'min-width': '88rem' }"
   >
     <ng-template pTemplate="caption">
       <div class="caption-actions">
@@ -91,6 +91,16 @@
                 [rounded]="true"
                 [text]="true"
                 (onClick)="confirmDelete(user)"
+              ></p-button>
+              <p-button
+                label="Cerrar sesiones"
+                icon="pi pi-sign-out"
+                severity="secondary"
+                [outlined]="true"
+                size="small"
+                [loading]="revokingUserId() === user.id"
+                [disabled]="revokingUserId() !== null"
+                (onClick)="confirmRevokeSessions(user)"
               ></p-button>
             </div>
           } @else {

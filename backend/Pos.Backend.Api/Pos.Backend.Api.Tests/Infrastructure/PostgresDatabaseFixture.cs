@@ -16,6 +16,8 @@ public sealed class PostgresDatabaseFixture : IAsyncLifetime
 
     private readonly string _connectionString;
 
+    internal string ConnectionString => _connectionString;
+
     public PostgresDatabaseFixture()
     {
         var configuredConnectionString = Environment.GetEnvironmentVariable(

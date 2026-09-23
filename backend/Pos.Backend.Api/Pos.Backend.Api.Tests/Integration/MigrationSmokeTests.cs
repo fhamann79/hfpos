@@ -20,7 +20,9 @@ public sealed class MigrationSmokeTests(PostgresDatabaseFixture database)
         Assert.Equal(definedMigrations, appliedMigrations);
         Assert.Empty(pendingMigrations);
         Assert.Contains(definedMigrations, migration => migration.EndsWith("AddSaleVoidCashSemantics"));
+        Assert.Contains(definedMigrations, migration => migration.EndsWith("AddSessionAuthorizationVersions"));
         Assert.Equal(0, await context.Companies.CountAsync());
+        Assert.False(context.Database.HasPendingModelChanges());
     }
 }
 

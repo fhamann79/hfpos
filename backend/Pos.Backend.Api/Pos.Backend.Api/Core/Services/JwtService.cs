@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Globalization;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
@@ -25,10 +26,10 @@ public class JwtService
 
     public string GenerateToken(User user)
     {
-        var roleCode = _context.Roles
+        var role = _context.Roles
             .AsNoTracking()
             .Where(r => r.Id == user.RoleId && r.CompanyId == user.CompanyId && r.IsActive)
-            .Select(r => r.Code)
+            .Select(r => new { r.Code, r.AuthorizationVersion })
             .FirstOrDefault()
             ?? throw new OperationalContextException("ROLE_INACTIVE_OR_INVALID", StatusCodes.Status401Unauthorized);
 
@@ -46,7 +47,9 @@ public class JwtService
             new Claim(AppClaims.CompanyId, user.CompanyId.ToString()),
             new Claim(AppClaims.EstablishmentId, user.EstablishmentId!.Value.ToString()),
             new Claim(AppClaims.EmissionPointId, user.EmissionPointId.ToString()),
-            new Claim(ClaimTypes.Role, roleCode ?? string.Empty)
+            new Claim(ClaimTypes.Role, role.Code),
+            new Claim(AppClaims.UserSessionVersion, user.SessionVersion.ToString(CultureInfo.InvariantCulture)),
+            new Claim(AppClaims.RoleAuthorizationVersion, role.AuthorizationVersion.ToString(CultureInfo.InvariantCulture))
         };
 
         foreach (var permission in permissions)

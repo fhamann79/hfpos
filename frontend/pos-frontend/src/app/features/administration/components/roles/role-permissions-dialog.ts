@@ -6,6 +6,7 @@ import { ButtonModule } from 'primeng/button';
 import { CheckboxModule } from 'primeng/checkbox';
 import { DialogModule } from 'primeng/dialog';
 import { MessageModule } from 'primeng/message';
+import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
 import { RolePermission } from '../../models/role-permission.model';
 import { Role } from '../../models/role.model';
@@ -66,6 +67,9 @@ export class RolePermissionsDialog implements OnChanges {
   }
 
   togglePermission(permissionId: number, assigned: boolean): void {
+    if (this.permissions().some((permission) => permission.permissionId === permissionId && this.isRequiredAdminPermission(permission))) {
+      return;
+    }
     this.permissions.update((items) =>
       items.map((permission) => (permission.permissionId === permissionId ? { ...permission, assigned } : permission))
     );
@@ -77,10 +81,15 @@ export class RolePermissionsDialog implements OnChanges {
     }
 
     const permissionIds = this.permissions()
-      .filter((permission) => permission.assigned)
+      .filter((permission) => permission.assigned || this.isRequiredAdminPermission(permission))
       .map((permission) => permission.permissionId);
 
     this.submitForm.emit({ roleId: this.role.id, permissionIds });
+  }
+
+  isRequiredAdminPermission(permission: RolePermission): boolean {
+    return this.role?.code === 'ADMIN'
+      && (permission.code === PERMISSIONS.adminRolesRead || permission.code === PERMISSIONS.adminRolesWrite);
   }
 
   private loadPermissions(roleId: number): void {

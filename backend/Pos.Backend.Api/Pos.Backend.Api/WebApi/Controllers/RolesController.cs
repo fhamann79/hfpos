@@ -145,6 +145,10 @@ public class RolesController : ControllerBase
         }
 
         role.Name = dto.Name.Trim();
+        if (role.IsActive != dto.IsActive)
+        {
+            role.AuthorizationVersion = checked(role.AuthorizationVersion + 1);
+        }
         role.IsActive = dto.IsActive;
 
         await _context.SaveChangesAsync();
