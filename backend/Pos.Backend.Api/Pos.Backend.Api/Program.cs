@@ -116,6 +116,7 @@ builder.Services.AddScoped<ISriRidePdfService, SriRidePdfService>();
 builder.Services.AddScoped<ISaleInvoiceEmailService, SaleInvoiceEmailService>();
 builder.Services.AddScoped<ICreditNoteEmailService, CreditNoteEmailService>();
 builder.Services.AddScoped<ISalesService, SalesService>();
+builder.Services.AddScoped<IElectronicDocumentQueryService, ElectronicDocumentQueryService>();
 builder.Services.AddScoped<Pos.Backend.Api.WebApi.Filters.OperationalContextFilter>();
 builder.Services.AddHttpClient<ISriWebServiceClient, SriWebServiceClient>((serviceProvider, client) =>
 {

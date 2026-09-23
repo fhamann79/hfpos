@@ -39,6 +39,11 @@ export const SALES_REPORTS_ACCESS_REQUIREMENT: PermissionRequirement = {
   matchMode: 'all',
 };
 
+export const ELECTRONIC_DOCUMENTS_ACCESS_REQUIREMENT: PermissionRequirement = {
+  requiredPermissions: [PERMISSIONS.reportsSalesRead],
+  matchMode: 'all',
+};
+
 export const INVENTORY_ACCESS_REQUIREMENT: PermissionRequirement = {
   requiredPermissions: [PERMISSIONS.inventoryRead],
   matchMode: 'all',
@@ -110,6 +115,12 @@ export const NAVIGATION_ITEMS: NavigationItemConfig[] = [
     icon: 'pi pi-chart-bar',
     route: '/sales-reports',
     ...SALES_REPORTS_ACCESS_REQUIREMENT,
+  },
+  {
+    label: 'Documentos electrónicos',
+    icon: 'pi pi-file-check',
+    route: '/electronic-documents',
+    ...ELECTRONIC_DOCUMENTS_ACCESS_REQUIREMENT,
   },
   {
     label: 'Inventario',

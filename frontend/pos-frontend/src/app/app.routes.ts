@@ -4,6 +4,7 @@ import { administrationAccessGuard } from './core/guards/administration-access.g
 import { cashSessionsAccessGuard } from './core/guards/cash-sessions-access.guard';
 import { catalogAccessGuard } from './core/guards/catalog-access.guard';
 import { customersAccessGuard } from './core/guards/customers-access.guard';
+import { electronicDocumentsAccessGuard } from './core/guards/electronic-documents-access.guard';
 import { inventoryAccessGuard } from './core/guards/inventory-access.guard';
 import { fiscalSettingsAccessGuard } from './core/guards/fiscal-settings-access.guard';
 import { operationalStructureAccessGuard } from './core/guards/operational-structure-access.guard';
@@ -57,6 +58,14 @@ export const routes: Routes = [
     canActivate: [AuthGuard, salesReportsAccessGuard],
     loadComponent: () =>
       import('./features/sales-reports/pages/sales-report-page/sales-report-page').then((m) => m.SalesReportPage),
+  },
+  {
+    path: 'electronic-documents',
+    canActivate: [AuthGuard, electronicDocumentsAccessGuard],
+    loadComponent: () =>
+      import('./features/electronic-documents/pages/electronic-documents-page/electronic-documents-page').then(
+        (m) => m.ElectronicDocumentsPage
+      ),
   },
   {
     path: 'inventory',
