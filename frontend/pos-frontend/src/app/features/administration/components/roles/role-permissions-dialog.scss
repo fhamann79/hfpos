@@ -36,6 +36,15 @@
   }
 }
 
+:host ::ng-deep .permission-item--required .p-checkbox.p-disabled .p-checkbox-box {
+  background: #64748b;
+  border-color: #64748b;
+}
+
+:host ::ng-deep .permission-item--required .p-checkbox.p-disabled .p-checkbox-box .p-checkbox-icon {
+  color: #ffffff;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;

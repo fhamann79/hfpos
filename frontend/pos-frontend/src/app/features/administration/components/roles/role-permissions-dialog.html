@@ -21,7 +21,7 @@
         <h4>{{ group.name }}</h4>
         <div class="permission-list">
           @for (permission of group.items; track permission.permissionId) {
-            <label class="permission-item" [for]="'perm-' + permission.permissionId">
+            <label class="permission-item" [class.permission-item--required]="isRequiredAdminPermission(permission)" [for]="'perm-' + permission.permissionId">
               <p-checkbox
                 [inputId]="'perm-' + permission.permissionId"
                 [binary]="true"
