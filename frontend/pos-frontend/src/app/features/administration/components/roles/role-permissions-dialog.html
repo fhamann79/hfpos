@@ -11,6 +11,9 @@
   @if (errorMessage()) {
     <p-message severity="error" [text]="errorMessage()"></p-message>
   }
+  @if (role?.code === 'ADMIN') {
+    <p-message severity="info" text="ADMIN debe conservar los permisos de lectura y escritura de roles."></p-message>
+  }
 
   <div class="permissions-content" [class.permissions-content--loading]="loading()">
     @for (group of groupedPermissions(); track group.name) {
@@ -18,11 +21,12 @@
         <h4>{{ group.name }}</h4>
         <div class="permission-list">
           @for (permission of group.items; track permission.permissionId) {
-            <label class="permission-item" [for]="'perm-' + permission.permissionId">
+            <label class="permission-item" [class.permission-item--required]="isRequiredAdminPermission(permission)" [for]="'perm-' + permission.permissionId">
               <p-checkbox
                 [inputId]="'perm-' + permission.permissionId"
                 [binary]="true"
-                [ngModel]="permission.assigned"
+                [ngModel]="permission.assigned || isRequiredAdminPermission(permission)"
+                [disabled]="isRequiredAdminPermission(permission)"
                 (ngModelChange)="togglePermission(permission.permissionId, $event)"
               ></p-checkbox>
               <div>

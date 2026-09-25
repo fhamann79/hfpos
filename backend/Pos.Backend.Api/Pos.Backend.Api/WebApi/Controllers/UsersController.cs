@@ -168,11 +168,20 @@ public class UsersController : ControllerBase
             return validationError;
         }
 
+        var securityChanged = user.RoleId != dto.RoleId
+            || user.EstablishmentId != dto.EstablishmentId
+            || user.EmissionPointId != dto.EmissionPointId
+            || user.IsActive != dto.IsActive;
+
         user.Email = dto.Email.Trim();
         user.RoleId = dto.RoleId;
         user.EstablishmentId = dto.EstablishmentId;
         user.EmissionPointId = dto.EmissionPointId;
         user.IsActive = dto.IsActive;
+        if (securityChanged)
+        {
+            user.SessionVersion = checked(user.SessionVersion + 1);
+        }
 
         await _context.SaveChangesAsync();
         if (!await _administrationGuard.HasActiveAdministratorAsync(tenant.CompanyId))
@@ -202,6 +211,7 @@ public class UsersController : ControllerBase
         }
 
         user.PasswordHash = _hasher.HashPassword(user, dto.NewPassword);
+        user.SessionVersion = checked(user.SessionVersion + 1);
         await _context.SaveChangesAsync();
         await tx.CommitAsync();
 
@@ -221,7 +231,11 @@ public class UsersController : ControllerBase
         }
 
         // Decisión explícita: soft-delete lógico.
-        user.IsActive = false;
+        if (user.IsActive)
+        {
+            user.IsActive = false;
+            user.SessionVersion = checked(user.SessionVersion + 1);
+        }
 
         await _context.SaveChangesAsync();
         if (!await _administrationGuard.HasActiveAdministratorAsync(tenant.CompanyId))
@@ -230,6 +244,24 @@ public class UsersController : ControllerBase
         }
         await tx.CommitAsync();
 
+        return NoContent();
+    }
+
+    [HttpPost("{id:int}/revoke-sessions")]
+    [Authorize(Policy = AppPermissions.AdminUsersWrite)]
+    public async Task<IActionResult> RevokeSessions(int id)
+    {
+        var tenant = await _operationalContext.GetRequiredContextAsync();
+        await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id && u.CompanyId == tenant.CompanyId);
+        if (user is null)
+        {
+            return NotFound(new ApiErrorResponse { Error = "USER_NOT_FOUND" });
+        }
+
+        user.SessionVersion = checked(user.SessionVersion + 1);
+        await _context.SaveChangesAsync();
+        await tx.CommitAsync();
         return NoContent();
     }
 

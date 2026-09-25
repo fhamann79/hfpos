@@ -49,6 +49,9 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<Role>(entity =>
         {
+            entity.Property(r => r.AuthorizationVersion).HasDefaultValue(1L);
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_Roles_AuthorizationVersion_Positive", "\"AuthorizationVersion\" > 0"));
             entity.HasIndex(r => r.CompanyId);
             entity.HasIndex(r => new { r.CompanyId, r.Code }).IsUnique();
             entity.HasAlternateKey(r => new { r.CompanyId, r.Id });
@@ -58,6 +61,9 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<User>(entity =>
         {
+            entity.Property(u => u.SessionVersion).HasDefaultValue(1L);
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_Users_SessionVersion_Positive", "\"SessionVersion\" > 0"));
             entity.HasOne(u => u.Company).WithMany()
                 .HasForeignKey(u => u.CompanyId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(u => u.Establishment).WithMany()

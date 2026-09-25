@@ -20,5 +20,7 @@ public class Role
 
     public DateTime CreatedAt { get; set; }
 
+    public long AuthorizationVersion { get; set; } = 1;
+
     public ICollection<RolePermission> RolePermissions { get; set; } = new List<RolePermission>();
 }

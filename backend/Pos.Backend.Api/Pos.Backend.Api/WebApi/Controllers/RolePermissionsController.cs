@@ -69,36 +69,52 @@ public class RolePermissionsController : ControllerBase
     {
         var tenant = await _operationalContext.GetRequiredContextAsync();
         await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
-        var roleExists = await _context.Roles.AnyAsync(r => r.Id == roleId && r.CompanyId == tenant.CompanyId);
-        if (!roleExists)
+        var role = await _context.Roles.FirstOrDefaultAsync(r => r.Id == roleId && r.CompanyId == tenant.CompanyId);
+        if (role is null)
         {
             return NotFound(new ApiErrorResponse { Error = "ROLE_NOT_FOUND" });
         }
 
         var permissionIds = dto?.PermissionIds?.Distinct().ToList() ?? new List<int>();
-
-        var existingPermissionsCount = await _context.Permissions
-            .CountAsync(p => permissionIds.Contains(p.Id));
-
-        if (existingPermissionsCount != permissionIds.Count)
+        var requestedPermissions = await _context.Permissions
+            .Where(p => permissionIds.Contains(p.Id))
+            .Select(p => new { p.Id, p.Code })
+            .ToListAsync();
+        if (requestedPermissions.Count != permissionIds.Count)
         {
             return BadRequest(new ApiErrorResponse { Error = "INVALID_PERMISSION_IDS" });
+        }
+
+        if (role.Code == AppRoles.Admin)
+        {
+            var codes = requestedPermissions.Select(p => p.Code).ToHashSet(StringComparer.Ordinal);
+            if (!codes.Contains(AppPermissions.AdminRolesRead)
+                || !codes.Contains(AppPermissions.AdminRolesWrite))
+            {
+                return Conflict(new ApiErrorResponse { Error = "ADMIN_ROLE_REQUIRED_PERMISSIONS" });
+            }
         }
 
         var existingRolePermissions = await _context.RolePermissions
             .Where(rp => rp.RoleId == roleId && rp.Role.CompanyId == tenant.CompanyId)
             .ToListAsync();
 
-        _context.RolePermissions.RemoveRange(existingRolePermissions);
-        await _context.SaveChangesAsync();
+        var requestedIds = permissionIds.ToHashSet();
+        var existingIds = existingRolePermissions.Select(rp => rp.PermissionId).ToHashSet();
+        if (existingIds.SetEquals(requestedIds))
+        {
+            return NoContent();
+        }
 
-        var newRolePermissions = permissionIds.Select(permissionId => new RolePermission
+        _context.RolePermissions.RemoveRange(existingRolePermissions.Where(rp => !requestedIds.Contains(rp.PermissionId)));
+        var newRolePermissions = requestedIds.Except(existingIds).Select(permissionId => new RolePermission
         {
             RoleId = roleId,
             PermissionId = permissionId
         });
 
         await _context.RolePermissions.AddRangeAsync(newRolePermissions);
+        role.AuthorizationVersion = checked(role.AuthorizationVersion + 1);
         await _context.SaveChangesAsync();
         await tx.CommitAsync();
 

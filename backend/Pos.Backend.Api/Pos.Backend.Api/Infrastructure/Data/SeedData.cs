@@ -312,6 +312,7 @@ public static class SeedData
         var existingRolePermissionSet = existingRolePermissions
             .Select(rp => (rp.RoleId, rp.PermissionId))
             .ToHashSet();
+        var changedRoleIds = new HashSet<int>();
 
         foreach (var roleEntry in rolePermissionMap)
         {
@@ -333,9 +334,15 @@ public static class SeedData
                     RoleId = roleEntry.Key,
                     PermissionId = permission.Id
                 });
+                changedRoleIds.Add(roleEntry.Key);
             }
         }
 
+        foreach (var role in new[] { adminRole, supervisorRole, cashierRole }
+            .Where(r => changedRoleIds.Contains(r.Id)))
+        {
+            role.AuthorizationVersion = checked(role.AuthorizationVersion + 1);
+        }
         await context.SaveChangesAsync();
 
         var sriSettings = await context.CompanySriSettings

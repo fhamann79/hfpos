@@ -30,6 +30,8 @@ const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
   INVENTORY_CONCURRENCY_CONFLICT: 'El inventario cambió mientras se procesaba la operación. Vuelve a intentarlo.',
   INVALID_CREDENTIALS: 'Credenciales inválidas.',
   LAST_ACTIVE_ADMIN_REQUIRED: 'Debe permanecer al menos un administrador activo en la empresa.',
+  ADMIN_ROLE_REQUIRED_PERMISSIONS: 'El rol ADMIN debe conservar los permisos de lectura y escritura de roles.',
+  SESSION_STALE: 'La sesión dejó de estar vigente. Inicia sesión nuevamente.',
   ROLE_NOT_IN_COMPANY: 'El rol seleccionado no está disponible para esta empresa.',
   ROLE_INACTIVE_OR_INVALID: 'El rol de la sesión ya no es válido. Inicia sesión nuevamente.',
   PLATFORM_OPERATION_REQUIRED: 'Esta operación no está disponible en la administración de la empresa.',
