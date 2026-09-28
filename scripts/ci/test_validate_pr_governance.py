@@ -230,6 +230,13 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
         self.assertIn("trusted_codex_comment_event", self.workflow)
         self.assertIn("state: 'pending'", self.workflow)
 
+    def test_changed_files_come_from_authoritative_pr_api_not_endpoint_diff(self) -> None:
+        self.assertIn("github.paginate(github.rest.pulls.listFiles", self.workflow)
+        self.assertIn("Changed files from authoritative PR merge diff", self.workflow)
+        self.assertNotIn("git diff --name-only", self.workflow)
+        self.assertNotIn("git fetch --no-tags", self.workflow)
+        self.assertNotIn("head_repo", self.workflow)
+
     def test_current_head_review_objects_are_collected_fail_closed(self) -> None:
         self.assertIn("/pulls/{pr}/reviews", self.workflow)
         self.assertIn("kind\": \"review", self.workflow.replace("'", '"'))
