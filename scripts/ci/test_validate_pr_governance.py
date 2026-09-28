@@ -94,7 +94,7 @@ class IndependentReviewReadinessTests(unittest.TestCase):
             "id": comment_id,
             "kind": "clean_comment",
             "reviewer": reviewer,
-            "commit_id": commit_id or self.HEAD[:10],
+            "commit_id": commit_id or self.HEAD,
             "state": "CLEAN",
             "created_at": created_at,
             "blocker_count": 0,
@@ -126,8 +126,8 @@ class IndependentReviewReadinessTests(unittest.TestCase):
         errors = review_readiness_errors(evidence, self.HEAD, "R2")
         self.assertTrue(any("No trusted independent reviewer" in error for error in errors))
 
-    def test_short_clean_commit_must_match_current_head_prefix(self) -> None:
-        evidence = self.evidence(self.clean_comment(commit_id="b" * 10))
+    def test_short_sha_is_never_authoritative(self) -> None:
+        evidence = self.evidence(self.clean_comment(commit_id=self.HEAD[:10]))
         errors = review_readiness_errors(evidence, self.HEAD, "R2")
         self.assertTrue(any("No trusted independent reviewer" in error for error in errors))
 
@@ -142,10 +142,18 @@ class IndependentReviewReadinessTests(unittest.TestCase):
         self.assertTrue(any("BLOCKER" in error for error in errors))
         self.assertTrue(any("MAJOR" in error for error in errors))
 
-    def test_latest_current_attestation_wins(self) -> None:
+    def test_later_clean_attestation_cannot_erase_findings_on_same_head(self) -> None:
         evidence = self.evidence(
             self.review(blocker=1, created_at="2026-09-28T15:00:00Z"),
             self.clean_comment(created_at="2026-09-28T15:05:00Z"),
+        )
+        errors = review_readiness_errors(evidence, self.HEAD, "R2")
+        self.assertTrue(any("BLOCKER" in error for error in errors))
+
+    def test_findings_from_different_head_do_not_block_current_head(self) -> None:
+        evidence = self.evidence(
+            self.review(commit_id="b" * 40, blocker=1),
+            self.clean_comment(),
         )
         self.assertEqual([], review_readiness_errors(evidence, self.HEAD, "R2"))
 
