@@ -129,7 +129,7 @@ Every PR must:
 - report exact tests/checks executed and their result;
 - state what requires manual validation;
 - state whether real environments/data/SRI/certificates were used (the expected answer for autonomous work is `NO`);
-- include a human-readable independent-review summary, while treating GitHub review evidence—not editable PR prose—as the authoritative review gate;
+- include a human-readable independent-review summary, while treating trusted GitHub attestation evidence—not editable PR prose—as the authoritative review gate;
 - finish with an explicit merge state. AI-authored PRs start as `PENDIENTE`.
 
 Agents MUST NOT change a PR to a human-authorized merge state on Fernando's behalf.
@@ -146,8 +146,9 @@ For R2 and R3 changes, independent review is a distinct gate. The implementation
 - R2 review must test scope, contracts, permissions, error states, regressions and whether claimed tests actually cover the changed behavior.
 - R3 review must additionally challenge tenant boundaries, server-side authorization, transaction boundaries, money/stock/cash semantics, locking/concurrency/idempotency, EF migrations/constraints, SQL correctness/performance and SRI lifecycle as applicable.
 - Changes to `AGENTS.md`, governance scripts, GitHub Actions or branch/review controls require adversarial review for self-bypass, weakened gates, stale-review acceptance and unsafe `pull_request_target` usage. No untrusted PR code may execute with privileged tokens or real secrets.
-- `AI-Native Governance` MUST obtain authoritative review evidence from GitHub's review API while executing trusted base code. Editable PR fields cannot prove reviewer identity, review completion, reviewed SHA or finding counts.
-- A review is stale after the PR HEAD changes. R2/R3 readiness requires a trusted review whose GitHub `commit_id` equals the exact current PR HEAD SHA.
+- `AI-Native Governance` MUST obtain authoritative evidence from GitHub APIs while executing trusted base/default-branch code. Editable PR fields cannot prove reviewer identity, review completion, reviewed SHA or finding counts.
+- A trusted attestation may be a GitHub review with findings or a Codex clean-verdict issue comment. In either case, the attestation must identify the current PR HEAD (full SHA or an unambiguous sufficiently long SHA prefix).
+- A review is stale after the PR HEAD changes. R2/R3 readiness requires a trusted attestation for the exact current HEAD.
 - The initial trusted AI reviewer identity is `chatgpt-codex-connector[bot]`. Modifying the trusted-reviewer set is itself governance work and requires adversarial independent review.
 - If the preferred independent reviewer is unavailable, record that fact and use a real fallback; never label an implementer's second pass as independent.
 - Independent AI review never authorizes merge, production changes, shared/persistent database mutation, real SRI operations or use of real certificates/secrets. Fernando retains those decisions.
