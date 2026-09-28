@@ -10,7 +10,7 @@ import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { SelectModule } from 'primeng/select';
-import { TableModule } from 'primeng/table';
+import { TableLazyLoadEvent, TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { TextareaModule } from 'primeng/textarea';
 import { ToastModule } from 'primeng/toast';
@@ -27,7 +27,7 @@ import {
   UpdateCustomerRequest,
   customerIdentificationTypeLabel,
 } from '../../models/customer.model';
-import { CustomerService } from '../../services/customer.service';
+import { CustomerService, CustomerPageQuery } from '../../services/customer.service';
 
 @Component({
   selector: 'app-customers-page',
@@ -62,6 +62,9 @@ export class CustomersPage implements OnInit {
   private readonly fb = inject(FormBuilder);
 
   readonly customers = signal<Customer[]>([]);
+  readonly totalItems = signal(0);
+  readonly totalPages = signal(0);
+  readonly currentPage = signal(1);
   readonly loading = signal(false);
   readonly saving = signal(false);
   readonly errorMessage = signal('');
@@ -70,10 +73,7 @@ export class CustomersPage implements OnInit {
 
   readonly identificationTypeOptions = CUSTOMER_IDENTIFICATION_TYPE_OPTIONS;
   readonly statusOptions = CUSTOMER_STATUS_OPTIONS;
-
   readonly canWrite = computed(() => this.permissionService.hasPermission(PERMISSIONS.customersWrite));
-  readonly activeCount = computed(() => this.customers().filter((customer) => customer.isActive).length);
-  readonly inactiveCount = computed(() => this.customers().filter((customer) => !customer.isActive).length);
 
   readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.maxLength(150)]],
@@ -89,62 +89,87 @@ export class CustomersPage implements OnInit {
   search = '';
   status: CustomerStatusFilter = 'active';
   dialogVisible = false;
+  first = 0;
+  rows = 15;
+  sortBy: CustomerPageQuery['sortBy'];
+  sortDir: CustomerPageQuery['sortDir'];
 
   get isEditMode(): boolean {
     return this.selectedCustomer() !== null;
   }
 
   ngOnInit(): void {
-    this.loadCustomers();
+    this.loadCustomers(1, this.rows);
   }
 
-  loadCustomers(): void {
+  loadCustomers(page = this.currentPage(), pageSize = this.rows): void {
     this.loading.set(true);
     this.errorMessage.set('');
 
-    this.customerService.getAll({ search: this.search, status: this.status, take: 200 }).subscribe({
-      next: (customers) => {
-        this.customers.set(customers);
-        this.loading.set(false);
-      },
-      error: (error: HttpErrorResponse) => {
-        this.loading.set(false);
-        this.errorMessage.set(resolveHttpErrorMessage(error, 'No se pudieron cargar los clientes.'));
-      },
-    });
+    this.customerService
+      .getPage({
+        search: this.search,
+        status: this.status,
+        page,
+        pageSize,
+        sortBy: this.sortBy,
+        sortDir: this.sortDir,
+      })
+      .subscribe({
+        next: (result) => {
+          if (result.totalPages > 0 && result.page > result.totalPages) {
+            this.loadCustomers(result.totalPages, result.pageSize);
+            return;
+          }
+
+          this.customers.set(result.items);
+          this.totalItems.set(result.totalItems);
+          this.totalPages.set(result.totalPages);
+          this.rows = result.pageSize;
+          this.first = result.totalItems === 0 ? 0 : (result.page - 1) * result.pageSize;
+          this.currentPage.set(result.totalItems === 0 ? 1 : result.page);
+          this.loading.set(false);
+        },
+        error: (error: HttpErrorResponse) => {
+          this.loading.set(false);
+          this.errorMessage.set(resolveHttpErrorMessage(error, 'No se pudieron cargar los clientes.'));
+        },
+      });
+  }
+
+  onCustomersLazyLoad(event: TableLazyLoadEvent): void {
+    const rows = event.rows ?? this.rows;
+    const first = event.first ?? this.first;
+    const sortField = typeof event.sortField === 'string' ? event.sortField : undefined;
+    this.sortBy = sortField === 'name' || sortField === 'isActive' || sortField === 'updatedAt' ? sortField : undefined;
+    this.sortDir = event.sortOrder === -1 ? 'desc' : event.sortOrder === 1 ? 'asc' : undefined;
+    this.loadCustomers(Math.floor(first / rows) + 1, rows);
+  }
+
+  applyFilters(): void {
+    this.first = 0;
+    this.currentPage.set(1);
+    this.loadCustomers(1, this.rows);
   }
 
   clearFilters(): void {
     this.search = '';
     this.status = 'active';
-    this.loadCustomers();
+    this.sortBy = undefined;
+    this.sortDir = undefined;
+    this.applyFilters();
   }
 
   openCreateDialog(): void {
-    if (!this.canWrite()) {
-      return;
-    }
-
+    if (!this.canWrite()) return;
     this.selectedCustomer.set(null);
-    this.form.reset({
-      name: '',
-      identificationType: '',
-      identification: '',
-      email: '',
-      phone: '',
-      address: '',
-      notes: '',
-      isActive: true,
-    });
+    this.form.reset({ name: '', identificationType: '', identification: '', email: '', phone: '', address: '', notes: '', isActive: true });
     this.formError.set('');
     this.dialogVisible = true;
   }
 
   openEditDialog(customer: Customer): void {
-    if (!this.canWrite()) {
-      return;
-    }
-
+    if (!this.canWrite()) return;
     this.selectedCustomer.set(customer);
     this.form.setValue({
       name: customer.name,
@@ -168,12 +193,8 @@ export class CustomersPage implements OnInit {
   }
 
   save(): void {
-    if (!this.canWrite()) {
-      return;
-    }
-
+    if (!this.canWrite()) return;
     this.formError.set('');
-
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       return;
@@ -187,7 +208,6 @@ export class CustomersPage implements OnInit {
 
     const selected = this.selectedCustomer();
     this.saving.set(true);
-
     if (selected) {
       this.customerService.update(selected.id, this.buildUpdatePayload()).subscribe({
         next: () => this.handleSaveSuccess('Cliente actualizado.'),
@@ -197,25 +217,20 @@ export class CustomersPage implements OnInit {
     }
 
     this.customerService.create(this.buildCreatePayload()).subscribe({
-      next: () => this.handleSaveSuccess('Cliente creado.'),
+      next: () => this.handleSaveSuccess('Cliente creado.', true),
       error: (error: HttpErrorResponse) => this.handleSaveError(error),
     });
   }
 
   confirmDeactivate(customer: Customer): void {
-    if (!this.canWrite() || !customer.isActive) {
-      return;
-    }
-
+    if (!this.canWrite() || !customer.isActive) return;
     this.confirmationService.confirm({
       header: 'Desactivar cliente',
       message: `Deseas desactivar el cliente "${customer.name}"?`,
       icon: 'pi pi-exclamation-triangle',
       acceptLabel: 'Desactivar',
       rejectLabel: 'Cancelar',
-      acceptButtonProps: {
-        severity: 'danger',
-      },
+      acceptButtonProps: { severity: 'danger' },
       accept: () => {
         this.customerService.deactivate(customer.id).subscribe({
           next: () => {
@@ -229,10 +244,7 @@ export class CustomersPage implements OnInit {
   }
 
   confirmActivate(customer: Customer): void {
-    if (!this.canWrite() || customer.isActive) {
-      return;
-    }
-
+    if (!this.canWrite() || customer.isActive) return;
     this.confirmationService.confirm({
       header: 'Reactivar cliente',
       message: `Deseas reactivar el cliente "${customer.name}"?`,
@@ -257,7 +269,6 @@ export class CustomersPage implements OnInit {
 
   private buildCreatePayload(): CreateCustomerRequest {
     const values = this.form.getRawValue();
-
     return {
       name: values.name.trim(),
       identificationType: this.normalizeOptionalText(values.identificationType),
@@ -271,66 +282,44 @@ export class CustomersPage implements OnInit {
 
   private buildUpdatePayload(): UpdateCustomerRequest {
     const values = this.form.getRawValue();
-
-    return {
-      ...this.buildCreatePayload(),
-      isActive: values.isActive,
-    };
+    return { ...this.buildCreatePayload(), isActive: values.isActive };
   }
 
   private validateFiscalFields(): string {
     const values = this.form.getRawValue();
     const identificationType = values.identificationType.trim();
     const identification = values.identification.trim();
-
-    if (identification && !identificationType) {
-      return 'Selecciona el tipo de identificacion del cliente.';
-    }
-
-    if (identificationType && !identification) {
-      return 'Ingresa el numero de identificacion del cliente.';
-    }
-
-    if (!identificationType || !identification) {
-      return '';
-    }
+    if (identification && !identificationType) return 'Selecciona el tipo de identificacion del cliente.';
+    if (identificationType && !identification) return 'Ingresa el numero de identificacion del cliente.';
+    if (!identificationType || !identification) return '';
 
     switch (identificationType) {
-      case '04':
-        return /^\d{13}$/.test(identification) ? '' : 'El RUC debe tener 13 digitos.';
-      case '05':
-        return /^\d{10}$/.test(identification) ? '' : 'La cedula debe tener 10 digitos.';
-      case '06':
-        return /^[A-Za-z0-9]{1,20}$/.test(identification) ? '' : 'El pasaporte debe ser alfanumerico y maximo 20 caracteres.';
-      case '07':
-        return identification === '9999999999999' ? '' : 'Consumidor final debe usar identificacion 9999999999999.';
-      default:
-        return 'Selecciona un tipo de identificacion valido.';
+      case '04': return /^\d{13}$/.test(identification) ? '' : 'El RUC debe tener 13 digitos.';
+      case '05': return /^\d{10}$/.test(identification) ? '' : 'La cedula debe tener 10 digitos.';
+      case '06': return /^[A-Za-z0-9]{1,20}$/.test(identification) ? '' : 'El pasaporte debe ser alfanumerico y maximo 20 caracteres.';
+      case '07': return identification === '9999999999999' ? '' : 'Consumidor final debe usar identificacion 9999999999999.';
+      default: return 'Selecciona un tipo de identificacion valido.';
     }
   }
 
-  private handleSaveSuccess(detail: string): void {
+  private handleSaveSuccess(detail: string, resetToFirstPage = false): void {
     this.messageService.add({ severity: 'success', summary: 'Listo', detail });
     this.saving.set(false);
     this.closeDialog();
-    this.loadCustomers();
+    if (resetToFirstPage) {
+      this.applyFilters();
+    } else {
+      this.loadCustomers();
+    }
   }
 
   private handleSaveError(error: HttpErrorResponse): void {
     this.saving.set(false);
-    this.messageService.add({
-      severity: 'error',
-      summary: 'Error',
-      detail: resolveHttpErrorMessage(error, 'No se pudo guardar el cliente.'),
-    });
+    this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error, 'No se pudo guardar el cliente.') });
   }
 
   private showActionError(error: HttpErrorResponse, fallback: string): void {
-    this.messageService.add({
-      severity: 'error',
-      summary: 'Error',
-      detail: resolveHttpErrorMessage(error, fallback),
-    });
+    this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error, fallback) });
   }
 
   private normalizeOptionalText(value: string): string | null {
