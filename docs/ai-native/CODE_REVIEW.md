@@ -23,7 +23,7 @@ Repository code cannot enable GitHub/Codex account integrations or GitHub App cr
 
 The App private key is infrastructure credential material. It must never be committed, pasted into PRs, stored as a normal repository-wide secret, or exposed to PR-head workflows. The `main`-only environment policy is a required security boundary: if that restriction is missing or broadened, remove/disable the App secrets until the restriction is restored.
 
-Until automatic Codex review is confirmed, request review in the PR with:
+Until automatic Codex review is confirmed, request review in the PR with a first line containing only:
 
 ```text
 @codex review
@@ -84,15 +84,20 @@ Therefore HFPOS separates **review evidence**, **trusted workflow code**, and **
 
 A PR workflow may imitate the text `AI-Native Governance`, but it cannot possess the required App identity if the environment remains restricted to `main`, so that imitation cannot satisfy the protected rule once the expected source is configured.
 
-## Review request invalidation
+## Durable review-request boundary
 
-A new explicit `@codex review` on an unchanged HEAD invalidates an earlier clean result until Codex produces a newer verdict. The request is authoritative only when it is posted by the PR author or by an account whose GitHub `author_association` is `OWNER`, `MEMBER`, or `COLLABORATOR`.
+A new authorized `@codex review` on an unchanged HEAD invalidates an earlier clean result until Codex produces a newer verdict. The request is authoritative only when it is posted by the PR author or by an account whose GitHub `author_association` is `OWNER`, `MEMBER`, or `COLLABORATOR`, and the command occupies the first line by itself.
 
-Governance does **not** depend on a particular Actions run surviving concurrency queues. On every evaluation it reads the current GitHub issue comments, derives the latest authorized review request from the request comment's own immutable `created_at`, and accepts a clean Codex verdict only when that verdict was created later than the request.
+The workflow deliberately separates **recording** from **evaluation**:
 
-For an authorized review-request event, or when trusted Codex issue-comment evidence changes, the dedicated App publishes `AI-Native Governance = pending` before the current state is evaluated. That keeps the gate fail-closed while the evidence is transitioning.
+1. `record_review_event` has **no concurrency group**, so GitHub Actions cannot compact away a queued review-request event.
+2. It publishes `AI-Native Governance = pending` first. If later persistence fails, the gate remains fail-closed.
+3. It then persists an App-authenticated commit status named `AI-Native Review Request` on the exact HEAD. Its description encodes the original GitHub request comment's immutable `(created_at, comment_id)` boundary.
+4. Editing or deleting the original request comment cannot remove that commit-status history. A later evaluator takes the maximum boundary from both surviving authorized comments and durable App markers.
+5. The evaluator has its own per-PR concurrency with cancellation. After acquiring that evaluator lock for a newly recorded request, it republishes `AI-Native Governance = pending` and exits without trying to certify readiness.
+6. A Codex clean verdict is eligible only when its own `(created_at, comment_id)` tuple is strictly greater than the latest durable request tuple. The numeric comment ID breaks ties when GitHub timestamps share the same second.
 
-If Codex returns findings, the current HEAD remains blocked because the GitHub review object is evidence against it. If Codex returns an accepted clean comment, the issue-comment event causes governance to re-evaluate the exact current HEAD.
+This means queue coalescing, deletion of a request comment, delayed workflow startup and same-second timestamps cannot resurrect a clean verdict that predates a newer review request.
 
 ## Automatic re-evaluation
 
@@ -103,7 +108,7 @@ Governance listens to:
 
 Those event families execute from the trusted default/base ref, which is required for access to the protected governance environment. The workflow never checks out or executes PR code. Changed paths are obtained from GitHub's pull-request files API (`pulls.listFiles`), which reflects the PR's own merge diff instead of comparing the current `main` tip against the PR endpoint manually.
 
-A new push invalidates old review evidence automatically because the exact HEAD changes. Deleting or editing the accepted clean Codex comment triggers another current-state evaluation.
+Trusted Codex issue-comment creation/edit/deletion causes the non-concurrent recorder to publish `AI-Native Governance = pending` before the evaluator reconstructs current evidence. A new push invalidates old review evidence automatically because the exact HEAD changes. Deleting or editing an accepted clean Codex comment therefore cannot leave an old green state authoritative.
 
 ## HFPOS review focus
 
@@ -128,7 +133,9 @@ Governance changes require a different adversarial lens:
 - can a PR-head workflow request the governance environment or read its App secrets?;
 - can a stale review be accepted after a new push or after a newer authorized review request?;
 - can queue coalescing lose a review request and resurrect older clean evidence?;
+- can editing/deleting the request erase its review boundary?;
 - can an unauthorized commenter hold governance pending indefinitely?;
+- can same-second request/verdict timestamps be ordered incorrectly?;
 - can editable PR metadata impersonate trusted review evidence?;
 - can deletion/editing/dismissal make a reviewed failing HEAD clean without a code change?;
 - can a quoted or malformed clean-verdict marker be mistaken for a real clean review?;
