@@ -188,6 +188,8 @@ def review_readiness_errors(
     if evidence_head != current_head:
         fail(errors, "Trusted review evidence is stale or does not match the current PR HEAD.")
 
+    sticky_findings = bool(review_evidence.get("sticky_findings"))
+
     attestations = review_evidence.get("attestations")
     if not isinstance(attestations, list):
         return errors + ["Trusted review evidence does not contain an attestation list."]
@@ -208,8 +210,6 @@ def review_readiness_errors(
         if kind not in {"review", "clean_comment"}:
             continue
 
-        # Preserve all trusted findings for the immutable HEAD even if a review
-        # is later dismissed. Dismissal must not become a finding-erasure API.
         current_attestations.append(attestation)
         if kind == "clean_comment" and state == "CLEAN":
             positive_attestations.append(attestation)
@@ -221,8 +221,6 @@ def review_readiness_errors(
             "No active trusted independent reviewer attestation exists for the current PR HEAD."
         ]
 
-    # Findings are sticky for an immutable HEAD. A later clean verdict or a
-    # dismissed review MUST NOT erase an earlier BLOCKER/MAJOR on the same commit.
     blocker_count = sum(int(item.get("blocker_count") or 0) for item in current_attestations)
     major_count = sum(int(item.get("major_count") or 0) for item in current_attestations)
     changes_requested = sum(
@@ -233,8 +231,14 @@ def review_readiness_errors(
     )
     major_count += changes_requested
 
+    # A separate commit-status ledger is written by trusted default-branch
+    # workflow code as soon as a blocking review event is observed. It survives
+    # deletion/editing of the original inline comment and is immutable per HEAD.
+    if sticky_findings:
+        blocker_count += 1
+
     if blocker_count != 0:
-        fail(errors, f"Trusted independent review has {blocker_count} unresolved BLOCKER finding(s) on this HEAD.")
+        fail(errors, f"Trusted independent review has persistent BLOCKER finding(s) on this HEAD ({blocker_count}).")
     if major_count != 0:
         fail(errors, f"Trusted independent review has {major_count} unresolved MAJOR/change-request finding(s) on this HEAD.")
 
