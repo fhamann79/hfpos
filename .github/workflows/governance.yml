@@ -25,6 +25,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Run trusted governance regression tests
+        run: python3 scripts/ci/test_validate_pr_governance.py
+
       - name: Fetch PR head without executing PR code
         env:
           HEAD_REPO: ${{ github.event.pull_request.head.repo.clone_url }}
