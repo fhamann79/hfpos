@@ -9,7 +9,8 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
-import { TableModule } from 'primeng/table';
+import { SelectModule } from 'primeng/select';
+import { TableLazyLoadEvent, TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { TextareaModule } from 'primeng/textarea';
 import { ToastModule } from 'primeng/toast';
@@ -18,7 +19,7 @@ import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
 import { CreateSupplierRequest, Supplier, UpdateSupplierRequest } from '../../models/supplier.model';
-import { SupplierService } from '../../services/supplier.service';
+import { SupplierPageQuery, SupplierService, SupplierStatusFilter } from '../../services/supplier.service';
 
 @Component({
   selector: 'app-suppliers-page',
@@ -35,6 +36,7 @@ import { SupplierService } from '../../services/supplier.service';
     DialogModule,
     InputTextModule,
     MessageModule,
+    SelectModule,
     TagModule,
     TextareaModule,
     ToastModule,
@@ -52,14 +54,19 @@ export class SuppliersPage implements OnInit {
   private readonly fb = inject(FormBuilder);
 
   readonly suppliers = signal<Supplier[]>([]);
+  readonly totalItems = signal(0);
+  readonly totalPages = signal(0);
+  readonly currentPage = signal(1);
   readonly loading = signal(false);
   readonly saving = signal(false);
   readonly errorMessage = signal('');
   readonly selectedSupplier = signal<Supplier | null>(null);
-
   readonly canWrite = computed(() => this.permissionService.hasPermission(PERMISSIONS.suppliersWrite));
-  readonly activeCount = computed(() => this.suppliers().filter((supplier) => supplier.isActive).length);
-  readonly inactiveCount = computed(() => this.suppliers().filter((supplier) => !supplier.isActive).length);
+  readonly statusOptions = [
+    { label: 'Todos', value: 'all' as SupplierStatusFilter },
+    { label: 'Activos', value: 'active' as SupplierStatusFilter },
+    { label: 'Inactivos', value: 'inactive' as SupplierStatusFilter },
+  ];
 
   readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.maxLength(150)]],
@@ -72,60 +79,81 @@ export class SuppliersPage implements OnInit {
   });
 
   search = '';
+  status: SupplierStatusFilter = 'all';
   dialogVisible = false;
+  first = 0;
+  rows = 15;
+  sortBy: SupplierPageQuery['sortBy'];
+  sortDir: SupplierPageQuery['sortDir'];
 
   get isEditMode(): boolean {
     return this.selectedSupplier() !== null;
   }
 
   ngOnInit(): void {
-    this.loadSuppliers();
+    this.loadSuppliers(1, this.rows);
   }
 
-  loadSuppliers(): void {
+  loadSuppliers(page = this.currentPage(), pageSize = this.rows): void {
     this.loading.set(true);
     this.errorMessage.set('');
 
-    this.supplierService.getAll(this.search).subscribe({
-      next: (suppliers) => {
-        this.suppliers.set(suppliers);
-        this.loading.set(false);
-      },
-      error: (error: HttpErrorResponse) => {
-        this.loading.set(false);
-        this.errorMessage.set(resolveHttpErrorMessage(error, 'No se pudieron cargar los proveedores.'));
-      },
-    });
+    this.supplierService
+      .getPage({ search: this.search, status: this.status, page, pageSize, sortBy: this.sortBy, sortDir: this.sortDir })
+      .subscribe({
+        next: (result) => {
+          if (result.totalPages > 0 && result.page > result.totalPages) {
+            this.loadSuppliers(result.totalPages, result.pageSize);
+            return;
+          }
+
+          this.suppliers.set(result.items);
+          this.totalItems.set(result.totalItems);
+          this.totalPages.set(result.totalPages);
+          this.rows = result.pageSize;
+          this.first = result.totalItems === 0 ? 0 : (result.page - 1) * result.pageSize;
+          this.currentPage.set(result.totalItems === 0 ? 1 : result.page);
+          this.loading.set(false);
+        },
+        error: (error: HttpErrorResponse) => {
+          this.loading.set(false);
+          this.errorMessage.set(resolveHttpErrorMessage(error, 'No se pudieron cargar los proveedores.'));
+        },
+      });
+  }
+
+  onSuppliersLazyLoad(event: TableLazyLoadEvent): void {
+    const rows = event.rows ?? this.rows;
+    const first = event.first ?? this.first;
+    const sortField = typeof event.sortField === 'string' ? event.sortField : undefined;
+    this.sortBy = sortField === 'name' || sortField === 'isActive' || sortField === 'updatedAt' ? sortField : undefined;
+    this.sortDir = event.sortOrder === -1 ? 'desc' : event.sortOrder === 1 ? 'asc' : undefined;
+    this.loadSuppliers(Math.floor(first / rows) + 1, rows);
+  }
+
+  applyFilters(): void {
+    this.first = 0;
+    this.currentPage.set(1);
+    this.loadSuppliers(1, this.rows);
   }
 
   clearSearch(): void {
     this.search = '';
-    this.loadSuppliers();
+    this.status = 'all';
+    this.sortBy = undefined;
+    this.sortDir = undefined;
+    this.applyFilters();
   }
 
   openCreateDialog(): void {
-    if (!this.canWrite()) {
-      return;
-    }
-
+    if (!this.canWrite()) return;
     this.selectedSupplier.set(null);
-    this.form.reset({
-      name: '',
-      identification: '',
-      email: '',
-      phone: '',
-      address: '',
-      notes: '',
-      isActive: true,
-    });
+    this.form.reset({ name: '', identification: '', email: '', phone: '', address: '', notes: '', isActive: true });
     this.dialogVisible = true;
   }
 
   openEditDialog(supplier: Supplier): void {
-    if (!this.canWrite()) {
-      return;
-    }
-
+    if (!this.canWrite()) return;
     this.selectedSupplier.set(supplier);
     this.form.setValue({
       name: supplier.name,
@@ -146,10 +174,7 @@ export class SuppliersPage implements OnInit {
   }
 
   save(): void {
-    if (!this.canWrite()) {
-      return;
-    }
-
+    if (!this.canWrite()) return;
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       return;
@@ -157,7 +182,6 @@ export class SuppliersPage implements OnInit {
 
     const selected = this.selectedSupplier();
     this.saving.set(true);
-
     if (selected) {
       this.supplierService.update(selected.id, this.buildUpdatePayload()).subscribe({
         next: () => this.handleSaveSuccess('Proveedor actualizado.'),
@@ -167,25 +191,20 @@ export class SuppliersPage implements OnInit {
     }
 
     this.supplierService.create(this.buildCreatePayload()).subscribe({
-      next: () => this.handleSaveSuccess('Proveedor creado.'),
+      next: () => this.handleSaveSuccess('Proveedor creado.', true),
       error: (error: HttpErrorResponse) => this.handleSaveError(error),
     });
   }
 
   confirmDeactivate(supplier: Supplier): void {
-    if (!this.canWrite() || !supplier.isActive) {
-      return;
-    }
-
+    if (!this.canWrite() || !supplier.isActive) return;
     this.confirmationService.confirm({
       header: 'Desactivar proveedor',
       message: `Deseas desactivar el proveedor "${supplier.name}"?`,
       icon: 'pi pi-exclamation-triangle',
       acceptLabel: 'Desactivar',
       rejectLabel: 'Cancelar',
-      acceptButtonProps: {
-        severity: 'danger',
-      },
+      acceptButtonProps: { severity: 'danger' },
       accept: () => {
         this.supplierService.deactivate(supplier.id).subscribe({
           next: () => {
@@ -193,11 +212,7 @@ export class SuppliersPage implements OnInit {
             this.loadSuppliers();
           },
           error: (error: HttpErrorResponse) => {
-            this.messageService.add({
-              severity: 'error',
-              summary: 'Error',
-              detail: resolveHttpErrorMessage(error, 'No se pudo desactivar el proveedor.'),
-            });
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error, 'No se pudo desactivar el proveedor.') });
           },
         });
       },
@@ -206,7 +221,6 @@ export class SuppliersPage implements OnInit {
 
   private buildCreatePayload(): CreateSupplierRequest {
     const values = this.form.getRawValue();
-
     return {
       name: values.name.trim(),
       identification: this.normalizeOptionalText(values.identification),
@@ -219,27 +233,20 @@ export class SuppliersPage implements OnInit {
 
   private buildUpdatePayload(): UpdateSupplierRequest {
     const values = this.form.getRawValue();
-
-    return {
-      ...this.buildCreatePayload(),
-      isActive: values.isActive,
-    };
+    return { ...this.buildCreatePayload(), isActive: values.isActive };
   }
 
-  private handleSaveSuccess(detail: string): void {
+  private handleSaveSuccess(detail: string, resetToFirstPage = false): void {
     this.messageService.add({ severity: 'success', summary: 'Listo', detail });
     this.saving.set(false);
     this.closeDialog();
-    this.loadSuppliers();
+    if (resetToFirstPage) this.applyFilters();
+    else this.loadSuppliers();
   }
 
   private handleSaveError(error: HttpErrorResponse): void {
     this.saving.set(false);
-    this.messageService.add({
-      severity: 'error',
-      summary: 'Error',
-      detail: resolveHttpErrorMessage(error, 'No se pudo guardar el proveedor.'),
-    });
+    this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error, 'No se pudo guardar el proveedor.') });
   }
 
   private normalizeOptionalText(value: string): string | null {
