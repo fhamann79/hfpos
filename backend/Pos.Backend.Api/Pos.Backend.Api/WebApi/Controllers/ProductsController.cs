@@ -18,6 +18,11 @@ namespace Pos.Backend.Api.WebApi.Controllers;
 [RequireOperationalContext]
 public class ProductsController : ControllerBase
 {
+    private const int DefaultPageSize = 30;
+    private const int MaxPageSize = 200;
+    private const int DefaultLookupTake = 30;
+    private const int MaxLookupTake = 200;
+
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
     private readonly IMasterDataLifecycleService _lifecycle;
@@ -35,6 +40,8 @@ public class ProductsController : ControllerBase
         _productCostService = productCostService;
     }
 
+    // Legacy full catalog endpoint kept temporarily for the current POS snapshot.
+    // New administrative and lookup consumers must use /page or /lookup.
     [HttpGet]
     [Authorize(Policy = AppPermissions.CatalogProductsRead)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -44,23 +51,73 @@ public class ProductsController : ControllerBase
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
         var products = await _context.Products
+            .AsNoTracking()
             .Where(p => p.CompanyId == operationalContext.CompanyId)
-            .Select(p => new ProductDto
-            {
-                Id = p.Id,
-                CategoryId = p.CategoryId,
-                Name = p.Name,
-                Barcode = p.Barcode,
-                InternalCode = p.InternalCode,
-                Price = p.Price,
-                Cost = p.Cost,
-                MinimumStock = p.MinimumStock,
-                VatCategory = p.VatCategory,
-                IsActive = p.IsActive
-            })
+            .OrderBy(p => p.Name)
+            .ThenBy(p => p.Id)
+            .Select(p => ToDto(p))
             .ToListAsync();
 
         return Ok(products);
+    }
+
+    [HttpGet("lookup")]
+    [Authorize(Policy = AppPermissions.CatalogProductsRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IEnumerable<ProductDto>>> Lookup(
+        [FromQuery] string? search,
+        [FromQuery] int take = DefaultLookupTake,
+        [FromQuery] int? categoryId = null)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var limit = Math.Clamp(take, 1, MaxLookupTake);
+        var query = BuildFilteredQuery(operationalContext.CompanyId, search, "active", categoryId);
+
+        var products = await query
+            .OrderBy(p => p.Name)
+            .ThenBy(p => p.Id)
+            .Take(limit)
+            .Select(p => ToDto(p))
+            .ToListAsync();
+
+        return Ok(products);
+    }
+
+    [HttpGet("page")]
+    [Authorize(Policy = AppPermissions.CatalogProductsRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<PagedResultDto<ProductDto>>> GetPage(
+        [FromQuery] string? search,
+        [FromQuery] string? status = "all",
+        [FromQuery] int? categoryId = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = DefaultPageSize,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortDir = null)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var normalizedPage = Math.Max(page, 1);
+        var normalizedPageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+        var query = BuildFilteredQuery(operationalContext.CompanyId, search, status, categoryId);
+        var totalItems = await query.CountAsync();
+        var ordered = ApplyOrdering(query, sortBy, sortDir);
+
+        var items = await ordered
+            .Skip((normalizedPage - 1) * normalizedPageSize)
+            .Take(normalizedPageSize)
+            .Select(p => ToDto(p))
+            .ToListAsync();
+
+        return Ok(new PagedResultDto<ProductDto>
+        {
+            Items = items,
+            Page = normalizedPage,
+            PageSize = normalizedPageSize,
+            TotalItems = totalItems,
+            TotalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)normalizedPageSize)
+        });
     }
 
     [HttpPost]
@@ -138,21 +195,7 @@ public class ProductsController : ControllerBase
         await _context.SaveChangesAsync();
         await transaction.CommitAsync();
 
-        var response = new ProductDto
-        {
-            Id = product.Id,
-            CategoryId = product.CategoryId,
-            Name = product.Name,
-            Barcode = product.Barcode,
-            InternalCode = product.InternalCode,
-            Price = product.Price,
-            Cost = product.Cost,
-            MinimumStock = product.MinimumStock,
-            VatCategory = product.VatCategory,
-            IsActive = product.IsActive
-        };
-
-        return CreatedAtAction(nameof(GetById), new { id = product.Id }, response);
+        return CreatedAtAction(nameof(GetById), new { id = product.Id }, ToDto(product));
     }
 
     [HttpGet("{id:int}")]
@@ -164,20 +207,9 @@ public class ProductsController : ControllerBase
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
         var product = await _context.Products
+            .AsNoTracking()
             .Where(p => p.Id == id && p.CompanyId == operationalContext.CompanyId)
-            .Select(p => new ProductDto
-            {
-                Id = p.Id,
-                CategoryId = p.CategoryId,
-                Name = p.Name,
-                Barcode = p.Barcode,
-                InternalCode = p.InternalCode,
-                Price = p.Price,
-                Cost = p.Cost,
-                MinimumStock = p.MinimumStock,
-                VatCategory = p.VatCategory,
-                IsActive = p.IsActive
-            })
+            .Select(p => ToDto(p))
             .FirstOrDefaultAsync();
 
         if (product is null)
@@ -268,6 +300,60 @@ public class ProductsController : ControllerBase
         return NoContent();
     }
 
+    private IQueryable<Product> BuildFilteredQuery(int companyId, string? search, string? status, int? categoryId)
+    {
+        var query = _context.Products
+            .AsNoTracking()
+            .Where(p => p.CompanyId == companyId);
+
+        if (categoryId.HasValue)
+        {
+            query = query.Where(p => p.CategoryId == categoryId.Value);
+        }
+
+        var normalizedStatus = status?.Trim().ToLowerInvariant();
+        query = normalizedStatus switch
+        {
+            "active" or "activo" or "activos" => query.Where(p => p.IsActive),
+            "inactive" or "inactivo" or "inactivos" => query.Where(p => !p.IsActive),
+            _ => query
+        };
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(p =>
+                p.Name.ToLower().Contains(term)
+                || (p.Barcode != null && p.Barcode.ToLower().Contains(term))
+                || (p.InternalCode != null && p.InternalCode.ToLower().Contains(term)));
+        }
+
+        return query;
+    }
+
+    private static IOrderedQueryable<Product> ApplyOrdering(IQueryable<Product> query, string? sortBy, string? sortDir)
+    {
+        var descending = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+        var normalizedSort = sortBy?.Trim().ToLowerInvariant();
+
+        return normalizedSort switch
+        {
+            "name" => descending
+                ? query.OrderByDescending(p => p.Name).ThenByDescending(p => p.Id)
+                : query.OrderBy(p => p.Name).ThenBy(p => p.Id),
+            "price" => descending
+                ? query.OrderByDescending(p => p.Price).ThenByDescending(p => p.Id)
+                : query.OrderBy(p => p.Price).ThenBy(p => p.Id),
+            "cost" => descending
+                ? query.OrderByDescending(p => p.Cost).ThenByDescending(p => p.Id)
+                : query.OrderBy(p => p.Cost).ThenBy(p => p.Id),
+            "isactive" => descending
+                ? query.OrderByDescending(p => p.IsActive).ThenBy(p => p.Name).ThenBy(p => p.Id)
+                : query.OrderBy(p => p.IsActive).ThenBy(p => p.Name).ThenBy(p => p.Id),
+            _ => query.OrderByDescending(p => p.IsActive).ThenBy(p => p.Name).ThenBy(p => p.Id)
+        };
+    }
+
     private async Task<ObjectResult?> ValidateUniqueIdentifiersAsync(
         int companyId,
         string? barcode,
@@ -303,6 +389,21 @@ public class ProductsController : ControllerBase
         return null;
     }
 
+    private static ProductDto ToDto(Product product)
+        => new()
+        {
+            Id = product.Id,
+            CategoryId = product.CategoryId,
+            Name = product.Name,
+            Barcode = product.Barcode,
+            InternalCode = product.InternalCode,
+            Price = product.Price,
+            Cost = product.Cost,
+            MinimumStock = product.MinimumStock,
+            VatCategory = product.VatCategory,
+            IsActive = product.IsActive
+        };
+
     private static string? NormalizeOptionalIdentifier(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -314,9 +415,7 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> Deactivate(int id)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-
         await _lifecycle.SetProductActiveAsync(operationalContext.CompanyId, id, false);
-
         return NoContent();
     }
 
