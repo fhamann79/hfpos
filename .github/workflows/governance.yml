@@ -11,7 +11,8 @@ on:
 # checks out or executes code from the PR HEAD. Its built-in GITHUB_TOKEN cannot
 # write commit statuses. The required governance status is emitted only with the
 # dedicated HFPOS Governance Gate GitHub App token stored in a protected
-# environment.
+# environment. That environment MUST be restricted to Selected branches and
+# tags -> Branch main only before its App secrets are added.
 permissions:
   contents: read
   pull-requests: read
@@ -24,7 +25,8 @@ concurrency:
 jobs:
   governance:
     if: >-
-      github.event_name != 'issue_comment' || github.event.issue.pull_request
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'issue_comment' || github.event.issue.pull_request)
     name: Governance Event Processor
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -83,6 +85,21 @@ jobs:
           script: |
             const headSha = '${{ steps.pr.outputs.head_sha }}';
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            // Persistent, append-only lower bound for review freshness on this
+            // immutable HEAD. A later clean verdict must be newer than the most
+            // recent request marker. Spoofed extra markers can only keep the
+            // gate blocked; they cannot make stale evidence valid.
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: headSha,
+              state: 'success',
+              context: 'AI-Native Review Request',
+              description: 'Independent Codex review requested for current HEAD',
+              target_url: runUrl,
+            });
+
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -147,9 +164,13 @@ jobs:
           head_sha = os.environ["HEAD_SHA"].lower()
           output = os.environ["REVIEW_EVIDENCE_FILE"]
           trusted_reviewer = "chatgpt-codex-connector[bot]"
-          clean_header_pattern = re.compile(
-              r"^Codex Review: Didn't find any major issues\.(?: [^\r\n]+)?$"
-          )
+          review_request_context = "AI-Native Review Request"
+          review_request_description = "Independent Codex review requested for current HEAD"
+          clean_headers = {
+              "Codex Review: Didn't find any major issues.",
+              "Codex Review: Didn't find any major issues. Chef's kiss.",
+              "Codex Review: Didn't find any major issues. You're on a roll.",
+          }
           clean_commit_line = re.compile(r"\*\*Reviewed commit:\*\* `([0-9a-f]{10,40})`", re.IGNORECASE)
 
           def request_json(path):
@@ -188,6 +209,19 @@ jobs:
               resolved = (commit.get("sha") or "").lower() if isinstance(commit, dict) else ""
               return resolved if re.fullmatch(r"[0-9a-f]{40}", resolved) else None
 
+          # Every explicit @codex review request writes an App-authenticated
+          # marker on the exact immutable HEAD. A clean verdict older than the
+          # latest marker is stale even when its Reviewed commit still matches.
+          latest_review_request_at = ""
+          for status in get_all(f"/repos/{repo}/commits/{head_sha}/statuses"):
+              if (
+                  status.get("context") == review_request_context
+                  and status.get("description") == review_request_description
+              ):
+                  created_at = status.get("created_at") or ""
+                  if created_at > latest_review_request_at:
+                      latest_review_request_at = created_at
+
           attestations = []
 
           # Fail closed: observed Codex behavior creates a GitHub review object
@@ -209,11 +243,10 @@ jobs:
                   }
               )
 
-          # Codex varies the friendly suffix of a clean verdict (for example
-          # "Chef's kiss." vs "You're on a roll."). The stable first clause,
-          # blank-line/Reviewed-commit structure and details block are canonical.
-          # The displayed short SHA must still resolve through GitHub to the exact
-          # immutable current HEAD, and finding markers are incompatible with clean.
+          # Clean verdicts are accepted only with one of the exact first-line
+          # variants observed from Codex. Unknown suffixes fail closed. The
+          # displayed short SHA must resolve through GitHub to the exact HEAD,
+          # and the verdict must be newer than the latest explicit review request.
           for comment in get_all(f"/repos/{repo}/issues/{pr}/comments"):
               reviewer = ((comment.get("user") or {}).get("login") or "")
               if reviewer != trusted_reviewer:
@@ -222,11 +255,14 @@ jobs:
               lines = body.splitlines()
               if (
                   len(lines) < 5
-                  or not clean_header_pattern.fullmatch(lines[0].strip())
+                  or lines[0].strip() not in clean_headers
                   or lines[1].strip() != ""
                   or lines[3].strip() != ""
                   or not lines[4].lstrip().startswith("<details>")
               ):
+                  continue
+              created_at = comment.get("created_at") or ""
+              if latest_review_request_at and created_at <= latest_review_request_at:
                   continue
               commit_match = clean_commit_line.fullmatch(lines[2].strip())
               if not commit_match or re.search(r"\[(?:BLOCKER|MAJOR)\]", body, re.IGNORECASE):
@@ -241,13 +277,23 @@ jobs:
                       "reviewer": reviewer,
                       "state": "CLEAN",
                       "commit_id": resolved,
-                      "created_at": comment.get("created_at") or "",
+                      "created_at": created_at,
                   }
               )
 
           with open(output, "w", encoding="utf-8") as handle:
-              json.dump({"head_sha": head_sha, "attestations": attestations}, handle, indent=2, sort_keys=True)
+              json.dump(
+                  {
+                      "head_sha": head_sha,
+                      "latest_review_request_at": latest_review_request_at,
+                      "attestations": attestations,
+                  },
+                  handle,
+                  indent=2,
+                  sort_keys=True,
+              )
 
+          print(f"Latest explicit review request marker: {latest_review_request_at or 'NONE'}")
           print(f"Trusted Codex attestations found: {len(attestations)}")
           for item in attestations:
               print(f"  kind={item['kind']} id={item['id']} commit={item['commit_id']} state={item['state']}")
