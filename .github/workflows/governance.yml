@@ -6,6 +6,8 @@ on:
     types: [opened, synchronize, reopened, edited, ready_for_review]
   pull_request_review:
     types: [submitted, edited, dismissed]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
   issue_comment:
     types: [created, edited]
 
@@ -13,6 +15,7 @@ permissions:
   contents: read
   pull-requests: read
   issues: read
+  statuses: write
 
 concurrency:
   group: governance-${{ github.event.pull_request.number || github.event.issue.number }}
@@ -21,9 +24,11 @@ concurrency:
 jobs:
   governance:
     if: >-
-      github.event_name != 'issue_comment' ||
-      (github.event.issue.pull_request && github.event.comment.user.login == 'chatgpt-codex-connector[bot]')
-    name: AI-Native Governance
+      (github.event_name != 'issue_comment' ||
+        (github.event.issue.pull_request && github.event.comment.user.login == 'chatgpt-codex-connector[bot]')) &&
+      (github.event_name != 'pull_request_review_comment' ||
+        github.event.comment.user.login == 'chatgpt-codex-connector[bot]')
+    name: Governance Event Processor
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -56,6 +61,60 @@ jobs:
             core.setOutput('head_repo', pr.head.repo.clone_url);
             core.setOutput('event_path', eventPath);
 
+      - name: Mark governance pending on PR HEAD
+        uses: actions/github-script@v7
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.HEAD_SHA,
+              state: 'pending',
+              context: 'AI-Native Governance',
+              description: 'Governance/review evidence is being evaluated',
+            });
+
+      - name: Persist blocking trusted-review event on immutable HEAD
+        uses: actions/github-script@v7
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        with:
+          script: |
+            const trusted = 'chatgpt-codex-connector[bot]';
+            let blocking = false;
+            let description = 'Blocking trusted review finding on immutable HEAD';
+
+            if (context.eventName === 'pull_request_review_comment') {
+              const comment = context.payload.comment ?? {};
+              const login = comment.user?.login ?? '';
+              const body = comment.body ?? '';
+              if (login === trusted && /\[(BLOCKER|MAJOR)\]/i.test(body)) {
+                blocking = true;
+              }
+            }
+
+            if (context.eventName === 'pull_request_review') {
+              const review = context.payload.review ?? {};
+              const login = review.user?.login ?? '';
+              if (login === trusted && String(review.state ?? '').toUpperCase() === 'CHANGES_REQUESTED') {
+                blocking = true;
+                description = 'Trusted reviewer requested changes on immutable HEAD';
+              }
+            }
+
+            if (blocking) {
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: process.env.HEAD_SHA,
+                state: 'failure',
+                context: 'AI-Native Review Finding',
+                description,
+              });
+            }
+
       - name: Checkout trusted base
         uses: actions/checkout@v4
         with:
@@ -77,8 +136,6 @@ jobs:
           BASE_SHA: ${{ steps.pr.outputs.base_sha }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
-          # Compare the two trees directly. The PR head is intentionally fetched
-          # shallowly, so triple-dot/merge-base comparison is unsafe here.
           git diff --name-only "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/hfpos-changed-files.txt"
           echo "Changed files:"
           cat "$RUNNER_TEMP/hfpos-changed-files.txt"
@@ -107,16 +164,21 @@ jobs:
           head_sha = os.environ["HEAD_SHA"].lower()
           output = os.environ["REVIEW_EVIDENCE_FILE"]
           trusted_reviewers = {"chatgpt-codex-connector[bot]"}
+          finding_context = "AI-Native Review Finding"
           clean_header = "Codex Review: Didn't find any major issues. Chef's kiss."
           clean_commit_line = re.compile(r"\*\*Reviewed commit:\*\* `([0-9a-f]{10,40})`", re.IGNORECASE)
 
-          def request_json(path):
+          def request_json(path, method="GET", payload=None):
               url = f"{api}{path}"
+              data = None if payload is None else json.dumps(payload).encode("utf-8")
               request = urllib.request.Request(
                   url,
+                  data=data,
+                  method=method,
                   headers={
                       "Authorization": f"Bearer {token}",
                       "Accept": "application/vnd.github+json",
+                      "Content-Type": "application/json",
                       "X-GitHub-Api-Version": "2022-11-28",
                   },
               )
@@ -149,9 +211,26 @@ jobs:
                   return None
               return resolved
 
+          def post_finding_status(description):
+              request_json(
+                  f"/repos/{repo}/statuses/{head_sha}",
+                  method="POST",
+                  payload={
+                      "state": "failure",
+                      "context": finding_context,
+                      "description": description[:140],
+                  },
+              )
+
           reviews = get_all(f"/repos/{repo}/pulls/{pr}/reviews")
           review_comments = get_all(f"/repos/{repo}/pulls/{pr}/comments")
           issue_comments = get_all(f"/repos/{repo}/issues/{pr}/comments")
+          statuses = get_all(f"/repos/{repo}/commits/{head_sha}/statuses")
+
+          sticky_findings = any(
+              status.get("context") == finding_context and status.get("state") == "failure"
+              for status in statuses
+          )
 
           by_review = {}
           for comment in review_comments:
@@ -167,6 +246,7 @@ jobs:
               bucket["major_count"] += len(re.findall(r"\[MAJOR\]", body, flags=re.IGNORECASE))
 
           attestations = []
+          blocking_now = False
           for review in reviews:
               reviewer = ((review.get("user") or {}).get("login") or "")
               if reviewer not in trusted_reviewers:
@@ -176,18 +256,25 @@ jobs:
                   continue
               review_id = review.get("id")
               counts = by_review.get(review_id, {"blocker_count": 0, "major_count": 0})
+              state = str(review.get("state") or "").upper()
               attestations.append(
                   {
                       "id": review_id,
                       "kind": "review",
                       "reviewer": reviewer,
-                      "state": review.get("state"),
+                      "state": state,
                       "commit_id": commit_id,
                       "created_at": review.get("submitted_at") or "",
                       "blocker_count": counts["blocker_count"],
                       "major_count": counts["major_count"],
                   }
               )
+              if commit_id == head_sha and (
+                  counts["blocker_count"] > 0
+                  or counts["major_count"] > 0
+                  or state == "CHANGES_REQUESTED"
+              ):
+                  blocking_now = True
 
           for comment in issue_comments:
               reviewer = ((comment.get("user") or {}).get("login") or "")
@@ -195,8 +282,6 @@ jobs:
                   continue
               body = comment.get("body") or ""
               lines = body.splitlines()
-              # Accept only Codex's canonical clean-verdict prologue. Quoting the
-              # marker later in explanatory text cannot satisfy this structure.
               if len(lines) < 3 or lines[0].strip() != clean_header or lines[1].strip() != "":
                   continue
               commit_match = clean_commit_line.fullmatch(lines[2].strip())
@@ -213,7 +298,6 @@ jobs:
                       "kind": "clean_comment",
                       "reviewer": reviewer,
                       "state": "CLEAN",
-                      # Store only the canonical full SHA resolved by GitHub.
                       "commit_id": resolved,
                       "created_at": comment.get("created_at") or "",
                       "blocker_count": 0,
@@ -221,11 +305,20 @@ jobs:
                   }
               )
 
-          evidence = {"head_sha": head_sha, "attestations": attestations}
+          if blocking_now and not sticky_findings:
+              post_finding_status("Persistent blocking Codex finding on immutable HEAD")
+              sticky_findings = True
+
+          evidence = {
+              "head_sha": head_sha,
+              "sticky_findings": sticky_findings,
+              "attestations": attestations,
+          }
           with open(output, "w", encoding="utf-8") as handle:
               json.dump(evidence, handle, indent=2, sort_keys=True)
 
           print(f"Trusted Codex attestations found: {len(attestations)}")
+          print(f"Persistent finding ledger: {'BLOCKING' if sticky_findings else 'CLEAR'}")
           for item in attestations:
               print(
                   f"  kind={item['kind']} id={item['id']} commit={item['commit_id']} "
@@ -233,10 +326,36 @@ jobs:
               )
           PY
 
-      - name: Validate PR governance and independent-review readiness with trusted validator
+      - name: Validate governance and independent-review readiness
+        id: validate
+        continue-on-error: true
         env:
           HFPOS_EVENT_PATH: ${{ steps.pr.outputs.event_path }}
           HFPOS_CHANGED_FILES: ${{ runner.temp }}/hfpos-changed-files.txt
           HFPOS_REVIEW_EVIDENCE: ${{ runner.temp }}/hfpos-review-evidence.json
           HFPOS_REQUIRE_REVIEW_READY: "1"
         run: python3 scripts/ci/validate_pr_governance.py
+
+      - name: Publish governance result on PR HEAD
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
+        with:
+          script: |
+            const passed = process.env.VALIDATION_OUTCOME === 'success';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.HEAD_SHA,
+              state: passed ? 'success' : 'failure',
+              context: 'AI-Native Governance',
+              description: passed
+                ? 'Governance and independent review are ready'
+                : 'Governance/review requirements are not satisfied',
+            });
+
+      - name: Fail workflow when governance is not ready
+        if: steps.validate.outcome != 'success'
+        run: exit 1
