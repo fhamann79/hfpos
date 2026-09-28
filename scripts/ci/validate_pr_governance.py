@@ -75,6 +75,9 @@ def minimum_risk_for_path(path: str) -> tuple[int, str]:
     if p == "AGENTS.md" or low.startswith(".github/workflows/") or low.startswith("scripts/ci/"):
         return 2, "repository governance/CI behavior"
 
+    if low.startswith(".github/issue_template/") or low == ".github/pull_request_template.md":
+        return 1, "development-process metadata"
+
     if low.startswith("backend/"):
         if "/tests/" in low or low.endswith("tests.cs") or ".tests/" in low:
             return 1, "backend tests"
@@ -122,9 +125,6 @@ def minimum_risk_for_path(path: str) -> tuple[int, str]:
     if low.startswith("docs/") or low.endswith(".md"):
         return 0, "documentation"
 
-    if low.startswith(".github/issue_template/") or low == ".github/pull_request_template.md":
-        return 1, "development-process metadata"
-
     return 1, "unclassified repository change"
 
 
@@ -150,6 +150,9 @@ def main() -> int:
     title = (pr.get("title") or "").strip()
     body = pr.get("body") or ""
     changed_files = read_changed_files()
+
+    if not changed_files:
+        fail(errors, "No changed files were supplied to governance validation; fail closed.")
 
     title_match = TICKET_RE.match(title)
     if not title_match:
