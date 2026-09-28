@@ -1,23 +1,47 @@
 <div class="catalog-section">
   <p-toolbar styleClass="catalog-toolbar">
     <ng-template #start>
-      <div class="table-search">
-        <i class="pi pi-search"></i>
-        <input
-          pInputText
-          type="text"
-          [(ngModel)]="globalFilter"
-          (input)="dt.filterGlobal(globalFilter, 'contains')"
-          placeholder="Buscar productos"
-          aria-label="Buscar productos"
-        />
+      <div class="filters">
+        <div class="table-search">
+          <i class="pi pi-search"></i>
+          <input
+            pInputText
+            type="text"
+            [(ngModel)]="globalFilter"
+            (keyup.enter)="applyFilters()"
+            placeholder="Nombre, código interno o código de barras"
+            aria-label="Buscar productos"
+          />
+        </div>
+        <p-select
+          [options]="statusOptions"
+          [(ngModel)]="status"
+          optionLabel="label"
+          optionValue="value"
+          appendTo="body"
+          aria-label="Filtrar por estado"
+        ></p-select>
+        <p-select
+          [options]="categoryOptions()"
+          [(ngModel)]="categoryId"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Todas las categorías"
+          [showClear]="true"
+          appendTo="body"
+          aria-label="Filtrar por categoría"
+        ></p-select>
       </div>
     </ng-template>
-    @if (canWrite) {
-      <ng-template #end>
-        <p-button label="Nuevo Producto" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
-      </ng-template>
-    }
+    <ng-template #end>
+      <div class="caption-actions">
+        <p-button label="Buscar" icon="pi pi-search" [loading]="loading()" (onClick)="applyFilters()"></p-button>
+        <p-button label="Limpiar" icon="pi pi-filter-slash" severity="secondary" [outlined]="true" (onClick)="clearFilters()"></p-button>
+        @if (canWrite) {
+          <p-button label="Nuevo Producto" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
+        }
+      </div>
+    </ng-template>
   </p-toolbar>
 
   @if (errorMessage()) {
@@ -25,41 +49,32 @@
   }
 
   <p-table
-    #dt
     [value]="products()"
     [loading]="loading()"
+    [lazy]="true"
+    [lazyLoadOnInit]="false"
     [paginator]="true"
-    [rows]="10"
+    [first]="first"
+    [rows]="rows"
+    [totalRecords]="totalItems()"
     [rowsPerPageOptions]="[10, 25, 50]"
-    [globalFilterFields]="['id', 'name', 'barcode', 'internalCode', 'categoryId', 'price', 'cost', 'minimumStock', 'vatCategory', 'isActive']"
-    [sortMode]="'multiple'"
+    [showCurrentPageReport]="true"
+    currentPageReportTemplate="{first} - {last} de {totalRecords}"
+    [sortMode]="'single'"
+    (onLazyLoad)="onProductsLazyLoad($event)"
     responsiveLayout="scroll"
     [tableStyle]="{ 'min-width': '68rem' }"
   >
-    <ng-template pTemplate="caption">
-      <div class="caption-actions">
-        <p-button
-          label="Limpiar"
-          icon="pi pi-filter-slash"
-          severity="secondary"
-          [outlined]="true"
-          (onClick)="globalFilter = ''; dt.filterGlobal('', 'contains')"
-        ></p-button>
-      </div>
-    </ng-template>
-
     <ng-template pTemplate="header">
       <tr>
-        <th pSortableColumn="id">Id <p-sortIcon field="id"></p-sortIcon></th>
+        <th>Id</th>
         <th pSortableColumn="name">Nombre <p-sortIcon field="name"></p-sortIcon></th>
         <th>Categoría</th>
         <th pSortableColumn="price">Precio <p-sortIcon field="price"></p-sortIcon></th>
         <th pSortableColumn="cost">Costo <p-sortIcon field="cost"></p-sortIcon></th>
-        <th pSortableColumn="minimumStock">Stock minimo <p-sortIcon field="minimumStock"></p-sortIcon></th>
+        <th>Stock minimo</th>
         <th pSortableColumn="isActive">Estado <p-sortIcon field="isActive"></p-sortIcon></th>
-        @if (canWrite) {
-          <th>Acciones</th>
-        }
+        @if (canWrite) { <th>Acciones</th> }
       </tr>
     </ng-template>
 
@@ -71,50 +86,31 @@
             <span class="product-name">{{ product.name }}</span>
             <div class="product-identifiers">
               @if (product.barcode) {
-                <span class="identifier-pill barcode-pill">
-                  <i class="pi pi-barcode"></i>
-                  <span>{{ product.barcode }}</span>
-                </span>
+                <span class="identifier-pill barcode-pill"><i class="pi pi-barcode"></i><span>{{ product.barcode }}</span></span>
               }
               @if (product.internalCode) {
-                <span class="identifier-pill internal-pill">
-                  <i class="pi pi-id-card"></i>
-                  <span>{{ product.internalCode }}</span>
-                </span>
+                <span class="identifier-pill internal-pill"><i class="pi pi-id-card"></i><span>{{ product.internalCode }}</span></span>
               }
-              @if (!product.barcode && !product.internalCode) {
-                <span class="identifier-empty">Sin códigos registrados</span>
-              }
+              @if (!product.barcode && !product.internalCode) { <span class="identifier-empty">Sin códigos registrados</span> }
             </div>
           </div>
         </td>
         <td>{{ getCategoryName(product.categoryId) }}</td>
-        <td>
-          <div class="price-cell">
-            <strong>{{ product.price | currency: 'USD' }}</strong>
-            <span class="vat-pill">{{ getVatLabel(product) }}</span>
-          </div>
-        </td>
-        <td>
-          <span class="cost-cell">{{ product.cost | currency: 'USD' }}</span>
-        </td>
-        <td>
-          <span class="minimum-stock-cell">{{ product.minimumStock }}</span>
-        </td>
-        <td>
-          <p-tag [severity]="product.isActive ? 'success' : 'danger'" [value]="product.isActive ? 'Activo' : 'Inactivo'"></p-tag>
-        </td>
+        <td><div class="price-cell"><strong>{{ product.price | currency: 'USD' }}</strong><span class="vat-pill">{{ getVatLabel(product) }}</span></div></td>
+        <td><span class="cost-cell">{{ product.cost | currency: 'USD' }}</span></td>
+        <td><span class="minimum-stock-cell">{{ product.minimumStock }}</span></td>
+        <td><p-tag [severity]="product.isActive ? 'success' : 'danger'" [value]="product.isActive ? 'Activo' : 'Inactivo'"></p-tag></td>
         @if (canWrite) {
           <td>
             <div class="actions">
               <p-button icon="pi pi-pencil" [rounded]="true" [text]="true" (onClick)="openEditDialog(product)"></p-button>
               <p-button
-                  [icon]="product.isActive ? 'pi pi-ban' : 'pi pi-check-circle'"
-                  [label]="product.isActive ? 'Desactivar' : 'Activar'"
-                  [severity]="product.isActive ? 'warn' : 'success'"
-                  [text]="true"
-                  (onClick)="confirmLifecycle(product)"
-                ></p-button>
+                [icon]="product.isActive ? 'pi pi-ban' : 'pi pi-check-circle'"
+                [label]="product.isActive ? 'Desactivar' : 'Activar'"
+                [severity]="product.isActive ? 'warn' : 'success'"
+                [text]="true"
+                (onClick)="confirmLifecycle(product)"
+              ></p-button>
             </div>
           </td>
         }
@@ -126,9 +122,7 @@
         <td [attr.colspan]="canWrite ? 8 : 7">
           <div class="empty-state">
             <span>No hay registros</span>
-            @if (canWrite) {
-              <p-button label="Crear" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
-            }
+            @if (canWrite) { <p-button label="Crear" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button> }
           </div>
         </td>
       </tr>
