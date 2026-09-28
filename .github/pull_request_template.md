@@ -69,12 +69,16 @@ Evidencia/resultados:
 ## Revisión independiente
 
 - Reviewer independiente: Pendiente
+- Estado de revisión: `PENDIENTE`
+- HEAD revisado: `PENDIENTE`
 - BLOCKER: 0
 - MAJOR: 0
 - MINOR: 0
 - NIT: 0
 - Observaciones:
   - 
+
+> Para R2/R3, una revisión solo es vigente cuando `Estado de revisión` es `COMPLETA`, el `HEAD revisado` coincide con el HEAD actual del PR y no quedan BLOCKER/MAJOR abiertos.
 
 ## Riesgos residuales / rollback
 
