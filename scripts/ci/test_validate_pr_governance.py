@@ -200,27 +200,31 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
     def test_clean_verdict_deletion_retriggers_governance(self) -> None:
         self.assertGreaterEqual(self.workflow.count("types: [created, edited, deleted]"), 2)
 
-    def test_review_events_are_not_cancelled_before_ledger_persistence(self) -> None:
-        self.assertNotIn("cancel-in-progress:", self.workflow)
-
-    def test_finding_ledger_targets_reviewed_commit_not_current_pr_head(self) -> None:
+    def test_finding_ledger_targets_reviewed_commit_or_fails_closed(self) -> None:
         self.assertIn("comment.commit_id", self.workflow)
         self.assertIn("review.commit_id", self.workflow)
-        self.assertIn("sha: reviewedSha", self.workflow)
+        self.assertIn("const targetSha =", self.workflow)
+        self.assertIn("sha: targetSha", self.workflow)
 
     def test_deleted_trusted_review_comment_is_fail_closed(self) -> None:
         self.assertIn("action === 'deleted'", self.workflow)
         self.assertIn("Trusted review evidence was deleted from reviewed commit", self.workflow)
 
-    def test_governance_generation_is_tied_to_action_run(self) -> None:
-        self.assertIn("RUN_ID: ${{ github.run_id }}", self.workflow)
-        self.assertIn("Governance generation ${runId} pending", self.workflow)
-        self.assertIn("target_url: runUrl", self.workflow)
+    def test_blocking_event_persistence_is_outside_cancellable_governance(self) -> None:
+        persist_start = self.workflow.index("  persist_review_event:")
+        governance_start = self.workflow.index("  governance:")
+        self.assertLess(persist_start, governance_start)
+        persist_block = self.workflow[persist_start:governance_start]
+        self.assertNotIn("concurrency:", persist_block)
+        self.assertNotIn("cancel-in-progress:", persist_block)
 
-    def test_only_latest_generation_can_publish_final_status(self) -> None:
-        self.assertIn("listCommitStatusesForRef", self.workflow)
-        self.assertIn("latest.target_url !== runUrl", self.workflow)
-        self.assertIn("Stale governance generation ${runId}", self.workflow)
+    def test_governance_waits_for_ledger_then_serializes_by_pr(self) -> None:
+        governance_start = self.workflow.index("  governance:")
+        governance_block = self.workflow[governance_start:]
+        self.assertIn("needs: persist_review_event", governance_block)
+        self.assertIn("concurrency:", governance_block)
+        self.assertIn("group: governance-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}", governance_block)
+        self.assertIn("cancel-in-progress: true", governance_block)
 
 
 if __name__ == "__main__":
