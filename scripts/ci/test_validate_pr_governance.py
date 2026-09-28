@@ -207,12 +207,14 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
     def test_clean_verdict_deletion_retriggers_evaluation(self) -> None:
         self.assertIn("types: [created, edited, deleted]", self.workflow)
 
-    def test_requester_must_be_authorized_before_triggering_pending(self) -> None:
+    def test_requester_must_be_authorized_and_use_canonical_first_line_command(self) -> None:
         self.assertIn("author_association", self.workflow)
         self.assertIn("['OWNER', 'MEMBER', 'COLLABORATOR']", self.workflow)
         self.assertIn("commenter === String(pr.user?.login ?? '')", self.workflow)
         self.assertIn("authorizedRequester", self.workflow)
-        self.assertIn("reviewRequested =", self.workflow)
+        self.assertIn("firstLine = body.split", self.workflow)
+        self.assertIn("/^\\s*@codex\\s+review\\s*$/i.test(firstLine)", self.workflow)
+        self.assertIn("request_pattern.fullmatch(first_line)", self.workflow)
 
     def test_review_request_freshness_is_derived_from_authoritative_comments_not_run_marker(self) -> None:
         self.assertIn("issue_comments = get_all", self.workflow)
