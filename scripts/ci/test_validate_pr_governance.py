@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Regression tests for HFPOS PR governance risk classification."""
+"""Regression tests for HFPOS PR governance risk/review classification."""
 
 import unittest
 
-from validate_pr_governance import compute_minimum_risk, minimum_risk_for_path
+from validate_pr_governance import (
+    compute_minimum_risk,
+    minimum_risk_for_path,
+    review_readiness_errors,
+)
 
 
 class MinimumRiskForPathTests(unittest.TestCase):
@@ -45,6 +49,55 @@ class MinimumRiskForPathTests(unittest.TestCase):
         )
         self.assertEqual("R3", minimum)
         self.assertEqual(3, len(evidence))
+
+
+class IndependentReviewReadinessTests(unittest.TestCase):
+    HEAD = "a" * 40
+
+    def body(
+        self,
+        *,
+        reviewer: str = "Codex",
+        state: str = "COMPLETA",
+        head: str | None = None,
+        blocker: int = 0,
+        major: int = 0,
+    ) -> str:
+        reviewed_head = head if head is not None else self.HEAD
+        return f"""## Revisión independiente
+
+- Reviewer independiente: {reviewer}
+- Estado de revisión: `{state}`
+- HEAD revisado: `{reviewed_head}`
+- BLOCKER: {blocker}
+- MAJOR: {major}
+- MINOR: 0
+- NIT: 0
+"""
+
+    def test_r1_does_not_require_independent_review(self) -> None:
+        self.assertEqual([], review_readiness_errors("", self.HEAD, "R1"))
+
+    def test_complete_current_r2_review_is_ready(self) -> None:
+        self.assertEqual([], review_readiness_errors(self.body(), self.HEAD, "R2"))
+
+    def test_pending_reviewer_blocks_r2(self) -> None:
+        errors = review_readiness_errors(
+            self.body(reviewer="Pendiente", state="PENDIENTE", head="PENDIENTE"),
+            self.HEAD,
+            "R2",
+        )
+        self.assertTrue(any("real independent reviewer" in error for error in errors))
+        self.assertTrue(any("Estado de revisión" in error for error in errors))
+
+    def test_stale_review_head_blocks_r2(self) -> None:
+        errors = review_readiness_errors(self.body(head="b" * 40), self.HEAD, "R2")
+        self.assertTrue(any("stale" in error for error in errors))
+
+    def test_blocker_or_major_blocks_r3(self) -> None:
+        errors = review_readiness_errors(self.body(blocker=1, major=2), self.HEAD, "R3")
+        self.assertTrue(any("BLOCKER" in error for error in errors))
+        self.assertTrue(any("MAJOR" in error for error in errors))
 
 
 if __name__ == "__main__":
