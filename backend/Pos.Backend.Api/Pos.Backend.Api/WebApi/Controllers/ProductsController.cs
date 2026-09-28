@@ -18,50 +18,64 @@ namespace Pos.Backend.Api.WebApi.Controllers;
 [RequireOperationalContext]
 public class ProductsController : ControllerBase
 {
+    private const int DefaultPageSize = 30;
+    private const int DefaultLookupTake = 30;
+
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
+    private readonly IProductQueryService _productQueryService;
     private readonly IMasterDataLifecycleService _lifecycle;
     private readonly TenantAdministrationGuard _administrationGuard;
     private readonly IProductCostService _productCostService;
 
-    public ProductsController(PosDbContext context, IOperationalContextAccessor operationalContextAccessor,
-        IMasterDataLifecycleService lifecycle, TenantAdministrationGuard administrationGuard,
+    public ProductsController(
+        PosDbContext context,
+        IOperationalContextAccessor operationalContextAccessor,
+        IProductQueryService productQueryService,
+        IMasterDataLifecycleService lifecycle,
+        TenantAdministrationGuard administrationGuard,
         IProductCostService productCostService)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
+        _productQueryService = productQueryService;
         _lifecycle = lifecycle;
         _administrationGuard = administrationGuard;
         _productCostService = productCostService;
     }
 
+    // Legacy full catalog endpoint kept temporarily for the current POS snapshot.
+    // New administrative and lookup consumers must use /page or /lookup.
     [HttpGet]
     [Authorize(Policy = AppPermissions.CatalogProductsRead)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<IEnumerable<ProductDto>>> Get()
-    {
-        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        => Ok(await _productQueryService.GetLegacyCatalogAsync());
 
-        var products = await _context.Products
-            .Where(p => p.CompanyId == operationalContext.CompanyId)
-            .Select(p => new ProductDto
-            {
-                Id = p.Id,
-                CategoryId = p.CategoryId,
-                Name = p.Name,
-                Barcode = p.Barcode,
-                InternalCode = p.InternalCode,
-                Price = p.Price,
-                Cost = p.Cost,
-                MinimumStock = p.MinimumStock,
-                VatCategory = p.VatCategory,
-                IsActive = p.IsActive
-            })
-            .ToListAsync();
+    [HttpGet("lookup")]
+    [Authorize(Policy = AppPermissions.CatalogProductsRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IEnumerable<ProductDto>>> Lookup(
+        [FromQuery] string? search,
+        [FromQuery] int take = DefaultLookupTake,
+        [FromQuery] int? categoryId = null)
+        => Ok(await _productQueryService.GetLookupAsync(search, take, categoryId));
 
-        return Ok(products);
-    }
+    [HttpGet("page")]
+    [Authorize(Policy = AppPermissions.CatalogProductsRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<PagedResultDto<ProductDto>>> GetPage(
+        [FromQuery] string? search,
+        [FromQuery] string? status = "all",
+        [FromQuery] int? categoryId = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = DefaultPageSize,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortDir = null)
+        => Ok(await _productQueryService.GetPageAsync(search, status, categoryId, page, pageSize, sortBy, sortDir));
 
     [HttpPost]
     [Authorize(Policy = AppPermissions.CatalogProductsWrite)]
@@ -138,21 +152,7 @@ public class ProductsController : ControllerBase
         await _context.SaveChangesAsync();
         await transaction.CommitAsync();
 
-        var response = new ProductDto
-        {
-            Id = product.Id,
-            CategoryId = product.CategoryId,
-            Name = product.Name,
-            Barcode = product.Barcode,
-            InternalCode = product.InternalCode,
-            Price = product.Price,
-            Cost = product.Cost,
-            MinimumStock = product.MinimumStock,
-            VatCategory = product.VatCategory,
-            IsActive = product.IsActive
-        };
-
-        return CreatedAtAction(nameof(GetById), new { id = product.Id }, response);
+        return CreatedAtAction(nameof(GetById), new { id = product.Id }, ToDto(product));
     }
 
     [HttpGet("{id:int}")]
@@ -164,20 +164,9 @@ public class ProductsController : ControllerBase
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
         var product = await _context.Products
+            .AsNoTracking()
             .Where(p => p.Id == id && p.CompanyId == operationalContext.CompanyId)
-            .Select(p => new ProductDto
-            {
-                Id = p.Id,
-                CategoryId = p.CategoryId,
-                Name = p.Name,
-                Barcode = p.Barcode,
-                InternalCode = p.InternalCode,
-                Price = p.Price,
-                Cost = p.Cost,
-                MinimumStock = p.MinimumStock,
-                VatCategory = p.VatCategory,
-                IsActive = p.IsActive
-            })
+            .Select(p => ToDto(p))
             .FirstOrDefaultAsync();
 
         if (product is null)
@@ -303,6 +292,21 @@ public class ProductsController : ControllerBase
         return null;
     }
 
+    private static ProductDto ToDto(Product product)
+        => new()
+        {
+            Id = product.Id,
+            CategoryId = product.CategoryId,
+            Name = product.Name,
+            Barcode = product.Barcode,
+            InternalCode = product.InternalCode,
+            Price = product.Price,
+            Cost = product.Cost,
+            MinimumStock = product.MinimumStock,
+            VatCategory = product.VatCategory,
+            IsActive = product.IsActive
+        };
+
     private static string? NormalizeOptionalIdentifier(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -314,9 +318,7 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> Deactivate(int id)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-
         await _lifecycle.SetProductActiveAsync(operationalContext.CompanyId, id, false);
-
         return NoContent();
     }
 

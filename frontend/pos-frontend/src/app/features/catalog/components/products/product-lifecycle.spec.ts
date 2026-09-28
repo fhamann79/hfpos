@@ -13,6 +13,7 @@ import { CategoryService } from '../../services/category.service';
 
 describe('Product lifecycle', () => {
   const item = { id: 1, categoryId: 1, name: 'Producto histórico', price: 10, cost: 4, minimumStock: 3, vatCategory: DEFAULT_VAT_CATEGORY, isActive: true };
+  const page = (items = [item]) => ({ items, page: 1, pageSize: 10, totalItems: items.length, totalPages: items.length ? 1 : 0 });
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -29,7 +30,7 @@ describe('Product lifecycle', () => {
   });
 
   it('renders Desactivar for active records and Activar for inactive records, without delete', async () => {
-    vi.spyOn(TestBed.inject(ProductService), 'getAll').mockReturnValue(of([item, { ...item, id: 2, isActive: false }]));
+    vi.spyOn(TestBed.inject(ProductService), 'getPage').mockReturnValue(of(page([item, { ...item, id: 2, isActive: false }])));
     const fixture = TestBed.createComponent(ProductsTable);
     fixture.componentRef.setInput('canWrite', true);
 
@@ -45,7 +46,7 @@ describe('Product lifecycle', () => {
 
   it('confirms lifecycle, posts explicit endpoints and refreshes the table', () => {
     const service = TestBed.inject(ProductService);
-    const reload = vi.spyOn(service, 'getAll').mockReturnValue(of([item]));
+    const reload = vi.spyOn(service, 'getPage').mockReturnValue(of(page()));
     const fixture = TestBed.createComponent(ProductsTable);
     fixture.componentRef.setInput('canWrite', true);
 
