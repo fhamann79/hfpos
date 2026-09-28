@@ -169,6 +169,8 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         repo_root = Path(__file__).resolve().parents[2]
         cls.workflow = (repo_root / ".github/workflows/governance.yml").read_text(encoding="utf-8")
+        cls.agent_policy = (repo_root / "AGENTS.md").read_text(encoding="utf-8")
+        cls.review_policy = (repo_root / "docs/ai-native/CODE_REVIEW.md").read_text(encoding="utf-8")
 
     def test_untrusted_builtin_token_cannot_write_statuses(self) -> None:
         permissions = self.workflow.split("concurrency:", 1)[0]
@@ -179,6 +181,13 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
         self.assertIn("environment: hfpos-governance", self.workflow)
         self.assertIn("HFPOS_GOVERNANCE_APP_ID", self.workflow)
         self.assertIn("HFPOS_GOVERNANCE_PRIVATE_KEY", self.workflow)
+
+    def test_governance_environment_policy_requires_selected_main_only_before_secrets(self) -> None:
+        for policy in (self.agent_policy, self.review_policy):
+            self.assertIn("Selected branches and tags", policy)
+            self.assertIn("Branch `main` only", policy)
+            self.assertIn("before", policy.lower())
+        self.assertIn("Do not use `No restriction` or `Protected branches only`", self.agent_policy)
 
     def test_governance_uses_dedicated_github_app_token_for_statuses(self) -> None:
         self.assertIn("actions/create-github-app-token@v2", self.workflow)
