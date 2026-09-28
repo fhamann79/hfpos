@@ -1,7 +1,17 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
+import { PagedResult } from '../../../core/models/paged-result.model';
 import { environment } from '../../../../environments/environment';
 import { CreateCustomerRequest, Customer, CustomerStatusFilter, UpdateCustomerRequest } from '../models/customer.model';
+
+export interface CustomerPageQuery {
+  search?: string;
+  status?: CustomerStatusFilter;
+  page?: number;
+  pageSize?: number;
+  sortBy?: 'name' | 'isActive' | 'updatedAt';
+  sortDir?: 'asc' | 'desc';
+}
 
 @Injectable({ providedIn: 'root' })
 export class CustomerService {
@@ -25,6 +35,28 @@ export class CustomerService {
     }
 
     return this.http.get<Customer[]>(this.baseUrl, { params });
+  }
+
+  getPage(query: CustomerPageQuery = {}) {
+    let params = new HttpParams()
+      .set('page', String(query.page ?? 1))
+      .set('pageSize', String(query.pageSize ?? 30));
+    const search = query.search?.trim();
+
+    if (search) {
+      params = params.set('search', search);
+    }
+    if (query.status) {
+      params = params.set('status', query.status);
+    }
+    if (query.sortBy) {
+      params = params.set('sortBy', query.sortBy);
+    }
+    if (query.sortDir) {
+      params = params.set('sortDir', query.sortDir);
+    }
+
+    return this.http.get<PagedResult<Customer>>(`${this.baseUrl}/page`, { params });
   }
 
   getById(id: number) {

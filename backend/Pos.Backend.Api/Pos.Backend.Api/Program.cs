@@ -87,6 +87,8 @@ builder.Services.AddScoped<IProductCostService, ProductCostService>();
 builder.Services.AddScoped<IProductQueryService, ProductQueryService>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<IOperationalContextAccessor, OperationalContextAccessor>();
+builder.Services.AddScoped<ICustomerQueryService, CustomerQueryService>();
+builder.Services.AddScoped<ISupplierQueryService, SupplierQueryService>();
 builder.Services.AddSingleton<IBusinessClockService, BusinessClockService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();

@@ -7,12 +7,12 @@
 
     <div class="header-actions">
       <div class="summary-chip">
-        <small>Activos</small>
-        <strong>{{ activeCount() }}</strong>
+        <small>Resultados</small>
+        <strong>{{ totalItems() }}</strong>
       </div>
       <div class="summary-chip summary-chip--muted">
-        <small>Inactivos</small>
-        <strong>{{ inactiveCount() }}</strong>
+        <small>Pagina</small>
+        <strong>{{ currentPage() }} / {{ totalPages() || 1 }}</strong>
       </div>
       <p-button
         label="Refrescar"
@@ -40,7 +40,7 @@
               [(ngModel)]="search"
               placeholder="Nombre, identificacion, email o telefono"
               aria-label="Buscar clientes"
-              (keyup.enter)="loadCustomers()"
+              (keyup.enter)="applyFilters()"
             />
           </div>
           <label class="filter-field">
@@ -57,7 +57,7 @@
       </ng-template>
       <ng-template #end>
         <div class="toolbar-actions">
-          <p-button label="Buscar" icon="pi pi-search" [loading]="loading()" (onClick)="loadCustomers()"></p-button>
+          <p-button label="Buscar" icon="pi pi-search" [loading]="loading()" (onClick)="applyFilters()"></p-button>
           <p-button
             label="Limpiar"
             icon="pi pi-filter-slash"
@@ -77,10 +77,15 @@
       styleClass="professional-table customers-table"
       [value]="customers()"
       [loading]="loading()"
+      [lazy]="true"
+      [lazyLoadOnInit]="false"
       [paginator]="true"
-      [rows]="15"
+      [rows]="rows"
+      [first]="first"
+      [totalRecords]="totalItems()"
       [rowsPerPageOptions]="[15, 30, 50]"
-      [sortMode]="'multiple'"
+      [sortMode]="'single'"
+      (onLazyLoad)="onCustomersLazyLoad($event)"
       responsiveLayout="scroll"
       [tableStyle]="{ 'min-width': '92rem' }"
     >
@@ -101,11 +106,7 @@
 
       <ng-template pTemplate="body" let-customer>
         <tr [class.row-inactive]="!customer.isActive">
-          <td>
-            <span class="customer-main">
-              <strong>{{ customer.name }}</strong>
-            </span>
-          </td>
+          <td><span class="customer-main"><strong>{{ customer.name }}</strong></span></td>
           <td>
             <span class="identity-stack">
               <strong>{{ identificationTypeLabel(customer.identificationType) }}</strong>
@@ -114,24 +115,15 @@
           </td>
           <td>
             <span class="contact-stack">
-              @if (customer.email) {
-                <span><i class="pi pi-at"></i>{{ customer.email }}</span>
-              }
-              @if (customer.phone) {
-                <span><i class="pi pi-phone"></i>{{ customer.phone }}</span>
-              }
-              @if (!customer.email && !customer.phone) {
-                <small>Sin contacto</small>
-              }
+              @if (customer.email) { <span><i class="pi pi-at"></i>{{ customer.email }}</span> }
+              @if (customer.phone) { <span><i class="pi pi-phone"></i>{{ customer.phone }}</span> }
+              @if (!customer.email && !customer.phone) { <small>Sin contacto</small> }
             </span>
           </td>
           <td class="text-cell">{{ customer.address || '-' }}</td>
           <td class="text-cell">{{ customer.notes || '-' }}</td>
           <td>
-            <p-tag
-              [severity]="customer.isActive ? 'success' : 'danger'"
-              [value]="customer.isActive ? 'Activo' : 'Inactivo'"
-            ></p-tag>
+            <p-tag [severity]="customer.isActive ? 'success' : 'danger'" [value]="customer.isActive ? 'Activo' : 'Inactivo'"></p-tag>
           </td>
           <td>
             <span class="date-stack">
@@ -142,31 +134,11 @@
           @if (canWrite()) {
             <td class="action-column">
               <div class="actions">
-                <p-button
-                  icon="pi pi-pencil"
-                  [rounded]="true"
-                  [text]="true"
-                  aria-label="Editar cliente"
-                  (onClick)="openEditDialog(customer)"
-                ></p-button>
+                <p-button icon="pi pi-pencil" [rounded]="true" [text]="true" aria-label="Editar cliente" (onClick)="openEditDialog(customer)"></p-button>
                 @if (customer.isActive) {
-                  <p-button
-                    icon="pi pi-ban"
-                    severity="danger"
-                    [rounded]="true"
-                    [text]="true"
-                    aria-label="Desactivar cliente"
-                    (onClick)="confirmDeactivate(customer)"
-                  ></p-button>
+                  <p-button icon="pi pi-ban" severity="danger" [rounded]="true" [text]="true" aria-label="Desactivar cliente" (onClick)="confirmDeactivate(customer)"></p-button>
                 } @else {
-                  <p-button
-                    icon="pi pi-check"
-                    severity="success"
-                    [rounded]="true"
-                    [text]="true"
-                    aria-label="Reactivar cliente"
-                    (onClick)="confirmActivate(customer)"
-                  ></p-button>
+                  <p-button icon="pi pi-check" severity="success" [rounded]="true" [text]="true" aria-label="Reactivar cliente" (onClick)="confirmActivate(customer)"></p-button>
                 }
               </div>
             </td>
@@ -180,9 +152,7 @@
             <div class="empty-state">
               <i class="pi pi-users"></i>
               <strong>No hay clientes registrados.</strong>
-              @if (canWrite()) {
-                <p-button label="Crear cliente" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
-              }
+              @if (canWrite()) { <p-button label="Crear cliente" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button> }
             </div>
           </td>
         </tr>
@@ -212,15 +182,7 @@
 
       <label class="field">
         <span>Tipo identificacion</span>
-        <p-select
-          [options]="identificationTypeOptions"
-          formControlName="identificationType"
-          optionLabel="label"
-          optionValue="value"
-          placeholder="Sin tipo"
-          [showClear]="true"
-          appendTo="body"
-        ></p-select>
+        <p-select [options]="identificationTypeOptions" formControlName="identificationType" optionLabel="label" optionValue="value" placeholder="Sin tipo" [showClear]="true" appendTo="body"></p-select>
       </label>
 
       <label class="field">
@@ -231,9 +193,7 @@
       <label class="field">
         <span>Email</span>
         <input pInputText type="email" formControlName="email" maxlength="320" autocomplete="off" />
-        @if (form.controls.email.touched && form.controls.email.invalid) {
-          <small class="p-error">Ingresa un email valido.</small>
-        }
+        @if (form.controls.email.touched && form.controls.email.invalid) { <small class="p-error">Ingresa un email valido.</small> }
       </label>
 
       <label class="field">
@@ -252,9 +212,7 @@
       </label>
     </div>
 
-    @if (formError()) {
-      <p-message severity="error" [text]="formError()"></p-message>
-    }
+    @if (formError()) { <p-message severity="error" [text]="formError()"></p-message> }
 
     @if (isEditMode) {
       <label class="field-inline">
