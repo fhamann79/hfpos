@@ -9,17 +9,13 @@ on:
   pull_request_review_comment:
     types: [created, edited, deleted]
   issue_comment:
-    types: [created, edited]
+    types: [created, edited, deleted]
 
 permissions:
   contents: read
   pull-requests: read
   issues: read
   statuses: write
-
-concurrency:
-  group: governance-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: true
 
 jobs:
   governance:
@@ -76,21 +72,27 @@ jobs:
               description: 'Governance/review evidence is being evaluated',
             });
 
-      - name: Persist blocking trusted-review event on immutable HEAD
+      - name: Persist blocking trusted-review event on reviewed commit
         uses: actions/github-script@v7
-        env:
-          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         with:
           script: |
             const trusted = 'chatgpt-codex-connector[bot]';
+            const action = String(context.payload.action ?? '').toLowerCase();
             let blocking = false;
-            let description = 'Blocking trusted review finding on immutable HEAD';
+            let reviewedSha = '';
+            let description = 'Blocking trusted review finding on reviewed commit';
 
             if (context.eventName === 'pull_request_review_comment') {
               const comment = context.payload.comment ?? {};
               const login = comment.user?.login ?? '';
               const body = comment.body ?? '';
-              if (login === trusted && /\[(BLOCKER|MAJOR)\]/i.test(body)) {
+              reviewedSha = String(comment.commit_id ?? '').toLowerCase();
+              if (login === trusted && action === 'deleted') {
+                // Deleting trusted inline review evidence is fail-closed. The
+                // immutable reviewed commit must receive a sticky finding ledger.
+                blocking = true;
+                description = 'Trusted review evidence was deleted from reviewed commit';
+              } else if (login === trusted && /\[(BLOCKER|MAJOR)\]/i.test(body)) {
                 blocking = true;
               }
             }
@@ -98,17 +100,28 @@ jobs:
             if (context.eventName === 'pull_request_review') {
               const review = context.payload.review ?? {};
               const login = review.user?.login ?? '';
-              if (login === trusted && String(review.state ?? '').toUpperCase() === 'CHANGES_REQUESTED') {
+              const state = String(review.state ?? '').toUpperCase();
+              reviewedSha = String(review.commit_id ?? '').toLowerCase();
+              if (login === trusted && state === 'CHANGES_REQUESTED') {
                 blocking = true;
-                description = 'Trusted reviewer requested changes on immutable HEAD';
+                description = 'Trusted reviewer requested changes on reviewed commit';
+              } else if (login === trusted && action === 'dismissed') {
+                // A dismissed trusted review cannot erase findings already tied
+                // to the immutable commit. Treat dismissal itself as blocking.
+                blocking = true;
+                description = 'Trusted review was dismissed on reviewed commit';
               }
             }
 
             if (blocking) {
+              if (!/^[0-9a-f]{40}$/.test(reviewedSha)) {
+                core.setFailed('Blocking review event does not contain a full reviewed commit SHA.');
+                return;
+              }
               await github.rest.repos.createCommitStatus({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                sha: process.env.HEAD_SHA,
+                sha: reviewedSha,
                 state: 'failure',
                 context: 'AI-Native Review Finding',
                 description,
