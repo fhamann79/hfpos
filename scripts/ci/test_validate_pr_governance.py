@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Regression tests for HFPOS PR governance risk/review classification."""
 
+from pathlib import Path
 import unittest
 
 from validate_pr_governance import (
@@ -188,6 +189,28 @@ class IndependentReviewReadinessTests(unittest.TestCase):
             self.clean_comment(),
         )
         self.assertEqual([], review_readiness_errors(evidence, self.HEAD, "R2"))
+
+
+class GovernanceWorkflowContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+        cls.workflow = (repo_root / ".github/workflows/governance.yml").read_text(encoding="utf-8")
+
+    def test_clean_verdict_deletion_retriggers_governance(self) -> None:
+        self.assertGreaterEqual(self.workflow.count("types: [created, edited, deleted]"), 2)
+
+    def test_review_events_are_not_cancelled_before_ledger_persistence(self) -> None:
+        self.assertNotIn("cancel-in-progress:", self.workflow)
+
+    def test_finding_ledger_targets_reviewed_commit_not_current_pr_head(self) -> None:
+        self.assertIn("comment.commit_id", self.workflow)
+        self.assertIn("review.commit_id", self.workflow)
+        self.assertIn("sha: reviewedSha", self.workflow)
+
+    def test_deleted_trusted_review_comment_is_fail_closed(self) -> None:
+        self.assertIn("action === 'deleted'", self.workflow)
+        self.assertIn("Trusted review evidence was deleted from reviewed commit", self.workflow)
 
 
 if __name__ == "__main__":
