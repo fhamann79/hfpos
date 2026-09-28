@@ -147,7 +147,9 @@ jobs:
           head_sha = os.environ["HEAD_SHA"].lower()
           output = os.environ["REVIEW_EVIDENCE_FILE"]
           trusted_reviewer = "chatgpt-codex-connector[bot]"
-          clean_header = "Codex Review: Didn't find any major issues. Chef's kiss."
+          clean_header_pattern = re.compile(
+              r"^Codex Review: Didn't find any major issues\.(?: [^\r\n]+)?$"
+          )
           clean_commit_line = re.compile(r"\*\*Reviewed commit:\*\* `([0-9a-f]{10,40})`", re.IGNORECASE)
 
           def request_json(path):
@@ -207,16 +209,24 @@ jobs:
                   }
               )
 
-          # A positive attestation is accepted only in Codex's observed canonical
-          # clean-comment form and only after its displayed short SHA resolves via
-          # GitHub's commits API to the exact current immutable HEAD.
+          # Codex varies the friendly suffix of a clean verdict (for example
+          # "Chef's kiss." vs "You're on a roll."). The stable first clause,
+          # blank-line/Reviewed-commit structure and details block are canonical.
+          # The displayed short SHA must still resolve through GitHub to the exact
+          # immutable current HEAD, and finding markers are incompatible with clean.
           for comment in get_all(f"/repos/{repo}/issues/{pr}/comments"):
               reviewer = ((comment.get("user") or {}).get("login") or "")
               if reviewer != trusted_reviewer:
                   continue
               body = comment.get("body") or ""
               lines = body.splitlines()
-              if len(lines) < 3 or lines[0].strip() != clean_header or lines[1].strip() != "":
+              if (
+                  len(lines) < 5
+                  or not clean_header_pattern.fullmatch(lines[0].strip())
+                  or lines[1].strip() != ""
+                  or lines[3].strip() != ""
+                  or not lines[4].lstrip().startswith("<details>")
+              ):
                   continue
               commit_match = clean_commit_line.fullmatch(lines[2].strip())
               if not commit_match or re.search(r"\[(?:BLOCKER|MAJOR)\]", body, re.IGNORECASE):
