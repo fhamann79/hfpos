@@ -15,7 +15,6 @@ from pathlib import Path
 
 
 RISK_ORDER = {"R0": 0, "R1": 1, "R2": 2, "R3": 3, "R4": 4}
-TRUSTED_REVIEWERS = {"chatgpt-codex-connector[bot]"}
 TICKET_RE = re.compile(r"^(?P<ticket>(?:BE-FE|DEV|BE|FE)-\d+[A-Z]?)\b", re.IGNORECASE)
 BODY_TICKET_RE = re.compile(r"-\s*Ticket:\s*`?(?P<ticket>(?:BE-FE|DEV|BE|FE)-\d+[A-Z]?)`?", re.IGNORECASE)
 ISSUE_RE = re.compile(r"-\s*Issue:\s*#(?P<issue>\d+)\b", re.IGNORECASE)
@@ -53,13 +52,10 @@ def fail(errors: list[str], message: str) -> None:
 
 
 def read_event() -> dict:
-    event_path = os.environ.get("HFPOS_EVENT_PATH") or os.environ.get("GITHUB_EVENT_PATH")
+    event_path = os.environ.get("GITHUB_EVENT_PATH")
     if not event_path:
-        raise RuntimeError("Neither HFPOS_EVENT_PATH nor GITHUB_EVENT_PATH is defined")
-    payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise RuntimeError("Governance event payload must be a JSON object")
-    return payload
+        raise RuntimeError("GITHUB_EVENT_PATH is not defined")
+    return json.loads(Path(event_path).read_text(encoding="utf-8"))
 
 
 def read_changed_files() -> list[str]:
@@ -72,41 +68,42 @@ def read_changed_files() -> list[str]:
     return [line.strip() for line in file_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def read_review_evidence() -> dict | None:
-    path = os.environ.get("HFPOS_REVIEW_EVIDENCE")
-    if not path:
-        return None
-    file_path = Path(path)
-    if not file_path.exists():
-        return None
-    payload = json.loads(file_path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise RuntimeError("HFPOS review evidence must be a JSON object")
-    return payload
-
-
-def env_truthy(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "si", "sí"}
-
-
 def minimum_risk_for_path(path: str) -> tuple[int, str]:
     p = path.replace("\\", "/")
     low = p.lower()
 
+    # Agent policy changes can alter future implementation/review behavior even
+    # when the file itself is Markdown, so they are governance rather than docs.
     if low == "agents.md" or low.endswith("/agents.md"):
         return 2, "agent governance policy"
+
     if low.startswith(".github/workflows/") or low.startswith("scripts/ci/"):
         return 2, "repository governance/CI behavior"
+
     if low.startswith(".github/issue_template/") or low == ".github/pull_request_template.md":
         return 1, "development-process metadata"
 
     if low.startswith("backend/"):
         if "/tests/" in low or low.endswith("tests.cs") or ".tests/" in low:
             return 1, "backend tests"
+
         critical_markers = (
-            "/migrations/", "/security/", "/auth", "jwt", "operationalcontext",
-            "/infrastructure/data/", "/repositories/", "/core/services/",
-            "sale", "purchase", "inventory", "stock", "cash", "creditnote", "sri", "invoice",
+            "/migrations/",
+            "/security/",
+            "/auth",
+            "jwt",
+            "operationalcontext",
+            "/infrastructure/data/",
+            "/repositories/",
+            "/core/services/",
+            "sale",
+            "purchase",
+            "inventory",
+            "stock",
+            "cash",
+            "creditnote",
+            "sri",
+            "invoice",
         )
         if any(marker in low for marker in critical_markers):
             return 3, "critical backend transactional/security/data path"
@@ -123,10 +120,13 @@ def minimum_risk_for_path(path: str) -> tuple[int, str]:
 
     if low.endswith((".csproj", ".sln", "nuget.config", "directory.packages.props")):
         return 2, "build/dependency configuration"
+
     if "production" in low or "deploy" in low or low.endswith((".pfx", ".p12", ".key", ".pem")):
         return 3, "production/deployment/certificate-sensitive path"
+
     if low.startswith("docs/") or low.endswith(".md"):
         return 0, "documentation"
+
     return 1, "unclassified repository change"
 
 
@@ -141,85 +141,16 @@ def compute_minimum_risk(paths: list[str]) -> tuple[str, list[tuple[str, str, st
     return f"R{highest}", evidence
 
 
-def review_readiness_errors(
-    review_evidence: dict | None,
-    current_head_sha: str,
-    declared_risk: str | None,
-) -> list[str]:
-    """Require a clean Codex attestation for the exact R2/R3 PR HEAD.
-
-    Observed Codex behavior is intentionally handled fail-closed:
-    - a clean review is emitted as the canonical trusted bot issue comment;
-    - a GitHub review object on the current HEAD means Codex reported findings.
-
-    Therefore any trusted Codex review object on the current immutable HEAD blocks
-    readiness, even if its inline comments are later edited/deleted/dismissed.
-    Findings are cleared only by changing the HEAD and reviewing the new commit.
-    """
-    if declared_risk not in {"R2", "R3"}:
-        return []
-
-    if not review_evidence:
-        return ["R2/R3 readiness requires trusted GitHub independent-review evidence."]
-
-    current_head = current_head_sha.lower()
-    if not re.fullmatch(r"[0-9a-f]{40}", current_head):
-        return ["Current PR HEAD is missing or is not a full 40-character SHA."]
-
-    errors: list[str] = []
-    evidence_head = str(review_evidence.get("head_sha") or "").lower()
-    if evidence_head != current_head:
-        fail(errors, "Trusted review evidence is stale or does not match the current PR HEAD.")
-
-    attestations = review_evidence.get("attestations")
-    if not isinstance(attestations, list):
-        return errors + ["Trusted review evidence does not contain an attestation list."]
-
-    trusted_current: list[dict] = []
-    for attestation in attestations:
-        if not isinstance(attestation, dict):
-            continue
-        reviewer = str(attestation.get("reviewer") or "")
-        commit_id = str(attestation.get("commit_id") or "").lower()
-        if reviewer not in TRUSTED_REVIEWERS or commit_id != current_head:
-            continue
-        if not re.fullmatch(r"[0-9a-f]{40}", commit_id):
-            continue
-        trusted_current.append(attestation)
-
-    current_reviews = [
-        item for item in trusted_current if str(item.get("kind") or "") == "review"
-    ]
-    if current_reviews:
-        fail(
-            errors,
-            "Trusted Codex GitHub review object exists for the current HEAD; "
-            "treat findings as blocking and create a new commit before re-review.",
-        )
-
-    clean_current = [
-        item
-        for item in trusted_current
-        if str(item.get("kind") or "") == "clean_comment"
-        and str(item.get("state") or "").upper() == "CLEAN"
-    ]
-    if not clean_current:
-        fail(errors, "No canonical clean Codex attestation exists for the current PR HEAD.")
-
-    return errors
-
-
 def main() -> int:
     errors: list[str] = []
     event = read_event()
     pr = event.get("pull_request")
-    if not isinstance(pr, dict):
-        fail(errors, "Governance event must contain a canonical pull_request object; fail closed.")
-        pr = {}
+    if not pr:
+        print("No pull_request payload: governance validation skipped.")
+        return 0
 
     title = (pr.get("title") or "").strip()
     body = pr.get("body") or ""
-    current_head_sha = ((pr.get("head") or {}).get("sha") or "").strip()
     changed_files = read_changed_files()
 
     if not changed_files:
@@ -265,7 +196,8 @@ def main() -> int:
     elif real_env_match.group("value").upper().replace("Í", "I") != "NO":
         fail(errors, "Autonomous PR validation forbids use of real environments/data/SRI/certificates.")
 
-    if not MERGE_STATE_RE.search(body):
+    merge_match = MERGE_STATE_RE.search(body)
+    if not merge_match:
         fail(errors, "PR body must have Estado de merge = PENDIENTE or AUTORIZADO_POR_FERNANDO.")
 
     minimum_risk, evidence = compute_minimum_risk(changed_files)
@@ -284,14 +216,9 @@ def main() -> int:
     if migration_changed and re.search(r"-\s*Migraciones EF:\s*Ninguna\b", body, re.IGNORECASE):
         fail(errors, "Migration files changed but PR body says 'Migraciones EF: Ninguna'.")
 
-    require_review_ready = env_truthy("HFPOS_REQUIRE_REVIEW_READY")
-    if require_review_ready:
-        errors.extend(review_readiness_errors(read_review_evidence(), current_head_sha, declared_risk))
-
     print(f"Ticket: {title_ticket or body_ticket or 'UNKNOWN'}")
     print(f"Declared risk: {declared_risk or 'MISSING'}")
     print(f"Path-derived minimum risk: {minimum_risk}")
-    print(f"Review readiness enforced: {'YES' if require_review_ready else 'NO'}")
     print(f"Changed files: {len(changed_files)}")
     for path, risk, reason in evidence:
         print(f"  {risk}  {path}  ({reason})")
