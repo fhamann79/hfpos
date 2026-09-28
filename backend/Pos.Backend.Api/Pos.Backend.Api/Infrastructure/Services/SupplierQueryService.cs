@@ -33,15 +33,19 @@ public sealed class SupplierQueryService : ISupplierQueryService
             operationalContext.CompanyId,
             search,
             activeOnly ? "active" : "all");
-        var limit = Math.Clamp(take ?? DefaultLookupTake, 1, MaxLookupTake);
 
-        return await query
+        var ordered = query
             .OrderByDescending(supplier => supplier.IsActive)
             .ThenBy(supplier => supplier.Name)
-            .ThenBy(supplier => supplier.Id)
-            .Take(limit)
-            .Select(supplier => ToDto(supplier))
-            .ToListAsync();
+            .ThenBy(supplier => supplier.Id);
+
+        var projected = ordered.Select(supplier => ToDto(supplier));
+        if (take.HasValue)
+        {
+            projected = projected.Take(Math.Clamp(take.Value, 1, MaxLookupTake));
+        }
+
+        return await projected.ToListAsync();
     }
 
     public async Task<IReadOnlyList<SupplierDto>> GetLookupAsync(string? search, int take)
