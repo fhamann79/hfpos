@@ -212,6 +212,16 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
         self.assertIn("action === 'deleted'", self.workflow)
         self.assertIn("Trusted review evidence was deleted from reviewed commit", self.workflow)
 
+    def test_governance_generation_is_tied_to_action_run(self) -> None:
+        self.assertIn("RUN_ID: ${{ github.run_id }}", self.workflow)
+        self.assertIn("Governance generation ${runId} pending", self.workflow)
+        self.assertIn("target_url: runUrl", self.workflow)
+
+    def test_only_latest_generation_can_publish_final_status(self) -> None:
+        self.assertIn("listCommitStatusesForRef", self.workflow)
+        self.assertIn("latest.target_url !== runUrl", self.workflow)
+        self.assertIn("Stale governance generation ${runId}", self.workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
