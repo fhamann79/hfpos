@@ -19,22 +19,26 @@ namespace Pos.Backend.Api.WebApi.Controllers;
 public class ProductsController : ControllerBase
 {
     private const int DefaultPageSize = 30;
-    private const int MaxPageSize = 200;
     private const int DefaultLookupTake = 30;
-    private const int MaxLookupTake = 200;
 
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
+    private readonly IProductQueryService _productQueryService;
     private readonly IMasterDataLifecycleService _lifecycle;
     private readonly TenantAdministrationGuard _administrationGuard;
     private readonly IProductCostService _productCostService;
 
-    public ProductsController(PosDbContext context, IOperationalContextAccessor operationalContextAccessor,
-        IMasterDataLifecycleService lifecycle, TenantAdministrationGuard administrationGuard,
+    public ProductsController(
+        PosDbContext context,
+        IOperationalContextAccessor operationalContextAccessor,
+        IProductQueryService productQueryService,
+        IMasterDataLifecycleService lifecycle,
+        TenantAdministrationGuard administrationGuard,
         IProductCostService productCostService)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
+        _productQueryService = productQueryService;
         _lifecycle = lifecycle;
         _administrationGuard = administrationGuard;
         _productCostService = productCostService;
@@ -47,19 +51,7 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<IEnumerable<ProductDto>>> Get()
-    {
-        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-
-        var products = await _context.Products
-            .AsNoTracking()
-            .Where(p => p.CompanyId == operationalContext.CompanyId)
-            .OrderBy(p => p.Name)
-            .ThenBy(p => p.Id)
-            .Select(p => ToDto(p))
-            .ToListAsync();
-
-        return Ok(products);
-    }
+        => Ok(await _productQueryService.GetLegacyCatalogAsync());
 
     [HttpGet("lookup")]
     [Authorize(Policy = AppPermissions.CatalogProductsRead)]
@@ -69,20 +61,7 @@ public class ProductsController : ControllerBase
         [FromQuery] string? search,
         [FromQuery] int take = DefaultLookupTake,
         [FromQuery] int? categoryId = null)
-    {
-        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-        var limit = Math.Clamp(take, 1, MaxLookupTake);
-        var query = BuildFilteredQuery(operationalContext.CompanyId, search, "active", categoryId);
-
-        var products = await query
-            .OrderBy(p => p.Name)
-            .ThenBy(p => p.Id)
-            .Take(limit)
-            .Select(p => ToDto(p))
-            .ToListAsync();
-
-        return Ok(products);
-    }
+        => Ok(await _productQueryService.GetLookupAsync(search, take, categoryId));
 
     [HttpGet("page")]
     [Authorize(Policy = AppPermissions.CatalogProductsRead)]
@@ -96,29 +75,7 @@ public class ProductsController : ControllerBase
         [FromQuery] int pageSize = DefaultPageSize,
         [FromQuery] string? sortBy = null,
         [FromQuery] string? sortDir = null)
-    {
-        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-        var normalizedPage = Math.Max(page, 1);
-        var normalizedPageSize = Math.Clamp(pageSize, 1, MaxPageSize);
-        var query = BuildFilteredQuery(operationalContext.CompanyId, search, status, categoryId);
-        var totalItems = await query.CountAsync();
-        var ordered = ApplyOrdering(query, sortBy, sortDir);
-
-        var items = await ordered
-            .Skip((normalizedPage - 1) * normalizedPageSize)
-            .Take(normalizedPageSize)
-            .Select(p => ToDto(p))
-            .ToListAsync();
-
-        return Ok(new PagedResultDto<ProductDto>
-        {
-            Items = items,
-            Page = normalizedPage,
-            PageSize = normalizedPageSize,
-            TotalItems = totalItems,
-            TotalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)normalizedPageSize)
-        });
-    }
+        => Ok(await _productQueryService.GetPageAsync(search, status, categoryId, page, pageSize, sortBy, sortDir));
 
     [HttpPost]
     [Authorize(Policy = AppPermissions.CatalogProductsWrite)]
@@ -298,60 +255,6 @@ public class ProductsController : ControllerBase
         await transaction.CommitAsync();
 
         return NoContent();
-    }
-
-    private IQueryable<Product> BuildFilteredQuery(int companyId, string? search, string? status, int? categoryId)
-    {
-        var query = _context.Products
-            .AsNoTracking()
-            .Where(p => p.CompanyId == companyId);
-
-        if (categoryId.HasValue)
-        {
-            query = query.Where(p => p.CategoryId == categoryId.Value);
-        }
-
-        var normalizedStatus = status?.Trim().ToLowerInvariant();
-        query = normalizedStatus switch
-        {
-            "active" or "activo" or "activos" => query.Where(p => p.IsActive),
-            "inactive" or "inactivo" or "inactivos" => query.Where(p => !p.IsActive),
-            _ => query
-        };
-
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var term = search.Trim().ToLower();
-            query = query.Where(p =>
-                p.Name.ToLower().Contains(term)
-                || (p.Barcode != null && p.Barcode.ToLower().Contains(term))
-                || (p.InternalCode != null && p.InternalCode.ToLower().Contains(term)));
-        }
-
-        return query;
-    }
-
-    private static IOrderedQueryable<Product> ApplyOrdering(IQueryable<Product> query, string? sortBy, string? sortDir)
-    {
-        var descending = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
-        var normalizedSort = sortBy?.Trim().ToLowerInvariant();
-
-        return normalizedSort switch
-        {
-            "name" => descending
-                ? query.OrderByDescending(p => p.Name).ThenByDescending(p => p.Id)
-                : query.OrderBy(p => p.Name).ThenBy(p => p.Id),
-            "price" => descending
-                ? query.OrderByDescending(p => p.Price).ThenByDescending(p => p.Id)
-                : query.OrderBy(p => p.Price).ThenBy(p => p.Id),
-            "cost" => descending
-                ? query.OrderByDescending(p => p.Cost).ThenByDescending(p => p.Id)
-                : query.OrderBy(p => p.Cost).ThenBy(p => p.Id),
-            "isactive" => descending
-                ? query.OrderByDescending(p => p.IsActive).ThenBy(p => p.Name).ThenBy(p => p.Id)
-                : query.OrderBy(p => p.IsActive).ThenBy(p => p.Name).ThenBy(p => p.Id),
-            _ => query.OrderByDescending(p => p.IsActive).ThenBy(p => p.Name).ThenBy(p => p.Id)
-        };
     }
 
     private async Task<ObjectResult?> ValidateUniqueIdentifiersAsync(
