@@ -90,8 +90,6 @@ def minimum_risk_for_path(path: str) -> tuple[int, str]:
     p = path.replace("\\", "/")
     low = p.lower()
 
-    # Agent policy changes can alter future implementation/review behavior even
-    # when the file itself is Markdown, so they are governance rather than docs.
     if low == "agents.md" or low.endswith("/agents.md"):
         return 2, "agent governance policy"
 
@@ -159,16 +157,23 @@ def compute_minimum_risk(paths: list[str]) -> tuple[str, list[tuple[str, str, st
     return f"R{highest}", evidence
 
 
+def _attestation_matches_head(attestation: dict, current_head: str) -> bool:
+    commit_id = str(attestation.get("commit_id") or "").lower()
+    # GitHub review objects provide a full SHA. Codex clean-verdict comments
+    # currently include a short SHA; require at least 7 hex chars and match it
+    # only as a prefix of the current immutable HEAD.
+    return len(commit_id) >= 7 and current_head.startswith(commit_id)
+
+
 def review_readiness_errors(
     review_evidence: dict | None,
     current_head_sha: str,
     declared_risk: str | None,
 ) -> list[str]:
-    """Validate trusted GitHub review evidence for R2/R3 PRs.
+    """Validate trusted GitHub review attestations for R2/R3 PRs.
 
-    PR-body review fields are deliberately not authoritative. Only evidence
-    collected by the trusted pull_request_target workflow from GitHub's review
-    API can satisfy this gate.
+    PR-body review fields are deliberately not authoritative. Only attestations
+    collected by the trusted workflow from GitHub APIs can satisfy this gate.
     """
     if declared_risk not in {"R2", "R3"}:
         return []
@@ -182,28 +187,38 @@ def review_readiness_errors(
     if not evidence_head or evidence_head != current_head:
         fail(errors, "Trusted review evidence is stale or does not match the current PR HEAD.")
 
-    reviews = review_evidence.get("reviews")
-    if not isinstance(reviews, list):
-        return errors + ["Trusted review evidence does not contain a review list."]
+    attestations = review_evidence.get("attestations")
+    if not isinstance(attestations, list):
+        return errors + ["Trusted review evidence does not contain an attestation list."]
 
     eligible: list[dict] = []
-    for review in reviews:
-        if not isinstance(review, dict):
+    for attestation in attestations:
+        if not isinstance(attestation, dict):
             continue
-        reviewer = str(review.get("reviewer") or "")
-        commit_id = str(review.get("commit_id") or "").lower()
-        state = str(review.get("state") or "").upper()
-        if reviewer in TRUSTED_REVIEWERS and commit_id == current_head and state in {"COMMENTED", "APPROVED"}:
-            eligible.append(review)
+        reviewer = str(attestation.get("reviewer") or "")
+        kind = str(attestation.get("kind") or "")
+        state = str(attestation.get("state") or "").upper()
+        if reviewer not in TRUSTED_REVIEWERS or not _attestation_matches_head(attestation, current_head):
+            continue
+        if kind == "review" and state not in {"COMMENTED", "APPROVED"}:
+            continue
+        if kind == "clean_comment" and state != "CLEAN":
+            continue
+        if kind not in {"review", "clean_comment"}:
+            continue
+        eligible.append(attestation)
 
     if not eligible:
         return errors + [
-            "No trusted independent reviewer has submitted a review for the current PR HEAD."
+            "No trusted independent reviewer attestation exists for the current PR HEAD."
         ]
 
-    # Use the latest trusted review for the current HEAD. A later re-review is
-    # authoritative over an earlier review of the same immutable commit.
-    latest = max(eligible, key=lambda item: int(item.get("id") or 0))
+    # Use the latest trusted attestation for this HEAD. ISO-8601 GitHub times sort
+    # lexicographically; id is a deterministic tie-breaker.
+    latest = max(
+        eligible,
+        key=lambda item: (str(item.get("created_at") or ""), int(item.get("id") or 0)),
+    )
     blocker_count = int(latest.get("blocker_count") or 0)
     major_count = int(latest.get("major_count") or 0)
 
