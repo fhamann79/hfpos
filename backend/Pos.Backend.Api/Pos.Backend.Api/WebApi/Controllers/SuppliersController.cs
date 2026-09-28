@@ -19,48 +19,57 @@ namespace Pos.Backend.Api.WebApi.Controllers;
 public class SuppliersController : ControllerBase
 {
     private const int MaxEmailLength = 320;
+    private const int DefaultLookupTake = 50;
+    private const int DefaultPageSize = 30;
 
     private static readonly Regex EmailRegex = new(@"^[^\s@]+@[^\s@]+\.[^\s@]+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
+    private readonly ISupplierQueryService _supplierQueryService;
 
-    public SuppliersController(PosDbContext context, IOperationalContextAccessor operationalContextAccessor)
+    public SuppliersController(
+        PosDbContext context,
+        IOperationalContextAccessor operationalContextAccessor,
+        ISupplierQueryService supplierQueryService)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
+        _supplierQueryService = supplierQueryService;
     }
 
+    // Bounded lookup kept for operational selectors that expect an array.
     [HttpGet]
     [Authorize(Policy = AppPermissions.SuppliersRead)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<IEnumerable<SupplierDto>>> Get([FromQuery] string? search)
-    {
-        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+    public async Task<ActionResult<IEnumerable<SupplierDto>>> Get(
+        [FromQuery] string? search,
+        [FromQuery] int? take = null,
+        [FromQuery] bool activeOnly = false)
+        => Ok(await _supplierQueryService.GetListAsync(search, take, activeOnly));
 
-        var query = _context.Suppliers
-            .AsNoTracking()
-            .Where(s => s.CompanyId == operationalContext.CompanyId);
+    [HttpGet("lookup")]
+    [Authorize(Policy = AppPermissions.SuppliersRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IEnumerable<SupplierDto>>> Lookup(
+        [FromQuery] string? search,
+        [FromQuery] int take = DefaultLookupTake)
+        => Ok(await _supplierQueryService.GetLookupAsync(search, take));
 
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var term = search.Trim().ToLower();
-            query = query.Where(s =>
-                s.Name.ToLower().Contains(term)
-                || (s.Identification != null && s.Identification.ToLower().Contains(term))
-                || (s.Email != null && s.Email.ToLower().Contains(term))
-                || (s.Phone != null && s.Phone.ToLower().Contains(term)));
-        }
-
-        var suppliers = await query
-            .OrderByDescending(s => s.IsActive)
-            .ThenBy(s => s.Name)
-            .Select(s => ToDto(s))
-            .ToListAsync();
-
-        return Ok(suppliers);
-    }
+    [HttpGet("page")]
+    [Authorize(Policy = AppPermissions.SuppliersRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<PagedResultDto<SupplierDto>>> GetPage(
+        [FromQuery] string? search,
+        [FromQuery] string? status = "all",
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = DefaultPageSize,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortDir = null)
+        => Ok(await _supplierQueryService.GetPageAsync(search, status, page, pageSize, sortBy, sortDir));
 
     [HttpGet("{id:int}")]
     [Authorize(Policy = AppPermissions.SuppliersRead)]

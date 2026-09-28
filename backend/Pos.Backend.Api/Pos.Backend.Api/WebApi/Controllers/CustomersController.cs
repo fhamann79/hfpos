@@ -24,8 +24,7 @@ public class CustomersController : ControllerBase
     private const int MaxEmailLength = 320;
     private const int MaxAddressLength = 300;
     private const int MaxNotesLength = 500;
-    private const int DefaultTake = 30;
-    private const int MaxTake = 200;
+    private const int DefaultPageSize = 30;
 
     private static readonly HashSet<string> ValidIdentificationTypes = new(StringComparer.Ordinal)
     {
@@ -40,13 +39,19 @@ public class CustomersController : ControllerBase
 
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
+    private readonly ICustomerQueryService _customerQueryService;
 
-    public CustomersController(PosDbContext context, IOperationalContextAccessor operationalContextAccessor)
+    public CustomersController(
+        PosDbContext context,
+        IOperationalContextAccessor operationalContextAccessor,
+        ICustomerQueryService customerQueryService)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
+        _customerQueryService = customerQueryService;
     }
 
+    // Bounded lookup kept for operational consumers that still expect an array.
     [HttpGet]
     [Authorize(Policy = AppPermissions.CustomersRead)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -56,35 +61,20 @@ public class CustomersController : ControllerBase
         [FromQuery] bool? includeInactive,
         [FromQuery] string? status,
         [FromQuery] int? take)
-    {
-        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-        var query = _context.Customers
-            .AsNoTracking()
-            .Where(c => c.CompanyId == operationalContext.CompanyId);
+        => Ok(await _customerQueryService.GetLookupAsync(search, includeInactive, status, take));
 
-        query = ApplyStatusFilter(query, includeInactive, status);
-
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var term = search.Trim().ToLower();
-            query = query.Where(c =>
-                c.Name.ToLower().Contains(term)
-                || (c.Identification != null && c.Identification.ToLower().Contains(term))
-                || (c.Email != null && c.Email.ToLower().Contains(term))
-                || (c.Phone != null && c.Phone.ToLower().Contains(term))
-                || (c.Address != null && c.Address.ToLower().Contains(term)));
-        }
-
-        var limit = Math.Clamp(take ?? DefaultTake, 1, MaxTake);
-        var customers = await query
-            .OrderByDescending(c => c.IsActive)
-            .ThenBy(c => c.Name)
-            .Take(limit)
-            .Select(c => ToDto(c))
-            .ToListAsync();
-
-        return Ok(customers);
-    }
+    [HttpGet("page")]
+    [Authorize(Policy = AppPermissions.CustomersRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<PagedResultDto<CustomerDto>>> GetPage(
+        [FromQuery] string? search,
+        [FromQuery] string? status,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = DefaultPageSize,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortDir = null)
+        => Ok(await _customerQueryService.GetPageAsync(search, status, page, pageSize, sortBy, sortDir));
 
     [HttpGet("{id:int}")]
     [Authorize(Policy = AppPermissions.CustomersRead)]
@@ -251,19 +241,6 @@ public class CustomersController : ControllerBase
         await _context.SaveChangesAsync();
 
         return NoContent();
-    }
-
-    private static IQueryable<Customer> ApplyStatusFilter(IQueryable<Customer> query, bool? includeInactive, string? status)
-    {
-        var normalizedStatus = NormalizeOptionalText(status)?.ToLowerInvariant();
-
-        return normalizedStatus switch
-        {
-            "active" or "activo" or "activos" => query.Where(c => c.IsActive),
-            "inactive" or "inactivo" or "inactivos" => query.Where(c => !c.IsActive),
-            "all" or "todos" => query,
-            _ => includeInactive == true ? query : query.Where(c => c.IsActive)
-        };
     }
 
     private async Task<bool> ActiveIdentificationExistsAsync(int companyId, string? identification, int? excludedCustomerId)
