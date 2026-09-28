@@ -170,6 +170,7 @@ jobs:
               "Codex Review: Didn't find any major issues.",
               "Codex Review: Didn't find any major issues. Chef's kiss.",
               "Codex Review: Didn't find any major issues. You're on a roll.",
+              "Codex Review: Didn't find any major issues. Hooray!",
           }
           clean_commit_line = re.compile(r"\*\*Reviewed commit:\*\* `([0-9a-f]{10,40})`", re.IGNORECASE)
 
