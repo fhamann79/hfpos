@@ -73,7 +73,6 @@ jobs:
             core.setOutput('number', String(pullNumber));
             core.setOutput('base_sha', pr.base.sha);
             core.setOutput('head_sha', pr.head.sha);
-            core.setOutput('head_repo', pr.head.repo.clone_url);
             core.setOutput('event_path', eventPath);
             core.setOutput('review_requested', reviewRequested ? 'true' : 'false');
             core.setOutput('trusted_codex_comment_event', trustedCodexCommentEvent ? 'true' : 'false');
@@ -115,20 +114,28 @@ jobs:
       - name: Run trusted governance regression tests
         run: python3 scripts/ci/test_validate_pr_governance.py
 
-      - name: Fetch PR head as Git object only
+      - name: Collect changed files from GitHub PR merge diff
+        uses: actions/github-script@v7
         env:
-          HEAD_REPO: ${{ steps.pr.outputs.head_repo }}
-          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
-        run: git fetch --no-tags --depth=1 "$HEAD_REPO" "$HEAD_SHA"
-
-      - name: Collect changed files
-        env:
-          BASE_SHA: ${{ steps.pr.outputs.base_sha }}
-          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
-        run: |
-          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/hfpos-changed-files.txt"
-          echo "Changed files:"
-          cat "$RUNNER_TEMP/hfpos-changed-files.txt"
+          CHANGED_FILES_PATH: ${{ runner.temp }}/hfpos-changed-files.txt
+        with:
+          script: |
+            const fs = require('fs');
+            const pullNumber = Number('${{ steps.pr.outputs.number }}');
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+              per_page: 100,
+            });
+            const names = files.map(file => file.filename).filter(Boolean);
+            if (names.length === 0) {
+              core.setFailed('GitHub PR API returned no changed files; fail closed.');
+              return;
+            }
+            fs.writeFileSync(process.env.CHANGED_FILES_PATH, `${names.join('\n')}\n`, { encoding: 'utf8' });
+            core.info(`Changed files from authoritative PR merge diff (${names.length}):`);
+            for (const name of names) core.info(`  ${name}`);
 
       - name: Collect trusted Codex evidence from GitHub
         env:
