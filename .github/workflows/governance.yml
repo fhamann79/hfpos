@@ -4,6 +4,8 @@ on:
   pull_request_target:
     branches: [main]
     types: [opened, synchronize, reopened, edited, ready_for_review]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
 
 permissions:
   contents: read
@@ -15,6 +17,7 @@ concurrency:
 
 jobs:
   governance:
+    if: github.event.pull_request.base.ref == 'main'
     name: AI-Native Governance
     runs-on: ubuntu-latest
     timeout-minutes: 5
