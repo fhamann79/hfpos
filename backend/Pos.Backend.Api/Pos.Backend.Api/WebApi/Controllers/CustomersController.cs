@@ -25,7 +25,9 @@ public class CustomersController : ControllerBase
     private const int MaxAddressLength = 300;
     private const int MaxNotesLength = 500;
     private const int DefaultTake = 30;
+    private const int DefaultPageSize = 30;
     private const int MaxTake = 200;
+    private const int MaxPageSize = 200;
 
     private static readonly HashSet<string> ValidIdentificationTypes = new(StringComparer.Ordinal)
     {
@@ -47,6 +49,7 @@ public class CustomersController : ControllerBase
         _operationalContextAccessor = operationalContextAccessor;
     }
 
+    // Bounded lookup kept for operational consumers that still expect an array.
     [HttpGet]
     [Authorize(Policy = AppPermissions.CustomersRead)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -58,32 +61,53 @@ public class CustomersController : ControllerBase
         [FromQuery] int? take)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-        var query = _context.Customers
-            .AsNoTracking()
-            .Where(c => c.CompanyId == operationalContext.CompanyId);
-
-        query = ApplyStatusFilter(query, includeInactive, status);
-
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var term = search.Trim().ToLower();
-            query = query.Where(c =>
-                c.Name.ToLower().Contains(term)
-                || (c.Identification != null && c.Identification.ToLower().Contains(term))
-                || (c.Email != null && c.Email.ToLower().Contains(term))
-                || (c.Phone != null && c.Phone.ToLower().Contains(term))
-                || (c.Address != null && c.Address.ToLower().Contains(term)));
-        }
-
+        var query = BuildFilteredQuery(operationalContext.CompanyId, search, includeInactive, status);
         var limit = Math.Clamp(take ?? DefaultTake, 1, MaxTake);
+
         var customers = await query
             .OrderByDescending(c => c.IsActive)
             .ThenBy(c => c.Name)
+            .ThenBy(c => c.Id)
             .Take(limit)
             .Select(c => ToDto(c))
             .ToListAsync();
 
         return Ok(customers);
+    }
+
+    [HttpGet("page")]
+    [Authorize(Policy = AppPermissions.CustomersRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<PagedResultDto<CustomerDto>>> GetPage(
+        [FromQuery] string? search,
+        [FromQuery] string? status,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = DefaultPageSize,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortDir = null)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var normalizedPage = Math.Max(page, 1);
+        var normalizedPageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+        var query = BuildFilteredQuery(operationalContext.CompanyId, search, includeInactive: null, status);
+        var totalItems = await query.CountAsync();
+        var ordered = ApplyOrdering(query, sortBy, sortDir);
+
+        var items = await ordered
+            .Skip((normalizedPage - 1) * normalizedPageSize)
+            .Take(normalizedPageSize)
+            .Select(c => ToDto(c))
+            .ToListAsync();
+
+        return Ok(new PagedResultDto<CustomerDto>
+        {
+            Items = items,
+            Page = normalizedPage,
+            PageSize = normalizedPageSize,
+            TotalItems = totalItems,
+            TotalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)normalizedPageSize)
+        });
     }
 
     [HttpGet("{id:int}")]
@@ -251,6 +275,48 @@ public class CustomersController : ControllerBase
         await _context.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    private IQueryable<Customer> BuildFilteredQuery(int companyId, string? search, bool? includeInactive, string? status)
+    {
+        var query = _context.Customers
+            .AsNoTracking()
+            .Where(c => c.CompanyId == companyId);
+
+        query = ApplyStatusFilter(query, includeInactive, status);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(c =>
+                c.Name.ToLower().Contains(term)
+                || (c.Identification != null && c.Identification.ToLower().Contains(term))
+                || (c.Email != null && c.Email.ToLower().Contains(term))
+                || (c.Phone != null && c.Phone.ToLower().Contains(term))
+                || (c.Address != null && c.Address.ToLower().Contains(term)));
+        }
+
+        return query;
+    }
+
+    private static IOrderedQueryable<Customer> ApplyOrdering(IQueryable<Customer> query, string? sortBy, string? sortDir)
+    {
+        var descending = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+        var normalizedSort = sortBy?.Trim().ToLowerInvariant();
+
+        return normalizedSort switch
+        {
+            "name" => descending
+                ? query.OrderByDescending(c => c.Name).ThenByDescending(c => c.Id)
+                : query.OrderBy(c => c.Name).ThenBy(c => c.Id),
+            "isactive" => descending
+                ? query.OrderByDescending(c => c.IsActive).ThenBy(c => c.Name).ThenBy(c => c.Id)
+                : query.OrderBy(c => c.IsActive).ThenBy(c => c.Name).ThenBy(c => c.Id),
+            "updatedat" => descending
+                ? query.OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt).ThenByDescending(c => c.Id)
+                : query.OrderBy(c => c.UpdatedAt ?? c.CreatedAt).ThenBy(c => c.Id),
+            _ => query.OrderByDescending(c => c.IsActive).ThenBy(c => c.Name).ThenBy(c => c.Id)
+        };
     }
 
     private static IQueryable<Customer> ApplyStatusFilter(IQueryable<Customer> query, bool? includeInactive, string? status)
