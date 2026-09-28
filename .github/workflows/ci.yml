@@ -3,11 +3,16 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
   push:
     branches: [main]
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend:
@@ -39,6 +44,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect governance changed files
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --name-only "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/hfpos-changed-files.txt"
+
+      - name: Enforce AI-Native governance contract
+        if: github.event_name == 'pull_request'
+        env:
+          HFPOS_CHANGED_FILES: ${{ runner.temp }}/hfpos-changed-files.txt
+        run: python3 scripts/ci/validate_pr_governance.py
 
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
