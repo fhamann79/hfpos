@@ -119,17 +119,17 @@ class IndependentReviewReadinessTests(unittest.TestCase):
     def test_untrusted_reviewer_cannot_self_certify(self) -> None:
         evidence = self.evidence(self.review(reviewer="fhamann79"))
         errors = review_readiness_errors(evidence, self.HEAD, "R2")
-        self.assertTrue(any("No trusted independent reviewer" in error for error in errors))
+        self.assertTrue(any("No active trusted independent reviewer" in error for error in errors))
 
     def test_stale_attestation_blocks_r2(self) -> None:
         evidence = self.evidence(self.review(commit_id="b" * 40))
         errors = review_readiness_errors(evidence, self.HEAD, "R2")
-        self.assertTrue(any("No trusted independent reviewer" in error for error in errors))
+        self.assertTrue(any("No active trusted independent reviewer" in error for error in errors))
 
     def test_short_sha_is_never_authoritative(self) -> None:
         evidence = self.evidence(self.clean_comment(commit_id=self.HEAD[:10]))
         errors = review_readiness_errors(evidence, self.HEAD, "R2")
-        self.assertTrue(any("No trusted independent reviewer" in error for error in errors))
+        self.assertTrue(any("No active trusted independent reviewer" in error for error in errors))
 
     def test_stale_evidence_head_blocks_r2(self) -> None:
         evidence = self.evidence(self.review(), evidence_head="b" * 40)
@@ -149,6 +149,27 @@ class IndependentReviewReadinessTests(unittest.TestCase):
         )
         errors = review_readiness_errors(evidence, self.HEAD, "R2")
         self.assertTrue(any("BLOCKER" in error for error in errors))
+
+    def test_dismissing_review_cannot_erase_its_findings(self) -> None:
+        evidence = self.evidence(
+            self.review(blocker=1, state="DISMISSED"),
+            self.clean_comment(),
+        )
+        errors = review_readiness_errors(evidence, self.HEAD, "R2")
+        self.assertTrue(any("BLOCKER" in error for error in errors))
+
+    def test_changes_requested_is_blocking_even_without_marker(self) -> None:
+        evidence = self.evidence(
+            self.review(state="CHANGES_REQUESTED"),
+            self.clean_comment(),
+        )
+        errors = review_readiness_errors(evidence, self.HEAD, "R2")
+        self.assertTrue(any("MAJOR/change-request" in error for error in errors))
+
+    def test_dismissed_clean_review_alone_is_not_active_evidence(self) -> None:
+        evidence = self.evidence(self.review(state="DISMISSED"))
+        errors = review_readiness_errors(evidence, self.HEAD, "R2")
+        self.assertTrue(any("No active trusted independent reviewer" in error for error in errors))
 
     def test_findings_from_different_head_do_not_block_current_head(self) -> None:
         evidence = self.evidence(
