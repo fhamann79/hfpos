@@ -145,10 +145,11 @@ For R2 and R3 changes, independent review is a distinct gate. The implementation
 - Every actionable finding should identify the affected file/area, explain the failure mode or consequence, and use BLOCKER / MAJOR / MINOR / NIT severity.
 - R2 review must test scope, contracts, permissions, error states, regressions and whether claimed tests actually cover the changed behavior.
 - R3 review must additionally challenge tenant boundaries, server-side authorization, transaction boundaries, money/stock/cash semantics, locking/concurrency/idempotency, EF migrations/constraints, SQL correctness/performance and SRI lifecycle as applicable.
-- Changes to `AGENTS.md`, governance scripts, GitHub Actions or branch/review controls require adversarial review for self-bypass, weakened gates, stale-review acceptance and unsafe `pull_request_target` usage. No untrusted PR code may execute with privileged tokens or real secrets.
-- `AI-Native Governance` MUST obtain authoritative evidence from GitHub APIs while executing trusted base/default-branch code. Editable PR fields cannot prove reviewer identity, review completion, reviewed SHA or finding counts.
-- A trusted attestation may be a GitHub review with findings or a Codex clean-verdict issue comment. In either case, the attestation must identify the current PR HEAD (full SHA or an unambiguous sufficiently long SHA prefix).
-- A review is stale after the PR HEAD changes. R2/R3 readiness requires a trusted attestation for the exact current HEAD.
+- Changes to `AGENTS.md`, governance scripts, GitHub Actions or branch/review controls require adversarial review for self-bypass, weakened gates, stale-review acceptance and unsafe privileged event usage. No untrusted PR code may execute with privileged tokens or real secrets.
+- `AI-Native Governance` MUST obtain authoritative evidence from GitHub APIs while executing trusted default/base-branch code. Editable PR fields cannot prove reviewer identity, review completion, reviewed SHA or finding counts.
+- A trusted attestation may be a GitHub review with findings or a canonical Codex clean-verdict issue comment. Normal reviews must carry the exact full current HEAD SHA. A clean comment's displayed SHA must be resolved through GitHub's commit API to the exact full current HEAD before it becomes evidence.
+- `BLOCKER` and `MAJOR` findings are sticky for an immutable HEAD: a later clean attestation on the same commit MUST NOT erase them. Correcting code creates a new HEAD and requires a fresh review.
+- A review is stale after the PR HEAD changes. R2/R3 readiness requires trusted evidence for the exact current HEAD.
 - The initial trusted AI reviewer identity is `chatgpt-codex-connector[bot]`. Modifying the trusted-reviewer set is itself governance work and requires adversarial independent review.
 - If the preferred independent reviewer is unavailable, record that fact and use a real fallback; never label an implementer's second pass as independent.
 - Independent AI review never authorizes merge, production changes, shared/persistent database mutation, real SRI operations or use of real certificates/secrets. Fernando retains those decisions.
