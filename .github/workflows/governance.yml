@@ -27,11 +27,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Resolve pull request context from GitHub
+      - name: Resolve canonical pull request context from GitHub
         id: pr
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require('fs');
+            const path = require('path');
             const pullNumber = context.payload.pull_request?.number ?? context.payload.issue?.number;
             if (!pullNumber) {
               core.setFailed('Could not resolve pull request number from event.');
@@ -46,10 +48,13 @@ jobs:
               core.setFailed(`Governance only supports PRs targeting main; got ${pr.base.ref}.`);
               return;
             }
+            const eventPath = path.join(process.env.RUNNER_TEMP, 'hfpos-pr-event.json');
+            fs.writeFileSync(eventPath, JSON.stringify({ pull_request: pr }), { encoding: 'utf8' });
             core.setOutput('number', String(pullNumber));
             core.setOutput('base_sha', pr.base.sha);
             core.setOutput('head_sha', pr.head.sha);
             core.setOutput('head_repo', pr.head.repo.clone_url);
+            core.setOutput('event_path', eventPath);
 
       - name: Checkout trusted base
         uses: actions/checkout@v4
@@ -91,6 +96,8 @@ jobs:
           import json
           import os
           import re
+          import urllib.error
+          import urllib.parse
           import urllib.request
 
           api = os.environ["GH_API_URL"].rstrip("/")
@@ -100,29 +107,47 @@ jobs:
           head_sha = os.environ["HEAD_SHA"].lower()
           output = os.environ["REVIEW_EVIDENCE_FILE"]
           trusted_reviewers = {"chatgpt-codex-connector[bot]"}
+          clean_header = "Codex Review: Didn't find any major issues. Chef's kiss."
+          clean_commit_line = re.compile(r"\*\*Reviewed commit:\*\* `([0-9a-f]{10,40})`", re.IGNORECASE)
+
+          def request_json(path):
+              url = f"{api}{path}"
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
 
           def get_all(path):
               items = []
               page = 1
               while True:
                   separator = "&" if "?" in path else "?"
-                  url = f"{api}{path}{separator}per_page=100&page={page}"
-                  request = urllib.request.Request(
-                      url,
-                      headers={
-                          "Authorization": f"Bearer {token}",
-                          "Accept": "application/vnd.github+json",
-                          "X-GitHub-Api-Version": "2022-11-28",
-                      },
-                  )
-                  with urllib.request.urlopen(request, timeout=30) as response:
-                      batch = json.load(response)
+                  batch = request_json(f"{path}{separator}per_page=100&page={page}")
                   if not isinstance(batch, list):
                       raise RuntimeError(f"Expected list from GitHub API: {path}")
                   items.extend(batch)
                   if len(batch) < 100:
                       return items
                   page += 1
+
+          def resolve_commit(ref):
+              if not re.fullmatch(r"[0-9a-f]{10,40}", ref, re.IGNORECASE):
+                  return None
+              encoded_ref = urllib.parse.quote(ref, safe="")
+              try:
+                  commit = request_json(f"/repos/{repo}/commits/{encoded_ref}")
+              except urllib.error.HTTPError:
+                  return None
+              resolved = (commit.get("sha") or "").lower() if isinstance(commit, dict) else ""
+              if not re.fullmatch(r"[0-9a-f]{40}", resolved):
+                  return None
+              return resolved
 
           reviews = get_all(f"/repos/{repo}/pulls/{pr}/reviews")
           review_comments = get_all(f"/repos/{repo}/pulls/{pr}/comments")
@@ -146,6 +171,9 @@ jobs:
               reviewer = ((review.get("user") or {}).get("login") or "")
               if reviewer not in trusted_reviewers:
                   continue
+              commit_id = (review.get("commit_id") or "").lower()
+              if not re.fullmatch(r"[0-9a-f]{40}", commit_id):
+                  continue
               review_id = review.get("id")
               counts = by_review.get(review_id, {"blocker_count": 0, "major_count": 0})
               attestations.append(
@@ -154,22 +182,30 @@ jobs:
                       "kind": "review",
                       "reviewer": reviewer,
                       "state": review.get("state"),
-                      "commit_id": (review.get("commit_id") or "").lower(),
+                      "commit_id": commit_id,
                       "created_at": review.get("submitted_at") or "",
                       "blocker_count": counts["blocker_count"],
                       "major_count": counts["major_count"],
                   }
               )
 
-          clean_pattern = re.compile(r"Codex Review:\s*Didn't find any major issues", re.IGNORECASE)
-          commit_pattern = re.compile(r"Reviewed commit:\s*`?([0-9a-f]{7,40})`?", re.IGNORECASE)
           for comment in issue_comments:
               reviewer = ((comment.get("user") or {}).get("login") or "")
               if reviewer not in trusted_reviewers:
                   continue
               body = comment.get("body") or ""
-              commit_match = commit_pattern.search(body)
-              if not clean_pattern.search(body) or not commit_match:
+              lines = body.splitlines()
+              # Accept only Codex's canonical clean-verdict prologue. Quoting the
+              # marker later in explanatory text cannot satisfy this structure.
+              if len(lines) < 3 or lines[0].strip() != clean_header or lines[1].strip() != "":
+                  continue
+              commit_match = clean_commit_line.fullmatch(lines[2].strip())
+              if not commit_match:
+                  continue
+              if re.search(r"\[(?:BLOCKER|MAJOR)\]", body, flags=re.IGNORECASE):
+                  continue
+              resolved = resolve_commit(commit_match.group(1).lower())
+              if resolved != head_sha:
                   continue
               attestations.append(
                   {
@@ -177,7 +213,8 @@ jobs:
                       "kind": "clean_comment",
                       "reviewer": reviewer,
                       "state": "CLEAN",
-                      "commit_id": commit_match.group(1).lower(),
+                      # Store only the canonical full SHA resolved by GitHub.
+                      "commit_id": resolved,
                       "created_at": comment.get("created_at") or "",
                       "blocker_count": 0,
                       "major_count": 0,
@@ -198,6 +235,7 @@ jobs:
 
       - name: Validate PR governance and independent-review readiness with trusted validator
         env:
+          HFPOS_EVENT_PATH: ${{ steps.pr.outputs.event_path }}
           HFPOS_CHANGED_FILES: ${{ runner.temp }}/hfpos-changed-files.txt
           HFPOS_REVIEW_EVIDENCE: ${{ runner.temp }}/hfpos-review-evidence.json
           HFPOS_REQUIRE_REVIEW_READY: "1"
