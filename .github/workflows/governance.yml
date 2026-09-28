@@ -7,38 +7,44 @@ on:
   issue_comment:
     types: [created, edited, deleted]
 
-# IMPORTANT: this trusted workflow runs only default/base-branch code. It never
-# checks out or executes code from the PR HEAD. Its built-in GITHUB_TOKEN cannot
-# write commit statuses. The required governance status is emitted only with the
-# dedicated HFPOS Governance Gate GitHub App token stored in a protected
-# environment. That environment MUST be restricted to Selected branches and
-# tags -> Branch main only before its App secrets are added.
+# SECURITY MODEL
+# - This workflow is loaded from the trusted default/base branch.
+# - No PR-head code is checked out or executed.
+# - The built-in GITHUB_TOKEN is read-only.
+# - Commit statuses are emitted only with the dedicated HFPOS Governance Gate
+#   GitHub App token held by the `hfpos-governance` environment.
+# - That environment MUST be restricted to Selected branches and tags -> main
+#   before either App secret is stored.
 permissions:
   contents: read
   pull-requests: read
   issues: read
 
-concurrency:
-  group: governance-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: false
-
 jobs:
-  governance:
+  # This job intentionally has NO concurrency group. Every authorized
+  # `@codex review` event must reach this job even if evaluation runs are being
+  # compacted/cancelled. It persists an immutable request boundary on the exact
+  # HEAD before the later evaluator is allowed to run.
+  record_review_event:
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name != 'issue_comment' || github.event.issue.pull_request)
-    name: Governance Event Processor
+    name: Record Review Boundary
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 3
     environment: hfpos-governance
+    outputs:
+      pr_number: ${{ steps.pr.outputs.number }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      base_sha: ${{ steps.pr.outputs.base_sha }}
+      review_requested: ${{ steps.pr.outputs.review_requested }}
+      trusted_codex_comment_event: ${{ steps.pr.outputs.trusted_codex_comment_event }}
     steps:
-      - name: Resolve canonical pull request context
+      - name: Resolve event and authorize review request
         id: pr
         uses: actions/github-script@v7
         with:
           script: |
-            const fs = require('fs');
-            const path = require('path');
             const pullNumber = context.payload.pull_request?.number ?? context.payload.issue?.number;
             if (!pullNumber) {
               core.setFailed('Could not resolve pull request number from event.');
@@ -55,9 +61,6 @@ jobs:
               return;
             }
 
-            const eventPath = path.join(process.env.RUNNER_TEMP, 'hfpos-pr-event.json');
-            fs.writeFileSync(eventPath, JSON.stringify({ pull_request: pr }), { encoding: 'utf8' });
-
             const comment = context.payload.comment ?? {};
             const body = String(comment.body ?? '');
             const firstLine = body.split(/\r?\n/, 1)[0] ?? '';
@@ -71,21 +74,35 @@ jobs:
             const reviewRequested = isCreatedIssueComment && authorizedRequester && !isCodexBot && /^\s*@codex\s+review\s*$/i.test(firstLine);
             const trustedCodexCommentEvent = context.eventName === 'issue_comment' && isCodexBot;
 
+            if (reviewRequested) {
+              const createdAt = String(comment.created_at ?? '');
+              const commentId = Number(comment.id ?? 0);
+              if (!createdAt || !Number.isSafeInteger(commentId) || commentId <= 0) {
+                core.setFailed('Authorized review request lacks a stable GitHub created_at/id boundary.');
+                return;
+              }
+              core.setOutput('request_created_at', createdAt);
+              core.setOutput('request_id', String(commentId));
+            }
+
             core.setOutput('number', String(pullNumber));
             core.setOutput('base_sha', pr.base.sha);
             core.setOutput('head_sha', pr.head.sha);
-            core.setOutput('event_path', eventPath);
             core.setOutput('review_requested', reviewRequested ? 'true' : 'false');
             core.setOutput('trusted_codex_comment_event', trustedCodexCommentEvent ? 'true' : 'false');
 
-      - name: Mint dedicated governance App token
+      - name: Mint dedicated governance App token for evidence transition
+        if: steps.pr.outputs.review_requested == 'true' || steps.pr.outputs.trusted_codex_comment_event == 'true'
         id: governance-app
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.HFPOS_GOVERNANCE_APP_ID }}
           private-key: ${{ secrets.HFPOS_GOVERNANCE_PRIVATE_KEY }}
 
-      - name: Fail closed while review evidence changes
+      # Pending is deliberately written BEFORE the durable request marker. If a
+      # partial failure occurs after this point, the protected gate remains
+      # blocked rather than retaining a previous green result.
+      - name: Fail closed immediately when trusted review evidence changes
         if: steps.pr.outputs.review_requested == 'true' || steps.pr.outputs.trusted_codex_comment_event == 'true'
         uses: actions/github-script@v7
         with:
@@ -105,7 +122,106 @@ jobs:
               target_url: runUrl,
             });
 
+      - name: Persist immutable authorized review-request boundary
+        if: steps.pr.outputs.review_requested == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.governance-app.outputs.token }}
+          script: |
+            const headSha = '${{ steps.pr.outputs.head_sha }}';
+            const createdAt = '${{ steps.pr.outputs.request_created_at }}';
+            const commentId = '${{ steps.pr.outputs.request_id }}';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const description = `request=${createdAt};id=${commentId}`;
+            if (description.length > 140) {
+              core.setFailed('Review-request boundary does not fit commit-status description.');
+              return;
+            }
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: headSha,
+              state: 'success',
+              context: 'AI-Native Review Request',
+              description,
+              target_url: runUrl,
+            });
+
+  # Evaluation may be cancelled/replaced because all request boundaries are
+  # already durable before this job is eligible to start. The newest evaluator
+  # always reconstructs current state from GitHub APIs.
+  governance:
+    needs: record_review_event
+    if: >-
+      always() &&
+      needs.record_review_event.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'issue_comment' || github.event.issue.pull_request)
+    name: Governance Event Processor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: hfpos-governance
+    concurrency:
+      group: governance-eval-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Mint dedicated governance App token
+        id: governance-app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.HFPOS_GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.HFPOS_GOVERNANCE_PRIVATE_KEY }}
+
+      # Acquiring the evaluator concurrency lock cancels an older evaluator.
+      # Re-publishing pending here creates a closing barrier after that
+      # cancellation, so an older result cannot remain the newest required
+      # status for a just-recorded request.
+      - name: Keep newly recorded review request pending after evaluator handoff
+        if: needs.record_review_event.outputs.review_requested == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.governance-app.outputs.token }}
+          script: |
+            const headSha = '${{ needs.record_review_event.outputs.head_sha }}';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: headSha,
+              state: 'pending',
+              context: 'AI-Native Governance',
+              description: 'Independent Codex review requested for current HEAD',
+              target_url: runUrl,
+            });
+
+      - name: Resolve canonical pull request context
+        if: needs.record_review_event.outputs.review_requested != 'true'
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const pullNumber = Number('${{ needs.record_review_event.outputs.pr_number }}');
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            });
+            if (pr.base.ref !== 'main') {
+              core.setFailed(`Governance only supports PRs targeting main; got ${pr.base.ref}.`);
+              return;
+            }
+
+            const eventPath = path.join(process.env.RUNNER_TEMP, 'hfpos-pr-event.json');
+            fs.writeFileSync(eventPath, JSON.stringify({ pull_request: pr }), { encoding: 'utf8' });
+            core.setOutput('number', String(pullNumber));
+            core.setOutput('base_sha', pr.base.sha);
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('event_path', eventPath);
+
       - name: Checkout trusted base
+        if: needs.record_review_event.outputs.review_requested != 'true'
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.pr.outputs.base_sha }}
@@ -113,9 +229,11 @@ jobs:
           persist-credentials: false
 
       - name: Run trusted governance regression tests
+        if: needs.record_review_event.outputs.review_requested != 'true'
         run: python3 scripts/ci/test_validate_pr_governance.py
 
       - name: Collect changed files from GitHub PR merge diff
+        if: needs.record_review_event.outputs.review_requested != 'true'
         uses: actions/github-script@v7
         env:
           CHANGED_FILES_PATH: ${{ runner.temp }}/hfpos-changed-files.txt
@@ -138,7 +256,8 @@ jobs:
             core.info(`Changed files from authoritative PR merge diff (${names.length}):`);
             for (const name of names) core.info(`  ${name}`);
 
-      - name: Collect trusted Codex evidence from GitHub
+      - name: Collect trusted Codex evidence and durable request boundaries
+        if: needs.record_review_event.outputs.review_requested != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_API_URL: ${{ github.api_url }}
@@ -164,6 +283,7 @@ jobs:
           trusted_reviewer = "chatgpt-codex-connector[bot]"
           trusted_request_associations = {"OWNER", "MEMBER", "COLLABORATOR"}
           request_pattern = re.compile(r"^\s*@codex\s+review\s*$", re.IGNORECASE)
+          marker_pattern = re.compile(r"^request=([^;]+);id=(\d+)$")
           clean_headers = {
               "Codex Review: Didn't find any major issues.",
               "Codex Review: Didn't find any major issues. Chef's kiss.",
@@ -208,17 +328,25 @@ jobs:
               resolved = (commit.get("sha") or "").lower() if isinstance(commit, dict) else ""
               return resolved if re.fullmatch(r"[0-9a-f]{40}", resolved) else None
 
+          def boundary_key(created_at, item_id):
+              created = str(created_at or "")
+              try:
+                  numeric_id = int(item_id)
+              except (TypeError, ValueError):
+                  return None
+              if not created or numeric_id <= 0:
+                  return None
+              return (created, numeric_id)
+
           pr_data = request_json(f"/repos/{repo}/pulls/{pr}")
           pr_author = ((pr_data.get("user") or {}).get("login") or "") if isinstance(pr_data, dict) else ""
           issue_comments = get_all(f"/repos/{repo}/issues/{pr}/comments")
 
-          # Derive review freshness from authoritative GitHub issue-comment state,
-          # not from whether a particular Actions run survived concurrency
-          # coalescing. Only trusted collaborators/owners or the PR author can
-          # establish a new review-request boundary. The command must occupy the
-          # first line by itself; quoted mentions elsewhere are not requests.
-          latest_review_request_at = ""
-          latest_review_request_id = None
+          # Request boundaries come from TWO sources:
+          # 1) current authorized comments (fast/current-state evidence), and
+          # 2) immutable App-authenticated commit-status markers (survives
+          #    comment editing/deletion and Actions queue compaction).
+          request_boundaries = []
           for comment in issue_comments:
               commenter = ((comment.get("user") or {}).get("login") or "")
               if commenter == trusted_reviewer:
@@ -230,16 +358,25 @@ jobs:
               first_line = lines[0] if lines else ""
               if not authorized or not request_pattern.fullmatch(first_line):
                   continue
-              created_at = comment.get("created_at") or ""
-              if created_at > latest_review_request_at:
-                  latest_review_request_at = created_at
-                  latest_review_request_id = comment.get("id")
+              key = boundary_key(comment.get("created_at"), comment.get("id"))
+              if key:
+                  request_boundaries.append(key)
 
+          for status in get_all(f"/repos/{repo}/commits/{head_sha}/statuses"):
+              if status.get("context") != "AI-Native Review Request":
+                  continue
+              match = marker_pattern.fullmatch(str(status.get("description") or ""))
+              if not match:
+                  continue
+              key = boundary_key(match.group(1), match.group(2))
+              if key:
+                  request_boundaries.append(key)
+
+          latest_request = max(request_boundaries) if request_boundaries else None
           attestations = []
 
-          # Fail closed: observed Codex behavior creates a GitHub review object
-          # when it has findings. Any trusted review object on this exact HEAD is
-          # therefore blocking, independent of mutable inline comment text/state.
+          # Fail closed: Codex creates a GitHub review object when it has
+          # findings. Any trusted review object on this exact HEAD blocks it.
           for review in get_all(f"/repos/{repo}/pulls/{pr}/reviews"):
               reviewer = ((review.get("user") or {}).get("login") or "")
               commit_id = (review.get("commit_id") or "").lower()
@@ -256,10 +393,10 @@ jobs:
                   }
               )
 
-          # Clean verdicts are accepted only with exact first-line variants
-          # observed from Codex. Unknown qualifiers fail closed. The displayed
-          # short SHA must resolve through GitHub to the exact current HEAD, and
-          # the verdict must be newer than the latest authorized review request.
+          # Clean verdicts use a closed set of observed first-line variants.
+          # Their (created_at, comment_id) key must be STRICTLY newer than the
+          # latest authorized request key, which also removes same-second
+          # ambiguity without trusting workflow processing time.
           for comment in issue_comments:
               reviewer = ((comment.get("user") or {}).get("login") or "")
               if reviewer != trusted_reviewer:
@@ -274,8 +411,8 @@ jobs:
                   or not lines[4].lstrip().startswith("<details>")
               ):
                   continue
-              created_at = comment.get("created_at") or ""
-              if latest_review_request_at and created_at <= latest_review_request_at:
+              clean_key = boundary_key(comment.get("created_at"), comment.get("id"))
+              if not clean_key or (latest_request and clean_key <= latest_request):
                   continue
               commit_match = clean_commit_line.fullmatch(lines[2].strip())
               if not commit_match or re.search(r"\[(?:BLOCKER|MAJOR)\]", body, re.IGNORECASE):
@@ -290,7 +427,7 @@ jobs:
                       "reviewer": reviewer,
                       "state": "CLEAN",
                       "commit_id": resolved,
-                      "created_at": created_at,
+                      "created_at": comment.get("created_at") or "",
                   }
               )
 
@@ -298,8 +435,7 @@ jobs:
               json.dump(
                   {
                       "head_sha": head_sha,
-                      "latest_review_request_at": latest_review_request_at,
-                      "latest_review_request_id": latest_review_request_id,
+                      "latest_review_request_key": list(latest_request) if latest_request else None,
                       "attestations": attestations,
                   },
                   handle,
@@ -307,16 +443,14 @@ jobs:
                   sort_keys=True,
               )
 
-          print(
-              "Latest authorized review request: "
-              f"id={latest_review_request_id or 'NONE'} at={latest_review_request_at or 'NONE'}"
-          )
+          print(f"Latest durable review request key: {latest_request or 'NONE'}")
           print(f"Trusted Codex attestations found: {len(attestations)}")
           for item in attestations:
               print(f"  kind={item['kind']} id={item['id']} commit={item['commit_id']} state={item['state']}")
           PY
 
       - name: Validate governance and review readiness
+        if: needs.record_review_event.outputs.review_requested != 'true'
         id: validate
         continue-on-error: true
         env:
@@ -327,7 +461,7 @@ jobs:
         run: python3 scripts/ci/validate_pr_governance.py
 
       - name: Publish App-authenticated governance result
-        if: always()
+        if: needs.record_review_event.outputs.review_requested != 'true' && always()
         uses: actions/github-script@v7
         with:
           github-token: ${{ steps.governance-app.outputs.token }}
@@ -352,5 +486,5 @@ jobs:
             });
 
       - name: Fail workflow when governance is not ready
-        if: steps.validate.outcome != 'success'
+        if: needs.record_review_event.outputs.review_requested != 'true' && steps.validate.outcome != 'success'
         run: exit 1
