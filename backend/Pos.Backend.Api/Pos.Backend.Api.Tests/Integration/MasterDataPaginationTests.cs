@@ -42,6 +42,7 @@ public sealed class MasterDataPaginationTests(PostgresDatabaseFixture database) 
         var filtered = await PageAsync(controller.GetPage("alp", "all", page: 1, pageSize: 50));
         var minimum = await PageAsync(controller.GetPage(null, "all", page: 0, pageSize: 0));
         var maximum = await PageAsync(controller.GetPage(null, "all", page: 1, pageSize: 999));
+        var overflow = await PageAsync(controller.GetPage(null, "all", page: int.MaxValue, pageSize: 200));
 
         Assert.Equal(3, first.TotalItems);
         Assert.Equal(2, first.TotalPages);
@@ -54,6 +55,8 @@ public sealed class MasterDataPaginationTests(PostgresDatabaseFixture database) 
         Assert.Single(minimum.Items);
         Assert.Equal(200, maximum.PageSize);
         Assert.Equal(3, maximum.Items.Count);
+        Assert.Equal(int.MaxValue, overflow.Page);
+        Assert.Empty(overflow.Items);
         Assert.DoesNotContain(first.Items.Concat(second.Items), item => item.Name == "Foreign");
     }
 
@@ -82,6 +85,8 @@ public sealed class MasterDataPaginationTests(PostgresDatabaseFixture database) 
         var second = await SupplierPageAsync(controller.GetPage(null, "all", page: 2, pageSize: 2));
         var filtered = await SupplierPageAsync(controller.GetPage("alpha", "active", page: 1, pageSize: 50));
         var maximum = await SupplierPageAsync(controller.GetPage(null, "all", page: 1, pageSize: 999));
+        var identificationDesc = await SupplierPageAsync(controller.GetPage(null, "all", page: 1, pageSize: 50, sortBy: "identification", sortDir: "desc"));
+        var overflow = await SupplierPageAsync(controller.GetPage(null, "all", page: int.MaxValue, pageSize: 200));
 
         var lookupAction = await controller.Lookup(null, take: 999);
         var lookupOk = Assert.IsType<OkObjectResult>(lookupAction.Result);
@@ -95,6 +100,9 @@ public sealed class MasterDataPaginationTests(PostgresDatabaseFixture database) 
         Assert.Equal("Alpha Supplier", filtered.Items[0].Name);
         Assert.Equal(200, maximum.PageSize);
         Assert.Equal(3, maximum.Items.Count);
+        Assert.Equal(new[] { "SUP-3", "SUP-2", "SUP-1" }, identificationDesc.Items.Select(item => item.Identification));
+        Assert.Equal(int.MaxValue, overflow.Page);
+        Assert.Empty(overflow.Items);
         Assert.Equal(new[] { "Alpha Supplier", "Bravo Supplier" }, lookup.Select(item => item.Name));
         Assert.DoesNotContain(lookup, item => item.Name == "Inactive Supplier" || item.Name == "Foreign Supplier");
     }

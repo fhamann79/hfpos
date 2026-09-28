@@ -56,12 +56,21 @@ public sealed class CustomerQueryService : ICustomerQueryService
         var query = BuildFilteredQuery(operationalContext.CompanyId, search, includeInactive: null, status);
         var totalItems = await query.CountAsync();
         var ordered = ApplyOrdering(query, sortBy, sortDir);
+        var offset = ((long)normalizedPage - 1L) * normalizedPageSize;
 
-        var items = await ordered
-            .Skip((normalizedPage - 1) * normalizedPageSize)
-            .Take(normalizedPageSize)
-            .Select(customer => ToDto(customer))
-            .ToListAsync();
+        IReadOnlyList<CustomerDto> items;
+        if (offset > int.MaxValue)
+        {
+            items = Array.Empty<CustomerDto>();
+        }
+        else
+        {
+            items = await ordered
+                .Skip((int)offset)
+                .Take(normalizedPageSize)
+                .Select(customer => ToDto(customer))
+                .ToListAsync();
+        }
 
         return new PagedResultDto<CustomerDto>
         {

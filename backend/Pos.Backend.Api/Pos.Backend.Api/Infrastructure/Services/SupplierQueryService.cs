@@ -72,12 +72,21 @@ public sealed class SupplierQueryService : ISupplierQueryService
         var query = BuildFilteredQuery(operationalContext.CompanyId, search, status);
         var totalItems = await query.CountAsync();
         var ordered = ApplyOrdering(query, sortBy, sortDir);
+        var offset = ((long)normalizedPage - 1L) * normalizedPageSize;
 
-        var items = await ordered
-            .Skip((normalizedPage - 1) * normalizedPageSize)
-            .Take(normalizedPageSize)
-            .Select(supplier => ToDto(supplier))
-            .ToListAsync();
+        IReadOnlyList<SupplierDto> items;
+        if (offset > int.MaxValue)
+        {
+            items = Array.Empty<SupplierDto>();
+        }
+        else
+        {
+            items = await ordered
+                .Skip((int)offset)
+                .Take(normalizedPageSize)
+                .Select(supplier => ToDto(supplier))
+                .ToListAsync();
+        }
 
         return new PagedResultDto<SupplierDto>
         {
@@ -129,6 +138,9 @@ public sealed class SupplierQueryService : ISupplierQueryService
             "name" => descending
                 ? query.OrderByDescending(supplier => supplier.Name).ThenByDescending(supplier => supplier.Id)
                 : query.OrderBy(supplier => supplier.Name).ThenBy(supplier => supplier.Id),
+            "identification" => descending
+                ? query.OrderByDescending(supplier => supplier.Identification).ThenByDescending(supplier => supplier.Id)
+                : query.OrderBy(supplier => supplier.Identification).ThenBy(supplier => supplier.Id),
             "isactive" => descending
                 ? query.OrderByDescending(supplier => supplier.IsActive).ThenBy(supplier => supplier.Name).ThenBy(supplier => supplier.Id)
                 : query.OrderBy(supplier => supplier.IsActive).ThenBy(supplier => supplier.Name).ThenBy(supplier => supplier.Id),
