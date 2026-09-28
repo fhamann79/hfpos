@@ -1,0 +1,49 @@
+name: AI-Native Governance
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: governance-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  governance:
+    name: AI-Native Governance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run trusted governance regression tests
+        run: python3 scripts/ci/test_validate_pr_governance.py
+
+      - name: Fetch PR head without executing PR code
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.clone_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git fetch --no-tags --depth=1 "$HEAD_REPO" "$HEAD_SHA"
+
+      - name: Collect changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git diff --name-only "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/hfpos-changed-files.txt"
+          echo "Changed files:"
+          cat "$RUNNER_TEMP/hfpos-changed-files.txt"
+
+      - name: Validate PR governance contract with trusted validator
+        env:
+          HFPOS_CHANGED_FILES: ${{ runner.temp }}/hfpos-changed-files.txt
+        run: python3 scripts/ci/validate_pr_governance.py
