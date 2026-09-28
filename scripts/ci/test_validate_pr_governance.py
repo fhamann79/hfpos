@@ -173,7 +173,7 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
         cls.review_policy = (repo_root / "docs/ai-native/CODE_REVIEW.md").read_text(encoding="utf-8")
 
     def test_untrusted_builtin_token_cannot_write_statuses(self) -> None:
-        permissions = self.workflow.split("concurrency:", 1)[0]
+        permissions = self.workflow.split("jobs:", 1)[0]
         self.assertNotIn("statuses: write", permissions)
         self.assertNotIn("checks: write", permissions)
 
@@ -194,7 +194,7 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
         self.assertIn("actions/create-github-app-token@v2", self.workflow)
         self.assertGreaterEqual(
             self.workflow.count("github-token: ${{ steps.governance-app.outputs.token }}"),
-            2,
+            3,
         )
         self.assertIn("context: 'AI-Native Governance'", self.workflow)
 
@@ -204,8 +204,16 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("pull_request_review:", self.workflow)
         self.assertNotIn("pull_request_review_comment:", self.workflow)
 
-    def test_clean_verdict_deletion_retriggers_evaluation(self) -> None:
-        self.assertIn("types: [created, edited, deleted]", self.workflow)
+    def test_record_job_is_never_subject_to_evaluator_concurrency(self) -> None:
+        record_segment = self.workflow.split("  record_review_event:", 1)[1].split("\n  governance:", 1)[0]
+        self.assertNotIn("concurrency:", record_segment)
+        self.assertIn("Persist immutable authorized review-request boundary", record_segment)
+
+    def test_only_evaluator_is_cancelable_and_serialized_per_pr(self) -> None:
+        governance_segment = self.workflow.split("\n  governance:", 1)[1]
+        self.assertIn("group: governance-eval-", governance_segment)
+        self.assertIn("cancel-in-progress: true", governance_segment)
+        self.assertIn("needs: record_review_event", governance_segment)
 
     def test_requester_must_be_authorized_and_use_canonical_first_line_command(self) -> None:
         self.assertIn("author_association", self.workflow)
@@ -216,21 +224,32 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
         self.assertIn("/^\\s*@codex\\s+review\\s*$/i.test(firstLine)", self.workflow)
         self.assertIn("request_pattern.fullmatch(first_line)", self.workflow)
 
-    def test_review_request_freshness_is_derived_from_authoritative_comments_not_run_marker(self) -> None:
-        self.assertIn("issue_comments = get_all", self.workflow)
-        self.assertIn("trusted_request_associations", self.workflow)
-        self.assertIn("latest_review_request_at", self.workflow)
-        self.assertIn("comment.get(\"author_association\")", self.workflow)
-        self.assertIn("comment.get(\"created_at\")", self.workflow)
-        self.assertIn("created_at <= latest_review_request_at", self.workflow)
-        self.assertNotIn("context: 'AI-Native Review Request'", self.workflow)
+    def test_request_pending_is_written_before_durable_marker(self) -> None:
+        pending = self.workflow.index("- name: Fail closed immediately when trusted review evidence changes")
+        marker = self.workflow.index("- name: Persist immutable authorized review-request boundary")
+        self.assertLess(pending, marker)
+        self.assertIn("context: 'AI-Native Review Request'", self.workflow)
+        self.assertIn("description = `request=${createdAt};id=${commentId}`", self.workflow)
 
-    def test_review_evidence_change_publishes_pending_before_evaluation(self) -> None:
-        pending = self.workflow.index("- name: Fail closed while review evidence changes")
-        collect = self.workflow.index("- name: Collect trusted Codex evidence from GitHub")
-        self.assertLess(pending, collect)
+    def test_request_handoff_republishes_pending_after_evaluator_lock(self) -> None:
+        self.assertIn("Keep newly recorded review request pending after evaluator handoff", self.workflow)
+        self.assertIn("needs.record_review_event.outputs.review_requested == 'true'", self.workflow)
+
+    def test_request_boundary_survives_comment_edit_delete_and_queue_compaction(self) -> None:
+        self.assertIn("request_boundaries = []", self.workflow)
+        self.assertIn("/commits/{head_sha}/statuses", self.workflow)
+        self.assertIn("status.get(\"context\") != \"AI-Native Review Request\"", self.workflow)
+        self.assertIn("marker_pattern.fullmatch", self.workflow)
+        self.assertIn("latest_request = max(request_boundaries)", self.workflow)
+
+    def test_request_and_clean_order_use_timestamp_plus_comment_id(self) -> None:
+        self.assertIn("return (created, numeric_id)", self.workflow)
+        self.assertIn("clean_key <= latest_request", self.workflow)
+        self.assertIn("latest_review_request_key", self.workflow)
+
+    def test_clean_verdict_deletion_retriggers_evaluation(self) -> None:
+        self.assertIn("types: [created, edited, deleted]", self.workflow)
         self.assertIn("trusted_codex_comment_event", self.workflow)
-        self.assertIn("state: 'pending'", self.workflow)
 
     def test_changed_files_come_from_authoritative_pr_api_not_endpoint_diff(self) -> None:
         self.assertIn("github.paginate(github.rest.pulls.listFiles", self.workflow)
