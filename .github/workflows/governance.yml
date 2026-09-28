@@ -32,7 +32,7 @@ jobs:
         env:
           HEAD_REPO: ${{ github.event.pull_request.head.repo.clone_url }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: git fetch --no-tags --depth=1 "$HEAD_REPO" "$HEAD_SHA"
+        run: git fetch --no-tags "$HEAD_REPO" "$HEAD_SHA"
 
       - name: Collect changed files
         env:
