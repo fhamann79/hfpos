@@ -4,122 +4,40 @@ on:
   pull_request_target:
     branches: [main]
     types: [opened, synchronize, reopened, edited, ready_for_review]
-  pull_request_review:
-    types: [submitted, edited, dismissed]
-  pull_request_review_comment:
-    types: [created, edited, deleted]
   issue_comment:
     types: [created, edited, deleted]
 
+# IMPORTANT: this trusted workflow runs only default/base-branch code. It never
+# checks out or executes code from the PR HEAD. Its built-in GITHUB_TOKEN cannot
+# write commit statuses. The required governance status is emitted only with the
+# dedicated HFPOS Governance Gate GitHub App token stored in a protected
+# environment.
 permissions:
   contents: read
   pull-requests: read
   issues: read
-  statuses: write
+
+concurrency:
+  group: governance-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
 
 jobs:
-  persist_review_event:
-    if: >-
-      (github.event_name != 'issue_comment' ||
-        (github.event.issue.pull_request && github.event.comment.user.login == 'chatgpt-codex-connector[bot]')) &&
-      (github.event_name != 'pull_request_review_comment' ||
-        github.event.comment.user.login == 'chatgpt-codex-connector[bot]')
-    name: Persist Trusted Review Event
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - name: Persist blocking trusted-review event before cancellable governance
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const trusted = 'chatgpt-codex-connector[bot]';
-            const action = String(context.payload.action ?? '').toLowerCase();
-            const pullNumber = context.payload.pull_request?.number ?? context.payload.issue?.number;
-            if (!pullNumber) {
-              core.setFailed('Could not resolve pull request number from review event.');
-              return;
-            }
-
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pullNumber,
-            });
-            if (pr.base.ref !== 'main') {
-              core.notice(`Ignoring governance event for base ${pr.base.ref}.`);
-              return;
-            }
-
-            const currentHead = String(pr.head.sha ?? '').toLowerCase();
-            let blocking = false;
-            let reviewedSha = '';
-            let description = 'Blocking trusted review finding on reviewed commit';
-
-            if (context.eventName === 'pull_request_review_comment') {
-              const comment = context.payload.comment ?? {};
-              const login = comment.user?.login ?? '';
-              const body = comment.body ?? '';
-              reviewedSha = String(comment.commit_id ?? '').toLowerCase();
-              if (login === trusted && action === 'deleted') {
-                blocking = true;
-                description = 'Trusted review evidence was deleted from reviewed commit';
-              } else if (login === trusted && /\[(BLOCKER|MAJOR)\]/i.test(body)) {
-                blocking = true;
-              }
-            }
-
-            if (context.eventName === 'pull_request_review') {
-              const review = context.payload.review ?? {};
-              const login = review.user?.login ?? '';
-              const state = String(review.state ?? '').toUpperCase();
-              reviewedSha = String(review.commit_id ?? '').toLowerCase();
-              if (login === trusted && state === 'CHANGES_REQUESTED') {
-                blocking = true;
-                description = 'Trusted reviewer requested changes on reviewed commit';
-              } else if (login === trusted && action === 'dismissed') {
-                blocking = true;
-                description = 'Trusted review was dismissed on reviewed commit';
-              }
-            }
-
-            if (!blocking) {
-              return;
-            }
-
-            // Fail closed if GitHub does not provide the reviewed SHA. This is
-            // deliberately conservative: the current PR HEAD is blocked rather
-            // than allowing malformed review evidence to disappear silently.
-            const targetSha = /^[0-9a-f]{40}$/.test(reviewedSha) ? reviewedSha : currentHead;
-            if (!/^[0-9a-f]{40}$/.test(targetSha)) {
-              core.setFailed('Could not resolve a commit for blocking review evidence.');
-              return;
-            }
-
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: targetSha,
-              state: 'failure',
-              context: 'AI-Native Review Finding',
-              description,
-            });
-
   governance:
-    needs: persist_review_event
     if: >-
-      always() && needs.persist_review_event.result == 'success' &&
-      (github.event_name != 'issue_comment' ||
-        (github.event.issue.pull_request && github.event.comment.user.login == 'chatgpt-codex-connector[bot]')) &&
-      (github.event_name != 'pull_request_review_comment' ||
-        github.event.comment.user.login == 'chatgpt-codex-connector[bot]')
-    concurrency:
-      group: governance-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}
-      cancel-in-progress: true
+      github.event_name != 'issue_comment' || github.event.issue.pull_request
     name: Governance Event Processor
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    environment: hfpos-governance
     steps:
-      - name: Resolve canonical pull request context from GitHub
+      - name: Mint dedicated governance App token
+        id: governance-app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.HFPOS_GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.HFPOS_GOVERNANCE_PRIVATE_KEY }}
+
+      - name: Resolve canonical pull request context
         id: pr
         uses: actions/github-script@v7
         with:
@@ -131,6 +49,7 @@ jobs:
               core.setFailed('Could not resolve pull request number from event.');
               return;
             }
+
             const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -140,25 +59,29 @@ jobs:
               core.setFailed(`Governance only supports PRs targeting main; got ${pr.base.ref}.`);
               return;
             }
+
             const eventPath = path.join(process.env.RUNNER_TEMP, 'hfpos-pr-event.json');
             fs.writeFileSync(eventPath, JSON.stringify({ pull_request: pr }), { encoding: 'utf8' });
+
+            const body = String(context.payload.comment?.body ?? '');
+            const isCreatedIssueComment = context.eventName === 'issue_comment' && context.payload.action === 'created';
+            const isCodexBot = context.payload.comment?.user?.login === 'chatgpt-codex-connector[bot]';
+            const reviewRequested = isCreatedIssueComment && !isCodexBot && /(^|\s)@codex\s+review\b/i.test(body);
+
             core.setOutput('number', String(pullNumber));
             core.setOutput('base_sha', pr.base.sha);
             core.setOutput('head_sha', pr.head.sha);
             core.setOutput('head_repo', pr.head.repo.clone_url);
             core.setOutput('event_path', eventPath);
+            core.setOutput('review_requested', reviewRequested ? 'true' : 'false');
 
-      - name: Mark governance pending on PR HEAD
+      - name: Mark governance pending when independent review is requested
+        if: steps.pr.outputs.review_requested == 'true'
         uses: actions/github-script@v7
-        env:
-          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         with:
+          github-token: ${{ steps.governance-app.outputs.token }}
           script: |
-            const headSha = String(process.env.HEAD_SHA ?? '').toLowerCase();
-            if (!/^[0-9a-f]{40}$/.test(headSha)) {
-              core.setFailed('Could not resolve a valid PR HEAD for governance.');
-              return;
-            }
+            const headSha = '${{ steps.pr.outputs.head_sha }}';
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
@@ -166,11 +89,12 @@ jobs:
               sha: headSha,
               state: 'pending',
               context: 'AI-Native Governance',
-              description: 'Governance/review evidence is being evaluated',
+              description: 'Independent Codex review requested for current HEAD',
               target_url: runUrl,
             });
 
       - name: Checkout trusted base
+        if: steps.pr.outputs.review_requested != 'true'
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.pr.outputs.base_sha }}
@@ -178,15 +102,18 @@ jobs:
           persist-credentials: false
 
       - name: Run trusted governance regression tests
+        if: steps.pr.outputs.review_requested != 'true'
         run: python3 scripts/ci/test_validate_pr_governance.py
 
-      - name: Fetch PR head without executing PR code
+      - name: Fetch PR head as Git object only
+        if: steps.pr.outputs.review_requested != 'true'
         env:
           HEAD_REPO: ${{ steps.pr.outputs.head_repo }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: git fetch --no-tags --depth=1 "$HEAD_REPO" "$HEAD_SHA"
 
       - name: Collect changed files
+        if: steps.pr.outputs.review_requested != 'true'
         env:
           BASE_SHA: ${{ steps.pr.outputs.base_sha }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
@@ -195,7 +122,8 @@ jobs:
           echo "Changed files:"
           cat "$RUNNER_TEMP/hfpos-changed-files.txt"
 
-      - name: Collect trusted GitHub review evidence
+      - name: Collect trusted Codex evidence from GitHub
+        if: steps.pr.outputs.review_requested != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_API_URL: ${{ github.api_url }}
@@ -218,22 +146,16 @@ jobs:
           token = os.environ["GH_TOKEN"]
           head_sha = os.environ["HEAD_SHA"].lower()
           output = os.environ["REVIEW_EVIDENCE_FILE"]
-          trusted_reviewers = {"chatgpt-codex-connector[bot]"}
-          finding_context = "AI-Native Review Finding"
+          trusted_reviewer = "chatgpt-codex-connector[bot]"
           clean_header = "Codex Review: Didn't find any major issues. Chef's kiss."
           clean_commit_line = re.compile(r"\*\*Reviewed commit:\*\* `([0-9a-f]{10,40})`", re.IGNORECASE)
 
-          def request_json(path, method="GET", payload=None):
-              url = f"{api}{path}"
-              data = None if payload is None else json.dumps(payload).encode("utf-8")
+          def request_json(path):
               request = urllib.request.Request(
-                  url,
-                  data=data,
-                  method=method,
+                  f"{api}{path}",
                   headers={
                       "Authorization": f"Bearer {token}",
                       "Accept": "application/vnd.github+json",
-                      "Content-Type": "application/json",
                       "X-GitHub-Api-Version": "2022-11-28",
                   },
               )
@@ -256,93 +178,48 @@ jobs:
           def resolve_commit(ref):
               if not re.fullmatch(r"[0-9a-f]{10,40}", ref, re.IGNORECASE):
                   return None
-              encoded_ref = urllib.parse.quote(ref, safe="")
+              encoded = urllib.parse.quote(ref, safe="")
               try:
-                  commit = request_json(f"/repos/{repo}/commits/{encoded_ref}")
+                  commit = request_json(f"/repos/{repo}/commits/{encoded}")
               except urllib.error.HTTPError:
                   return None
               resolved = (commit.get("sha") or "").lower() if isinstance(commit, dict) else ""
-              if not re.fullmatch(r"[0-9a-f]{40}", resolved):
-                  return None
-              return resolved
-
-          def post_finding_status(description):
-              request_json(
-                  f"/repos/{repo}/statuses/{head_sha}",
-                  method="POST",
-                  payload={
-                      "state": "failure",
-                      "context": finding_context,
-                      "description": description[:140],
-                  },
-              )
-
-          reviews = get_all(f"/repos/{repo}/pulls/{pr}/reviews")
-          review_comments = get_all(f"/repos/{repo}/pulls/{pr}/comments")
-          issue_comments = get_all(f"/repos/{repo}/issues/{pr}/comments")
-          statuses = get_all(f"/repos/{repo}/commits/{head_sha}/statuses")
-
-          sticky_findings = any(
-              status.get("context") == finding_context and status.get("state") == "failure"
-              for status in statuses
-          )
-
-          by_review = {}
-          for comment in review_comments:
-              commenter = ((comment.get("user") or {}).get("login") or "")
-              if commenter not in trusted_reviewers:
-                  continue
-              review_id = comment.get("pull_request_review_id")
-              if review_id is None:
-                  continue
-              body = comment.get("body") or ""
-              bucket = by_review.setdefault(review_id, {"blocker_count": 0, "major_count": 0})
-              bucket["blocker_count"] += len(re.findall(r"\[BLOCKER\]", body, flags=re.IGNORECASE))
-              bucket["major_count"] += len(re.findall(r"\[MAJOR\]", body, flags=re.IGNORECASE))
+              return resolved if re.fullmatch(r"[0-9a-f]{40}", resolved) else None
 
           attestations = []
-          blocking_now = False
-          for review in reviews:
+
+          # Fail closed: observed Codex behavior creates a GitHub review object
+          # when it has findings. Any trusted review object on this exact HEAD is
+          # therefore blocking, independent of mutable inline comment text/state.
+          for review in get_all(f"/repos/{repo}/pulls/{pr}/reviews"):
               reviewer = ((review.get("user") or {}).get("login") or "")
-              if reviewer not in trusted_reviewers:
-                  continue
               commit_id = (review.get("commit_id") or "").lower()
-              if not re.fullmatch(r"[0-9a-f]{40}", commit_id):
+              if reviewer != trusted_reviewer or not re.fullmatch(r"[0-9a-f]{40}", commit_id):
                   continue
-              review_id = review.get("id")
-              counts = by_review.get(review_id, {"blocker_count": 0, "major_count": 0})
-              state = str(review.get("state") or "").upper()
               attestations.append(
                   {
-                      "id": review_id,
+                      "id": review.get("id"),
                       "kind": "review",
                       "reviewer": reviewer,
-                      "state": state,
+                      "state": review.get("state") or "",
                       "commit_id": commit_id,
                       "created_at": review.get("submitted_at") or "",
-                      "blocker_count": counts["blocker_count"],
-                      "major_count": counts["major_count"],
                   }
               )
-              if commit_id == head_sha and (
-                  counts["blocker_count"] > 0
-                  or counts["major_count"] > 0
-                  or state == "CHANGES_REQUESTED"
-              ):
-                  blocking_now = True
 
-          for comment in issue_comments:
+          # A positive attestation is accepted only in Codex's observed canonical
+          # clean-comment form and only after its displayed short SHA resolves via
+          # GitHub's commits API to the exact current immutable HEAD.
+          for comment in get_all(f"/repos/{repo}/issues/{pr}/comments"):
               reviewer = ((comment.get("user") or {}).get("login") or "")
-              if reviewer not in trusted_reviewers:
+              if reviewer != trusted_reviewer:
                   continue
               body = comment.get("body") or ""
               lines = body.splitlines()
               if len(lines) < 3 or lines[0].strip() != clean_header or lines[1].strip() != "":
                   continue
               commit_match = clean_commit_line.fullmatch(lines[2].strip())
-              if not commit_match:
-                  continue
-              if re.search(r"\[(?:BLOCKER|MAJOR)\]", body, flags=re.IGNORECASE):
+              if not commit_match or re.search(r"\[(?:BLOCKER|MAJOR)\]", body, re.IGNORECASE):
                   continue
               resolved = resolve_commit(commit_match.group(1).lower())
               if resolved != head_sha:
@@ -355,34 +232,20 @@ jobs:
                       "state": "CLEAN",
                       "commit_id": resolved,
                       "created_at": comment.get("created_at") or "",
-                      "blocker_count": 0,
-                      "major_count": 0,
                   }
               )
 
-          if blocking_now and not sticky_findings:
-              post_finding_status("Persistent blocking Codex finding on immutable HEAD")
-              sticky_findings = True
-
-          evidence = {
-              "head_sha": head_sha,
-              "sticky_findings": sticky_findings,
-              "attestations": attestations,
-          }
           with open(output, "w", encoding="utf-8") as handle:
-              json.dump(evidence, handle, indent=2, sort_keys=True)
+              json.dump({"head_sha": head_sha, "attestations": attestations}, handle, indent=2, sort_keys=True)
 
           print(f"Trusted Codex attestations found: {len(attestations)}")
-          print(f"Persistent finding ledger: {'BLOCKING' if sticky_findings else 'CLEAR'}")
           for item in attestations:
-              print(
-                  f"  kind={item['kind']} id={item['id']} commit={item['commit_id']} "
-                  f"state={item['state']} BLOCKER={item['blocker_count']} MAJOR={item['major_count']}"
-              )
+              print(f"  kind={item['kind']} id={item['id']} commit={item['commit_id']} state={item['state']}")
           PY
 
-      - name: Validate governance and independent-review readiness
+      - name: Validate governance and review readiness
         id: validate
+        if: steps.pr.outputs.review_requested != 'true'
         continue-on-error: true
         env:
           HFPOS_EVENT_PATH: ${{ steps.pr.outputs.event_path }}
@@ -391,21 +254,19 @@ jobs:
           HFPOS_REQUIRE_REVIEW_READY: "1"
         run: python3 scripts/ci/validate_pr_governance.py
 
-      - name: Publish governance result on PR HEAD
-        if: always()
+      - name: Publish App-authenticated governance result
+        if: steps.pr.outputs.review_requested != 'true' && always()
         uses: actions/github-script@v7
-        env:
-          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
-          VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
         with:
+          github-token: ${{ steps.governance-app.outputs.token }}
           script: |
-            const headSha = String(process.env.HEAD_SHA ?? '').toLowerCase();
+            const headSha = '${{ steps.pr.outputs.head_sha }}';
             if (!/^[0-9a-f]{40}$/.test(headSha)) {
               core.setFailed('Could not resolve a valid PR HEAD for governance publishing.');
               return;
             }
+            const passed = '${{ steps.validate.outcome }}' === 'success';
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const passed = process.env.VALIDATION_OUTCOME === 'success';
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -413,11 +274,11 @@ jobs:
               state: passed ? 'success' : 'failure',
               context: 'AI-Native Governance',
               description: passed
-                ? 'Governance and independent review are ready'
+                ? 'Governance and independent Codex review are ready'
                 : 'Governance/review requirements are not satisfied',
               target_url: runUrl,
             });
 
       - name: Fail workflow when governance is not ready
-        if: steps.validate.outcome != 'success'
+        if: steps.pr.outputs.review_requested != 'true' && steps.validate.outcome != 'success'
         run: exit 1
