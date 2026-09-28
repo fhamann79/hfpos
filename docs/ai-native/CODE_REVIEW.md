@@ -49,16 +49,31 @@ If a new commit is pushed after review, the review is stale. The current PR HEAD
 
 The PR body may contain a human-readable summary of reviewer, state, reviewed SHA and finding counts, but **that text is not authoritative and cannot satisfy the gate**.
 
-For R2/R3, `AI-Native Governance` obtains review evidence directly from GitHub under the trusted `pull_request_target` workflow. The gate only accepts a review when:
+For R2/R3, `AI-Native Governance` obtains evidence directly from GitHub while executing trusted base code. Codex currently emits either:
 
-- it was emitted by an explicitly trusted independent reviewer identity;
-- the review is attached to the exact current PR HEAD commit;
-- the latest trusted review for that HEAD has no `BLOCKER` or `MAJOR` findings;
-- the evidence was collected by the trusted base workflow, not supplied by PR code or editable PR prose.
+- a normal GitHub review with inline findings; or
+- a trusted bot issue comment such as `Codex Review: Didn't find any major issues` with a `Reviewed commit` SHA when the review is clean.
+
+The gate accepts only attestations that:
+
+- were emitted by an explicitly trusted independent reviewer identity;
+- name the exact current PR HEAD (full SHA for review objects, or a sufficiently long SHA prefix from a Codex clean-verdict comment);
+- contain no `BLOCKER` or `MAJOR` findings in the latest trusted attestation for that HEAD;
+- were collected by the trusted base workflow from GitHub APIs, not supplied by PR code or editable PR prose.
 
 The initial trusted reviewer identity is `chatgpt-codex-connector[bot]`. Adding or changing trusted reviewer identities is itself a governance change and requires adversarial review.
 
 This prevents an implementation author from self-certifying a review by editing the PR body or copying the current SHA.
+
+## Automatic re-evaluation
+
+Governance listens for:
+
+- PR changes through `pull_request_target`;
+- submitted/edited/dismissed GitHub reviews through `pull_request_review`;
+- trusted Codex issue comments through `issue_comment`.
+
+Therefore a new push makes old review evidence stale, and a subsequent Codex review/clean verdict automatically causes governance to evaluate the current HEAD again.
 
 ## HFPOS review focus
 
@@ -110,7 +125,7 @@ Product CI (`Backend` and `Frontend`) should run for code changes, not every edi
 
 `AI-Native Governance` owns PR metadata/risk/review-readiness checks and reacts to PR body edits. Product CI does not need to rebuild the entire POS for metadata-only edits.
 
-The governance workflow executes from the protected base via `pull_request_target`, uses read-only permissions, never executes untrusted PR code, and queries GitHub's review API to verify reviewer identity and reviewed commit.
+The governance workflow executes trusted default/base-branch code with read-only permissions, never executes untrusted PR code, and queries GitHub APIs to verify reviewer identity, reviewed commit and blocker severity.
 
 After DEV-002 is merged and the governance workflow has demonstrated its final check on a subsequent PR, add **AI-Native Governance** to the `Protect main + CI` ruleset as a required status check. This GitHub repository setting is intentionally outside autonomous repo code and requires repository-owner administration.
 
