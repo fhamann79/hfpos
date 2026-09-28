@@ -18,12 +18,103 @@ permissions:
   statuses: write
 
 jobs:
-  governance:
+  persist_review_event:
     if: >-
       (github.event_name != 'issue_comment' ||
         (github.event.issue.pull_request && github.event.comment.user.login == 'chatgpt-codex-connector[bot]')) &&
       (github.event_name != 'pull_request_review_comment' ||
         github.event.comment.user.login == 'chatgpt-codex-connector[bot]')
+    name: Persist Trusted Review Event
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Persist blocking trusted-review event before cancellable governance
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const trusted = 'chatgpt-codex-connector[bot]';
+            const action = String(context.payload.action ?? '').toLowerCase();
+            const pullNumber = context.payload.pull_request?.number ?? context.payload.issue?.number;
+            if (!pullNumber) {
+              core.setFailed('Could not resolve pull request number from review event.');
+              return;
+            }
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            });
+            if (pr.base.ref !== 'main') {
+              core.notice(`Ignoring governance event for base ${pr.base.ref}.`);
+              return;
+            }
+
+            const currentHead = String(pr.head.sha ?? '').toLowerCase();
+            let blocking = false;
+            let reviewedSha = '';
+            let description = 'Blocking trusted review finding on reviewed commit';
+
+            if (context.eventName === 'pull_request_review_comment') {
+              const comment = context.payload.comment ?? {};
+              const login = comment.user?.login ?? '';
+              const body = comment.body ?? '';
+              reviewedSha = String(comment.commit_id ?? '').toLowerCase();
+              if (login === trusted && action === 'deleted') {
+                blocking = true;
+                description = 'Trusted review evidence was deleted from reviewed commit';
+              } else if (login === trusted && /\[(BLOCKER|MAJOR)\]/i.test(body)) {
+                blocking = true;
+              }
+            }
+
+            if (context.eventName === 'pull_request_review') {
+              const review = context.payload.review ?? {};
+              const login = review.user?.login ?? '';
+              const state = String(review.state ?? '').toUpperCase();
+              reviewedSha = String(review.commit_id ?? '').toLowerCase();
+              if (login === trusted && state === 'CHANGES_REQUESTED') {
+                blocking = true;
+                description = 'Trusted reviewer requested changes on reviewed commit';
+              } else if (login === trusted && action === 'dismissed') {
+                blocking = true;
+                description = 'Trusted review was dismissed on reviewed commit';
+              }
+            }
+
+            if (!blocking) {
+              return;
+            }
+
+            // Fail closed if GitHub does not provide the reviewed SHA. This is
+            // deliberately conservative: the current PR HEAD is blocked rather
+            // than allowing malformed review evidence to disappear silently.
+            const targetSha = /^[0-9a-f]{40}$/.test(reviewedSha) ? reviewedSha : currentHead;
+            if (!/^[0-9a-f]{40}$/.test(targetSha)) {
+              core.setFailed('Could not resolve a commit for blocking review evidence.');
+              return;
+            }
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: targetSha,
+              state: 'failure',
+              context: 'AI-Native Review Finding',
+              description,
+            });
+
+  governance:
+    needs: persist_review_event
+    if: >-
+      always() && needs.persist_review_event.result == 'success' &&
+      (github.event_name != 'issue_comment' ||
+        (github.event.issue.pull_request && github.event.comment.user.login == 'chatgpt-codex-connector[bot]')) &&
+      (github.event_name != 'pull_request_review_comment' ||
+        github.event.comment.user.login == 'chatgpt-codex-connector[bot]')
+    concurrency:
+      group: governance-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
     name: Governance Event Processor
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -57,85 +148,27 @@ jobs:
             core.setOutput('head_repo', pr.head.repo.clone_url);
             core.setOutput('event_path', eventPath);
 
-      - name: Mark governance generation pending on PR HEAD
+      - name: Mark governance pending on PR HEAD
         uses: actions/github-script@v7
         env:
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
-          RUN_ID: ${{ github.run_id }}
         with:
           script: |
             const headSha = String(process.env.HEAD_SHA ?? '').toLowerCase();
-            const runId = String(process.env.RUN_ID ?? '');
-            if (!/^[0-9a-f]{40}$/.test(headSha) || !/^\d+$/.test(runId)) {
-              core.setFailed('Could not establish a valid governance generation.');
+            if (!/^[0-9a-f]{40}$/.test(headSha)) {
+              core.setFailed('Could not resolve a valid PR HEAD for governance.');
               return;
             }
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: headSha,
               state: 'pending',
               context: 'AI-Native Governance',
-              description: `Governance generation ${runId} pending`,
+              description: 'Governance/review evidence is being evaluated',
               target_url: runUrl,
             });
-
-      - name: Persist blocking trusted-review event on reviewed commit
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const trusted = 'chatgpt-codex-connector[bot]';
-            const action = String(context.payload.action ?? '').toLowerCase();
-            let blocking = false;
-            let reviewedSha = '';
-            let description = 'Blocking trusted review finding on reviewed commit';
-
-            if (context.eventName === 'pull_request_review_comment') {
-              const comment = context.payload.comment ?? {};
-              const login = comment.user?.login ?? '';
-              const body = comment.body ?? '';
-              reviewedSha = String(comment.commit_id ?? '').toLowerCase();
-              if (login === trusted && action === 'deleted') {
-                // Deleting trusted inline review evidence is fail-closed. The
-                // immutable reviewed commit must receive a sticky finding ledger.
-                blocking = true;
-                description = 'Trusted review evidence was deleted from reviewed commit';
-              } else if (login === trusted && /\[(BLOCKER|MAJOR)\]/i.test(body)) {
-                blocking = true;
-              }
-            }
-
-            if (context.eventName === 'pull_request_review') {
-              const review = context.payload.review ?? {};
-              const login = review.user?.login ?? '';
-              const state = String(review.state ?? '').toUpperCase();
-              reviewedSha = String(review.commit_id ?? '').toLowerCase();
-              if (login === trusted && state === 'CHANGES_REQUESTED') {
-                blocking = true;
-                description = 'Trusted reviewer requested changes on reviewed commit';
-              } else if (login === trusted && action === 'dismissed') {
-                // A dismissed trusted review cannot erase findings already tied
-                // to the immutable commit. Treat dismissal itself as blocking.
-                blocking = true;
-                description = 'Trusted review was dismissed on reviewed commit';
-              }
-            }
-
-            if (blocking) {
-              if (!/^[0-9a-f]{40}$/.test(reviewedSha)) {
-                core.setFailed('Blocking review event does not contain a full reviewed commit SHA.');
-                return;
-              }
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha: reviewedSha,
-                state: 'failure',
-                context: 'AI-Native Review Finding',
-                description,
-              });
-            }
 
       - name: Checkout trusted base
         uses: actions/checkout@v4
@@ -358,34 +391,20 @@ jobs:
           HFPOS_REQUIRE_REVIEW_READY: "1"
         run: python3 scripts/ci/validate_pr_governance.py
 
-      - name: Publish governance result on PR HEAD only for latest generation
+      - name: Publish governance result on PR HEAD
         if: always()
         uses: actions/github-script@v7
         env:
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
           VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
-          RUN_ID: ${{ github.run_id }}
         with:
           script: |
             const headSha = String(process.env.HEAD_SHA ?? '').toLowerCase();
-            const runId = String(process.env.RUN_ID ?? '');
-            if (!/^[0-9a-f]{40}$/.test(headSha) || !/^\d+$/.test(runId)) {
-              core.setFailed('Could not establish a valid governance generation for publishing.');
+            if (!/^[0-9a-f]{40}$/.test(headSha)) {
+              core.setFailed('Could not resolve a valid PR HEAD for governance publishing.');
               return;
             }
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
-            const statuses = await github.paginate(github.rest.repos.listCommitStatusesForRef, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: headSha,
-              per_page: 100,
-            });
-            const latest = statuses.find(status => status.context === 'AI-Native Governance');
-            if (!latest || latest.state !== 'pending' || latest.target_url !== runUrl) {
-              core.notice(`Stale governance generation ${runId}; a newer generation owns the PR HEAD status.`);
-              return;
-            }
-
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const passed = process.env.VALIDATION_OUTCOME === 'success';
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
