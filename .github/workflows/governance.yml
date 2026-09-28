@@ -39,7 +39,11 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          git diff --name-only "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/hfpos-changed-files.txt"
+          # Compare the two trees directly. Do not use the triple-dot form here:
+          # the PR head is intentionally fetched shallowly and may not carry enough
+          # ancestry to compute a merge-base. The protected ruleset requires the PR
+          # to be up to date with main, so BASE_SHA..HEAD_SHA is the intended delta.
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/hfpos-changed-files.txt"
           echo "Changed files:"
           cat "$RUNNER_TEMP/hfpos-changed-files.txt"
 
