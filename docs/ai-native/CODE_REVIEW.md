@@ -17,10 +17,11 @@ Repository code cannot enable GitHub/Codex account integrations or GitHub App cr
 1. Connect `fhamann79/hfpos` to Codex/ChatGPT and keep the Codex environment for the repository.
 2. Enable Codex Code Review for the repository.
 3. Create a dedicated GitHub App named **HFPOS Governance Gate**, install it only on `fhamann79/hfpos`, and grant it only the repository permission needed to write commit statuses (plus implicit metadata read).
-4. Create the repository environment `hfpos-governance`, restrict it to trusted `main`/default-branch execution, and store `HFPOS_GOVERNANCE_APP_ID` and `HFPOS_GOVERNANCE_PRIVATE_KEY` there.
-5. After the App has emitted `AI-Native Governance` on a pilot PR, configure `Protect main + CI` to require that status from the expected **HFPOS Governance Gate** App source, not only by status name.
+4. Create the repository environment `hfpos-governance` **before adding secrets**. Configure **Deployment branches and tags → Selected branches and tags → Branch `main` only**. Do not choose `No restriction` or `Protected branches only`.
+5. Only after step 4 is saved, add the environment secrets `HFPOS_GOVERNANCE_APP_ID` and `HFPOS_GOVERNANCE_PRIVATE_KEY`.
+6. After the App has emitted `AI-Native Governance` on a pilot PR, configure `Protect main + CI` to require that status from the expected **HFPOS Governance Gate** App source, not only by status name.
 
-The App private key is infrastructure credential material. It must never be committed, pasted into PRs, stored as a normal repository-wide secret, or exposed to PR-head workflows.
+The App private key is infrastructure credential material. It must never be committed, pasted into PRs, stored as a normal repository-wide secret, or exposed to PR-head workflows. The `main`-only environment policy is a required security boundary: if that restriction is missing or broadened, remove/disable the App secrets until the restriction is restored.
 
 Until automatic Codex review is confirmed, request review in the PR with:
 
@@ -55,7 +56,7 @@ The PR body may contain a human-readable summary of reviewer, state, reviewed SH
 `AI-Native Governance` reads evidence directly from GitHub while executing trusted default/base-branch code. Observed Codex behavior is deliberately interpreted fail-closed:
 
 - when Codex finds actionable issues, it creates a trusted GitHub review object on the reviewed commit;
-- when Codex finds no major issues, it emits a trusted bot issue comment whose canonical first line is `Codex Review: Didn't find any major issues. Chef's kiss.` and whose `Reviewed commit` value identifies the reviewed commit.
+- when Codex finds no major issues, it emits a trusted bot issue comment whose canonical first line begins `Codex Review: Didn't find any major issues.` and whose `Reviewed commit` value identifies the reviewed commit.
 
 For R2/R3 readiness:
 
@@ -77,9 +78,11 @@ Therefore HFPOS separates **review evidence**, **trusted workflow code**, and **
 - its built-in `GITHUB_TOKEN` is read-only for repository contents/PR/issues and has **no** `statuses: write` or `checks: write`;
 - the final `AI-Native Governance` commit status is written only with a short-lived installation token minted for the dedicated **HFPOS Governance Gate** GitHub App;
 - the App ID/private key live only in the protected `hfpos-governance` environment;
+- that environment is configured with **Selected branches and tags → Branch `main` only** before either secret is stored;
+- the workflow is expected to run with `GITHUB_REF=refs/heads/main` for the trusted event families it uses; the environment branch rule independently enforces the secret boundary;
 - the branch ruleset pins the required `AI-Native Governance` context to the expected HFPOS Governance Gate App source.
 
-A PR workflow may imitate the text `AI-Native Governance`, but it cannot possess the required App identity, so that imitation cannot satisfy the protected rule once the expected source is configured.
+A PR workflow may imitate the text `AI-Native Governance`, but it cannot possess the required App identity if the environment remains restricted to `main`, so that imitation cannot satisfy the protected rule once the expected source is configured.
 
 ## Review request invalidation
 
@@ -118,12 +121,13 @@ Governance changes require a different adversarial lens:
 
 - can untrusted PR code execute under a privileged event?;
 - can a PR forge the required status/check identity?;
+- can a PR-head workflow request the governance environment or read its App secrets?;
 - can a stale review be accepted after a new push?;
 - can editable PR metadata impersonate trusted review evidence?;
 - can deletion/editing/dismissal make a reviewed failing HEAD clean without a code change?;
 - can a quoted or malformed clean-verdict marker be mistaken for a real clean review?;
 - can a short SHA resolve to anything other than the exact current HEAD?;
-- are App credentials reachable only from trusted workflow context?;
+- are App credentials reachable only from `main`-ref trusted workflow context?;
 - is the ruleset pinned to the expected governance App source rather than only a context string?
 
 ## Severity
@@ -144,7 +148,7 @@ If Codex Code Review is unavailable:
 3. use a genuinely independent reviewer whose identity is explicitly supported by governance;
 4. keep R2/R3 blocked until trusted review evidence exists for the current HEAD.
 
-If the HFPOS Governance Gate App, protected environment, or expected-source ruleset binding is unavailable, governance is **not fully enforced** and the repository stays in manual human-merge mode until the infrastructure is restored.
+If the HFPOS Governance Gate App, `main`-only protected environment, or expected-source ruleset binding is unavailable, governance is **not fully enforced** and the repository stays in manual human-merge mode until the infrastructure is restored.
 
 ## CI vs governance responsibilities
 
