@@ -191,9 +191,13 @@
           name="supplierId"
           optionLabel="label"
           optionValue="value"
-          placeholder="Selecciona proveedor"
+          placeholder="Busca proveedor por nombre o identificación"
           appendTo="body"
-          [loading]="catalogLoading()"
+          [filter]="true"
+          filterBy="label"
+          [showClear]="true"
+          [loading]="supplierLookupLoading()"
+          (onFilter)="searchSuppliers($event.filter)"
         ></p-select>
       </label>
 
@@ -249,8 +253,12 @@
               [name]="'product-' + item.uid"
               optionLabel="label"
               optionValue="value"
-              placeholder="Producto"
+              placeholder="Busca nombre, código de barras o código interno"
               appendTo="body"
+              [filter]="true"
+              filterBy="label"
+              [loading]="productLookupLoading()"
+              (onFilter)="searchProducts($event.filter)"
               (ngModelChange)="updateItemProduct(item.uid, $event)"
             ></p-select>
             <input
