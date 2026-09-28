@@ -20,7 +20,7 @@ export class SupplierService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiUrl}/api/Suppliers`;
 
-  getAll(search?: string, take = 50) {
+  getAll(search?: string, take = 200) {
     let params = new HttpParams().set('take', String(take));
     const trimmed = search?.trim();
     if (trimmed) {
