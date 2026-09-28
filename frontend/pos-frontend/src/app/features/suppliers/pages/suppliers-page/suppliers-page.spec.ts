@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { FormBuilder } from '@angular/forms';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { Subject } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { SupplierService } from '../../services/supplier.service';
@@ -49,6 +49,34 @@ describe('SuppliersPage pagination requests', () => {
     expect(page.currentPage()).toBe(2);
     expect(page.first).toBe(15);
     expect(page.loading()).toBe(false);
+  });
+
+  it('propagates identification sorting to the server query', () => {
+    const getPage = vi.fn().mockReturnValue(of({
+      items: [],
+      page: 1,
+      pageSize: 15,
+      totalItems: 0,
+      totalPages: 0,
+    }));
+
+    TestBed.configureTestingModule({
+      providers: [
+        FormBuilder,
+        MessageService,
+        ConfirmationService,
+        { provide: SupplierService, useValue: { getPage } },
+        { provide: PermissionService, useValue: { hasPermission: () => true } },
+      ],
+    });
+
+    const page = TestBed.runInInjectionContext(() => new SuppliersPage());
+    page.onSuppliersLazyLoad({ first: 0, rows: 15, sortField: 'identification', sortOrder: 1 });
+
+    expect(getPage).toHaveBeenCalledWith(expect.objectContaining({
+      sortBy: 'identification',
+      sortDir: 'asc',
+    }));
   });
 });
 
