@@ -131,7 +131,7 @@ export class SuppliersPage implements OnInit {
     const rows = event.rows ?? this.rows;
     const first = event.first ?? this.first;
     const sortField = typeof event.sortField === 'string' ? event.sortField : undefined;
-    this.sortBy = sortField === 'name' || sortField === 'isActive' || sortField === 'updatedAt' ? sortField : undefined;
+    this.sortBy = sortField === 'name' || sortField === 'identification' || sortField === 'isActive' || sortField === 'updatedAt' ? sortField : undefined;
     this.sortDir = event.sortOrder === -1 ? 'desc' : event.sortOrder === 1 ? 'asc' : undefined;
     this.loadSuppliers(Math.floor(first / rows) + 1, rows);
   }
