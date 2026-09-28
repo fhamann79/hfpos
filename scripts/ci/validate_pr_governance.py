@@ -72,7 +72,12 @@ def minimum_risk_for_path(path: str) -> tuple[int, str]:
     p = path.replace("\\", "/")
     low = p.lower()
 
-    if p == "AGENTS.md" or low.startswith(".github/workflows/") or low.startswith("scripts/ci/"):
+    # Agent policy changes can alter future implementation/review behavior even
+    # when the file itself is Markdown, so they are governance rather than docs.
+    if low == "agents.md" or low.endswith("/agents.md"):
+        return 2, "agent governance policy"
+
+    if low.startswith(".github/workflows/") or low.startswith("scripts/ci/"):
         return 2, "repository governance/CI behavior"
 
     if low.startswith(".github/issue_template/") or low == ".github/pull_request_template.md":
@@ -108,10 +113,9 @@ def minimum_risk_for_path(path: str) -> tuple[int, str]:
         if ".spec.ts" in low or "/tests/" in low:
             return 1, "frontend tests"
         if low.startswith("frontend/pos-frontend/src/"):
-            critical_frontend = ("/auth", "/guards/", "/interceptors/", "/core/services/")
-            if any(marker in low for marker in critical_frontend):
-                return 2, "frontend auth/core behavior"
-            return 1, "frontend application behavior"
+            # Source changes affect application behavior. Keep the minimum at R2
+            # even for presentation-oriented code; genuinely isolated tests remain R1.
+            return 2, "frontend application behavior"
         if low.endswith(("package.json", "package-lock.json", "angular.json", "tsconfig.json")):
             return 2, "frontend dependency/build configuration"
         return 1, "frontend tooling/configuration"
