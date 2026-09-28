@@ -54,9 +54,15 @@ class MinimumRiskForPathTests(unittest.TestCase):
 class IndependentReviewReadinessTests(unittest.TestCase):
     HEAD = "a" * 40
 
-    def evidence(self, *attestations: dict, evidence_head: str | None = None) -> dict:
+    def evidence(
+        self,
+        *attestations: dict,
+        evidence_head: str | None = None,
+        sticky_findings: bool = False,
+    ) -> dict:
         return {
             "head_sha": evidence_head or self.HEAD,
+            "sticky_findings": sticky_findings,
             "attestations": list(attestations),
         }
 
@@ -147,6 +153,11 @@ class IndependentReviewReadinessTests(unittest.TestCase):
             self.review(blocker=1, created_at="2026-09-28T15:00:00Z"),
             self.clean_comment(created_at="2026-09-28T15:05:00Z"),
         )
+        errors = review_readiness_errors(evidence, self.HEAD, "R2")
+        self.assertTrue(any("BLOCKER" in error for error in errors))
+
+    def test_persistent_ledger_blocks_even_if_original_comment_disappears(self) -> None:
+        evidence = self.evidence(self.clean_comment(), sticky_findings=True)
         errors = review_readiness_errors(evidence, self.HEAD, "R2")
         self.assertTrue(any("BLOCKER" in error for error in errors))
 
