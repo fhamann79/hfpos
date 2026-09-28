@@ -10,7 +10,6 @@ public sealed class CustomerQueryService : ICustomerQueryService
 {
     private const int DefaultTake = 30;
     private const int MaxTake = 200;
-    private const int DefaultPageSize = 30;
     private const int MaxPageSize = 200;
 
     private readonly PosDbContext _context;
@@ -53,7 +52,7 @@ public sealed class CustomerQueryService : ICustomerQueryService
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
         var normalizedPage = Math.Max(page, 1);
-        var normalizedPageSize = Math.Clamp(pageSize <= 0 ? DefaultPageSize : pageSize, 1, MaxPageSize);
+        var normalizedPageSize = Math.Clamp(pageSize, 1, MaxPageSize);
         var query = BuildFilteredQuery(operationalContext.CompanyId, search, includeInactive: null, status);
         var totalItems = await query.CountAsync();
         var ordered = ApplyOrdering(query, sortBy, sortDir);
