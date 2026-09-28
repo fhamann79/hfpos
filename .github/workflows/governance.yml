@@ -32,13 +32,6 @@ jobs:
     timeout-minutes: 5
     environment: hfpos-governance
     steps:
-      - name: Mint dedicated governance App token
-        id: governance-app
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.HFPOS_GOVERNANCE_APP_ID }}
-          private-key: ${{ secrets.HFPOS_GOVERNANCE_PRIVATE_KEY }}
-
       - name: Resolve canonical pull request context
         id: pr
         uses: actions/github-script@v7
@@ -65,10 +58,17 @@ jobs:
             const eventPath = path.join(process.env.RUNNER_TEMP, 'hfpos-pr-event.json');
             fs.writeFileSync(eventPath, JSON.stringify({ pull_request: pr }), { encoding: 'utf8' });
 
-            const body = String(context.payload.comment?.body ?? '');
+            const comment = context.payload.comment ?? {};
+            const body = String(comment.body ?? '');
+            const commenter = String(comment.user?.login ?? '');
+            const association = String(comment.author_association ?? '').toUpperCase();
+            const trustedAssociation = ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(association);
+            const isPrAuthor = commenter !== '' && commenter === String(pr.user?.login ?? '');
             const isCreatedIssueComment = context.eventName === 'issue_comment' && context.payload.action === 'created';
-            const isCodexBot = context.payload.comment?.user?.login === 'chatgpt-codex-connector[bot]';
-            const reviewRequested = isCreatedIssueComment && !isCodexBot && /(^|\s)@codex\s+review\b/i.test(body);
+            const isCodexBot = commenter === 'chatgpt-codex-connector[bot]';
+            const authorizedRequester = trustedAssociation || isPrAuthor;
+            const reviewRequested = isCreatedIssueComment && authorizedRequester && !isCodexBot && /(^|\s)@codex\s+review\b/i.test(body);
+            const trustedCodexCommentEvent = context.eventName === 'issue_comment' && isCodexBot;
 
             core.setOutput('number', String(pullNumber));
             core.setOutput('base_sha', pr.base.sha);
@@ -76,42 +76,36 @@ jobs:
             core.setOutput('head_repo', pr.head.repo.clone_url);
             core.setOutput('event_path', eventPath);
             core.setOutput('review_requested', reviewRequested ? 'true' : 'false');
+            core.setOutput('trusted_codex_comment_event', trustedCodexCommentEvent ? 'true' : 'false');
 
-      - name: Mark governance pending when independent review is requested
-        if: steps.pr.outputs.review_requested == 'true'
+      - name: Mint dedicated governance App token
+        id: governance-app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.HFPOS_GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.HFPOS_GOVERNANCE_PRIVATE_KEY }}
+
+      - name: Fail closed while review evidence changes
+        if: steps.pr.outputs.review_requested == 'true' || steps.pr.outputs.trusted_codex_comment_event == 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ steps.governance-app.outputs.token }}
           script: |
             const headSha = '${{ steps.pr.outputs.head_sha }}';
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-
-            // Persistent, append-only lower bound for review freshness on this
-            // immutable HEAD. A later clean verdict must be newer than the most
-            // recent request marker. Spoofed extra markers can only keep the
-            // gate blocked; they cannot make stale evidence valid.
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: headSha,
-              state: 'success',
-              context: 'AI-Native Review Request',
-              description: 'Independent Codex review requested for current HEAD',
-              target_url: runUrl,
-            });
-
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: headSha,
               state: 'pending',
               context: 'AI-Native Governance',
-              description: 'Independent Codex review requested for current HEAD',
+              description: '${{ steps.pr.outputs.review_requested }}' === 'true'
+                ? 'Independent Codex review requested for current HEAD'
+                : 'Trusted Codex review evidence changed; re-evaluating',
               target_url: runUrl,
             });
 
       - name: Checkout trusted base
-        if: steps.pr.outputs.review_requested != 'true'
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.pr.outputs.base_sha }}
@@ -119,18 +113,15 @@ jobs:
           persist-credentials: false
 
       - name: Run trusted governance regression tests
-        if: steps.pr.outputs.review_requested != 'true'
         run: python3 scripts/ci/test_validate_pr_governance.py
 
       - name: Fetch PR head as Git object only
-        if: steps.pr.outputs.review_requested != 'true'
         env:
           HEAD_REPO: ${{ steps.pr.outputs.head_repo }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: git fetch --no-tags --depth=1 "$HEAD_REPO" "$HEAD_SHA"
 
       - name: Collect changed files
-        if: steps.pr.outputs.review_requested != 'true'
         env:
           BASE_SHA: ${{ steps.pr.outputs.base_sha }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
@@ -140,7 +131,6 @@ jobs:
           cat "$RUNNER_TEMP/hfpos-changed-files.txt"
 
       - name: Collect trusted Codex evidence from GitHub
-        if: steps.pr.outputs.review_requested != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_API_URL: ${{ github.api_url }}
@@ -164,8 +154,8 @@ jobs:
           head_sha = os.environ["HEAD_SHA"].lower()
           output = os.environ["REVIEW_EVIDENCE_FILE"]
           trusted_reviewer = "chatgpt-codex-connector[bot]"
-          review_request_context = "AI-Native Review Request"
-          review_request_description = "Independent Codex review requested for current HEAD"
+          trusted_request_associations = {"OWNER", "MEMBER", "COLLABORATOR"}
+          request_pattern = re.compile(r"(^|\s)@codex\s+review\b", re.IGNORECASE)
           clean_headers = {
               "Codex Review: Didn't find any major issues.",
               "Codex Review: Didn't find any major issues. Chef's kiss.",
@@ -210,18 +200,29 @@ jobs:
               resolved = (commit.get("sha") or "").lower() if isinstance(commit, dict) else ""
               return resolved if re.fullmatch(r"[0-9a-f]{40}", resolved) else None
 
-          # Every explicit @codex review request writes an App-authenticated
-          # marker on the exact immutable HEAD. A clean verdict older than the
-          # latest marker is stale even when its Reviewed commit still matches.
+          pr_data = request_json(f"/repos/{repo}/pulls/{pr}")
+          pr_author = ((pr_data.get("user") or {}).get("login") or "") if isinstance(pr_data, dict) else ""
+          issue_comments = get_all(f"/repos/{repo}/issues/{pr}/comments")
+
+          # Derive review freshness from authoritative GitHub issue-comment state,
+          # not from whether a particular Actions run survived concurrency
+          # coalescing. Only trusted collaborators/owners or the PR author can
+          # establish a new review-request boundary.
           latest_review_request_at = ""
-          for status in get_all(f"/repos/{repo}/commits/{head_sha}/statuses"):
-              if (
-                  status.get("context") == review_request_context
-                  and status.get("description") == review_request_description
-              ):
-                  created_at = status.get("created_at") or ""
-                  if created_at > latest_review_request_at:
-                      latest_review_request_at = created_at
+          latest_review_request_id = None
+          for comment in issue_comments:
+              commenter = ((comment.get("user") or {}).get("login") or "")
+              if commenter == trusted_reviewer:
+                  continue
+              association = str(comment.get("author_association") or "").upper()
+              authorized = association in trusted_request_associations or commenter == pr_author
+              body = comment.get("body") or ""
+              if not authorized or not request_pattern.search(body):
+                  continue
+              created_at = comment.get("created_at") or ""
+              if created_at > latest_review_request_at:
+                  latest_review_request_at = created_at
+                  latest_review_request_id = comment.get("id")
 
           attestations = []
 
@@ -244,11 +245,11 @@ jobs:
                   }
               )
 
-          # Clean verdicts are accepted only with one of the exact first-line
-          # variants observed from Codex. Unknown suffixes fail closed. The
-          # displayed short SHA must resolve through GitHub to the exact HEAD,
-          # and the verdict must be newer than the latest explicit review request.
-          for comment in get_all(f"/repos/{repo}/issues/{pr}/comments"):
+          # Clean verdicts are accepted only with exact first-line variants
+          # observed from Codex. Unknown qualifiers fail closed. The displayed
+          # short SHA must resolve through GitHub to the exact current HEAD, and
+          # the verdict must be newer than the latest authorized review request.
+          for comment in issue_comments:
               reviewer = ((comment.get("user") or {}).get("login") or "")
               if reviewer != trusted_reviewer:
                   continue
@@ -287,6 +288,7 @@ jobs:
                   {
                       "head_sha": head_sha,
                       "latest_review_request_at": latest_review_request_at,
+                      "latest_review_request_id": latest_review_request_id,
                       "attestations": attestations,
                   },
                   handle,
@@ -294,7 +296,10 @@ jobs:
                   sort_keys=True,
               )
 
-          print(f"Latest explicit review request marker: {latest_review_request_at or 'NONE'}")
+          print(
+              "Latest authorized review request: "
+              f"id={latest_review_request_id or 'NONE'} at={latest_review_request_at or 'NONE'}"
+          )
           print(f"Trusted Codex attestations found: {len(attestations)}")
           for item in attestations:
               print(f"  kind={item['kind']} id={item['id']} commit={item['commit_id']} state={item['state']}")
@@ -302,7 +307,6 @@ jobs:
 
       - name: Validate governance and review readiness
         id: validate
-        if: steps.pr.outputs.review_requested != 'true'
         continue-on-error: true
         env:
           HFPOS_EVENT_PATH: ${{ steps.pr.outputs.event_path }}
@@ -312,7 +316,7 @@ jobs:
         run: python3 scripts/ci/validate_pr_governance.py
 
       - name: Publish App-authenticated governance result
-        if: steps.pr.outputs.review_requested != 'true' && always()
+        if: always()
         uses: actions/github-script@v7
         with:
           github-token: ${{ steps.governance-app.outputs.token }}
@@ -337,5 +341,5 @@ jobs:
             });
 
       - name: Fail workflow when governance is not ready
-        if: steps.pr.outputs.review_requested != 'true' && steps.validate.outcome != 'success'
+        if: steps.validate.outcome != 'success'
         run: exit 1
