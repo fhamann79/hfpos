@@ -210,6 +210,13 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
         self.assertIn("/commits/{encoded}", self.workflow)
         self.assertIn("resolved != head_sha", self.workflow)
 
+    def test_clean_verdict_structure_allows_only_friendly_suffix_variation(self) -> None:
+        self.assertIn("clean_header_pattern = re.compile", self.workflow)
+        self.assertIn("Didn't find any major issues\\.", self.workflow)
+        self.assertIn("lines[3].strip() != \"\"", self.workflow)
+        self.assertIn("lines[4].lstrip().startswith(\"<details>\")", self.workflow)
+        self.assertNotIn("clean_header = \"Codex Review: Didn't find any major issues. Chef's kiss.\"", self.workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
