@@ -232,6 +232,7 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
         self.assertIn("Codex Review: Didn't find any major issues.", self.workflow)
         self.assertIn("Codex Review: Didn't find any major issues. Chef's kiss.", self.workflow)
         self.assertIn("Codex Review: Didn't find any major issues. You're on a roll.", self.workflow)
+        self.assertIn("Codex Review: Didn't find any major issues. Hooray!", self.workflow)
         self.assertIn("lines[0].strip() not in clean_headers", self.workflow)
         self.assertNotIn("clean_header_pattern = re.compile", self.workflow)
 
