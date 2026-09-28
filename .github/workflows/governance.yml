@@ -6,26 +6,55 @@ on:
     types: [opened, synchronize, reopened, edited, ready_for_review]
   pull_request_review:
     types: [submitted, edited, dismissed]
+  issue_comment:
+    types: [created, edited]
 
 permissions:
   contents: read
   pull-requests: read
+  issues: read
 
 concurrency:
-  group: governance-${{ github.event.pull_request.number }}
+  group: governance-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
   governance:
-    if: github.event.pull_request.base.ref == 'main'
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request && github.event.comment.user.login == 'chatgpt-codex-connector[bot]')
     name: AI-Native Governance
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Resolve pull request context from GitHub
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pullNumber = context.payload.pull_request?.number ?? context.payload.issue?.number;
+            if (!pullNumber) {
+              core.setFailed('Could not resolve pull request number from event.');
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            });
+            if (pr.base.ref !== 'main') {
+              core.setFailed(`Governance only supports PRs targeting main; got ${pr.base.ref}.`);
+              return;
+            }
+            core.setOutput('number', String(pullNumber));
+            core.setOutput('base_sha', pr.base.sha);
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('head_repo', pr.head.repo.clone_url);
+
       - name: Checkout trusted base
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ steps.pr.outputs.base_sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -34,19 +63,17 @@ jobs:
 
       - name: Fetch PR head without executing PR code
         env:
-          HEAD_REPO: ${{ github.event.pull_request.head.repo.clone_url }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ steps.pr.outputs.head_repo }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: git fetch --no-tags --depth=1 "$HEAD_REPO" "$HEAD_SHA"
 
       - name: Collect changed files
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ steps.pr.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
-          # Compare the two trees directly. Do not use the triple-dot form here:
-          # the PR head is intentionally fetched shallowly and may not carry enough
-          # ancestry to compute a merge-base. The protected ruleset requires the PR
-          # to be up to date with main, so BASE_SHA..HEAD_SHA is the intended delta.
+          # Compare the two trees directly. The PR head is intentionally fetched
+          # shallowly, so triple-dot/merge-base comparison is unsafe here.
           git diff --name-only "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/hfpos-changed-files.txt"
           echo "Changed files:"
           cat "$RUNNER_TEMP/hfpos-changed-files.txt"
@@ -56,8 +83,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_API_URL: ${{ github.api_url }}
           GH_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
           REVIEW_EVIDENCE_FILE: ${{ runner.temp }}/hfpos-review-evidence.json
         run: |
           python3 - <<'PY'
@@ -98,10 +125,14 @@ jobs:
                   page += 1
 
           reviews = get_all(f"/repos/{repo}/pulls/{pr}/reviews")
-          comments = get_all(f"/repos/{repo}/pulls/{pr}/comments")
+          review_comments = get_all(f"/repos/{repo}/pulls/{pr}/comments")
+          issue_comments = get_all(f"/repos/{repo}/issues/{pr}/comments")
 
           by_review = {}
-          for comment in comments:
+          for comment in review_comments:
+              commenter = ((comment.get("user") or {}).get("login") or "")
+              if commenter not in trusted_reviewers:
+                  continue
               review_id = comment.get("pull_request_review_id")
               if review_id is None:
                   continue
@@ -110,34 +141,58 @@ jobs:
               bucket["blocker_count"] += len(re.findall(r"\[BLOCKER\]", body, flags=re.IGNORECASE))
               bucket["major_count"] += len(re.findall(r"\[MAJOR\]", body, flags=re.IGNORECASE))
 
-          normalized = []
+          attestations = []
           for review in reviews:
               reviewer = ((review.get("user") or {}).get("login") or "")
               if reviewer not in trusted_reviewers:
                   continue
               review_id = review.get("id")
               counts = by_review.get(review_id, {"blocker_count": 0, "major_count": 0})
-              normalized.append(
+              attestations.append(
                   {
                       "id": review_id,
+                      "kind": "review",
                       "reviewer": reviewer,
                       "state": review.get("state"),
                       "commit_id": (review.get("commit_id") or "").lower(),
-                      "submitted_at": review.get("submitted_at"),
+                      "created_at": review.get("submitted_at") or "",
                       "blocker_count": counts["blocker_count"],
                       "major_count": counts["major_count"],
                   }
               )
 
-          evidence = {"head_sha": head_sha, "reviews": normalized}
+          clean_pattern = re.compile(r"Codex Review:\s*Didn't find any major issues", re.IGNORECASE)
+          commit_pattern = re.compile(r"Reviewed commit:\s*`?([0-9a-f]{7,40})`?", re.IGNORECASE)
+          for comment in issue_comments:
+              reviewer = ((comment.get("user") or {}).get("login") or "")
+              if reviewer not in trusted_reviewers:
+                  continue
+              body = comment.get("body") or ""
+              commit_match = commit_pattern.search(body)
+              if not clean_pattern.search(body) or not commit_match:
+                  continue
+              attestations.append(
+                  {
+                      "id": comment.get("id"),
+                      "kind": "clean_comment",
+                      "reviewer": reviewer,
+                      "state": "CLEAN",
+                      "commit_id": commit_match.group(1).lower(),
+                      "created_at": comment.get("created_at") or "",
+                      "blocker_count": 0,
+                      "major_count": 0,
+                  }
+              )
+
+          evidence = {"head_sha": head_sha, "attestations": attestations}
           with open(output, "w", encoding="utf-8") as handle:
               json.dump(evidence, handle, indent=2, sort_keys=True)
 
-          print(f"Trusted Codex reviews found: {len(normalized)}")
-          for review in normalized:
+          print(f"Trusted Codex attestations found: {len(attestations)}")
+          for item in attestations:
               print(
-                  f"  id={review['id']} commit={review['commit_id']} state={review['state']} "
-                  f"BLOCKER={review['blocker_count']} MAJOR={review['major_count']}"
+                  f"  kind={item['kind']} id={item['id']} commit={item['commit_id']} "
+                  f"state={item['state']} BLOCKER={item['blocker_count']} MAJOR={item['major_count']}"
               )
           PY
 
