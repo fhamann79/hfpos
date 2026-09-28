@@ -55,15 +55,9 @@ class MinimumRiskForPathTests(unittest.TestCase):
 class IndependentReviewReadinessTests(unittest.TestCase):
     HEAD = "a" * 40
 
-    def evidence(
-        self,
-        *attestations: dict,
-        evidence_head: str | None = None,
-        sticky_findings: bool = False,
-    ) -> dict:
+    def evidence(self, *attestations: dict, evidence_head: str | None = None) -> dict:
         return {
             "head_sha": evidence_head or self.HEAD,
-            "sticky_findings": sticky_findings,
             "attestations": list(attestations),
         }
 
@@ -72,21 +66,15 @@ class IndependentReviewReadinessTests(unittest.TestCase):
         *,
         reviewer: str = "chatgpt-codex-connector[bot]",
         commit_id: str | None = None,
-        review_id: int = 100,
-        blocker: int = 0,
-        major: int = 0,
         state: str = "COMMENTED",
-        created_at: str = "2026-09-28T15:00:00Z",
     ) -> dict:
         return {
-            "id": review_id,
+            "id": 100,
             "kind": "review",
             "reviewer": reviewer,
             "commit_id": commit_id or self.HEAD,
             "state": state,
-            "created_at": created_at,
-            "blocker_count": blocker,
-            "major_count": major,
+            "created_at": "2026-09-28T15:00:00Z",
         }
 
     def clean_comment(
@@ -94,101 +82,86 @@ class IndependentReviewReadinessTests(unittest.TestCase):
         *,
         reviewer: str = "chatgpt-codex-connector[bot]",
         commit_id: str | None = None,
-        comment_id: int = 200,
-        created_at: str = "2026-09-28T15:05:00Z",
     ) -> dict:
         return {
-            "id": comment_id,
+            "id": 200,
             "kind": "clean_comment",
             "reviewer": reviewer,
             "commit_id": commit_id or self.HEAD,
             "state": "CLEAN",
-            "created_at": created_at,
-            "blocker_count": 0,
-            "major_count": 0,
+            "created_at": "2026-09-28T15:05:00Z",
         }
 
     def test_r1_does_not_require_independent_review(self) -> None:
         self.assertEqual([], review_readiness_errors(None, self.HEAD, "R1"))
 
-    def test_missing_trusted_evidence_blocks_r2(self) -> None:
+    def test_missing_evidence_blocks_r2(self) -> None:
         errors = review_readiness_errors(None, self.HEAD, "R2")
         self.assertTrue(any("trusted GitHub" in error for error in errors))
 
-    def test_current_codex_review_is_ready(self) -> None:
-        evidence = self.evidence(self.review())
-        self.assertEqual([], review_readiness_errors(evidence, self.HEAD, "R2"))
+    def test_clean_codex_comment_on_exact_head_is_ready(self) -> None:
+        self.assertEqual(
+            [],
+            review_readiness_errors(self.evidence(self.clean_comment()), self.HEAD, "R2"),
+        )
 
-    def test_current_codex_clean_comment_is_ready(self) -> None:
-        evidence = self.evidence(self.clean_comment())
-        self.assertEqual([], review_readiness_errors(evidence, self.HEAD, "R2"))
+    def test_any_codex_review_object_on_current_head_blocks_even_if_clean_comment_exists(self) -> None:
+        errors = review_readiness_errors(
+            self.evidence(self.review(), self.clean_comment()),
+            self.HEAD,
+            "R2",
+        )
+        self.assertTrue(any("GitHub review object" in error for error in errors))
 
-    def test_untrusted_reviewer_cannot_self_certify(self) -> None:
-        evidence = self.evidence(self.review(reviewer="fhamann79"))
-        errors = review_readiness_errors(evidence, self.HEAD, "R2")
-        self.assertTrue(any("No active trusted independent reviewer" in error for error in errors))
+    def test_dismissed_review_object_still_blocks_same_immutable_head(self) -> None:
+        errors = review_readiness_errors(
+            self.evidence(self.review(state="DISMISSED"), self.clean_comment()),
+            self.HEAD,
+            "R2",
+        )
+        self.assertTrue(any("GitHub review object" in error for error in errors))
 
-    def test_stale_attestation_blocks_r2(self) -> None:
-        evidence = self.evidence(self.review(commit_id="b" * 40))
-        errors = review_readiness_errors(evidence, self.HEAD, "R2")
-        self.assertTrue(any("No active trusted independent reviewer" in error for error in errors))
+    def test_review_from_old_head_does_not_block_clean_current_head(self) -> None:
+        self.assertEqual(
+            [],
+            review_readiness_errors(
+                self.evidence(self.review(commit_id="b" * 40), self.clean_comment()),
+                self.HEAD,
+                "R2",
+            ),
+        )
 
-    def test_short_sha_is_never_authoritative(self) -> None:
-        evidence = self.evidence(self.clean_comment(commit_id=self.HEAD[:10]))
-        errors = review_readiness_errors(evidence, self.HEAD, "R2")
-        self.assertTrue(any("No active trusted independent reviewer" in error for error in errors))
+    def test_stale_clean_comment_does_not_satisfy_current_head(self) -> None:
+        errors = review_readiness_errors(
+            self.evidence(self.clean_comment(commit_id="b" * 40)),
+            self.HEAD,
+            "R2",
+        )
+        self.assertTrue(any("No canonical clean" in error for error in errors))
 
-    def test_stale_evidence_head_blocks_r2(self) -> None:
-        evidence = self.evidence(self.review(), evidence_head="b" * 40)
-        errors = review_readiness_errors(evidence, self.HEAD, "R2")
+    def test_short_sha_is_never_authoritative_in_validator(self) -> None:
+        errors = review_readiness_errors(
+            self.evidence(self.clean_comment(commit_id=self.HEAD[:10])),
+            self.HEAD,
+            "R2",
+        )
+        self.assertTrue(any("No canonical clean" in error for error in errors))
+
+    def test_stale_evidence_head_blocks(self) -> None:
+        errors = review_readiness_errors(
+            self.evidence(self.clean_comment(), evidence_head="b" * 40),
+            self.HEAD,
+            "R2",
+        )
         self.assertTrue(any("stale" in error for error in errors))
 
-    def test_blocker_or_major_blocks_r3(self) -> None:
-        evidence = self.evidence(self.review(blocker=1, major=2))
-        errors = review_readiness_errors(evidence, self.HEAD, "R3")
-        self.assertTrue(any("BLOCKER" in error for error in errors))
-        self.assertTrue(any("MAJOR" in error for error in errors))
-
-    def test_later_clean_attestation_cannot_erase_findings_on_same_head(self) -> None:
-        evidence = self.evidence(
-            self.review(blocker=1, created_at="2026-09-28T15:00:00Z"),
-            self.clean_comment(created_at="2026-09-28T15:05:00Z"),
+    def test_untrusted_identity_cannot_satisfy_gate(self) -> None:
+        errors = review_readiness_errors(
+            self.evidence(self.clean_comment(reviewer="fhamann79")),
+            self.HEAD,
+            "R2",
         )
-        errors = review_readiness_errors(evidence, self.HEAD, "R2")
-        self.assertTrue(any("BLOCKER" in error for error in errors))
-
-    def test_persistent_ledger_blocks_even_if_original_comment_disappears(self) -> None:
-        evidence = self.evidence(self.clean_comment(), sticky_findings=True)
-        errors = review_readiness_errors(evidence, self.HEAD, "R2")
-        self.assertTrue(any("BLOCKER" in error for error in errors))
-
-    def test_dismissing_review_cannot_erase_its_findings(self) -> None:
-        evidence = self.evidence(
-            self.review(blocker=1, state="DISMISSED"),
-            self.clean_comment(),
-        )
-        errors = review_readiness_errors(evidence, self.HEAD, "R2")
-        self.assertTrue(any("BLOCKER" in error for error in errors))
-
-    def test_changes_requested_is_blocking_even_without_marker(self) -> None:
-        evidence = self.evidence(
-            self.review(state="CHANGES_REQUESTED"),
-            self.clean_comment(),
-        )
-        errors = review_readiness_errors(evidence, self.HEAD, "R2")
-        self.assertTrue(any("MAJOR/change-request" in error for error in errors))
-
-    def test_dismissed_clean_review_alone_is_not_active_evidence(self) -> None:
-        evidence = self.evidence(self.review(state="DISMISSED"))
-        errors = review_readiness_errors(evidence, self.HEAD, "R2")
-        self.assertTrue(any("No active trusted independent reviewer" in error for error in errors))
-
-    def test_findings_from_different_head_do_not_block_current_head(self) -> None:
-        evidence = self.evidence(
-            self.review(commit_id="b" * 40, blocker=1),
-            self.clean_comment(),
-        )
-        self.assertEqual([], review_readiness_errors(evidence, self.HEAD, "R2"))
+        self.assertTrue(any("No canonical clean" in error for error in errors))
 
 
 class GovernanceWorkflowContractTests(unittest.TestCase):
@@ -197,34 +170,45 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
         repo_root = Path(__file__).resolve().parents[2]
         cls.workflow = (repo_root / ".github/workflows/governance.yml").read_text(encoding="utf-8")
 
-    def test_clean_verdict_deletion_retriggers_governance(self) -> None:
-        self.assertGreaterEqual(self.workflow.count("types: [created, edited, deleted]"), 2)
+    def test_untrusted_builtin_token_cannot_write_statuses(self) -> None:
+        permissions = self.workflow.split("concurrency:", 1)[0]
+        self.assertNotIn("statuses: write", permissions)
+        self.assertNotIn("checks: write", permissions)
 
-    def test_finding_ledger_targets_reviewed_commit_or_fails_closed(self) -> None:
-        self.assertIn("comment.commit_id", self.workflow)
-        self.assertIn("review.commit_id", self.workflow)
-        self.assertIn("const targetSha =", self.workflow)
-        self.assertIn("sha: targetSha", self.workflow)
+    def test_dedicated_protected_environment_holds_app_credentials(self) -> None:
+        self.assertIn("environment: hfpos-governance", self.workflow)
+        self.assertIn("HFPOS_GOVERNANCE_APP_ID", self.workflow)
+        self.assertIn("HFPOS_GOVERNANCE_PRIVATE_KEY", self.workflow)
 
-    def test_deleted_trusted_review_comment_is_fail_closed(self) -> None:
-        self.assertIn("action === 'deleted'", self.workflow)
-        self.assertIn("Trusted review evidence was deleted from reviewed commit", self.workflow)
+    def test_governance_uses_dedicated_github_app_token_for_statuses(self) -> None:
+        self.assertIn("actions/create-github-app-token@v2", self.workflow)
+        self.assertGreaterEqual(
+            self.workflow.count("github-token: ${{ steps.governance-app.outputs.token }}"),
+            2,
+        )
+        self.assertIn("context: 'AI-Native Governance'", self.workflow)
 
-    def test_blocking_event_persistence_is_outside_cancellable_governance(self) -> None:
-        persist_start = self.workflow.index("  persist_review_event:")
-        governance_start = self.workflow.index("  governance:")
-        self.assertLess(persist_start, governance_start)
-        persist_block = self.workflow[persist_start:governance_start]
-        self.assertNotIn("concurrency:", persist_block)
-        self.assertNotIn("cancel-in-progress:", persist_block)
+    def test_only_trusted_base_ref_events_are_used(self) -> None:
+        self.assertIn("pull_request_target:", self.workflow)
+        self.assertIn("issue_comment:", self.workflow)
+        self.assertNotIn("pull_request_review:", self.workflow)
+        self.assertNotIn("pull_request_review_comment:", self.workflow)
 
-    def test_governance_waits_for_ledger_then_serializes_by_pr(self) -> None:
-        governance_start = self.workflow.index("  governance:")
-        governance_block = self.workflow[governance_start:]
-        self.assertIn("needs: persist_review_event", governance_block)
-        self.assertIn("concurrency:", governance_block)
-        self.assertIn("group: governance-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}", governance_block)
-        self.assertIn("cancel-in-progress: true", governance_block)
+    def test_clean_verdict_deletion_retriggers_evaluation(self) -> None:
+        self.assertIn("types: [created, edited, deleted]", self.workflow)
+
+    def test_explicit_review_request_invalidates_previous_green_status(self) -> None:
+        self.assertIn("@codex\\s+review", self.workflow)
+        self.assertIn("Independent Codex review requested for current HEAD", self.workflow)
+        self.assertIn("state: 'pending'", self.workflow)
+
+    def test_current_head_review_objects_are_collected_fail_closed(self) -> None:
+        self.assertIn("/pulls/{pr}/reviews", self.workflow)
+        self.assertIn("kind\": \"review", self.workflow.replace("'", '"'))
+
+    def test_clean_short_sha_is_resolved_through_github_commits_api(self) -> None:
+        self.assertIn("/commits/{encoded}", self.workflow)
+        self.assertIn("resolved != head_sha", self.workflow)
 
 
 if __name__ == "__main__":
