@@ -68,7 +68,10 @@ Evidencia/resultados:
 
 ## Revisión independiente
 
+<!-- Para R2/R3: congelar HEAD, pedir una revisión, corregir hallazgos en lote y volver a revisar solo si el HEAD cambió. Ver docs/ai-native/CODE_REVIEW.md. -->
+
 - Reviewer independiente: Pendiente
+- HEAD revisado: `PENDIENTE`
 - BLOCKER: 0
 - MAJOR: 0
 - MINOR: 0
