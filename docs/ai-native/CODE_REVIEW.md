@@ -49,21 +49,24 @@ If a new commit is pushed after review, the review is stale. The current PR HEAD
 
 The PR body may contain a human-readable summary of reviewer, state, reviewed SHA and finding counts, but **that text is not authoritative and cannot satisfy the gate**.
 
-For R2/R3, `AI-Native Governance` obtains evidence directly from GitHub while executing trusted base code. Codex currently emits either:
+For R2/R3, `AI-Native Governance` obtains evidence directly from GitHub while executing trusted default/base-branch code. Codex currently emits either:
 
 - a normal GitHub review with inline findings; or
-- a trusted bot issue comment such as `Codex Review: Didn't find any major issues` with a `Reviewed commit` SHA when the review is clean.
+- a trusted bot issue comment whose canonical prologue says `Codex Review: Didn't find any major issues. Chef's kiss.` and includes a `Reviewed commit` SHA when the review is clean.
 
 The gate accepts only attestations that:
 
 - were emitted by an explicitly trusted independent reviewer identity;
-- name the exact current PR HEAD (full SHA for review objects, or a sufficiently long SHA prefix from a Codex clean-verdict comment);
-- contain no `BLOCKER` or `MAJOR` findings in the latest trusted attestation for that HEAD;
-- were collected by the trusted base workflow from GitHub APIs, not supplied by PR code or editable PR prose.
+- resolve to the exact current 40-character PR HEAD SHA;
+- for normal reviews, carry a full GitHub `commit_id` equal to the current HEAD;
+- for clean comments, match the canonical Codex clean-verdict structure and have their displayed SHA resolved through GitHub's commit API to the exact current HEAD;
+- were collected by the trusted workflow from GitHub APIs, not supplied by PR code or editable PR prose.
+
+`BLOCKER` and `MAJOR` findings are **sticky for an immutable HEAD**: every trusted finding attached to that same HEAD remains blocking. A later clean verdict cannot erase an earlier blocking finding on the same commit. Correcting code creates a new HEAD and therefore requires a fresh review.
 
 The initial trusted reviewer identity is `chatgpt-codex-connector[bot]`. Adding or changing trusted reviewer identities is itself a governance change and requires adversarial review.
 
-This prevents an implementation author from self-certifying a review by editing the PR body or copying the current SHA.
+This prevents an implementation author from self-certifying a review, replaying a stale review, or clearing a finding by editing the PR body or requesting a second clean comment for unchanged code.
 
 ## Automatic re-evaluation
 
@@ -72,6 +75,8 @@ Governance listens for:
 - PR changes through `pull_request_target`;
 - submitted/edited/dismissed GitHub reviews through `pull_request_review`;
 - trusted Codex issue comments through `issue_comment`.
+
+For every event, governance resolves the PR again from GitHub and synthesizes one canonical `pull_request` payload for the validator. It never treats an `issue_comment` payload as if it already contained full PR context.
 
 Therefore a new push makes old review evidence stale, and a subsequent Codex review/clean verdict automatically causes governance to evaluate the current HEAD again.
 
@@ -94,10 +99,12 @@ The reviewer must prioritize correctness over style and actively try to falsify 
 Governance changes require a different adversarial lens:
 
 - can the PR weaken or bypass its own checks?;
-- can untrusted PR code execute under `pull_request_target`?;
+- can untrusted PR code execute under privileged review events?;
 - can a stale review be accepted after a new push?;
 - can an agent claim independent review without a real reviewer?;
 - can editable PR metadata impersonate trusted review evidence?;
+- can one trusted attestation incorrectly erase another finding on the same HEAD?;
+- can a quoted or malformed clean-verdict marker be mistaken for a real clean review?;
 - can a body edit bypass product CI or required governance?;
 - are secrets/write permissions unnecessarily exposed?
 
@@ -125,7 +132,7 @@ Product CI (`Backend` and `Frontend`) should run for code changes, not every edi
 
 `AI-Native Governance` owns PR metadata/risk/review-readiness checks and reacts to PR body edits. Product CI does not need to rebuild the entire POS for metadata-only edits.
 
-The governance workflow executes trusted default/base-branch code with read-only permissions, never executes untrusted PR code, and queries GitHub APIs to verify reviewer identity, reviewed commit and blocker severity.
+The governance workflow executes trusted default/base-branch code with read-only permissions, never executes untrusted PR code, and queries GitHub APIs to verify reviewer identity, canonical reviewed commit and blocker severity.
 
 After DEV-002 is merged and the governance workflow has demonstrated its final check on a subsequent PR, add **AI-Native Governance** to the `Protect main + CI` ruleset as a required status check. This GitHub repository setting is intentionally outside autonomous repo code and requires repository-owner administration.
 
