@@ -60,6 +60,7 @@ jobs:
 
             const comment = context.payload.comment ?? {};
             const body = String(comment.body ?? '');
+            const firstLine = body.split(/\r?\n/, 1)[0] ?? '';
             const commenter = String(comment.user?.login ?? '');
             const association = String(comment.author_association ?? '').toUpperCase();
             const trustedAssociation = ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(association);
@@ -67,7 +68,7 @@ jobs:
             const isCreatedIssueComment = context.eventName === 'issue_comment' && context.payload.action === 'created';
             const isCodexBot = commenter === 'chatgpt-codex-connector[bot]';
             const authorizedRequester = trustedAssociation || isPrAuthor;
-            const reviewRequested = isCreatedIssueComment && authorizedRequester && !isCodexBot && /(^|\s)@codex\s+review\b/i.test(body);
+            const reviewRequested = isCreatedIssueComment && authorizedRequester && !isCodexBot && /^\s*@codex\s+review\s*$/i.test(firstLine);
             const trustedCodexCommentEvent = context.eventName === 'issue_comment' && isCodexBot;
 
             core.setOutput('number', String(pullNumber));
@@ -162,7 +163,7 @@ jobs:
           output = os.environ["REVIEW_EVIDENCE_FILE"]
           trusted_reviewer = "chatgpt-codex-connector[bot]"
           trusted_request_associations = {"OWNER", "MEMBER", "COLLABORATOR"}
-          request_pattern = re.compile(r"(^|\s)@codex\s+review\b", re.IGNORECASE)
+          request_pattern = re.compile(r"^\s*@codex\s+review\s*$", re.IGNORECASE)
           clean_headers = {
               "Codex Review: Didn't find any major issues.",
               "Codex Review: Didn't find any major issues. Chef's kiss.",
@@ -214,7 +215,8 @@ jobs:
           # Derive review freshness from authoritative GitHub issue-comment state,
           # not from whether a particular Actions run survived concurrency
           # coalescing. Only trusted collaborators/owners or the PR author can
-          # establish a new review-request boundary.
+          # establish a new review-request boundary. The command must occupy the
+          # first line by itself; quoted mentions elsewhere are not requests.
           latest_review_request_at = ""
           latest_review_request_id = None
           for comment in issue_comments:
@@ -224,7 +226,9 @@ jobs:
               association = str(comment.get("author_association") or "").upper()
               authorized = association in trusted_request_associations or commenter == pr_author
               body = comment.get("body") or ""
-              if not authorized or not request_pattern.search(body):
+              lines = body.splitlines()
+              first_line = lines[0] if lines else ""
+              if not authorized or not request_pattern.fullmatch(first_line):
                   continue
               created_at = comment.get("created_at") or ""
               if created_at > latest_review_request_at:
