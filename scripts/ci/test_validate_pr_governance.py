@@ -54,50 +54,79 @@ class MinimumRiskForPathTests(unittest.TestCase):
 class IndependentReviewReadinessTests(unittest.TestCase):
     HEAD = "a" * 40
 
-    def body(
+    def evidence(
         self,
         *,
-        reviewer: str = "Codex",
-        state: str = "COMPLETA",
-        head: str | None = None,
+        reviewer: str = "chatgpt-codex-connector[bot]",
+        commit_id: str | None = None,
+        review_id: int = 100,
         blocker: int = 0,
         major: int = 0,
-    ) -> str:
-        reviewed_head = head if head is not None else self.HEAD
-        return f"""## Revisión independiente
-
-- Reviewer independiente: {reviewer}
-- Estado de revisión: `{state}`
-- HEAD revisado: `{reviewed_head}`
-- BLOCKER: {blocker}
-- MAJOR: {major}
-- MINOR: 0
-- NIT: 0
-"""
+        state: str = "COMMENTED",
+        evidence_head: str | None = None,
+    ) -> dict:
+        return {
+            "head_sha": evidence_head or self.HEAD,
+            "reviews": [
+                {
+                    "id": review_id,
+                    "reviewer": reviewer,
+                    "commit_id": commit_id or self.HEAD,
+                    "state": state,
+                    "blocker_count": blocker,
+                    "major_count": major,
+                }
+            ],
+        }
 
     def test_r1_does_not_require_independent_review(self) -> None:
-        self.assertEqual([], review_readiness_errors("", self.HEAD, "R1"))
+        self.assertEqual([], review_readiness_errors(None, self.HEAD, "R1"))
 
-    def test_complete_current_r2_review_is_ready(self) -> None:
-        self.assertEqual([], review_readiness_errors(self.body(), self.HEAD, "R2"))
+    def test_missing_trusted_evidence_blocks_r2(self) -> None:
+        errors = review_readiness_errors(None, self.HEAD, "R2")
+        self.assertTrue(any("trusted GitHub" in error for error in errors))
 
-    def test_pending_reviewer_blocks_r2(self) -> None:
+    def test_complete_current_codex_review_is_ready(self) -> None:
+        self.assertEqual([], review_readiness_errors(self.evidence(), self.HEAD, "R2"))
+
+    def test_untrusted_reviewer_cannot_self_certify(self) -> None:
         errors = review_readiness_errors(
-            self.body(reviewer="Pendiente", state="PENDIENTE", head="PENDIENTE"),
-            self.HEAD,
-            "R2",
+            self.evidence(reviewer="fhamann79"), self.HEAD, "R2"
         )
-        self.assertTrue(any("real independent reviewer" in error for error in errors))
-        self.assertTrue(any("Estado de revisión" in error for error in errors))
+        self.assertTrue(any("No trusted independent reviewer" in error for error in errors))
 
-    def test_stale_review_head_blocks_r2(self) -> None:
-        errors = review_readiness_errors(self.body(head="b" * 40), self.HEAD, "R2")
+    def test_stale_review_commit_blocks_r2(self) -> None:
+        errors = review_readiness_errors(
+            self.evidence(commit_id="b" * 40), self.HEAD, "R2"
+        )
+        self.assertTrue(any("No trusted independent reviewer" in error for error in errors))
+
+    def test_stale_evidence_head_blocks_r2(self) -> None:
+        errors = review_readiness_errors(
+            self.evidence(evidence_head="b" * 40), self.HEAD, "R2"
+        )
         self.assertTrue(any("stale" in error for error in errors))
 
     def test_blocker_or_major_blocks_r3(self) -> None:
-        errors = review_readiness_errors(self.body(blocker=1, major=2), self.HEAD, "R3")
+        errors = review_readiness_errors(
+            self.evidence(blocker=1, major=2), self.HEAD, "R3"
+        )
         self.assertTrue(any("BLOCKER" in error for error in errors))
         self.assertTrue(any("MAJOR" in error for error in errors))
+
+    def test_latest_current_review_wins(self) -> None:
+        evidence = self.evidence(review_id=100, blocker=1)
+        evidence["reviews"].append(
+            {
+                "id": 101,
+                "reviewer": "chatgpt-codex-connector[bot]",
+                "commit_id": self.HEAD,
+                "state": "COMMENTED",
+                "blocker_count": 0,
+                "major_count": 0,
+            }
+        )
+        self.assertEqual([], review_readiness_errors(evidence, self.HEAD, "R2"))
 
 
 if __name__ == "__main__":
