@@ -16,7 +16,7 @@ Repository code cannot enable a GitHub/Codex account integration by itself. The 
 
 Expected setup:
 
-1. Connect the GitHub repository `fhamann79/hfpos` to Codex/ChatGPT if it is not already enabled for Codex cloud/code review.
+1. Connect the GitHub repository `fhamann79/hfpos` to Codex/ChatGPT and create a Codex environment for the repository.
 2. Enable Codex Code Review for the repository.
 3. Prefer automatic review for new PRs and re-review after new pushes when the product UI/account offers those options.
 4. Until automatic review is confirmed, request it manually in the PR with:
@@ -45,23 +45,20 @@ IMPLEMENTATION
 
 If a new commit is pushed after review, the review is stale. The current PR HEAD must be reviewed again before readiness.
 
-## Evidence recorded in the PR
+## Authoritative evidence
 
-The PR body records:
+The PR body may contain a human-readable summary of reviewer, state, reviewed SHA and finding counts, but **that text is not authoritative and cannot satisfy the gate**.
 
-- reviewer provider;
-- review state (`PENDIENTE` / `COMPLETA`);
-- reviewed HEAD SHA;
-- BLOCKER / MAJOR / MINOR / NIT counts;
-- short disposition of findings.
+For R2/R3, `AI-Native Governance` obtains review evidence directly from GitHub under the trusted `pull_request_target` workflow. The gate only accepts a review when:
 
-R2/R3 is not ready when:
+- it was emitted by an explicitly trusted independent reviewer identity;
+- the review is attached to the exact current PR HEAD commit;
+- the latest trusted review for that HEAD has no `BLOCKER` or `MAJOR` findings;
+- the evidence was collected by the trusted base workflow, not supplied by PR code or editable PR prose.
 
-- reviewer is pending;
-- review state is not complete;
-- reviewed SHA differs from current PR HEAD;
-- BLOCKER > 0;
-- MAJOR > 0.
+The initial trusted reviewer identity is `chatgpt-codex-connector[bot]`. Adding or changing trusted reviewer identities is itself a governance change and requires adversarial review.
+
+This prevents an implementation author from self-certifying a review by editing the PR body or copying the current SHA.
 
 ## HFPOS review focus
 
@@ -85,6 +82,7 @@ Governance changes require a different adversarial lens:
 - can untrusted PR code execute under `pull_request_target`?;
 - can a stale review be accepted after a new push?;
 - can an agent claim independent review without a real reviewer?;
+- can editable PR metadata impersonate trusted review evidence?;
 - can a body edit bypass product CI or required governance?;
 - are secrets/write permissions unnecessarily exposed?
 
@@ -101,18 +99,20 @@ Findings should state the concrete failure mode and affected area. Avoid stylist
 
 If Codex Code Review is unavailable:
 
-1. mark the provider/state as unavailable or pending;
+1. record that the preferred provider is unavailable;
 2. do not pretend that implementer self-review is independent;
-3. use a real human or separate independent reviewer;
-4. keep the PR blocked for R2/R3 until independent review is complete.
+3. use a genuinely independent reviewer whose GitHub identity is explicitly trusted by governance;
+4. keep the PR blocked for R2/R3 until trusted review evidence exists for the current HEAD.
 
 ## CI vs governance responsibilities
 
 Product CI (`Backend` and `Frontend`) should run for code changes, not every edit to PR prose.
 
-`AI-Native Governance` owns PR metadata/risk/review-readiness checks and should react to PR body edits. This separation lets a reviewer update evidence without recompiling the entire POS.
+`AI-Native Governance` owns PR metadata/risk/review-readiness checks and reacts to PR body edits. Product CI does not need to rebuild the entire POS for metadata-only edits.
 
-After DEV-002 is merged and the governance workflow has demonstrated its check name on a real PR, add **AI-Native Governance** to the `Protect main + CI` ruleset as a required status check. This GitHub repository setting is intentionally outside autonomous repo code and requires repository-owner administration.
+The governance workflow executes from the protected base via `pull_request_target`, uses read-only permissions, never executes untrusted PR code, and queries GitHub's review API to verify reviewer identity and reviewed commit.
+
+After DEV-002 is merged and the governance workflow has demonstrated its final check on a subsequent PR, add **AI-Native Governance** to the `Protect main + CI` ruleset as a required status check. This GitHub repository setting is intentionally outside autonomous repo code and requires repository-owner administration.
 
 ## Merge authority
 
