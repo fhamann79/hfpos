@@ -54,7 +54,13 @@ class MinimumRiskForPathTests(unittest.TestCase):
 class IndependentReviewReadinessTests(unittest.TestCase):
     HEAD = "a" * 40
 
-    def evidence(
+    def evidence(self, *attestations: dict, evidence_head: str | None = None) -> dict:
+        return {
+            "head_sha": evidence_head or self.HEAD,
+            "attestations": list(attestations),
+        }
+
+    def review(
         self,
         *,
         reviewer: str = "chatgpt-codex-connector[bot]",
@@ -63,20 +69,36 @@ class IndependentReviewReadinessTests(unittest.TestCase):
         blocker: int = 0,
         major: int = 0,
         state: str = "COMMENTED",
-        evidence_head: str | None = None,
+        created_at: str = "2026-09-28T15:00:00Z",
     ) -> dict:
         return {
-            "head_sha": evidence_head or self.HEAD,
-            "reviews": [
-                {
-                    "id": review_id,
-                    "reviewer": reviewer,
-                    "commit_id": commit_id or self.HEAD,
-                    "state": state,
-                    "blocker_count": blocker,
-                    "major_count": major,
-                }
-            ],
+            "id": review_id,
+            "kind": "review",
+            "reviewer": reviewer,
+            "commit_id": commit_id or self.HEAD,
+            "state": state,
+            "created_at": created_at,
+            "blocker_count": blocker,
+            "major_count": major,
+        }
+
+    def clean_comment(
+        self,
+        *,
+        reviewer: str = "chatgpt-codex-connector[bot]",
+        commit_id: str | None = None,
+        comment_id: int = 200,
+        created_at: str = "2026-09-28T15:05:00Z",
+    ) -> dict:
+        return {
+            "id": comment_id,
+            "kind": "clean_comment",
+            "reviewer": reviewer,
+            "commit_id": commit_id or self.HEAD[:10],
+            "state": "CLEAN",
+            "created_at": created_at,
+            "blocker_count": 0,
+            "major_count": 0,
         }
 
     def test_r1_does_not_require_independent_review(self) -> None:
@@ -86,45 +108,44 @@ class IndependentReviewReadinessTests(unittest.TestCase):
         errors = review_readiness_errors(None, self.HEAD, "R2")
         self.assertTrue(any("trusted GitHub" in error for error in errors))
 
-    def test_complete_current_codex_review_is_ready(self) -> None:
-        self.assertEqual([], review_readiness_errors(self.evidence(), self.HEAD, "R2"))
+    def test_current_codex_review_is_ready(self) -> None:
+        evidence = self.evidence(self.review())
+        self.assertEqual([], review_readiness_errors(evidence, self.HEAD, "R2"))
+
+    def test_current_codex_clean_comment_is_ready(self) -> None:
+        evidence = self.evidence(self.clean_comment())
+        self.assertEqual([], review_readiness_errors(evidence, self.HEAD, "R2"))
 
     def test_untrusted_reviewer_cannot_self_certify(self) -> None:
-        errors = review_readiness_errors(
-            self.evidence(reviewer="fhamann79"), self.HEAD, "R2"
-        )
+        evidence = self.evidence(self.review(reviewer="fhamann79"))
+        errors = review_readiness_errors(evidence, self.HEAD, "R2")
         self.assertTrue(any("No trusted independent reviewer" in error for error in errors))
 
-    def test_stale_review_commit_blocks_r2(self) -> None:
-        errors = review_readiness_errors(
-            self.evidence(commit_id="b" * 40), self.HEAD, "R2"
-        )
+    def test_stale_attestation_blocks_r2(self) -> None:
+        evidence = self.evidence(self.review(commit_id="b" * 40))
+        errors = review_readiness_errors(evidence, self.HEAD, "R2")
+        self.assertTrue(any("No trusted independent reviewer" in error for error in errors))
+
+    def test_short_clean_commit_must_match_current_head_prefix(self) -> None:
+        evidence = self.evidence(self.clean_comment(commit_id="b" * 10))
+        errors = review_readiness_errors(evidence, self.HEAD, "R2")
         self.assertTrue(any("No trusted independent reviewer" in error for error in errors))
 
     def test_stale_evidence_head_blocks_r2(self) -> None:
-        errors = review_readiness_errors(
-            self.evidence(evidence_head="b" * 40), self.HEAD, "R2"
-        )
+        evidence = self.evidence(self.review(), evidence_head="b" * 40)
+        errors = review_readiness_errors(evidence, self.HEAD, "R2")
         self.assertTrue(any("stale" in error for error in errors))
 
     def test_blocker_or_major_blocks_r3(self) -> None:
-        errors = review_readiness_errors(
-            self.evidence(blocker=1, major=2), self.HEAD, "R3"
-        )
+        evidence = self.evidence(self.review(blocker=1, major=2))
+        errors = review_readiness_errors(evidence, self.HEAD, "R3")
         self.assertTrue(any("BLOCKER" in error for error in errors))
         self.assertTrue(any("MAJOR" in error for error in errors))
 
-    def test_latest_current_review_wins(self) -> None:
-        evidence = self.evidence(review_id=100, blocker=1)
-        evidence["reviews"].append(
-            {
-                "id": 101,
-                "reviewer": "chatgpt-codex-connector[bot]",
-                "commit_id": self.HEAD,
-                "state": "COMMENTED",
-                "blocker_count": 0,
-                "major_count": 0,
-            }
+    def test_latest_current_attestation_wins(self) -> None:
+        evidence = self.evidence(
+            self.review(blocker=1, created_at="2026-09-28T15:00:00Z"),
+            self.clean_comment(created_at="2026-09-28T15:05:00Z"),
         )
         self.assertEqual([], review_readiness_errors(evidence, self.HEAD, "R2"))
 
