@@ -5,6 +5,7 @@ using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Enums;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Services;
+using Pos.Backend.Api.Infrastructure.Services;
 using Pos.Backend.Api.Tests.Infrastructure;
 using Pos.Backend.Api.WebApi.Controllers;
 
@@ -43,9 +44,12 @@ public sealed class ProductCatalogPaginationTests(PostgresDatabaseFixture databa
         }
 
         await using var readContext = database.CreateDbContext();
+        var accessor = new FixedOperationalContextAccessor(tenant.OperationalContext);
+        var queryService = new ProductQueryService(readContext, accessor);
         var controller = new ProductsController(
             readContext,
-            new FixedOperationalContextAccessor(tenant.OperationalContext),
+            accessor,
+            queryService,
             lifecycle: null!,
             administrationGuard: null!,
             productCostService: null!);
@@ -54,6 +58,7 @@ public sealed class ProductCatalogPaginationTests(PostgresDatabaseFixture databa
         var second = await PageAsync(controller.GetPage(null, "all", null, page: 2, pageSize: 2));
         var barcode = await PageAsync(controller.GetPage("BAR-001", "all", null, page: 1, pageSize: 20));
         var internalCode = await PageAsync(controller.GetPage("INT-002", "all", null, page: 1, pageSize: 20));
+        var minimum = await PageAsync(controller.GetPage(null, "all", null, page: 0, pageSize: 0));
         var maximum = await PageAsync(controller.GetPage(null, "all", null, page: 1, pageSize: 999));
 
         Assert.Equal(3, first.TotalItems);
@@ -64,6 +69,9 @@ public sealed class ProductCatalogPaginationTests(PostgresDatabaseFixture databa
         Assert.Equal("Alpha Product", barcode.Items[0].Name);
         Assert.Single(internalCode.Items);
         Assert.Equal("Bravo Product", internalCode.Items[0].Name);
+        Assert.Equal(1, minimum.Page);
+        Assert.Equal(1, minimum.PageSize);
+        Assert.Single(minimum.Items);
         Assert.Equal(200, maximum.PageSize);
         Assert.Equal(3, maximum.Items.Count);
         Assert.DoesNotContain(first.Items.Concat(second.Items), item => item.Name == "Foreign Product");
@@ -102,9 +110,12 @@ public sealed class ProductCatalogPaginationTests(PostgresDatabaseFixture databa
         }
 
         await using var readContext = database.CreateDbContext();
+        var accessor = new FixedOperationalContextAccessor(tenant.OperationalContext);
+        var queryService = new ProductQueryService(readContext, accessor);
         var controller = new ProductsController(
             readContext,
-            new FixedOperationalContextAccessor(tenant.OperationalContext),
+            accessor,
+            queryService,
             lifecycle: null!,
             administrationGuard: null!,
             productCostService: null!);
