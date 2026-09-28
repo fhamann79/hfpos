@@ -11,7 +11,7 @@ export interface SupplierPageQuery {
   status?: SupplierStatusFilter;
   page?: number;
   pageSize?: number;
-  sortBy?: 'name' | 'isActive' | 'updatedAt';
+  sortBy?: 'name' | 'identification' | 'isActive' | 'updatedAt';
   sortDir?: 'asc' | 'desc';
 }
 
@@ -20,11 +20,14 @@ export class SupplierService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiUrl}/api/Suppliers`;
 
-  getAll(search?: string, take = 200) {
-    let params = new HttpParams().set('take', String(take));
+  getAll(search?: string, take?: number) {
+    let params = new HttpParams();
     const trimmed = search?.trim();
     if (trimmed) {
       params = params.set('search', trimmed);
+    }
+    if (take !== undefined) {
+      params = params.set('take', String(take));
     }
 
     return this.http.get<Supplier[]>(this.baseUrl, { params });
