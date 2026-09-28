@@ -68,19 +68,17 @@ Evidencia/resultados:
 
 ## Revisión independiente
 
-<!-- Resumen informativo para humanos. NO es la autoridad del gate: AI-Native Governance verifica la identidad, commit y hallazgos directamente desde la API de revisiones de GitHub. -->
+<!-- Para R2/R3: solicitar `@codex review`, registrar el HEAD revisado y resumir hallazgos. Si cambia el HEAD, repetir la revisión. -->
 
 - Reviewer independiente: Pendiente
-- Estado de revisión: `PENDIENTE`
 - HEAD revisado: `PENDIENTE`
+- Resultado: `PENDIENTE`
 - BLOCKER: 0
 - MAJOR: 0
 - MINOR: 0
 - NIT: 0
 - Observaciones:
   - 
-
-> Para R2/R3, la autoridad es la evidencia de revisión emitida en GitHub por un reviewer confiable sobre el HEAD actual. Estos campos del body son solo un espejo legible y no pueden satisfacer el gate por sí solos.
 
 ## Riesgos residuales / rollback
 
