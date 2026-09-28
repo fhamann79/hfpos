@@ -207,17 +207,28 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
     def test_clean_verdict_deletion_retriggers_evaluation(self) -> None:
         self.assertIn("types: [created, edited, deleted]", self.workflow)
 
-    def test_explicit_review_request_invalidates_previous_green_status_and_persists_freshness_marker(self) -> None:
-        self.assertIn("@codex\\s+review", self.workflow)
-        self.assertIn("context: 'AI-Native Review Request'", self.workflow)
-        self.assertIn("Independent Codex review requested for current HEAD", self.workflow)
-        self.assertIn("context: 'AI-Native Governance'", self.workflow)
-        self.assertIn("state: 'pending'", self.workflow)
+    def test_requester_must_be_authorized_before_triggering_pending(self) -> None:
+        self.assertIn("author_association", self.workflow)
+        self.assertIn("['OWNER', 'MEMBER', 'COLLABORATOR']", self.workflow)
+        self.assertIn("commenter === String(pr.user?.login ?? '')", self.workflow)
+        self.assertIn("authorizedRequester", self.workflow)
+        self.assertIn("reviewRequested =", self.workflow)
 
-    def test_clean_verdict_must_be_newer_than_latest_review_request_marker(self) -> None:
-        self.assertIn("/commits/{head_sha}/statuses", self.workflow)
+    def test_review_request_freshness_is_derived_from_authoritative_comments_not_run_marker(self) -> None:
+        self.assertIn("issue_comments = get_all", self.workflow)
+        self.assertIn("trusted_request_associations", self.workflow)
         self.assertIn("latest_review_request_at", self.workflow)
+        self.assertIn("comment.get(\"author_association\")", self.workflow)
+        self.assertIn("comment.get(\"created_at\")", self.workflow)
         self.assertIn("created_at <= latest_review_request_at", self.workflow)
+        self.assertNotIn("context: 'AI-Native Review Request'", self.workflow)
+
+    def test_review_evidence_change_publishes_pending_before_evaluation(self) -> None:
+        pending = self.workflow.index("- name: Fail closed while review evidence changes")
+        collect = self.workflow.index("- name: Collect trusted Codex evidence from GitHub")
+        self.assertLess(pending, collect)
+        self.assertIn("trusted_codex_comment_event", self.workflow)
+        self.assertIn("state: 'pending'", self.workflow)
 
     def test_current_head_review_objects_are_collected_fail_closed(self) -> None:
         self.assertIn("/pulls/{pr}/reviews", self.workflow)
