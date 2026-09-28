@@ -15,6 +15,7 @@ from pathlib import Path
 
 
 RISK_ORDER = {"R0": 0, "R1": 1, "R2": 2, "R3": 3, "R4": 4}
+TRUSTED_REVIEWERS = {"chatgpt-codex-connector[bot]"}
 TICKET_RE = re.compile(r"^(?P<ticket>(?:BE-FE|DEV|BE|FE)-\d+[A-Z]?)\b", re.IGNORECASE)
 BODY_TICKET_RE = re.compile(r"-\s*Ticket:\s*`?(?P<ticket>(?:BE-FE|DEV|BE|FE)-\d+[A-Z]?)`?", re.IGNORECASE)
 ISSUE_RE = re.compile(r"-\s*Issue:\s*#(?P<issue>\d+)\b", re.IGNORECASE)
@@ -29,17 +30,6 @@ MERGE_STATE_RE = re.compile(
     r"## Estado de merge\s*\n+\s*`?(?P<state>PENDIENTE|AUTORIZADO_POR_FERNANDO)`?",
     re.IGNORECASE,
 )
-REVIEWER_RE = re.compile(r"-\s*Reviewer independiente:\s*(?P<value>[^\n]+)", re.IGNORECASE)
-REVIEW_STATE_RE = re.compile(
-    r"-\s*Estado de revisión:\s*`?(?P<value>PENDIENTE|COMPLETA)`?",
-    re.IGNORECASE,
-)
-REVIEW_HEAD_RE = re.compile(
-    r"-\s*HEAD revisado:\s*`?(?P<value>PENDIENTE|[0-9a-f]{40})`?",
-    re.IGNORECASE,
-)
-BLOCKER_RE = re.compile(r"-\s*BLOCKER:\s*(?P<count>\d+)\b", re.IGNORECASE)
-MAJOR_RE = re.compile(r"-\s*MAJOR:\s*(?P<count>\d+)\b", re.IGNORECASE)
 
 REQUIRED_SECTIONS = (
     "## Ticket",
@@ -77,6 +67,19 @@ def read_changed_files() -> list[str]:
     if not file_path.exists():
         return []
     return [line.strip() for line in file_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def read_review_evidence() -> dict | None:
+    path = os.environ.get("HFPOS_REVIEW_EVIDENCE")
+    if not path:
+        return None
+    file_path = Path(path)
+    if not file_path.exists():
+        return None
+    payload = json.loads(file_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise RuntimeError("HFPOS review evidence must be a JSON object")
+    return payload
 
 
 def env_truthy(name: str) -> bool:
@@ -128,8 +131,6 @@ def minimum_risk_for_path(path: str) -> tuple[int, str]:
         if ".spec.ts" in low or "/tests/" in low:
             return 1, "frontend tests"
         if low.startswith("frontend/pos-frontend/src/"):
-            # Source changes affect application behavior. Keep the minimum at R2
-            # even for presentation-oriented code; genuinely isolated tests remain R1.
             return 2, "frontend application behavior"
         if low.endswith(("package.json", "package-lock.json", "angular.json", "tsconfig.json")):
             return 2, "frontend dependency/build configuration"
@@ -158,44 +159,58 @@ def compute_minimum_risk(paths: list[str]) -> tuple[str, list[tuple[str, str, st
     return f"R{highest}", evidence
 
 
-def review_readiness_errors(body: str, current_head_sha: str, declared_risk: str | None) -> list[str]:
-    """Return blocking review-readiness errors for R2/R3 PRs."""
+def review_readiness_errors(
+    review_evidence: dict | None,
+    current_head_sha: str,
+    declared_risk: str | None,
+) -> list[str]:
+    """Validate trusted GitHub review evidence for R2/R3 PRs.
+
+    PR-body review fields are deliberately not authoritative. Only evidence
+    collected by the trusted pull_request_target workflow from GitHub's review
+    API can satisfy this gate.
+    """
     if declared_risk not in {"R2", "R3"}:
         return []
 
     errors: list[str] = []
+    if not review_evidence:
+        return ["R2/R3 readiness requires trusted GitHub independent-review evidence."]
 
-    reviewer_match = REVIEWER_RE.search(body)
-    reviewer = reviewer_match.group("value").strip(" `") if reviewer_match else ""
-    if not reviewer or reviewer.lower().startswith("pendiente"):
-        fail(errors, "R2/R3 PRs require a real independent reviewer before readiness.")
+    evidence_head = str(review_evidence.get("head_sha") or "").lower()
+    current_head = current_head_sha.lower()
+    if not evidence_head or evidence_head != current_head:
+        fail(errors, "Trusted review evidence is stale or does not match the current PR HEAD.")
 
-    state_match = REVIEW_STATE_RE.search(body)
-    state = state_match.group("value").upper() if state_match else None
-    if state != "COMPLETA":
-        fail(errors, "R2/R3 PRs require Estado de revisión = COMPLETA.")
+    reviews = review_evidence.get("reviews")
+    if not isinstance(reviews, list):
+        return errors + ["Trusted review evidence does not contain a review list."]
 
-    head_match = REVIEW_HEAD_RE.search(body)
-    reviewed_head = head_match.group("value").lower() if head_match else None
-    if not reviewed_head or reviewed_head == "pendiente":
-        fail(errors, "R2/R3 PRs require a concrete 40-character HEAD revisado SHA.")
-    elif current_head_sha and reviewed_head != current_head_sha.lower():
-        fail(
-            errors,
-            f"Independent review is stale: reviewed HEAD {reviewed_head} != current PR HEAD {current_head_sha.lower()}.",
-        )
+    eligible: list[dict] = []
+    for review in reviews:
+        if not isinstance(review, dict):
+            continue
+        reviewer = str(review.get("reviewer") or "")
+        commit_id = str(review.get("commit_id") or "").lower()
+        state = str(review.get("state") or "").upper()
+        if reviewer in TRUSTED_REVIEWERS and commit_id == current_head and state in {"COMMENTED", "APPROVED"}:
+            eligible.append(review)
 
-    blocker_match = BLOCKER_RE.search(body)
-    major_match = MAJOR_RE.search(body)
-    if not blocker_match:
-        fail(errors, "Independent review must declare BLOCKER count.")
-    elif int(blocker_match.group("count")) != 0:
-        fail(errors, "Independent review still has unresolved BLOCKER findings.")
+    if not eligible:
+        return errors + [
+            "No trusted independent reviewer has submitted a review for the current PR HEAD."
+        ]
 
-    if not major_match:
-        fail(errors, "Independent review must declare MAJOR count.")
-    elif int(major_match.group("count")) != 0:
-        fail(errors, "Independent review still has unresolved MAJOR findings.")
+    # Use the latest trusted review for the current HEAD. A later re-review is
+    # authoritative over an earlier review of the same immutable commit.
+    latest = max(eligible, key=lambda item: int(item.get("id") or 0))
+    blocker_count = int(latest.get("blocker_count") or 0)
+    major_count = int(latest.get("major_count") or 0)
+
+    if blocker_count != 0:
+        fail(errors, f"Trusted independent review has {blocker_count} unresolved BLOCKER finding(s).")
+    if major_count != 0:
+        fail(errors, f"Trusted independent review has {major_count} unresolved MAJOR finding(s).")
 
     return errors
 
@@ -278,7 +293,9 @@ def main() -> int:
 
     require_review_ready = env_truthy("HFPOS_REQUIRE_REVIEW_READY")
     if require_review_ready:
-        errors.extend(review_readiness_errors(body, current_head_sha, declared_risk))
+        errors.extend(
+            review_readiness_errors(read_review_evidence(), current_head_sha, declared_risk)
+        )
 
     print(f"Ticket: {title_ticket or body_ticket or 'UNKNOWN'}")
     print(f"Declared risk: {declared_risk or 'MISSING'}")
