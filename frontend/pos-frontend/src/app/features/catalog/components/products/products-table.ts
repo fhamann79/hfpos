@@ -46,6 +46,7 @@ export class ProductsTable implements OnInit {
   private readonly categoryService = inject(CategoryService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
+  private loadRequestId = 0;
 
   readonly products = signal<Product[]>([]);
   readonly categories = signal<Category[]>([]);
@@ -82,6 +83,7 @@ export class ProductsTable implements OnInit {
   }
 
   loadProducts(page = this.currentPage(), pageSize = this.rows): void {
+    const requestId = ++this.loadRequestId;
     this.loading.set(true);
     this.errorMessage.set('');
 
@@ -97,6 +99,8 @@ export class ProductsTable implements OnInit {
       })
       .subscribe({
         next: (result) => {
+          if (requestId !== this.loadRequestId) return;
+
           if (result.totalPages > 0 && result.page > result.totalPages) {
             this.loadProducts(result.totalPages, result.pageSize);
             return;
@@ -111,6 +115,7 @@ export class ProductsTable implements OnInit {
           this.loading.set(false);
         },
         error: (error: HttpErrorResponse) => {
+          if (requestId !== this.loadRequestId) return;
           this.loading.set(false);
           this.errorMessage.set(resolveHttpErrorMessage(error, 'No se pudieron cargar los productos.'));
         },
