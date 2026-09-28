@@ -3,6 +3,7 @@ using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Services;
+using Pos.Backend.Api.Infrastructure.Services;
 using Pos.Backend.Api.Tests.Infrastructure;
 using Pos.Backend.Api.WebApi.Controllers;
 
@@ -32,7 +33,9 @@ public sealed class MasterDataPaginationTests(PostgresDatabaseFixture database) 
         }
 
         await using var readContext = database.CreateDbContext();
-        var controller = new CustomersController(readContext, new FixedOperationalContextAccessor(tenant.OperationalContext));
+        var accessor = new FixedOperationalContextAccessor(tenant.OperationalContext);
+        var queryService = new CustomerQueryService(readContext, accessor);
+        var controller = new CustomersController(readContext, accessor, queryService);
 
         var first = await PageAsync(controller.GetPage(null, "all", page: 1, pageSize: 2));
         var second = await PageAsync(controller.GetPage(null, "all", page: 2, pageSize: 2));
@@ -71,7 +74,9 @@ public sealed class MasterDataPaginationTests(PostgresDatabaseFixture database) 
         }
 
         await using var readContext = database.CreateDbContext();
-        var controller = new SuppliersController(readContext, new FixedOperationalContextAccessor(tenant.OperationalContext));
+        var accessor = new FixedOperationalContextAccessor(tenant.OperationalContext);
+        var queryService = new SupplierQueryService(readContext, accessor);
+        var controller = new SuppliersController(readContext, accessor, queryService);
 
         var first = await SupplierPageAsync(controller.GetPage(null, "all", page: 1, pageSize: 2));
         var second = await SupplierPageAsync(controller.GetPage(null, "all", page: 2, pageSize: 2));
