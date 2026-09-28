@@ -43,7 +43,8 @@ jobs:
           echo "Changed files:"
           cat "$RUNNER_TEMP/hfpos-changed-files.txt"
 
-      - name: Validate PR governance contract with trusted validator
+      - name: Validate PR governance and independent-review readiness with trusted validator
         env:
           HFPOS_CHANGED_FILES: ${{ runner.temp }}/hfpos-changed-files.txt
+          HFPOS_REQUIRE_REVIEW_READY: "1"
         run: python3 scripts/ci/validate_pr_governance.py
