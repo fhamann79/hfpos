@@ -53,10 +53,15 @@ def fail(errors: list[str], message: str) -> None:
 
 
 def read_event() -> dict:
-    event_path = os.environ.get("GITHUB_EVENT_PATH")
+    # Governance may synthesize a canonical pull_request payload for events such
+    # as issue_comment. Product CI falls back to GitHub's original event file.
+    event_path = os.environ.get("HFPOS_EVENT_PATH") or os.environ.get("GITHUB_EVENT_PATH")
     if not event_path:
-        raise RuntimeError("GITHUB_EVENT_PATH is not defined")
-    return json.loads(Path(event_path).read_text(encoding="utf-8"))
+        raise RuntimeError("Neither HFPOS_EVENT_PATH nor GITHUB_EVENT_PATH is defined")
+    payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise RuntimeError("Governance event payload must be a JSON object")
+    return payload
 
 
 def read_changed_files() -> list[str]:
@@ -157,14 +162,6 @@ def compute_minimum_risk(paths: list[str]) -> tuple[str, list[tuple[str, str, st
     return f"R{highest}", evidence
 
 
-def _attestation_matches_head(attestation: dict, current_head: str) -> bool:
-    commit_id = str(attestation.get("commit_id") or "").lower()
-    # GitHub review objects provide a full SHA. Codex clean-verdict comments
-    # currently include a short SHA; require at least 7 hex chars and match it
-    # only as a prefix of the current immutable HEAD.
-    return len(commit_id) >= 7 and current_head.startswith(commit_id)
-
-
 def review_readiness_errors(
     review_evidence: dict | None,
     current_head_sha: str,
@@ -173,7 +170,8 @@ def review_readiness_errors(
     """Validate trusted GitHub review attestations for R2/R3 PRs.
 
     PR-body review fields are deliberately not authoritative. Only attestations
-    collected by the trusted workflow from GitHub APIs can satisfy this gate.
+    collected by trusted default/base-branch workflow code from GitHub APIs can
+    satisfy this gate.
     """
     if declared_risk not in {"R2", "R3"}:
         return []
@@ -182,9 +180,12 @@ def review_readiness_errors(
     if not review_evidence:
         return ["R2/R3 readiness requires trusted GitHub independent-review evidence."]
 
-    evidence_head = str(review_evidence.get("head_sha") or "").lower()
     current_head = current_head_sha.lower()
-    if not evidence_head or evidence_head != current_head:
+    if not re.fullmatch(r"[0-9a-f]{40}", current_head):
+        return ["Current PR HEAD is missing or is not a full 40-character SHA."]
+
+    evidence_head = str(review_evidence.get("head_sha") or "").lower()
+    if evidence_head != current_head:
         fail(errors, "Trusted review evidence is stale or does not match the current PR HEAD.")
 
     attestations = review_evidence.get("attestations")
@@ -198,7 +199,11 @@ def review_readiness_errors(
         reviewer = str(attestation.get("reviewer") or "")
         kind = str(attestation.get("kind") or "")
         state = str(attestation.get("state") or "").upper()
-        if reviewer not in TRUSTED_REVIEWERS or not _attestation_matches_head(attestation, current_head):
+        commit_id = str(attestation.get("commit_id") or "").lower()
+        if reviewer not in TRUSTED_REVIEWERS:
+            continue
+        # The collector must resolve every attestation to a canonical full SHA.
+        if commit_id != current_head or not re.fullmatch(r"[0-9a-f]{40}", commit_id):
             continue
         if kind == "review" and state not in {"COMMENTED", "APPROVED"}:
             continue
@@ -213,19 +218,16 @@ def review_readiness_errors(
             "No trusted independent reviewer attestation exists for the current PR HEAD."
         ]
 
-    # Use the latest trusted attestation for this HEAD. ISO-8601 GitHub times sort
-    # lexicographically; id is a deterministic tie-breaker.
-    latest = max(
-        eligible,
-        key=lambda item: (str(item.get("created_at") or ""), int(item.get("id") or 0)),
-    )
-    blocker_count = int(latest.get("blocker_count") or 0)
-    major_count = int(latest.get("major_count") or 0)
+    # Findings are sticky for an immutable HEAD. A later clean verdict MUST NOT
+    # erase an earlier BLOCKER/MAJOR on the same commit. Fixing a code finding
+    # necessarily creates a new HEAD, which then requires a fresh review.
+    blocker_count = sum(int(item.get("blocker_count") or 0) for item in eligible)
+    major_count = sum(int(item.get("major_count") or 0) for item in eligible)
 
     if blocker_count != 0:
-        fail(errors, f"Trusted independent review has {blocker_count} unresolved BLOCKER finding(s).")
+        fail(errors, f"Trusted independent review has {blocker_count} unresolved BLOCKER finding(s) on this HEAD.")
     if major_count != 0:
-        fail(errors, f"Trusted independent review has {major_count} unresolved MAJOR finding(s).")
+        fail(errors, f"Trusted independent review has {major_count} unresolved MAJOR finding(s) on this HEAD.")
 
     return errors
 
@@ -234,9 +236,9 @@ def main() -> int:
     errors: list[str] = []
     event = read_event()
     pr = event.get("pull_request")
-    if not pr:
-        print("No pull_request payload: governance validation skipped.")
-        return 0
+    if not isinstance(pr, dict):
+        fail(errors, "Governance event must contain a canonical pull_request object; fail closed.")
+        pr = {}
 
     title = (pr.get("title") or "").strip()
     body = pr.get("body") or ""
