@@ -1,0 +1,113 @@
+name: Development ticket
+description: Ticket estructurado para trabajo AI-Native en HFPOS.
+title: "DEV-000 "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Usa este formulario para definir el trabajo antes de crear una rama. `main` es la fuente de verdad.
+
+  - type: input
+    id: base_sha
+    attributes:
+      label: Base SHA verificada
+      description: SHA de `main` desde la que se planificó este ticket.
+      placeholder: 40-character commit SHA
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema / resultado buscado
+      description: Describe el problema real y el resultado observable esperado.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Criterios de aceptación
+      description: Deben ser verificables y específicos.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Invariantes y arquitectura
+      description: Tenant isolation, permisos, dinero/stock/caja, idempotencia, contratos, migraciones, SRI u otros invariantes relevantes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Alcance y no objetivos
+      description: Qué se puede cambiar y qué queda expresamente fuera.
+      placeholder: |
+        Alcance:
+        - ...
+
+        No objetivos:
+        - ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencias y frentes paralelos
+      description: Indica dependencias con otros tickets, ownership de paths y si puede ejecutarse en paralelo sin colisiones.
+      placeholder: Ninguna / depende de #... / paths reservados ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Riesgo
+      description: Consulta la matriz R0-R4 del AGENTS.md raíz.
+      options:
+        - R0 — documentación/no ejecutable
+        - R1 — comportamiento aislado de bajo riesgo
+        - R2 — comportamiento de aplicación o CI
+        - R3 — transaccional/seguridad/datos crítico
+        - R4 — operación real privilegiada/destructiva
+    validations:
+      required: true
+
+  - type: textarea
+    id: automated_validation
+    attributes:
+      label: Plan de validación automática
+      description: Tests, builds, PostgreSQL, migraciones, concurrencia, auditoría u otros checks necesarios.
+    validations:
+      required: true
+
+  - type: textarea
+    id: manual_validation
+    attributes:
+      label: Plan de validación manual
+      description: Escribe `No aplica` cuando realmente no aporte valor; para R3 normalmente debe existir validación humana explícita.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Restricciones de seguridad
+      options:
+        - label: No se usarán datos reales de clientes/contribuyentes en sandboxes o pruebas automatizadas.
+          required: true
+        - label: No se usarán certificados, llaves o secretos reales.
+          required: true
+        - label: No se ejecutará `dotnet ef database update` contra bases persistentes, compartidas o de producción.
+          required: true
+        - label: No se llamarán endpoints reales del SRI desde agentes o CI.
+          required: true
+        - label: El agente no hará merge; la autorización final corresponde a Fernando.
+          required: true
