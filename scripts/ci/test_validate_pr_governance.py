@@ -181,6 +181,7 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
         self.assertIn("environment: hfpos-governance", self.workflow)
         self.assertIn("HFPOS_GOVERNANCE_APP_ID", self.workflow)
         self.assertIn("HFPOS_GOVERNANCE_PRIVATE_KEY", self.workflow)
+        self.assertIn("github.ref == 'refs/heads/main'", self.workflow)
 
     def test_governance_environment_policy_requires_selected_main_only_before_secrets(self) -> None:
         for policy in (self.agent_policy, self.review_policy):
@@ -206,10 +207,17 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
     def test_clean_verdict_deletion_retriggers_evaluation(self) -> None:
         self.assertIn("types: [created, edited, deleted]", self.workflow)
 
-    def test_explicit_review_request_invalidates_previous_green_status(self) -> None:
+    def test_explicit_review_request_invalidates_previous_green_status_and_persists_freshness_marker(self) -> None:
         self.assertIn("@codex\\s+review", self.workflow)
+        self.assertIn("context: 'AI-Native Review Request'", self.workflow)
         self.assertIn("Independent Codex review requested for current HEAD", self.workflow)
+        self.assertIn("context: 'AI-Native Governance'", self.workflow)
         self.assertIn("state: 'pending'", self.workflow)
+
+    def test_clean_verdict_must_be_newer_than_latest_review_request_marker(self) -> None:
+        self.assertIn("/commits/{head_sha}/statuses", self.workflow)
+        self.assertIn("latest_review_request_at", self.workflow)
+        self.assertIn("created_at <= latest_review_request_at", self.workflow)
 
     def test_current_head_review_objects_are_collected_fail_closed(self) -> None:
         self.assertIn("/pulls/{pr}/reviews", self.workflow)
@@ -219,12 +227,13 @@ class GovernanceWorkflowContractTests(unittest.TestCase):
         self.assertIn("/commits/{encoded}", self.workflow)
         self.assertIn("resolved != head_sha", self.workflow)
 
-    def test_clean_verdict_structure_allows_only_friendly_suffix_variation(self) -> None:
-        self.assertIn("clean_header_pattern = re.compile", self.workflow)
-        self.assertIn("Didn't find any major issues\\.", self.workflow)
-        self.assertIn("lines[3].strip() != \"\"", self.workflow)
-        self.assertIn("lines[4].lstrip().startswith(\"<details>\")", self.workflow)
-        self.assertNotIn("clean_header = \"Codex Review: Didn't find any major issues. Chef's kiss.\"", self.workflow)
+    def test_clean_verdict_uses_closed_set_of_observed_headers(self) -> None:
+        self.assertIn("clean_headers = {", self.workflow)
+        self.assertIn("Codex Review: Didn't find any major issues.", self.workflow)
+        self.assertIn("Codex Review: Didn't find any major issues. Chef's kiss.", self.workflow)
+        self.assertIn("Codex Review: Didn't find any major issues. You're on a roll.", self.workflow)
+        self.assertIn("lines[0].strip() not in clean_headers", self.workflow)
+        self.assertNotIn("clean_header_pattern = re.compile", self.workflow)
 
 
 if __name__ == "__main__":
