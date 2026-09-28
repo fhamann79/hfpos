@@ -56,14 +56,14 @@ The PR body may contain a human-readable summary of reviewer, state, reviewed SH
 `AI-Native Governance` reads evidence directly from GitHub while executing trusted default/base-branch code. Observed Codex behavior is deliberately interpreted fail-closed:
 
 - when Codex finds actionable issues, it creates a trusted GitHub review object on the reviewed commit;
-- when Codex finds no major issues, it emits a trusted bot issue comment whose canonical first line begins `Codex Review: Didn't find any major issues.` and whose `Reviewed commit` value identifies the reviewed commit.
+- when Codex finds no major issues, it emits a trusted bot issue comment whose first line must match one of the exact clean-verdict variants observed and allowed by the workflow, and whose `Reviewed commit` value identifies the reviewed commit.
 
 For R2/R3 readiness:
 
 - the evidence must come from `chatgpt-codex-connector[bot]`;
 - a clean comment's displayed short SHA is resolved through GitHub's commits API and must equal the exact current 40-character HEAD;
 - **any Codex GitHub review object on the current HEAD blocks that HEAD**, regardless of later edit/delete/dismiss of mutable inline text;
-- a positive result requires at least one canonical clean Codex comment for the exact current HEAD and no Codex review object for that HEAD;
+- a positive result requires at least one accepted clean Codex comment for the exact current HEAD and no Codex review object for that HEAD;
 - findings are cleared by fixing the code and producing a new HEAD, never by repeatedly re-reviewing the unchanged commit.
 
 This makes the commit itself the review boundary and removes dependence on mutable finding counters or editable PR prose.
@@ -86,9 +86,13 @@ A PR workflow may imitate the text `AI-Native Governance`, but it cannot possess
 
 ## Review request invalidation
 
-A new explicit `@codex review` request on an unchanged HEAD invalidates any previous green governance state while the new review is pending. Trusted governance code uses the dedicated App token to publish `AI-Native Governance = pending` for that exact HEAD.
+A new explicit `@codex review` on an unchanged HEAD invalidates an earlier clean result until Codex produces a newer verdict. The request is authoritative only when it is posted by the PR author or by an account whose GitHub `author_association` is `OWNER`, `MEMBER`, or `COLLABORATOR`.
 
-If Codex returns findings, the current HEAD remains blocked because the GitHub review object is evidence against it. If Codex returns the canonical clean comment, the issue-comment event causes governance to re-evaluate the exact current HEAD.
+Governance does **not** depend on a particular Actions run surviving concurrency queues. On every evaluation it reads the current GitHub issue comments, derives the latest authorized review request from the request comment's own immutable `created_at`, and accepts a clean Codex verdict only when that verdict was created later than the request.
+
+For an authorized review-request event, or when trusted Codex issue-comment evidence changes, the dedicated App publishes `AI-Native Governance = pending` before the current state is evaluated. That keeps the gate fail-closed while the evidence is transitioning.
+
+If Codex returns findings, the current HEAD remains blocked because the GitHub review object is evidence against it. If Codex returns an accepted clean comment, the issue-comment event causes governance to re-evaluate the exact current HEAD.
 
 ## Automatic re-evaluation
 
@@ -97,9 +101,9 @@ Governance listens to:
 - PR state/code changes through `pull_request_target`;
 - PR issue comments through `issue_comment` (`created`, `edited`, `deleted`).
 
-Those event families execute from the trusted default/base ref, which is required for access to the protected governance environment. The workflow never checks out or executes PR code; it fetches the PR HEAD only as a Git object to compute changed paths.
+Those event families execute from the trusted default/base ref, which is required for access to the protected governance environment. The workflow never checks out or executes PR code. Changed paths are obtained from GitHub's pull-request files API (`pulls.listFiles`), which reflects the PR's own merge diff instead of comparing the current `main` tip against the PR endpoint manually.
 
-A new push invalidates old review evidence automatically because the exact HEAD changes. Deleting or editing the canonical clean Codex comment triggers another current-state evaluation.
+A new push invalidates old review evidence automatically because the exact HEAD changes. Deleting or editing the accepted clean Codex comment triggers another current-state evaluation.
 
 ## HFPOS review focus
 
@@ -122,11 +126,14 @@ Governance changes require a different adversarial lens:
 - can untrusted PR code execute under a privileged event?;
 - can a PR forge the required status/check identity?;
 - can a PR-head workflow request the governance environment or read its App secrets?;
-- can a stale review be accepted after a new push?;
+- can a stale review be accepted after a new push or after a newer authorized review request?;
+- can queue coalescing lose a review request and resurrect older clean evidence?;
+- can an unauthorized commenter hold governance pending indefinitely?;
 - can editable PR metadata impersonate trusted review evidence?;
 - can deletion/editing/dismissal make a reviewed failing HEAD clean without a code change?;
 - can a quoted or malformed clean-verdict marker be mistaken for a real clean review?;
 - can a short SHA resolve to anything other than the exact current HEAD?;
+- are changed files derived from the authoritative PR diff rather than endpoint drift against a newer `main`?;
 - are App credentials reachable only from `main`-ref trusted workflow context?;
 - is the ruleset pinned to the expected governance App source rather than only a context string?
 
