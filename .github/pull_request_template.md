@@ -68,6 +68,8 @@ Evidencia/resultados:
 
 ## Revisión independiente
 
+<!-- Resumen informativo para humanos. NO es la autoridad del gate: AI-Native Governance verifica la identidad, commit y hallazgos directamente desde la API de revisiones de GitHub. -->
+
 - Reviewer independiente: Pendiente
 - Estado de revisión: `PENDIENTE`
 - HEAD revisado: `PENDIENTE`
@@ -78,7 +80,7 @@ Evidencia/resultados:
 - Observaciones:
   - 
 
-> Para R2/R3, una revisión solo es vigente cuando `Estado de revisión` es `COMPLETA`, el `HEAD revisado` coincide con el HEAD actual del PR y no quedan BLOCKER/MAJOR abiertos.
+> Para R2/R3, la autoridad es la evidencia de revisión emitida en GitHub por un reviewer confiable sobre el HEAD actual. Estos campos del body son solo un espejo legible y no pueden satisfacer el gate por sí solos.
 
 ## Riesgos residuales / rollback
 
