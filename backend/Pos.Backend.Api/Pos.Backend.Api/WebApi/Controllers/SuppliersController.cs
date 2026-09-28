@@ -19,6 +19,10 @@ namespace Pos.Backend.Api.WebApi.Controllers;
 public class SuppliersController : ControllerBase
 {
     private const int MaxEmailLength = 320;
+    private const int DefaultLookupTake = 50;
+    private const int MaxLookupTake = 200;
+    private const int DefaultPageSize = 30;
+    private const int MaxPageSize = 200;
 
     private static readonly Regex EmailRegex = new(@"^[^\s@]+@[^\s@]+\.[^\s@]+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
@@ -31,35 +35,86 @@ public class SuppliersController : ControllerBase
         _operationalContextAccessor = operationalContextAccessor;
     }
 
+    // Bounded lookup kept for operational selectors that expect an array.
     [HttpGet]
     [Authorize(Policy = AppPermissions.SuppliersRead)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<IEnumerable<SupplierDto>>> Get([FromQuery] string? search)
+    public async Task<ActionResult<IEnumerable<SupplierDto>>> Get(
+        [FromQuery] string? search,
+        [FromQuery] int? take = null,
+        [FromQuery] bool activeOnly = false)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-
-        var query = _context.Suppliers
-            .AsNoTracking()
-            .Where(s => s.CompanyId == operationalContext.CompanyId);
-
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var term = search.Trim().ToLower();
-            query = query.Where(s =>
-                s.Name.ToLower().Contains(term)
-                || (s.Identification != null && s.Identification.ToLower().Contains(term))
-                || (s.Email != null && s.Email.ToLower().Contains(term))
-                || (s.Phone != null && s.Phone.ToLower().Contains(term)));
-        }
+        var query = BuildFilteredQuery(operationalContext.CompanyId, search, activeOnly ? "active" : "all");
+        var limit = Math.Clamp(take ?? DefaultLookupTake, 1, MaxLookupTake);
 
         var suppliers = await query
             .OrderByDescending(s => s.IsActive)
             .ThenBy(s => s.Name)
+            .ThenBy(s => s.Id)
+            .Take(limit)
             .Select(s => ToDto(s))
             .ToListAsync();
 
         return Ok(suppliers);
+    }
+
+    [HttpGet("lookup")]
+    [Authorize(Policy = AppPermissions.SuppliersRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IEnumerable<SupplierDto>>> Lookup(
+        [FromQuery] string? search,
+        [FromQuery] int take = DefaultLookupTake)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var limit = Math.Clamp(take, 1, MaxLookupTake);
+        var query = BuildFilteredQuery(operationalContext.CompanyId, search, "active");
+
+        var suppliers = await query
+            .OrderBy(s => s.Name)
+            .ThenBy(s => s.Id)
+            .Take(limit)
+            .Select(s => ToDto(s))
+            .ToListAsync();
+
+        return Ok(suppliers);
+    }
+
+    [HttpGet("page")]
+    [Authorize(Policy = AppPermissions.SuppliersRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<PagedResultDto<SupplierDto>>> GetPage(
+        [FromQuery] string? search,
+        [FromQuery] string? status = "all",
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = DefaultPageSize,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortDir = null)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var normalizedPage = Math.Max(page, 1);
+        var normalizedPageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+        var query = BuildFilteredQuery(operationalContext.CompanyId, search, status);
+        var totalItems = await query.CountAsync();
+        var ordered = ApplyOrdering(query, sortBy, sortDir);
+
+        var items = await ordered
+            .Skip((normalizedPage - 1) * normalizedPageSize)
+            .Take(normalizedPageSize)
+            .Select(s => ToDto(s))
+            .ToListAsync();
+
+        return Ok(new PagedResultDto<SupplierDto>
+        {
+            Items = items,
+            Page = normalizedPage,
+            PageSize = normalizedPageSize,
+            TotalItems = totalItems,
+            TotalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)normalizedPageSize)
+        });
     }
 
     [HttpGet("{id:int}")]
@@ -199,6 +254,53 @@ public class SuppliersController : ControllerBase
         await _context.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    private IQueryable<Supplier> BuildFilteredQuery(int companyId, string? search, string? status)
+    {
+        var query = _context.Suppliers
+            .AsNoTracking()
+            .Where(s => s.CompanyId == companyId);
+
+        var normalizedStatus = NormalizeOptionalText(status)?.ToLowerInvariant();
+        query = normalizedStatus switch
+        {
+            "active" or "activo" or "activos" => query.Where(s => s.IsActive),
+            "inactive" or "inactivo" or "inactivos" => query.Where(s => !s.IsActive),
+            _ => query
+        };
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(s =>
+                s.Name.ToLower().Contains(term)
+                || (s.Identification != null && s.Identification.ToLower().Contains(term))
+                || (s.Email != null && s.Email.ToLower().Contains(term))
+                || (s.Phone != null && s.Phone.ToLower().Contains(term)));
+        }
+
+        return query;
+    }
+
+    private static IOrderedQueryable<Supplier> ApplyOrdering(IQueryable<Supplier> query, string? sortBy, string? sortDir)
+    {
+        var descending = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+        var normalizedSort = sortBy?.Trim().ToLowerInvariant();
+
+        return normalizedSort switch
+        {
+            "name" => descending
+                ? query.OrderByDescending(s => s.Name).ThenByDescending(s => s.Id)
+                : query.OrderBy(s => s.Name).ThenBy(s => s.Id),
+            "isactive" => descending
+                ? query.OrderByDescending(s => s.IsActive).ThenBy(s => s.Name).ThenBy(s => s.Id)
+                : query.OrderBy(s => s.IsActive).ThenBy(s => s.Name).ThenBy(s => s.Id),
+            "updatedat" => descending
+                ? query.OrderByDescending(s => s.UpdatedAt ?? s.CreatedAt).ThenByDescending(s => s.Id)
+                : query.OrderBy(s => s.UpdatedAt ?? s.CreatedAt).ThenBy(s => s.Id),
+            _ => query.OrderByDescending(s => s.IsActive).ThenBy(s => s.Name).ThenBy(s => s.Id)
+        };
     }
 
     private async Task<bool> IdentificationExistsAsync(int companyId, string? identification, int? excludedSupplierId = null)
