@@ -53,8 +53,6 @@ def fail(errors: list[str], message: str) -> None:
 
 
 def read_event() -> dict:
-    # Governance may synthesize a canonical pull_request payload for events such
-    # as issue_comment. Product CI falls back to GitHub's original event file.
     event_path = os.environ.get("HFPOS_EVENT_PATH") or os.environ.get("GITHUB_EVENT_PATH")
     if not event_path:
         raise RuntimeError("Neither HFPOS_EVENT_PATH nor GITHUB_EVENT_PATH is defined")
@@ -97,34 +95,18 @@ def minimum_risk_for_path(path: str) -> tuple[int, str]:
 
     if low == "agents.md" or low.endswith("/agents.md"):
         return 2, "agent governance policy"
-
     if low.startswith(".github/workflows/") or low.startswith("scripts/ci/"):
         return 2, "repository governance/CI behavior"
-
     if low.startswith(".github/issue_template/") or low == ".github/pull_request_template.md":
         return 1, "development-process metadata"
 
     if low.startswith("backend/"):
         if "/tests/" in low or low.endswith("tests.cs") or ".tests/" in low:
             return 1, "backend tests"
-
         critical_markers = (
-            "/migrations/",
-            "/security/",
-            "/auth",
-            "jwt",
-            "operationalcontext",
-            "/infrastructure/data/",
-            "/repositories/",
-            "/core/services/",
-            "sale",
-            "purchase",
-            "inventory",
-            "stock",
-            "cash",
-            "creditnote",
-            "sri",
-            "invoice",
+            "/migrations/", "/security/", "/auth", "jwt", "operationalcontext",
+            "/infrastructure/data/", "/repositories/", "/core/services/",
+            "sale", "purchase", "inventory", "stock", "cash", "creditnote", "sri", "invoice",
         )
         if any(marker in low for marker in critical_markers):
             return 3, "critical backend transactional/security/data path"
@@ -141,13 +123,10 @@ def minimum_risk_for_path(path: str) -> tuple[int, str]:
 
     if low.endswith((".csproj", ".sln", "nuget.config", "directory.packages.props")):
         return 2, "build/dependency configuration"
-
     if "production" in low or "deploy" in low or low.endswith((".pfx", ".p12", ".key", ".pem")):
         return 3, "production/deployment/certificate-sensitive path"
-
     if low.startswith("docs/") or low.endswith(".md"):
         return 0, "documentation"
-
     return 1, "unclassified repository change"
 
 
@@ -167,16 +146,19 @@ def review_readiness_errors(
     current_head_sha: str,
     declared_risk: str | None,
 ) -> list[str]:
-    """Validate trusted GitHub review attestations for R2/R3 PRs.
+    """Require a clean Codex attestation for the exact R2/R3 PR HEAD.
 
-    PR-body review fields are deliberately not authoritative. Only attestations
-    collected by trusted default/base-branch workflow code from GitHub APIs can
-    satisfy this gate.
+    Observed Codex behavior is intentionally handled fail-closed:
+    - a clean review is emitted as the canonical trusted bot issue comment;
+    - a GitHub review object on the current HEAD means Codex reported findings.
+
+    Therefore any trusted Codex review object on the current immutable HEAD blocks
+    readiness, even if its inline comments are later edited/deleted/dismissed.
+    Findings are cleared only by changing the HEAD and reviewing the new commit.
     """
     if declared_risk not in {"R2", "R3"}:
         return []
 
-    errors: list[str] = []
     if not review_evidence:
         return ["R2/R3 readiness requires trusted GitHub independent-review evidence."]
 
@@ -184,63 +166,45 @@ def review_readiness_errors(
     if not re.fullmatch(r"[0-9a-f]{40}", current_head):
         return ["Current PR HEAD is missing or is not a full 40-character SHA."]
 
+    errors: list[str] = []
     evidence_head = str(review_evidence.get("head_sha") or "").lower()
     if evidence_head != current_head:
         fail(errors, "Trusted review evidence is stale or does not match the current PR HEAD.")
-
-    sticky_findings = bool(review_evidence.get("sticky_findings"))
 
     attestations = review_evidence.get("attestations")
     if not isinstance(attestations, list):
         return errors + ["Trusted review evidence does not contain an attestation list."]
 
-    current_attestations: list[dict] = []
-    positive_attestations: list[dict] = []
+    trusted_current: list[dict] = []
     for attestation in attestations:
         if not isinstance(attestation, dict):
             continue
         reviewer = str(attestation.get("reviewer") or "")
-        kind = str(attestation.get("kind") or "")
-        state = str(attestation.get("state") or "").upper()
         commit_id = str(attestation.get("commit_id") or "").lower()
-        if reviewer not in TRUSTED_REVIEWERS:
+        if reviewer not in TRUSTED_REVIEWERS or commit_id != current_head:
             continue
-        if commit_id != current_head or not re.fullmatch(r"[0-9a-f]{40}", commit_id):
+        if not re.fullmatch(r"[0-9a-f]{40}", commit_id):
             continue
-        if kind not in {"review", "clean_comment"}:
-            continue
+        trusted_current.append(attestation)
 
-        current_attestations.append(attestation)
-        if kind == "clean_comment" and state == "CLEAN":
-            positive_attestations.append(attestation)
-        elif kind == "review" and state in {"COMMENTED", "APPROVED"}:
-            positive_attestations.append(attestation)
+    current_reviews = [
+        item for item in trusted_current if str(item.get("kind") or "") == "review"
+    ]
+    if current_reviews:
+        fail(
+            errors,
+            "Trusted Codex GitHub review object exists for the current HEAD; "
+            "treat findings as blocking and create a new commit before re-review.",
+        )
 
-    if not positive_attestations:
-        return errors + [
-            "No active trusted independent reviewer attestation exists for the current PR HEAD."
-        ]
-
-    blocker_count = sum(int(item.get("blocker_count") or 0) for item in current_attestations)
-    major_count = sum(int(item.get("major_count") or 0) for item in current_attestations)
-    changes_requested = sum(
-        1
-        for item in current_attestations
-        if str(item.get("kind") or "") == "review"
-        and str(item.get("state") or "").upper() == "CHANGES_REQUESTED"
-    )
-    major_count += changes_requested
-
-    # A separate commit-status ledger is written by trusted default-branch
-    # workflow code as soon as a blocking review event is observed. It survives
-    # deletion/editing of the original inline comment and is immutable per HEAD.
-    if sticky_findings:
-        blocker_count += 1
-
-    if blocker_count != 0:
-        fail(errors, f"Trusted independent review has persistent BLOCKER finding(s) on this HEAD ({blocker_count}).")
-    if major_count != 0:
-        fail(errors, f"Trusted independent review has {major_count} unresolved MAJOR/change-request finding(s) on this HEAD.")
+    clean_current = [
+        item
+        for item in trusted_current
+        if str(item.get("kind") or "") == "clean_comment"
+        and str(item.get("state") or "").upper() == "CLEAN"
+    ]
+    if not clean_current:
+        fail(errors, "No canonical clean Codex attestation exists for the current PR HEAD.")
 
     return errors
 
@@ -301,8 +265,7 @@ def main() -> int:
     elif real_env_match.group("value").upper().replace("Í", "I") != "NO":
         fail(errors, "Autonomous PR validation forbids use of real environments/data/SRI/certificates.")
 
-    merge_match = MERGE_STATE_RE.search(body)
-    if not merge_match:
+    if not MERGE_STATE_RE.search(body):
         fail(errors, "PR body must have Estado de merge = PENDIENTE or AUTORIZADO_POR_FERNANDO.")
 
     minimum_risk, evidence = compute_minimum_risk(changed_files)
@@ -323,9 +286,7 @@ def main() -> int:
 
     require_review_ready = env_truthy("HFPOS_REQUIRE_REVIEW_READY")
     if require_review_ready:
-        errors.extend(
-            review_readiness_errors(read_review_evidence(), current_head_sha, declared_risk)
-        )
+        errors.extend(review_readiness_errors(read_review_evidence(), current_head_sha, declared_risk))
 
     print(f"Ticket: {title_ticket or body_ticket or 'UNKNOWN'}")
     print(f"Declared risk: {declared_risk or 'MISSING'}")
@@ -348,6 +309,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except Exception as exc:  # fail closed for CI/governance code
+    except Exception as exc:
         print(f"Governance validator crashed: {exc}", file=sys.stderr)
         raise
