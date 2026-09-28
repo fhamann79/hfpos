@@ -29,6 +29,17 @@ MERGE_STATE_RE = re.compile(
     r"## Estado de merge\s*\n+\s*`?(?P<state>PENDIENTE|AUTORIZADO_POR_FERNANDO)`?",
     re.IGNORECASE,
 )
+REVIEWER_RE = re.compile(r"-\s*Reviewer independiente:\s*(?P<value>[^\n]+)", re.IGNORECASE)
+REVIEW_STATE_RE = re.compile(
+    r"-\s*Estado de revisión:\s*`?(?P<value>PENDIENTE|COMPLETA)`?",
+    re.IGNORECASE,
+)
+REVIEW_HEAD_RE = re.compile(
+    r"-\s*HEAD revisado:\s*`?(?P<value>PENDIENTE|[0-9a-f]{40})`?",
+    re.IGNORECASE,
+)
+BLOCKER_RE = re.compile(r"-\s*BLOCKER:\s*(?P<count>\d+)\b", re.IGNORECASE)
+MAJOR_RE = re.compile(r"-\s*MAJOR:\s*(?P<count>\d+)\b", re.IGNORECASE)
 
 REQUIRED_SECTIONS = (
     "## Ticket",
@@ -66,6 +77,10 @@ def read_changed_files() -> list[str]:
     if not file_path.exists():
         return []
     return [line.strip() for line in file_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "si", "sí"}
 
 
 def minimum_risk_for_path(path: str) -> tuple[int, str]:
@@ -143,6 +158,48 @@ def compute_minimum_risk(paths: list[str]) -> tuple[str, list[tuple[str, str, st
     return f"R{highest}", evidence
 
 
+def review_readiness_errors(body: str, current_head_sha: str, declared_risk: str | None) -> list[str]:
+    """Return blocking review-readiness errors for R2/R3 PRs."""
+    if declared_risk not in {"R2", "R3"}:
+        return []
+
+    errors: list[str] = []
+
+    reviewer_match = REVIEWER_RE.search(body)
+    reviewer = reviewer_match.group("value").strip(" `") if reviewer_match else ""
+    if not reviewer or reviewer.lower().startswith("pendiente"):
+        fail(errors, "R2/R3 PRs require a real independent reviewer before readiness.")
+
+    state_match = REVIEW_STATE_RE.search(body)
+    state = state_match.group("value").upper() if state_match else None
+    if state != "COMPLETA":
+        fail(errors, "R2/R3 PRs require Estado de revisión = COMPLETA.")
+
+    head_match = REVIEW_HEAD_RE.search(body)
+    reviewed_head = head_match.group("value").lower() if head_match else None
+    if not reviewed_head or reviewed_head == "pendiente":
+        fail(errors, "R2/R3 PRs require a concrete 40-character HEAD revisado SHA.")
+    elif current_head_sha and reviewed_head != current_head_sha.lower():
+        fail(
+            errors,
+            f"Independent review is stale: reviewed HEAD {reviewed_head} != current PR HEAD {current_head_sha.lower()}.",
+        )
+
+    blocker_match = BLOCKER_RE.search(body)
+    major_match = MAJOR_RE.search(body)
+    if not blocker_match:
+        fail(errors, "Independent review must declare BLOCKER count.")
+    elif int(blocker_match.group("count")) != 0:
+        fail(errors, "Independent review still has unresolved BLOCKER findings.")
+
+    if not major_match:
+        fail(errors, "Independent review must declare MAJOR count.")
+    elif int(major_match.group("count")) != 0:
+        fail(errors, "Independent review still has unresolved MAJOR findings.")
+
+    return errors
+
+
 def main() -> int:
     errors: list[str] = []
     event = read_event()
@@ -153,6 +210,7 @@ def main() -> int:
 
     title = (pr.get("title") or "").strip()
     body = pr.get("body") or ""
+    current_head_sha = ((pr.get("head") or {}).get("sha") or "").strip()
     changed_files = read_changed_files()
 
     if not changed_files:
@@ -218,9 +276,14 @@ def main() -> int:
     if migration_changed and re.search(r"-\s*Migraciones EF:\s*Ninguna\b", body, re.IGNORECASE):
         fail(errors, "Migration files changed but PR body says 'Migraciones EF: Ninguna'.")
 
+    require_review_ready = env_truthy("HFPOS_REQUIRE_REVIEW_READY")
+    if require_review_ready:
+        errors.extend(review_readiness_errors(body, current_head_sha, declared_risk))
+
     print(f"Ticket: {title_ticket or body_ticket or 'UNKNOWN'}")
     print(f"Declared risk: {declared_risk or 'MISSING'}")
     print(f"Path-derived minimum risk: {minimum_risk}")
+    print(f"Review readiness enforced: {'YES' if require_review_ready else 'NO'}")
     print(f"Changed files: {len(changed_files)}")
     for path, risk, reason in evidence:
         print(f"  {risk}  {path}  ({reason})")
