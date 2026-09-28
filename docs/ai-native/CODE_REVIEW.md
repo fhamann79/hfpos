@@ -8,24 +8,27 @@ Codex is an additional reviewer. It does not replace automated tests, branch pro
 
 ## Why Codex
 
-The repository already uses `AGENTS.md` as the normative agent policy. Codex Code Review can consume repository review rules and review pull requests directly in GitHub, so it fits the existing workflow without adding an OpenAI API key or custom reviewer service to the repository.
+The repository already uses `AGENTS.md` as the normative agent policy. Codex Code Review can consume repository review rules and review pull requests directly in GitHub, so it fits the existing workflow without adding an OpenAI API key or a custom AI reviewer service to the repository.
 
 ## One-time external enablement
 
-Repository code cannot enable a GitHub/Codex account integration by itself. The GitHub repository must be connected to Codex Code Review once outside the repo.
+Repository code cannot enable GitHub/Codex account integrations or GitHub App credentials by itself. The repository owner performs these one-time external steps:
 
-Expected setup:
-
-1. Connect the GitHub repository `fhamann79/hfpos` to Codex/ChatGPT and create a Codex environment for the repository.
+1. Connect `fhamann79/hfpos` to Codex/ChatGPT and keep the Codex environment for the repository.
 2. Enable Codex Code Review for the repository.
-3. Prefer automatic review for new PRs and re-review after new pushes when the product UI/account offers those options.
-4. Until automatic review is confirmed, request it manually in the PR with:
+3. Create a dedicated GitHub App named **HFPOS Governance Gate**, install it only on `fhamann79/hfpos`, and grant it only the repository permission needed to write commit statuses (plus implicit metadata read).
+4. Create the repository environment `hfpos-governance`, restrict it to trusted `main`/default-branch execution, and store `HFPOS_GOVERNANCE_APP_ID` and `HFPOS_GOVERNANCE_PRIVATE_KEY` there.
+5. After the App has emitted `AI-Native Governance` on a pilot PR, configure `Protect main + CI` to require that status from the expected **HFPOS Governance Gate** App source, not only by status name.
+
+The App private key is infrastructure credential material. It must never be committed, pasted into PRs, stored as a normal repository-wide secret, or exposed to PR-head workflows.
+
+Until automatic Codex review is confirmed, request review in the PR with:
 
 ```text
 @codex review
 ```
 
-DEV-002 is the pilot PR for proving that this integration is available and produces a real review from a reviewer separate from the implementation pass.
+DEV-002 is the pilot for proving the review contract and the protected governance identity.
 
 ## Review lifecycle
 
@@ -37,64 +40,63 @@ IMPLEMENTATION
   -> PRODUCT_CI
   -> CODEX_INDEPENDENT_REVIEW
   -> FIX_FINDINGS
-  -> RE-REVIEW_CURRENT_HEAD
-  -> AI-NATIVE_GOVERNANCE_GREEN
+  -> RE-REVIEW_NEW_HEAD
+  -> APP-AUTHENTICATED_GOVERNANCE_GREEN
   -> HUMAN_VALIDATION (R3 / when required)
   -> FERNANDO_AUTHORIZES_MERGE
 ```
 
-If a new commit is pushed after review, the review is stale. The current PR HEAD must be reviewed again before readiness.
+If a new commit is pushed after review, the review is stale. The new PR HEAD must be reviewed again before readiness.
 
-## Authoritative evidence
+## Authoritative review evidence
 
-The PR body may contain a human-readable summary of reviewer, state, reviewed SHA and finding counts, but **that text is not authoritative and cannot satisfy the gate**.
+The PR body may contain a human-readable summary of reviewer, state, reviewed SHA and findings, but **that text is not authoritative and cannot satisfy the gate**.
 
-For R2/R3, `AI-Native Governance` obtains evidence directly from GitHub while executing trusted default/base-branch code. Codex currently emits either:
+`AI-Native Governance` reads evidence directly from GitHub while executing trusted default/base-branch code. Observed Codex behavior is deliberately interpreted fail-closed:
 
-- a normal GitHub review with inline findings; or
-- a trusted bot issue comment whose canonical prologue says `Codex Review: Didn't find any major issues. Chef's kiss.` and includes a `Reviewed commit` SHA when the review is clean.
+- when Codex finds actionable issues, it creates a trusted GitHub review object on the reviewed commit;
+- when Codex finds no major issues, it emits a trusted bot issue comment whose canonical first line is `Codex Review: Didn't find any major issues. Chef's kiss.` and whose `Reviewed commit` value identifies the reviewed commit.
 
-The gate accepts only attestations that:
+For R2/R3 readiness:
 
-- were emitted by an explicitly trusted independent reviewer identity;
-- resolve to the exact current 40-character PR HEAD SHA;
-- for normal reviews, carry a full GitHub `commit_id` equal to the current HEAD;
-- for clean comments, match the canonical Codex clean-verdict structure and have their displayed SHA resolved through GitHub's commit API to the exact current HEAD;
-- were collected by the trusted workflow from GitHub APIs, not supplied by PR code or editable PR prose.
+- the evidence must come from `chatgpt-codex-connector[bot]`;
+- a clean comment's displayed short SHA is resolved through GitHub's commits API and must equal the exact current 40-character HEAD;
+- **any Codex GitHub review object on the current HEAD blocks that HEAD**, regardless of later edit/delete/dismiss of mutable inline text;
+- a positive result requires at least one canonical clean Codex comment for the exact current HEAD and no Codex review object for that HEAD;
+- findings are cleared by fixing the code and producing a new HEAD, never by repeatedly re-reviewing the unchanged commit.
 
-## Persistent finding ledger
+This makes the commit itself the review boundary and removes dependence on mutable finding counters or editable PR prose.
 
-Inline comments are useful evidence but they are not an immutable ledger. A repository writer may be able to delete or edit a comment after review. Therefore trusted default-branch workflow code persists a separate commit status named **`AI-Native Review Finding`** on the exact PR HEAD as soon as a trusted `BLOCKER`, `MAJOR`, or `CHANGES_REQUESTED` event is observed.
+## Protected governance identity
 
-That ledger is deliberately one-way for an immutable HEAD:
+A required status name by itself is insufficient: a workflow running from an untrusted same-repository PR may be able to request a writable `GITHUB_TOKEN` and try to publish another status with the same context string.
 
-- it only records failure;
-- it is never cleared by a clean comment on the same SHA;
-- deleting/dismissing/editing the original review evidence cannot make the HEAD ready;
-- correcting the code creates a new HEAD with a fresh ledger and requires a fresh review.
+Therefore HFPOS separates **review evidence**, **trusted workflow code**, and **status publisher identity**:
 
-The validator combines current GitHub review evidence with this persistent finding ledger. This preserves the principle that `BLOCKER` and `MAJOR` findings are sticky for the commit on which they were found.
+- `.github/workflows/governance.yml` runs only through trusted default/base-ref event families (`pull_request_target` and `issue_comment`) and never executes PR-head code;
+- its built-in `GITHUB_TOKEN` is read-only for repository contents/PR/issues and has **no** `statuses: write` or `checks: write`;
+- the final `AI-Native Governance` commit status is written only with a short-lived installation token minted for the dedicated **HFPOS Governance Gate** GitHub App;
+- the App ID/private key live only in the protected `hfpos-governance` environment;
+- the branch ruleset pins the required `AI-Native Governance` context to the expected HFPOS Governance Gate App source.
 
-## Head-bound governance status
+A PR workflow may imitate the text `AI-Native Governance`, but it cannot possess the required App identity, so that imitation cannot satisfy the protected rule once the expected source is configured.
 
-GitHub does not necessarily attach workflows triggered by `issue_comment` to the PR HEAD. To avoid a clean Codex comment leaving a required check permanently stale, trusted workflow code explicitly publishes a commit status named **`AI-Native Governance`** to the exact PR HEAD.
+## Review request invalidation
 
-Every relevant governance event first publishes `AI-Native Governance = pending`. After validation it publishes `success` or `failure` on that same SHA. If processing crashes before completion, the latest state remains pending and the PR fails closed once this context is required by the branch ruleset.
+A new explicit `@codex review` request on an unchanged HEAD invalidates any previous green governance state while the new review is pending. Trusted governance code uses the dedicated App token to publish `AI-Native Governance = pending` for that exact HEAD.
 
-The only write permission granted to this workflow is `statuses: write`. It does not receive contents write, pull-request write, secrets, production credentials, SRI credentials or certificate access.
+If Codex returns findings, the current HEAD remains blocked because the GitHub review object is evidence against it. If Codex returns the canonical clean comment, the issue-comment event causes governance to re-evaluate the exact current HEAD.
 
 ## Automatic re-evaluation
 
-Governance listens for:
+Governance listens to:
 
-- PR changes through `pull_request_target`;
-- submitted/edited/dismissed GitHub reviews through `pull_request_review`;
-- trusted inline review-comment creation/edit/deletion through `pull_request_review_comment`;
-- trusted Codex issue comments through `issue_comment`.
+- PR state/code changes through `pull_request_target`;
+- PR issue comments through `issue_comment` (`created`, `edited`, `deleted`).
 
-For every event, governance resolves the PR again from GitHub and synthesizes one canonical `pull_request` payload for the validator. It never treats an `issue_comment` payload as if it already contained full PR context.
+Those event families execute from the trusted default/base ref, which is required for access to the protected governance environment. The workflow never checks out or executes PR code; it fetches the PR HEAD only as a Git object to compute changed paths.
 
-Therefore a new push makes old review evidence stale, and a subsequent Codex review/clean verdict automatically causes governance to evaluate and publish status for the current HEAD.
+A new push invalidates old review evidence automatically because the exact HEAD changes. Deleting or editing the canonical clean Codex comment triggers another current-state evaluation.
 
 ## HFPOS review focus
 
@@ -114,16 +116,15 @@ The reviewer must prioritize correctness over style and actively try to falsify 
 
 Governance changes require a different adversarial lens:
 
-- can the PR weaken or bypass its own checks?;
-- can untrusted PR code execute under privileged review events?;
+- can untrusted PR code execute under a privileged event?;
+- can a PR forge the required status/check identity?;
 - can a stale review be accepted after a new push?;
-- can an agent claim independent review without a real reviewer?;
 - can editable PR metadata impersonate trusted review evidence?;
-- can one trusted attestation incorrectly erase another finding on the same HEAD?;
-- can deletion/editing/dismissal erase a previously observed blocking finding?;
+- can deletion/editing/dismissal make a reviewed failing HEAD clean without a code change?;
 - can a quoted or malformed clean-verdict marker be mistaken for a real clean review?;
-- is the final governance status published on the exact PR HEAD?;
-- are write permissions limited to the minimum required status publication?
+- can a short SHA resolve to anything other than the exact current HEAD?;
+- are App credentials reachable only from trusted workflow context?;
+- is the ruleset pinned to the expected governance App source rather than only a context string?
 
 ## Severity
 
@@ -140,19 +141,19 @@ If Codex Code Review is unavailable:
 
 1. record that the preferred provider is unavailable;
 2. do not pretend that implementer self-review is independent;
-3. use a genuinely independent reviewer whose GitHub identity is explicitly trusted by governance;
-4. keep the PR blocked for R2/R3 until trusted review evidence exists for the current HEAD.
+3. use a genuinely independent reviewer whose identity is explicitly supported by governance;
+4. keep R2/R3 blocked until trusted review evidence exists for the current HEAD.
+
+If the HFPOS Governance Gate App, protected environment, or expected-source ruleset binding is unavailable, governance is **not fully enforced** and the repository stays in manual human-merge mode until the infrastructure is restored.
 
 ## CI vs governance responsibilities
 
-Product CI (`Backend` and `Frontend`) should run for code changes, not every edit to PR prose.
+Product CI (`Backend` and `Frontend`) runs from PR code to build/test the proposed implementation. It is not authoritative for independent-review readiness.
 
-`AI-Native Governance` owns PR metadata/risk/review-readiness checks and reacts to PR/review evidence changes. Product CI does not need to rebuild the entire POS for metadata-only edits.
+`AI-Native Governance` owns metadata/risk/review-readiness and executes only trusted base/default-branch code. Its built-in token is read-only. Status publication uses the dedicated App identity from the protected environment.
 
-The governance workflow executes trusted default/base-branch code, never executes untrusted PR code, and queries GitHub APIs to verify reviewer identity, canonical reviewed commit and blocker severity. Its sole write capability is publishing commit statuses on the PR HEAD.
-
-After DEV-002 is merged and the explicit `AI-Native Governance` commit status has been demonstrated on a subsequent PR, add **AI-Native Governance** to the `Protect main + CI` ruleset as a required status check.
+After DEV-002 is merged, prove the final workflow on a small pilot PR, then bind **AI-Native Governance** in `Protect main + CI` to the expected **HFPOS Governance Gate** App source before treating the automated gate as mandatory enforcement.
 
 ## Merge authority
 
-Neither Codex nor any other AI reviewer may merge the PR or change the PR to a human-authorized merge state. Fernando makes the final merge decision after required evidence is complete.
+Neither Codex nor the governance App nor any other AI reviewer may merge a PR or change its human authorization state. Fernando makes the final merge decision after required evidence is complete.
