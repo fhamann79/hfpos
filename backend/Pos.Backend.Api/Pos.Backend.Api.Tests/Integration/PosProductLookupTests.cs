@@ -123,7 +123,7 @@ public sealed class PosProductLookupTests(PostgresDatabaseFixture database) : IA
         var bounded = await service.SearchAsync(null, 999);
 
         var exact = Assert.Single(barcode);
-        Assert.Equal(first: tenant.Products[0].Id, actual: exact.Id);
+        Assert.Equal(tenant.Products[0].Id, exact.Id);
         Assert.Equal(7m, exact.Stock);
         Assert.DoesNotContain(barcode, item => item.Name == "Foreign Search Product");
 
