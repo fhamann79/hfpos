@@ -92,6 +92,7 @@ builder.Services.AddScoped<ISupplierQueryService, SupplierQueryService>();
 builder.Services.AddSingleton<IBusinessClockService, BusinessClockService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<IInventoryTransferService, InventoryTransferService>();
 builder.Services.AddScoped<IPosProductLookupService, PosProductLookupService>();
 builder.Services.AddScoped<ICashSessionService, CashSessionService>();
 builder.Services.AddScoped<IPurchaseReceiptQueryService, PurchaseReceiptQueryService>();

@@ -31,6 +31,8 @@ public class PosDbContext : DbContext
     public DbSet<ProductCostEvent> ProductCostEvents { get; set; }
     public DbSet<ProductStock> ProductStocks { get; set; }
     public DbSet<InventoryMovement> InventoryMovements { get; set; }
+    public DbSet<InventoryTransfer> InventoryTransfers { get; set; }
+    public DbSet<InventoryTransferItem> InventoryTransferItems { get; set; }
     public DbSet<DocumentSequence> DocumentSequences { get; set; }
     public DbSet<DocumentSequenceAudit> DocumentSequenceAudits { get; set; }
     public DbSet<CashSession> CashSessions { get; set; }
@@ -568,7 +570,7 @@ public class PosDbContext : DbContext
             entity.HasIndex(im => new { im.SourceType, im.SourceId });
             entity.HasIndex(im => new { im.SourceType, im.SourceId, im.SourceLineId })
                 .IsUnique()
-                .HasFilter(@"""SourceId"" IS NOT NULL AND ""SourceLineId"" IS NOT NULL AND ""SourceType"" IN (4, 5, 6, 7, 8)");
+                .HasFilter(@"""SourceId"" IS NOT NULL AND ""SourceLineId"" IS NOT NULL AND ""SourceType"" IN (4, 5, 6, 7, 8, 9, 10)");
 
             entity.HasOne(im => im.Product)
                 .WithMany()
@@ -589,6 +591,37 @@ public class PosDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(im => im.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<InventoryTransfer>(entity =>
+        {
+            entity.Property(t => t.BusinessDate).HasColumnType("date");
+            entity.Property(t => t.TimeZoneIdSnapshot).IsRequired().HasMaxLength(100);
+            entity.Property(t => t.Reference).HasMaxLength(100);
+            entity.Property(t => t.Notes).HasMaxLength(500);
+            entity.HasIndex(t => new { t.CompanyId, t.RequestId }).IsUnique();
+            entity.HasIndex(t => new { t.CompanyId, t.SourceEstablishmentId, t.BusinessDate });
+            entity.HasIndex(t => new { t.CompanyId, t.DestinationEstablishmentId, t.BusinessDate });
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_InventoryTransfers_DifferentEstablishments",
+                @"""SourceEstablishmentId"" <> ""DestinationEstablishmentId"""));
+            entity.HasOne(t => t.Company).WithMany().HasForeignKey(t => t.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(t => t.SourceEstablishment).WithMany().HasForeignKey(t => t.SourceEstablishmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(t => t.DestinationEstablishment).WithMany().HasForeignKey(t => t.DestinationEstablishmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(t => t.CreatedByUser).WithMany().HasForeignKey(t => t.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<InventoryTransferItem>(entity =>
+        {
+            entity.Property(i => i.Quantity).HasPrecision(18, 4);
+            entity.HasIndex(i => new { i.InventoryTransferId, i.ProductId }).IsUnique();
+            entity.HasIndex(i => i.SourceMovementId).IsUnique();
+            entity.HasIndex(i => i.DestinationMovementId).IsUnique();
+            entity.ToTable(table => table.HasCheckConstraint("CK_InventoryTransferItems_Quantity_Positive", @"""Quantity"" > 0"));
+            entity.HasOne(i => i.InventoryTransfer).WithMany(t => t.Items).HasForeignKey(i => i.InventoryTransferId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(i => i.Product).WithMany().HasForeignKey(i => i.ProductId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(i => i.SourceMovement).WithMany().HasForeignKey(i => i.SourceMovementId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(i => i.DestinationMovement).WithMany().HasForeignKey(i => i.DestinationMovementId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Product>(entity =>

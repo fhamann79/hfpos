@@ -29,6 +29,11 @@ internal sealed class TestServiceScope : IAsyncDisposable
             contextAccessor,
             businessClock,
             administrationGuard);
+        Transfers = new InventoryTransferService(
+            DbContext,
+            contextAccessor,
+            businessClock,
+            administrationGuard);
 
         CashSessions = new CashSessionService(
             DbContext,
@@ -64,6 +69,7 @@ internal sealed class TestServiceScope : IAsyncDisposable
     public PosDbContext DbContext { get; }
 
     public InventoryService Inventory { get; }
+    public InventoryTransferService Transfers { get; }
 
     public CashSessionService CashSessions { get; }
 

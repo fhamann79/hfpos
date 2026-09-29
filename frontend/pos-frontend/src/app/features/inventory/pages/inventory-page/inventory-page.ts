@@ -34,6 +34,7 @@ import { InventoryMovementFilters } from '../../models/inventory-filters.model';
 import { InventoryOperationRequest } from '../../models/inventory-operation.model';
 import { InventoryStock, StockStatus } from '../../models/inventory-stock.model';
 import { InventoryService } from '../../services/inventory.service';
+import { InventoryTransferPanel } from '../../components/inventory-transfer-panel/inventory-transfer-panel';
 
 interface SelectOption<T> {
   label: string;
@@ -74,6 +75,7 @@ interface InventoryOperationForm {
     ToggleSwitchModule,
     ToastModule,
     ToolbarModule,
+    InventoryTransferPanel,
   ],
   providers: [MessageService],
   templateUrl: './inventory-page.html',
@@ -152,6 +154,8 @@ export class InventoryPage implements OnInit {
     { label: 'Recepción de compra', value: InventoryMovementSourceType.PurchaseReceipt },
     { label: 'Cancelación recepción de compra', value: InventoryMovementSourceType.PurchaseReceiptCancel },
     { label: 'Nota de crédito', value: InventoryMovementSourceType.CreditNoteReturn },
+    { label: 'Transferencia enviada', value: InventoryMovementSourceType.InventoryTransferOut },
+    { label: 'Transferencia recibida', value: InventoryMovementSourceType.InventoryTransferIn },
   ];
 
   readonly operationOptions: SelectOption<InventoryOperationKind>[] = [
@@ -192,6 +196,10 @@ export class InventoryPage implements OnInit {
   refreshAll(): void {
     this.loadStocks();
     this.loadMovements(1, this.movementRows);
+  }
+
+  onTransferComplete(): void {
+    this.refreshAll();
   }
 
   loadStocks(): void {
