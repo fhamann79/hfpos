@@ -15,10 +15,14 @@ namespace Pos.Backend.Api.WebApi.Controllers;
 public class InventoryController : ControllerBase
 {
     private readonly IInventoryService _inventoryService;
+    private readonly IPosProductLookupService _posProductLookupService;
 
-    public InventoryController(IInventoryService inventoryService)
+    public InventoryController(
+        IInventoryService inventoryService,
+        IPosProductLookupService posProductLookupService)
     {
         _inventoryService = inventoryService;
+        _posProductLookupService = posProductLookupService;
     }
 
     [HttpGet("stocks")]
@@ -29,6 +33,19 @@ public class InventoryController : ControllerBase
     {
         var stocks = await _inventoryService.GetStocksAsync(search, productId, onlyPositive);
         return Ok(stocks);
+    }
+
+    [HttpGet("pos-products")]
+    [Authorize(Policy = AppPermissions.InventoryRead)]
+    [Authorize(Policy = AppPermissions.CatalogProductsRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IEnumerable<PosProductLookupDto>>> GetPosProducts(
+        [FromQuery] string? search,
+        [FromQuery] int take = 30)
+    {
+        var products = await _posProductLookupService.SearchAsync(search, take);
+        return Ok(products);
     }
 
     [HttpGet("movements")]
