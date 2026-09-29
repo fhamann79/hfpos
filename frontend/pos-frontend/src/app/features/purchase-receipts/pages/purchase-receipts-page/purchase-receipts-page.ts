@@ -83,6 +83,8 @@ export class PurchaseReceiptsPage implements OnInit {
   private readonly permissionService = inject(PermissionService);
   private readonly authStore = inject(AuthStore);
   private readonly messageService = inject(MessageService);
+  private supplierLookupRequestId = 0;
+  private productLookupRequestId = 0;
 
   readonly receipts = signal<PurchaseReceiptListItem[]>([]);
   readonly summary = signal<PurchaseReceiptSummary>(EMPTY_SUMMARY);
@@ -94,7 +96,8 @@ export class PurchaseReceiptsPage implements OnInit {
   readonly selectedReceipt = signal<PurchaseReceipt | null>(null);
   readonly draftItems = signal<ReceiptDraftItem[]>([]);
   readonly loading = signal(false);
-  readonly catalogLoading = signal(false);
+  readonly supplierLookupLoading = signal(false);
+  readonly productLookupLoading = signal(false);
   readonly saving = signal(false);
   readonly detailLoading = signal(false);
   readonly canceling = signal(false);
@@ -121,7 +124,7 @@ export class PurchaseReceiptsPage implements OnInit {
 
   readonly productOptions = computed<SelectOption<number>[]>(() =>
     this.activeProducts().map((product) => ({
-      label: `${product.name} - costo ${this.formatCompactMoney(product.cost)}`,
+      label: this.productOptionLabel(product),
       value: product.id,
     }))
   );
@@ -148,38 +151,7 @@ export class PurchaseReceiptsPage implements OnInit {
   rows = 15;
 
   ngOnInit(): void {
-    this.loadReferenceData();
     this.loadReceipts(1, this.rows);
-  }
-
-  loadReferenceData(): void {
-    this.catalogLoading.set(true);
-
-    this.supplierService.getAll().subscribe({
-      next: (suppliers) => {
-        this.suppliers.set(suppliers);
-        this.catalogLoading.set(false);
-      },
-      error: () => {
-        this.catalogLoading.set(false);
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Error',
-          detail: 'No se pudieron cargar los proveedores.',
-        });
-      },
-    });
-
-    this.productService.getAll().subscribe({
-      next: (products) => this.products.set(products),
-      error: () => {
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Error',
-          detail: 'No se pudieron cargar los productos.',
-        });
-      },
-    });
   }
 
   loadReceipts(page = this.currentPage(), pageSize = this.rows): void {
@@ -245,12 +217,62 @@ export class PurchaseReceiptsPage implements OnInit {
 
     this.resetForm();
     this.createDialogVisible = true;
+    this.searchSuppliers('');
+    this.searchProducts('');
   }
 
   closeCreateDialog(): void {
     this.createDialogVisible = false;
     this.formError.set('');
     this.saving.set(false);
+    this.supplierLookupRequestId++;
+    this.productLookupRequestId++;
+    this.supplierLookupLoading.set(false);
+    this.productLookupLoading.set(false);
+  }
+
+  searchSuppliers(search: string): void {
+    const requestId = ++this.supplierLookupRequestId;
+    this.supplierLookupLoading.set(true);
+
+    this.supplierService.lookup(search, 50).subscribe({
+      next: (suppliers) => {
+        if (requestId !== this.supplierLookupRequestId) return;
+        this.suppliers.set(this.mergeSelectedSupplier(suppliers));
+        this.supplierLookupLoading.set(false);
+      },
+      error: () => {
+        if (requestId !== this.supplierLookupRequestId) return;
+        this.supplierLookupLoading.set(false);
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'No se pudieron buscar los proveedores.',
+        });
+      },
+    });
+  }
+
+  searchProducts(search: string): void {
+    const requestId = ++this.productLookupRequestId;
+    this.productLookupLoading.set(true);
+
+    this.productService.lookup(search, 30).subscribe({
+      next: (products) => {
+        if (requestId !== this.productLookupRequestId) return;
+        this.products.set(this.mergeSelectedProducts(products));
+        this.productLookupLoading.set(false);
+      },
+      error: () => {
+        if (requestId !== this.productLookupRequestId) return;
+        this.productLookupLoading.set(false);
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'No se pudieron buscar los productos.',
+        });
+      },
+    });
   }
 
   addItem(): void {
@@ -478,8 +500,46 @@ export class PurchaseReceiptsPage implements OnInit {
     this.receiptDate = this.todayBusinessDateInput();
     this.notes = '';
     this.formError.set('');
+    this.suppliers.set([]);
+    this.products.set([]);
     this.draftItems.set([]);
     this.addItem();
+  }
+
+  private mergeSelectedSupplier(results: Supplier[]): Supplier[] {
+    const selected = this.supplierId === null
+      ? null
+      : this.suppliers().find((supplier) => supplier.id === this.supplierId) ?? null;
+
+    if (!selected || results.some((supplier) => supplier.id === selected.id)) {
+      return results;
+    }
+
+    return [selected, ...results];
+  }
+
+  private mergeSelectedProducts(results: Product[]): Product[] {
+    const selectedIds = new Set(
+      this.draftItems()
+        .map((item) => item.productId)
+        .filter((id): id is number => id !== null)
+    );
+    const selectedProducts = this.products().filter((product) => selectedIds.has(product.id));
+    const merged = [...selectedProducts];
+
+    for (const product of results) {
+      if (!merged.some((item) => item.id === product.id)) {
+        merged.push(product);
+      }
+    }
+
+    return merged;
+  }
+
+  private productOptionLabel(product: Product): string {
+    const identifiers = [product.barcode, product.internalCode].filter((value): value is string => !!value?.trim());
+    const identifierLabel = identifiers.length > 0 ? ` - ${identifiers.join(' / ')}` : '';
+    return `${product.name}${identifierLabel} - costo ${this.formatCompactMoney(product.cost)}`;
   }
 
   private validateForm(): string {

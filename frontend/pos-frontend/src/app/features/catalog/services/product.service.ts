@@ -21,7 +21,7 @@ export class ProductService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiUrl}/api/Products`;
 
-  /** Legacy compatibility for POS/purchase flows. New admin consumers must use getPage. */
+  /** Legacy compatibility for POS; purchase receipts migrate to lookup in BE-FE-515. New admin consumers must use getPage. */
   getAll() {
     return this.http.get<Product[]>(this.baseUrl);
   }
