@@ -27,27 +27,27 @@
     </div>
   </header>
 
-  @if (errorMessage) {
-    <p-message severity="error" [text]="errorMessage"></p-message>
+  @if (effectiveErrorMessage) {
+    <p-message severity="error" [text]="effectiveErrorMessage"></p-message>
   }
 
   @if (inventoryErrorMessage) {
     <p-message severity="warn" [text]="inventoryErrorMessage"></p-message>
   }
 
-  @if (loading) {
-    <div class="state">Cargando productos...</div>
+  @if (isLoading) {
+    <div class="state">Buscando productos...</div>
   } @else if (!hasSearchTerm) {
     <div class="scan-empty">
       <div class="scan-empty__icon"><i class="pi pi-barcode"></i></div>
       <strong>Escanea un producto o escribe para buscar</strong>
       <span>Usa código de barras, código interno o nombre. F2 abre la búsqueda rápida.</span>
     </div>
-  } @else if (!products.length) {
+  } @else if (!results.length) {
     <div class="state">No hay coincidencias para esta búsqueda.</div>
   } @else {
     <ul class="product-list">
-      @for (product of products; track product.id) {
+      @for (product of results; track product.id) {
         <li class="product-item" [class.product-item--out]="product.stock <= 0">
           <div>
             <strong>{{ product.name }}</strong>
