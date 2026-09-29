@@ -1,10 +1,24 @@
 import { CommonModule } from '@angular/common';
-import { AfterViewInit, Component, ElementRef, EventEmitter, Input, OnChanges, Output, SimpleChanges, ViewChild } from '@angular/core';
+import {
+  AfterViewInit,
+  Component,
+  ElementRef,
+  EventEmitter,
+  Input,
+  OnChanges,
+  OnDestroy,
+  Output,
+  SimpleChanges,
+  ViewChild,
+  inject,
+  signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { getVatCategoryOption } from '../../../../core/utils/vat-category';
 import { PosProduct } from '../../models/pos-product.model';
+import { PosProductCatalogService } from '../../services/pos-product-catalog.service';
 
 @Component({
   selector: 'app-quick-product-search-dialog',
@@ -13,7 +27,14 @@ import { PosProduct } from '../../models/pos-product.model';
   templateUrl: './quick-product-search-dialog.html',
   styleUrl: './quick-product-search-dialog.scss',
 })
-export class QuickProductSearchDialog implements AfterViewInit, OnChanges {
+export class QuickProductSearchDialog implements AfterViewInit, OnChanges, OnDestroy {
+  private readonly catalogService = inject(PosProductCatalogService);
+  private readonly remoteProducts = signal<PosProduct[]>([]);
+  readonly loading = signal(false);
+  readonly errorMessage = signal('');
+  private searchRequestId = 0;
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+
   @Input({ required: true }) visible = false;
   @Input({ required: true }) products: PosProduct[] = [];
   @Input() inventoryAvailable = false;
@@ -37,25 +58,30 @@ export class QuickProductSearchDialog implements AfterViewInit, OnChanges {
     }
   }
 
+  ngOnDestroy(): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+    }
+    this.searchRequestId++;
+  }
+
   onVisibleChange(value: boolean): void {
     this.visibleChange.emit(value);
     if (value) {
       this.resetLookup();
+    } else {
+      this.cancelPendingLookup();
     }
   }
 
   onFilterChange(value: string): void {
     this.filter = value;
     this.highlightedIndex = 0;
+    this.scheduleLookup(value);
   }
 
   get filteredProducts(): PosProduct[] {
-    const term = this.filter.trim().toLowerCase();
-    const filtered = this.products
-      .filter((product) => this.matchesTerm(product, term))
-      .sort((a, b) => this.matchRank(a, term) - this.matchRank(b, term) || a.name.localeCompare(b.name));
-
-    return filtered.slice(0, 20);
+    return this.remoteProducts().slice(0, 20);
   }
 
   onKeydown(event: KeyboardEvent): void {
@@ -100,6 +126,7 @@ export class QuickProductSearchDialog implements AfterViewInit, OnChanges {
   }
 
   close(): void {
+    this.cancelPendingLookup();
     this.visibleChange.emit(false);
   }
 
@@ -110,40 +137,59 @@ export class QuickProductSearchDialog implements AfterViewInit, OnChanges {
   private resetLookup(): void {
     this.filter = '';
     this.highlightedIndex = 0;
+    this.remoteProducts.set([]);
+    this.errorMessage.set('');
+    this.runLookup('', ++this.searchRequestId);
     setTimeout(() => this.focusInput(), 0);
   }
 
-  private matchesTerm(product: PosProduct, term: string): boolean {
-    if (!term.length) {
-      return true;
+  private scheduleLookup(value: string): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
     }
 
-    return this.searchText(product).some((value) => value.includes(term));
+    const requestId = ++this.searchRequestId;
+    this.errorMessage.set('');
+    // Do not allow keyboard selection from the previous query while this one is pending.
+    this.remoteProducts.set([]);
+    this.loading.set(true);
+    this.searchTimer = setTimeout(() => {
+      this.searchTimer = null;
+      this.runLookup(value.trim(), requestId);
+    }, 150);
   }
 
-  private matchRank(product: PosProduct, term: string): number {
-    if (!term.length) {
-      return 3;
-    }
+  private runLookup(search: string, requestId: number): void {
+    this.loading.set(true);
+    this.catalogService.searchProducts(search, 30).subscribe({
+      next: (products) => {
+        if (requestId !== this.searchRequestId || !this.visible) {
+          return;
+        }
 
-    if (this.sameIdentifier(product.barcode, term) || this.sameIdentifier(product.internalCode, term)) {
-      return 0;
-    }
+        this.remoteProducts.set(products);
+        this.highlightedIndex = 0;
+        this.loading.set(false);
+      },
+      error: () => {
+        if (requestId !== this.searchRequestId || !this.visible) {
+          return;
+        }
 
-    if (product.name.toLowerCase().startsWith(term)) {
-      return 1;
-    }
-
-    return 2;
+        this.remoteProducts.set([]);
+        this.loading.set(false);
+        this.errorMessage.set('No se pudo buscar productos. Intenta nuevamente.');
+      },
+    });
   }
 
-  private sameIdentifier(value: string | null | undefined, term: string): boolean {
-    return !!value && value.trim().toLowerCase() === term;
-  }
-
-  private searchText(product: PosProduct): string[] {
-    return [product.name, product.barcode ?? '', product.internalCode ?? '']
-      .map((value) => value.trim().toLowerCase())
-      .filter((value) => value.length > 0);
+  private cancelPendingLookup(): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
+    this.searchRequestId++;
+    this.loading.set(false);
   }
 }

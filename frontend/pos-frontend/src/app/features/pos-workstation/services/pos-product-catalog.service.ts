@@ -1,6 +1,6 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable, catchError, forkJoin, map, of } from 'rxjs';
+import { Observable, catchError, map, of } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { normalizeVatCategory } from '../../../core/utils/vat-category';
 import { PosProduct } from '../models/pos-product.model';
@@ -13,44 +13,37 @@ export interface PosCatalogSnapshot {
 @Injectable({ providedIn: 'root' })
 export class PosProductCatalogService {
   private readonly http = inject(HttpClient);
-  private readonly productsUrl = `${environment.apiUrl}/api/Products`;
-  private readonly inventoryUrl = `${environment.apiUrl}/api/Inventory/stocks`;
+  private readonly lookupUrl = `${environment.apiUrl}/api/Inventory/pos-products`;
 
+  /**
+   * Compatibility probe for PosWorkstationPage initialization.
+   * It verifies that the integrated product+stock lookup is available without
+   * materializing a local product catalog.
+   */
   getProductsWithStock(): Observable<PosCatalogSnapshot> {
-    return forkJoin({
-      products: this.http.get<unknown[]>(this.productsUrl),
-      inventory: this.http.get<unknown[]>(this.inventoryUrl).pipe(
-        map((stocks) => ({ stocks, inventoryAvailable: true })),
-        catchError(() => of({ stocks: [] as unknown[], inventoryAvailable: false }))
-      ),
-    }).pipe(
-      map(({ products, inventory }) =>
-        this.normalizeProducts(products, this.buildStockMap(inventory.stocks), inventory.inventoryAvailable)
+    return this.searchProducts('', 1).pipe(
+      map(() => ({ products: [], inventoryAvailable: true })),
+      catchError(() => of({ products: [], inventoryAvailable: false }))
+    );
+  }
+
+  searchProducts(search = '', take = 30): Observable<PosProduct[]> {
+    let params = new HttpParams().set('take', String(take));
+    const term = search.trim();
+    if (term) {
+      params = params.set('search', term);
+    }
+
+    return this.http.get<unknown[]>(this.lookupUrl, { params }).pipe(
+      map((rows) =>
+        rows
+          .map((row) => this.normalizeProduct(row))
+          .filter((product): product is PosProduct => product !== null)
       )
     );
   }
 
-  private buildStockMap(stocks: unknown[]): Map<number, number> {
-    const mapRef = new Map<number, number>();
-
-    for (const item of stocks) {
-      const row = this.asRecord(item);
-      if (!row) {
-        continue;
-      }
-
-      const id = this.readNumber(row, ['productId', 'id', 'productID']);
-      const stock = this.readNumber(row, ['stock', 'quantity', 'availableStock', 'currentStock'], 0);
-
-      if (id !== null) {
-        mapRef.set(id, stock ?? 0);
-      }
-    }
-
-    return mapRef;
-  }
-
-  private normalizeProduct(source: unknown, stockMap: Map<number, number>): PosProduct | null {
+  private normalizeProduct(source: unknown): PosProduct | null {
     const row = this.asRecord(source);
     if (!row) {
       return null;
@@ -61,10 +54,11 @@ export class PosProductCatalogService {
     const barcode = this.readString(row, ['barcode', 'barCode']);
     const internalCode = this.readString(row, ['internalCode', 'internal_code']);
     const price = this.readNumber(row, ['price', 'unitPrice'], 0) ?? 0;
+    const stock = this.readNumber(row, ['stock', 'quantity', 'availableStock', 'currentStock'], 0) ?? 0;
     const vatCategory = normalizeVatCategory(row['vatCategory'] ?? row['VatCategory']);
     const isActive = this.readBoolean(row, ['isActive', 'active'], true);
 
-    if (id === null || !name) {
+    if (id === null || !name || !isActive) {
       return null;
     }
 
@@ -76,22 +70,7 @@ export class PosProductCatalogService {
       price,
       vatCategory,
       isActive,
-      stock: stockMap.get(id) ?? 0,
-    };
-  }
-
-  private normalizeProducts(
-    products: unknown[],
-    stockMap: Map<number, number>,
-    inventoryAvailable: boolean
-  ): PosCatalogSnapshot {
-    return {
-      products: products
-        .map((product) => this.normalizeProduct(product, stockMap))
-        .filter((product): product is PosProduct => !!product)
-        .filter((product) => product.isActive)
-        .sort((a, b) => a.name.localeCompare(b.name)),
-      inventoryAvailable,
+      stock,
     };
   }
 
