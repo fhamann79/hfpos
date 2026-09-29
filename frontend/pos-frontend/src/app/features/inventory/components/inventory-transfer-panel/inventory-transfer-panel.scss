@@ -1,0 +1,52 @@
+.transfer-section, .transfer-form, .transfer-history, .transfer-lines, .transfer-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.transfer-section { min-width: 0; }
+.transfer-header, .transfer-form, .transfer-history {
+  padding: 1rem;
+  border: 1px solid var(--app-border);
+  border-radius: .7rem;
+  background: var(--app-surface);
+}
+.transfer-header h3, .transfer-form h4, .transfer-history h4, .transfer-lines h5 { margin: 0; }
+.transfer-header p { margin: .35rem 0 0; color: var(--app-text-muted); }
+.transfer-fields, .transfer-line, .transfer-filters, .transfer-detail-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .75rem;
+  align-items: end;
+}
+.transfer-line { grid-template-columns: minmax(12rem, 2fr) minmax(7rem, .8fr) minmax(9rem, 1fr) auto; }
+.transfer-fields label, .transfer-line label, .transfer-notes, .transfer-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  min-width: 0;
+}
+.transfer-fields label > span, .transfer-line label > span,
+.transfer-notes > span, .transfer-filters label > span, .transfer-detail-summary small {
+  font-size: .8rem;
+  color: var(--app-text-muted);
+}
+.transfer-fields p-select, .transfer-line p-select, .transfer-line p-inputnumber,
+.transfer-fields input, .transfer-notes textarea, .transfer-filters input { width: 100%; }
+.transfer-lines-heading, .transfer-history-header, .transfer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+.transfer-actions { justify-content: flex-end; }
+.transfer-history-header span { color: var(--app-text-muted); font-size: .85rem; }
+.transfer-filters { grid-template-columns: repeat(2, minmax(8rem, 1fr)) minmax(14rem, 2fr) auto; }
+.transfer-detail-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.transfer-detail-summary div { display: flex; flex-direction: column; gap: .2rem; }
+.transfer-detail-summary strong { overflow-wrap: anywhere; }
+.transfer-detail-notes { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 800px) {
+  .transfer-fields, .transfer-line, .transfer-filters, .transfer-detail-summary { grid-template-columns: 1fr; }
+  .transfer-actions, .transfer-history-header { flex-wrap: wrap; }
+}

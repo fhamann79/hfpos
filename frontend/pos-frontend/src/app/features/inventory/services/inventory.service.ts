@@ -8,6 +8,13 @@ import { InventoryMovementFilters, InventoryStockFilters } from '../models/inven
 import { InventoryStock } from '../models/inventory-stock.model';
 import { InventoryOperationRequest } from '../models/inventory-operation.model';
 import { PagedResult } from '../../../core/models/paged-result.model';
+import {
+  InventoryTransferCreateRequest,
+  InventoryTransferDestination,
+  InventoryTransferDetail,
+  InventoryTransferFilters,
+  InventoryTransferListItem,
+} from '../models/inventory-transfer.model';
 
 @Injectable({ providedIn: 'root' })
 export class InventoryService {
@@ -40,6 +47,26 @@ export class InventoryService {
 
   registerAdjustment(payload: InventoryOperationRequest): Observable<InventoryMovement> {
     return this.http.post<InventoryMovement>(`${this.baseUrl}/adjust`, payload);
+  }
+
+  getTransferDestinations(): Observable<InventoryTransferDestination[]> {
+    return this.http.get<InventoryTransferDestination[]>(`${this.baseUrl}/transfers/destinations`);
+  }
+
+  createTransfer(payload: InventoryTransferCreateRequest): Observable<InventoryTransferDetail> {
+    return this.http.post<InventoryTransferDetail>(`${this.baseUrl}/transfers`, payload);
+  }
+
+  getTransfers(filters: InventoryTransferFilters): Observable<PagedResult<InventoryTransferListItem>> {
+    let params = new HttpParams().set('page', filters.page).set('pageSize', filters.pageSize);
+    if (filters.from) params = params.set('from', filters.from);
+    if (filters.to) params = params.set('to', filters.to);
+    if (filters.search) params = params.set('search', filters.search);
+    return this.http.get<PagedResult<InventoryTransferListItem>>(`${this.baseUrl}/transfers`, { params });
+  }
+
+  getTransferById(id: number): Observable<InventoryTransferDetail> {
+    return this.http.get<InventoryTransferDetail>(`${this.baseUrl}/transfers/${id}`);
   }
 
   resolveError(error: HttpErrorResponse, fallback: string): string {

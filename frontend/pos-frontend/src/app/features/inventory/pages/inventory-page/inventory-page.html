@@ -40,6 +40,10 @@
           <i class="pi pi-file-edit"></i>
           <span>Operaciones</span>
         </p-tab>
+        <p-tab value="transfers">
+          <i class="pi pi-arrow-right-arrow-left"></i>
+          <span>Transferencias</span>
+        </p-tab>
       </p-tablist>
 
       <p-tabpanels>
@@ -513,6 +517,14 @@
               </ng-template>
             </p-table>
           </section>
+        </p-tabpanel>
+
+        <p-tabpanel value="transfers">
+          <app-inventory-transfer-panel
+            [stocks]="stocks()"
+            [canWrite]="canWriteInventory()"
+            (transferred)="onTransferComplete()"
+          ></app-inventory-transfer-panel>
         </p-tabpanel>
 
         <p-tabpanel value="operations">

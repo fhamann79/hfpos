@@ -1,0 +1,170 @@
+<section class="transfer-section">
+  <header class="transfer-header">
+    <div>
+      <h3>Transferencias entre establecimientos</h3>
+      <p>Movimientos de stock dentro de la compañía, con trazabilidad en ambos establecimientos.</p>
+    </div>
+  </header>
+
+  @if (canWrite) {
+    <div class="transfer-form">
+      <h4>Transferir stock</h4>
+      <div class="transfer-fields">
+        <label>
+          <span>Origen</span>
+          <strong>Establecimiento #{{ auth.establishmentId() }}</strong>
+        </label>
+        <label>
+          <span>Destino</span>
+          <p-select [options]="destinations()" optionLabel="name" optionValue="id"
+            [ngModel]="destinationId" (ngModelChange)="destinationId = $event; onDraftChanged()"
+            placeholder="Selecciona establecimiento" [showClear]="true"></p-select>
+        </label>
+        <label>
+          <span>Referencia</span>
+          <input pInputText type="text" maxlength="100" [(ngModel)]="reference"
+            (ngModelChange)="onDraftChanged()" placeholder="Opcional" />
+        </label>
+      </div>
+
+      @if (destinationsError()) {
+        <p-message severity="error" [text]="destinationsError()"></p-message>
+      }
+
+      <div class="transfer-lines">
+        <div class="transfer-lines-heading">
+          <h5>Productos</h5>
+          <p-button label="Agregar línea" icon="pi pi-plus" severity="secondary" [outlined]="true"
+            (onClick)="addLine()"></p-button>
+        </div>
+        @for (line of lines; track line.id) {
+          <div class="transfer-line">
+            <label>
+              <span>Producto</span>
+              <p-select [options]="productOptions" optionLabel="label" optionValue="value"
+                [ngModel]="line.productId" (ngModelChange)="line.productId = $event; onDraftChanged()"
+                placeholder="Selecciona producto" [filter]="true" [showClear]="true"></p-select>
+            </label>
+            <label>
+              <span>Disponible en origen</span>
+              <strong>{{ stockFor(line.productId) }}</strong>
+            </label>
+            <label>
+              <span>Cantidad</span>
+              <p-inputnumber [ngModel]="line.quantity"
+                (ngModelChange)="line.quantity = $event; onDraftChanged()"
+                [min]="0.0001" [maxFractionDigits]="4" [minFractionDigits]="0"></p-inputnumber>
+            </label>
+            <p-button icon="pi pi-trash" severity="secondary" [text]="true"
+              ariaLabel="Quitar línea" (onClick)="removeLine(line.id)"></p-button>
+          </div>
+        }
+      </div>
+
+      <label class="transfer-notes">
+        <span>Notas</span>
+        <textarea pTextarea rows="2" maxlength="500" [(ngModel)]="notes"
+          (ngModelChange)="onDraftChanged()" placeholder="Opcional"></textarea>
+      </label>
+
+      @if (submitError()) {
+        <p-message severity="error" [text]="submitError()"></p-message>
+      }
+      @if (submitSuccess()) {
+        <p-message severity="success" [text]="submitSuccess()"></p-message>
+      }
+      <footer class="transfer-actions">
+        <p-button label="Nueva transferencia" icon="pi pi-undo" severity="secondary"
+          [outlined]="true" [disabled]="submitLoading()" (onClick)="resetDraft()"></p-button>
+        <p-button label="Confirmar transferencia" icon="pi pi-check" [loading]="submitLoading()"
+          [disabled]="submitLoading()" (onClick)="submit()"></p-button>
+      </footer>
+    </div>
+  } @else {
+    <p-message severity="info" text="Puedes consultar transferencias; para registrar una se requiere INVENTORY_WRITE."></p-message>
+  }
+
+  <div class="transfer-history">
+    <header class="transfer-history-header">
+      <div>
+        <h4>Historial</h4>
+        <span>{{ totalItems() }} transferencias</span>
+      </div>
+      <p-button label="Actualizar" icon="pi pi-refresh" severity="secondary" [outlined]="true"
+        [loading]="historyLoading()" (onClick)="applyFilters()"></p-button>
+    </header>
+    <div class="transfer-filters">
+      <label><span>Desde</span><input pInputText type="date" [(ngModel)]="from" /></label>
+      <label><span>Hasta</span><input pInputText type="date" [(ngModel)]="to" /></label>
+      <label><span>Buscar</span><input pInputText type="text" [(ngModel)]="search"
+        placeholder="Referencia o establecimiento" /></label>
+      <p-button label="Buscar" icon="pi pi-search" (onClick)="applyFilters()"></p-button>
+    </div>
+    @if (historyError()) {
+      <p-message severity="error" [text]="historyError()"></p-message>
+    }
+    <p-table [value]="transfers()" [loading]="historyLoading()" [paginator]="true"
+      [lazy]="true" [lazyLoadOnInit]="false" [first]="first" [rows]="pageSize"
+      [totalRecords]="totalItems()" [rowsPerPageOptions]="[10, 25, 50, 100]"
+      responsiveLayout="scroll" [tableStyle]="{ 'min-width': '56rem' }"
+      (onLazyLoad)="onLazyLoad($event)">
+      <ng-template pTemplate="header">
+        <tr><th>Fecha</th><th>Dirección</th><th>Origen</th><th>Destino</th>
+          <th>Usuario</th><th>Referencia</th><th>Líneas / unidades</th><th>Detalle</th></tr>
+      </ng-template>
+      <ng-template pTemplate="body" let-transfer>
+        <tr>
+          <td>{{ formatDate(transfer.createdAt) }}</td>
+          <td>{{ transfer.sourceEstablishmentId === auth.establishmentId() ? 'Enviada' : 'Recibida' }}</td>
+          <td>{{ transfer.sourceEstablishmentName }}</td>
+          <td>{{ transfer.destinationEstablishmentName }}</td>
+          <td>{{ transfer.createdByUsername }}</td>
+          <td>{{ transfer.reference ?? '-' }}</td>
+          <td>{{ transfer.lineCount }} / {{ transfer.totalQuantity }}</td>
+          <td><p-button icon="pi pi-eye" label="Detalle" severity="secondary" [text]="true"
+            (onClick)="openDetail(transfer.id)"></p-button></td>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="emptymessage">
+        <tr><td colspan="8">No hay transferencias para estos filtros.</td></tr>
+      </ng-template>
+    </p-table>
+  </div>
+</section>
+
+<p-dialog header="Detalle de transferencia" [modal]="true" [(visible)]="detailVisible"
+  [style]="{ width: 'min(56rem, 96vw)' }">
+  @if (detailLoading()) {
+    <p>Cargando transferencia...</p>
+  } @else if (detailError()) {
+    <p-message severity="error" [text]="detailError()"></p-message>
+  } @else if (detail(); as transfer) {
+    <div class="transfer-detail">
+      <div class="transfer-detail-summary">
+        <div><small>Transferencia</small><strong>#{{ transfer.id }}</strong></div>
+        <div><small>Fecha</small><strong>{{ formatDate(transfer.createdAt) }}</strong></div>
+        <div><small>Origen</small><strong>{{ transfer.sourceEstablishmentName }}</strong></div>
+        <div><small>Destino</small><strong>{{ transfer.destinationEstablishmentName }}</strong></div>
+        <div><small>Usuario</small><strong>{{ transfer.createdByUsername }}</strong></div>
+        <div><small>Referencia</small><strong>{{ transfer.reference ?? '-' }}</strong></div>
+      </div>
+      @if (transfer.notes) { <p class="transfer-detail-notes">{{ transfer.notes }}</p> }
+      <p-table [value]="transfer.items" responsiveLayout="scroll"
+        [tableStyle]="{ 'min-width': '44rem' }">
+        <ng-template pTemplate="header">
+          <tr><th>Producto</th><th>Cantidad</th><th>Origen antes → después</th>
+            <th>Destino antes → después</th><th>Movimientos</th></tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-item>
+          <tr>
+            <td>{{ item.productName }}</td>
+            <td>{{ item.quantity }}</td>
+            <td>{{ item.sourceStockBefore }} → {{ item.sourceStockAfter }}</td>
+            <td>{{ item.destinationStockBefore }} → {{ item.destinationStockAfter }}</td>
+            <td>#{{ item.sourceMovementId }} / #{{ item.destinationMovementId }}</td>
+          </tr>
+        </ng-template>
+      </p-table>
+    </div>
+  }
+</p-dialog>

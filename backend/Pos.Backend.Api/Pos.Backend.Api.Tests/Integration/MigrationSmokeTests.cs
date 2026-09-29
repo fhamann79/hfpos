@@ -21,6 +21,7 @@ public sealed class MigrationSmokeTests(PostgresDatabaseFixture database)
         Assert.Empty(pendingMigrations);
         Assert.Contains(definedMigrations, migration => migration.EndsWith("AddSaleVoidCashSemantics"));
         Assert.Contains(definedMigrations, migration => migration.EndsWith("AddSessionAuthorizationVersions"));
+        Assert.Contains(definedMigrations, migration => migration.EndsWith("AddInventoryTransfers"));
         Assert.Equal(0, await context.Companies.CountAsync());
         Assert.False(context.Database.HasPendingModelChanges());
     }
