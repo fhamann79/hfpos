@@ -16,6 +16,7 @@ describe('POS remote product search', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    catalogService.searchProducts.mockReset();
     catalogService.searchProducts.mockReturnValue(of([]));
     TestBed.configureTestingModule({
       providers: [{ provide: PosProductCatalogService, useValue: catalogService }],
