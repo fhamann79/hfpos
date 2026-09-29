@@ -151,6 +151,8 @@ export class QuickProductSearchDialog implements AfterViewInit, OnChanges, OnDes
 
     const requestId = ++this.searchRequestId;
     this.errorMessage.set('');
+    // Do not allow keyboard selection from the previous query while this one is pending.
+    this.remoteProducts.set([]);
     this.loading.set(true);
     this.searchTimer = setTimeout(() => {
       this.searchTimer = null;

@@ -1,14 +1,16 @@
-import { TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
+import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { MessageService } from 'primeng/api';
 import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { AuthStore } from '../../../../core/stores/auth.store';
+import { ProductVatCategory } from '../../../../core/utils/vat-category';
 import { CashSession } from '../../../cash-sessions/models/cash-session.model';
 import { CashSessionService } from '../../../cash-sessions/services/cash-session.service';
 import { CreditNoteService } from '../../../credit-notes/services/credit-note.service';
+import { PosProduct } from '../../models/pos-product.model';
 import { SaleListItem } from '../../models/sale-list-item.model';
 import { SalePaymentMethod } from '../../models/sale-payment-method.model';
 import { PosKeyboardService } from '../../services/pos-keyboard.service';
@@ -17,6 +19,10 @@ import { PosWorkstationService } from '../../services/pos-workstation.service';
 import { PosWorkstationPage } from './pos-workstation-page';
 
 describe('PosWorkstationPage void refresh', () => {
+  const catalogService = {
+    getProductsWithStock: vi.fn(() => of({ products: [], inventoryAvailable: true })),
+  };
+
   const workstationService = {
     voidSale: vi.fn(() => of({ id: 42, isVoided: true })),
     isBusinessError: vi.fn((error: HttpErrorResponse, code: string) => error.error?.error === code),
@@ -30,7 +36,7 @@ describe('PosWorkstationPage void refresh', () => {
         { provide: PermissionService, useValue: { hasPermission: () => true } },
         { provide: AuthStore, useValue: { companyTimeZoneId: () => 'America/Guayaquil' } },
         { provide: Router, useValue: { navigateByUrl: vi.fn() } },
-        { provide: PosProductCatalogService, useValue: {} },
+        { provide: PosProductCatalogService, useValue: catalogService },
         { provide: PosWorkstationService, useValue: workstationService },
         { provide: CreditNoteService, useValue: {} },
         { provide: CashSessionService, useValue: {} },
@@ -78,5 +84,48 @@ describe('PosWorkstationPage void refresh', () => {
     expect(component.currentCashSession()).toBeNull();
     expect(loadCash).toHaveBeenCalledOnce();
     expect(component.saleToVoid()?.id).toBe(42);
+  });
+
+  it('keeps the active cart snapshot when the remote availability probe returns no catalog rows', () => {
+    const component = TestBed.runInInjectionContext(() => new PosWorkstationPage());
+    const product: PosProduct = {
+      id: 7,
+      name: 'Producto en carrito',
+      barcode: 'BAR-7',
+      internalCode: 'INT-7',
+      price: 4.25,
+      vatCategory: ProductVatCategory.Vat15,
+      isActive: true,
+      stock: 9,
+    };
+
+    component.cart.set([
+      {
+        productId: product.id,
+        productName: product.name,
+        quantity: 2,
+        unitPrice: product.price,
+        discountAmount: 0.5,
+        stock: product.stock,
+        product,
+      },
+    ]);
+    component.activeCartProductId.set(product.id);
+
+    component.loadProducts();
+
+    expect(catalogService.getProductsWithStock).toHaveBeenCalledOnce();
+    expect(component.inventoryAvailable()).toBe(true);
+    expect(component.cart()).toHaveLength(1);
+    expect(component.cart()[0]).toEqual(expect.objectContaining({
+      productId: 7,
+      productName: 'Producto en carrito',
+      quantity: 2,
+      unitPrice: 4.25,
+      discountAmount: 0.5,
+      stock: 9,
+    }));
+    expect(component.cart()[0].product).toBe(product);
+    expect(component.activeCartProductId()).toBe(7);
   });
 });

@@ -49,6 +49,29 @@ describe('POS remote product search', () => {
     expect(panel.results.map((item) => item.id)).toEqual([2]);
   });
 
+  it('clears previous main-search results before the next debounce so Enter cannot add a stale product', () => {
+    const previous = product(3, 'Anterior', 4);
+    const pending = new Subject<PosProduct[]>();
+    catalogService.searchProducts.mockReturnValueOnce(of([previous])).mockReturnValueOnce(pending);
+    const panel = createPanel();
+    panel.canSell = true;
+    panel.inventoryAvailable = true;
+    const added = vi.fn();
+    panel.addProduct.subscribe(added);
+
+    panel.searchTerm = 'anterior';
+    panel.onSearchChange('anterior');
+    vi.advanceTimersByTime(150);
+    expect(panel.results.map((item) => item.id)).toEqual([3]);
+
+    panel.searchTerm = 'nuevo';
+    panel.onSearchChange('nuevo');
+    expect(panel.results).toEqual([]);
+
+    panel.onSearchKeydown(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(added).not.toHaveBeenCalled();
+  });
+
   it('exact barcode response keeps scanner behavior and emits the stock snapshot', () => {
     const scanned = product(7, 'Escaneado', 6, 'BAR-7', 'INT-7');
     catalogService.searchProducts.mockReturnValue(of([scanned]));
@@ -90,6 +113,26 @@ describe('POS remote product search', () => {
 
     dialog.onKeydown(new KeyboardEvent('keydown', { key: 'Enter' }));
     expect(selected).toHaveBeenCalledWith(found);
+  });
+
+  it('clears previous F2 results before the next debounce so Enter cannot select a stale product', () => {
+    const previous = product(12, 'Anterior F2', 2);
+    const pending = new Subject<PosProduct[]>();
+    catalogService.searchProducts.mockReturnValueOnce(of([previous])).mockReturnValueOnce(pending);
+    const dialog = createDialog();
+    dialog.visible = true;
+    dialog.inventoryAvailable = true;
+    const selected = vi.fn();
+    dialog.selectProduct.subscribe(selected);
+
+    dialog.ngOnChanges({ visible: new SimpleChange(false, true, true) });
+    expect(dialog.filteredProducts.map((item) => item.id)).toEqual([12]);
+
+    dialog.onFilterChange('nuevo');
+    expect(dialog.filteredProducts).toEqual([]);
+
+    dialog.onKeydown(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(selected).not.toHaveBeenCalled();
   });
 
   it('F2 ignores stale responses after a newer remote lookup', () => {

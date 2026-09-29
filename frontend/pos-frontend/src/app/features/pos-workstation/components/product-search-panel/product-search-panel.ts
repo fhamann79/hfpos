@@ -143,6 +143,8 @@ export class ProductSearchPanel implements AfterViewInit, OnDestroy {
       return;
     }
 
+    // Never leave the previous query interactive while the new debounce/request is pending.
+    this.remoteProducts.set([]);
     this.remoteLoading.set(true);
     this.searchTimer = setTimeout(() => {
       this.searchTimer = null;

@@ -2844,11 +2844,12 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
   private applyCatalogSnapshot(snapshot: PosCatalogSnapshot): void {
     this.inventoryAvailable.set(snapshot.inventoryAvailable);
-    this.allProducts.set(snapshot.products);
 
+    // getProductsWithStock() is now an availability probe only. Its intentionally
+    // empty product list must never be treated as a replacement catalog because
+    // doing so would reconcile away products already present in an active cart.
     if (snapshot.inventoryAvailable) {
       this.inventoryError.set('');
-      this.reconcileCartWithCatalog();
       return;
     }
 
@@ -3828,7 +3829,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       case 'CREDIT_NOTE_SRI_RECEPTION_NOT_CONFIRMED':
         return 'La recepción de la nota de crédito todavía no fue confirmada por el SRI.';
       case 'CREDIT_NOTE_SRI_SIGNATURE_INCONSISTENT':
-        return 'La nota tiene datos parciales de firma y requiere revisión.';
+        return 'La nota tiene datos SRI parciales y requiere revisión.';
       case 'CREDIT_NOTE_SRI_AUTHORIZATION_PENDING':
         return 'La autorización continúa pendiente en el SRI. Intenta nuevamente más tarde.';
       case 'CREDIT_NOTE_SRI_AUTHORIZATION_INVALID_RESPONSE':
