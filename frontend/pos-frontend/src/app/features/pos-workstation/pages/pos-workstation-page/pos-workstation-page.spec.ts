@@ -110,12 +110,14 @@ describe('PosWorkstationPage void refresh', () => {
         product,
       },
     ]);
+    component.allProducts.set([product]);
     component.activeCartProductId.set(product.id);
 
     component.loadProducts();
 
     expect(catalogService.getProductsWithStock).toHaveBeenCalledOnce();
     expect(component.inventoryAvailable()).toBe(true);
+    expect(component.allProducts()).toEqual([product]);
     expect(component.cart()).toHaveLength(1);
     expect(component.cart()[0]).toEqual(expect.objectContaining({
       productId: 7,
