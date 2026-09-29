@@ -62,7 +62,7 @@ public sealed class PosProductLookupTests(PostgresDatabaseFixture database) : IA
                 UpdatedAt = CreatedAt
             });
 
-            var noStock = new Product
+            var noStockProduct = new Product
             {
                 CompanyId = tenant.CompanyId,
                 CategoryId = first.CategoryId,
@@ -76,7 +76,7 @@ public sealed class PosProductLookupTests(PostgresDatabaseFixture database) : IA
                 IsActive = true,
                 CreatedAt = CreatedAt
             };
-            var inactive = new Product
+            var inactiveProduct = new Product
             {
                 CompanyId = tenant.CompanyId,
                 CategoryId = first.CategoryId,
@@ -90,7 +90,7 @@ public sealed class PosProductLookupTests(PostgresDatabaseFixture database) : IA
                 IsActive = false,
                 CreatedAt = CreatedAt
             };
-            context.Products.AddRange(noStock, inactive);
+            context.Products.AddRange(noStockProduct, inactiveProduct);
 
             context.Products.AddRange(Enumerable.Range(1, 105).Select(index => new Product
             {
@@ -107,7 +107,7 @@ public sealed class PosProductLookupTests(PostgresDatabaseFixture database) : IA
             }));
 
             await context.SaveChangesAsync();
-            noStockProductId = noStock.Id;
+            noStockProductId = noStockProduct.Id;
         }
 
         await using var readContext = database.CreateDbContext();
@@ -118,8 +118,8 @@ public sealed class PosProductLookupTests(PostgresDatabaseFixture database) : IA
         var barcode = await service.SearchAsync("SKU-EXACT", 30);
         var byName = await service.SearchAsync("Alpha Search", 30);
         var byInternalCode = await service.SearchAsync("CODE-ALPHA", 30);
-        var noStock = await service.SearchAsync("ZERO-STOCK", 30);
-        var inactive = await service.SearchAsync("INACTIVE-SKU", 30);
+        var noStockResults = await service.SearchAsync("ZERO-STOCK", 30);
+        var inactiveResults = await service.SearchAsync("INACTIVE-SKU", 30);
         var bounded = await service.SearchAsync(null, 999);
 
         var exact = Assert.Single(barcode);
@@ -130,11 +130,11 @@ public sealed class PosProductLookupTests(PostgresDatabaseFixture database) : IA
         Assert.Equal(tenant.Products[1].Id, Assert.Single(byName).Id);
         Assert.Equal(tenant.Products[1].Id, Assert.Single(byInternalCode).Id);
 
-        var zero = Assert.Single(noStock);
+        var zero = Assert.Single(noStockResults);
         Assert.Equal(noStockProductId, zero.Id);
         Assert.Equal(0m, zero.Stock);
 
-        Assert.Empty(inactive);
+        Assert.Empty(inactiveResults);
         Assert.Equal(100, bounded.Count);
         Assert.DoesNotContain(bounded, item => item.Name == "Foreign Search Product");
         Assert.All(bounded, item => Assert.True(item.IsActive));
