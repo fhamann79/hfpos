@@ -12,6 +12,8 @@ public class PosDbContext : DbContext
     }
 
     public DbSet<User> Users { get; set; }
+    public DbSet<PlatformUser> PlatformUsers { get; set; }
+    public DbSet<PlatformTenantEvent> PlatformTenantEvents { get; set; }
     public DbSet<Role> Roles { get; set; }
     public DbSet<Permission> Permissions { get; set; }
     public DbSet<RolePermission> RolePermissions { get; set; }
@@ -50,6 +52,29 @@ public class PosDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
+        modelBuilder.Entity<PlatformUser>(entity =>
+        {
+            entity.Property(u => u.Username).IsRequired().HasMaxLength(100);
+            entity.Property(u => u.Email).IsRequired().HasMaxLength(320);
+            entity.Property(u => u.PasswordHash).IsRequired();
+            entity.Property(u => u.SessionVersion).HasDefaultValue(1L);
+            entity.HasIndex(u => u.Username).IsUnique();
+            entity.HasIndex(u => u.Email).IsUnique();
+            entity.ToTable(t => t.HasCheckConstraint("CK_PlatformUsers_SessionVersion", "\"SessionVersion\" > 0"));
+        });
+        modelBuilder.Entity<PlatformTenantEvent>(entity =>
+        {
+            entity.Property(e => e.EventType).HasConversion<string>().HasMaxLength(30);
+            entity.Property(e => e.Reason).HasMaxLength(500);
+            entity.HasIndex(e => e.RequestId).IsUnique().HasFilter("\"RequestId\" IS NOT NULL");
+            entity.HasIndex(e => new { e.CompanyId, e.CreatedAt, e.Id });
+            entity.HasOne(e => e.Company).WithMany().HasForeignKey(e => e.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.PlatformUser).WithMany().HasForeignKey(e => e.PlatformUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.InitialAdminUser).WithMany().HasForeignKey(e => e.InitialAdminUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(t => t.HasCheckConstraint("CK_PlatformTenantEvents_Type",
+                "(\"EventType\" = 'Provisioned' AND \"RequestId\" IS NOT NULL AND \"InitialAdminUserId\" IS NOT NULL AND \"ProvisioningSnapshot\" IS NOT NULL) OR (\"EventType\" IN ('Suspended', 'Reactivated') AND \"RequestId\" IS NULL AND \"InitialAdminUserId\" IS NULL AND \"ProvisioningSnapshot\" IS NULL AND \"Reason\" IS NOT NULL AND length(trim(\"Reason\")) > 0)"));
+        });
+
         modelBuilder.Entity<Role>(entity =>
         {
             entity.Property(r => r.AuthorizationVersion).HasDefaultValue(1L);
@@ -64,6 +89,8 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<User>(entity =>
         {
+            entity.HasIndex(u => u.Username).IsUnique();
+            entity.HasIndex(u => u.Email).IsUnique();
             entity.Property(u => u.SessionVersion).HasDefaultValue(1L);
             entity.ToTable(table => table.HasCheckConstraint(
                 "CK_Users_SessionVersion_Positive", "\"SessionVersion\" > 0"));
@@ -100,6 +127,7 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<Company>(entity =>
         {
+            entity.HasIndex(c => c.Ruc).IsUnique();
             entity.Property(c => c.TradeName)
                 .HasMaxLength(150);
 

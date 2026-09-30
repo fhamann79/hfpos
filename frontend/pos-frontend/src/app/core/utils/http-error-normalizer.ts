@@ -9,6 +9,18 @@ export interface NormalizedHttpError {
 }
 
 const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
+  USERNAME_ALREADY_EXISTS: 'Ya existe una cuenta con ese usuario.',
+  EMAIL_ALREADY_EXISTS: 'Ya existe una cuenta con ese email.',
+  INVALID_PLATFORM_CLAIMS: 'La sesi\u00f3n de plataforma no es v\u00e1lida.',
+  PLATFORM_SESSION_STALE: 'La sesi\u00f3n de plataforma expir\u00f3. Inicia sesi\u00f3n nuevamente.',
+  PLATFORM_USER_INACTIVE_OR_NOT_FOUND: 'La cuenta de plataforma no est\u00e1 disponible.',
+  TENANT_RUC_ALREADY_EXISTS: 'Ya existe una empresa con ese RUC.',
+  TENANT_PROVISIONING_REQUEST_CONFLICT: 'La solicitud ya fue utilizada con otros datos.',
+  TENANT_PROVISIONING_INVALID: 'Revisa los datos de la empresa y su estructura inicial.',
+  TENANT_ADMIN_INVALID: 'Revisa el usuario, email y contrase\u00f1a del administrador (m\u00ednimo 12 caracteres).',
+  TENANT_REASON_REQUIRED: 'Ingresa un motivo de hasta 500 caracteres.',
+  TENANT_STATUS_INVALID: 'El estado seleccionado no es v\u00e1lido.',
+  TENANT_NOT_FOUND: 'La empresa no est\u00e1 disponible.',
   INSUFFICIENT_STOCK: 'Stock insuficiente para completar la venta.',
   SALE_NOT_FOUND: 'La venta no existe.',
   SALE_ALREADY_VOIDED: 'La venta ya fue anulada.',

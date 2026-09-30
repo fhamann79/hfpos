@@ -1,0 +1,87 @@
+<main class="platform-page">
+  <header class="platform-header">
+    <div class="heading"><i class="pi pi-building" aria-hidden="true"></i><div><small>HFPOS Plataforma</small><h1>Tenants</h1></div></div>
+    <div class="header-actions"><span>{{ store.me()?.username }}</span><p-button label="Cerrar sesión" icon="pi pi-sign-out" severity="secondary" [text]="true" (onClick)="logout()" /></div>
+  </header>
+  <section class="tenant-directory">
+    <div class="section-heading"><h2>Empresas <span>{{ total() }}</span></h2><p-button label="Provisionar tenant" icon="pi pi-plus" (onClick)="openProvision()" /></div>
+    <form class="filters" (ngSubmit)="filter()">
+      <label><span>Buscar</span><input pInputText name="search" [(ngModel)]="search" placeholder="Nombre o RUC" maxlength="150" /></label>
+      <label><span>Estado</span><p-select name="status" [options]="statuses" optionLabel="label" optionValue="value" [(ngModel)]="status" appendTo="body" /></label>
+      <p-button type="submit" label="Buscar" icon="pi pi-search" [loading]="loading()" />
+      <p-button icon="pi pi-refresh" ariaLabel="Refrescar empresas" severity="secondary" [outlined]="true" (onClick)="load()" />
+    </form>
+    @if (notice()) { <p-message severity="success" [text]="notice()" /> }
+    @if (error()) { <p-message severity="error" [text]="error()" /> }
+    <p-table [value]="tenants()" [lazy]="true" [lazyLoadOnInit]="false" [loading]="loading()" [paginator]="true"
+      [rows]="rows" [first]="first" [totalRecords]="total()" [rowsPerPageOptions]="[20,50,100]"
+      (onLazyLoad)="page($event)" responsiveLayout="scroll" [tableStyle]="{'min-width':'68rem'}">
+      <ng-template #header><tr><th class="id">ID</th><th class="name">Nombre</th><th>RUC</th><th>Zona horaria</th><th>Estado</th><th>Creación</th><th class="actions">Acciones</th></tr></ng-template>
+      <ng-template #body let-tenant><tr>
+        <td>{{ tenant.id }}</td><td class="name"><strong>{{ tenant.name }}</strong></td><td>{{ tenant.ruc }}</td><td>{{ tenant.timeZoneId }}</td>
+        <td><p-tag [value]="tenant.isActive ? 'Activo' : 'Suspendido'" [severity]="tenant.isActive ? 'success' : 'warn'" /></td>
+        <td>{{ tenant.createdAt | date:'dd/MM/yyyy HH:mm' }}</td><td class="actions"><div>
+          <p-button label="Detalle" icon="pi pi-eye" severity="secondary" [text]="true" (onClick)="openDetail(tenant)" />
+          <p-button [label]="tenant.isActive ? 'Suspender' : 'Reactivar'" [icon]="tenant.isActive ? 'pi pi-pause' : 'pi pi-play'"
+            [severity]="tenant.isActive ? 'warn' : 'success'" [text]="true" (onClick)="openLifecycle(tenant, !tenant.isActive)" />
+        </div></td>
+      </tr></ng-template>
+      <ng-template #emptymessage><tr><td colspan="7" class="empty">No hay empresas para estos filtros.</td></tr></ng-template>
+    </p-table>
+  </section>
+</main>
+
+<p-dialog header="Provisionar tenant" [(visible)]="provisionVisible" [modal]="true" [style]="{width:'680px', maxWidth:'96vw'}"
+  [closable]="!saving()" [closeOnEscape]="!saving()" (onHide)="closeProvision()">
+  <form [formGroup]="form" (ngSubmit)="provision()">
+    <fieldset class="provision-form" [disabled]="saving()">
+      <h3>Empresa</h3>
+      <label class="wide"><span>Nombre empresa</span><input pInputText formControlName="name" maxlength="150" /></label>
+      <label><span>RUC</span><input pInputText formControlName="ruc" maxlength="13" inputmode="numeric" /></label>
+      <label><span>Zona horaria</span><input pInputText formControlName="timeZoneId" maxlength="100" /></label>
+      <h3>Estructura inicial</h3>
+      <label><span>Establecimiento</span><input pInputText formControlName="establishment" maxlength="150" /></label>
+      <label><span>Punto de emisión</span><input pInputText formControlName="emissionPoint" maxlength="150" /></label>
+      <label class="wide"><span>Dirección establecimiento</span><input pInputText formControlName="address" maxlength="250" /></label>
+      <h3>Administrador inicial</h3>
+      <label><span>Usuario</span><input pInputText formControlName="username" maxlength="100" autocomplete="off" /></label>
+      <label><span>Email</span><input pInputText formControlName="email" type="email" maxlength="320" autocomplete="off" /></label>
+      <label class="wide"><span>Contraseña</span><input pInputText formControlName="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" /></label>
+    </fieldset>
+    @if (error()) { <p-message severity="error" [text]="error()" /> }
+    <div class="dialog-actions"><p-button label="Cancelar" severity="secondary" [text]="true" [disabled]="saving()" (onClick)="provisionVisible = false; closeProvision()" />
+      <p-button type="submit" label="Provisionar" icon="pi pi-check" [loading]="saving()" [disabled]="saving()" /></div>
+  </form>
+</p-dialog>
+
+<p-dialog [header]="lifecycleActive ? 'Reactivar empresa' : 'Suspender empresa'" [visible]="!!lifecycleTarget"
+  (visibleChange)="!$event && !saving() && (lifecycleTarget = null)" [modal]="true" [closable]="!saving()" [closeOnEscape]="!saving()"
+  [style]="{width:'480px',maxWidth:'96vw'}">
+  <p><strong>{{ lifecycleTarget?.name }}</strong></p>
+  <p>{{ lifecycleActive ? 'Los usuarios deberán iniciar sesión nuevamente.' : 'Los usuarios perderán sus sesiones y no podrán operar mientras la empresa esté suspendida.' }}</p>
+  <label class="reason"><span>Motivo</span><textarea pInputText [(ngModel)]="reason" maxlength="500" rows="3" [disabled]="saving()"></textarea></label>
+  @if (error()) { <p-message severity="error" [text]="error()" /> }
+  <div class="dialog-actions"><p-button label="Cancelar" severity="secondary" [text]="true" [disabled]="saving()" (onClick)="lifecycleTarget = null" />
+    <p-button [label]="lifecycleActive ? 'Reactivar' : 'Suspender'" [icon]="lifecycleActive ? 'pi pi-play' : 'pi pi-pause'"
+      [severity]="lifecycleActive ? 'success' : 'warn'" [loading]="saving()" [disabled]="saving()" (onClick)="lifecycle()" /></div>
+</p-dialog>
+
+<p-dialog header="Detalle de empresa" [(visible)]="detailVisible" [modal]="true" [style]="{width:'880px',maxWidth:'96vw'}">
+  @if (detailLoading()) { <p>Cargando empresa…</p> }
+  @if (detail(); as tenant) {
+    <div class="detail-heading"><h2>{{ tenant.company.name }}</h2><p-tag [value]="tenant.company.isActive ? 'Activo' : 'Suspendido'" [severity]="tenant.company.isActive ? 'success' : 'warn'" /></div>
+    <dl class="detail-facts"><div><dt>RUC</dt><dd>{{ tenant.company.ruc }}</dd></div><div><dt>Zona horaria</dt><dd>{{ tenant.company.timeZoneId }}</dd></div>
+      <div><dt>Creación</dt><dd>{{ tenant.company.createdAt | date:'dd/MM/yyyy HH:mm' }}</dd></div>
+      <div><dt>Establecimientos activos / total</dt><dd>{{ tenant.activeEstablishmentCount }} / {{ tenant.establishmentCount }}</dd></div>
+      <div><dt>Puntos activos / total</dt><dd>{{ tenant.activeEmissionPointCount }} / {{ tenant.emissionPointCount }}</dd></div>
+      <div><dt>Usuarios activos / total</dt><dd>{{ tenant.activeUserCount }} / {{ tenant.userCount }}</dd></div></dl>
+    <h3>Eventos de lifecycle</h3>
+    <p-table [value]="events()" [loading]="eventLoading()" [lazy]="true" [lazyLoadOnInit]="false" [paginator]="true" [rows]="10"
+      [first]="eventFirst" [totalRecords]="eventTotal()" (onLazyLoad)="loadEvents($event)" responsiveLayout="scroll" [tableStyle]="{'min-width':'40rem'}">
+      <ng-template #header><tr><th>Fecha</th><th>Tipo</th><th>Administrador plataforma</th><th>Motivo</th></tr></ng-template>
+      <ng-template #body let-event><tr><td>{{ event.createdAt | date:'dd/MM/yyyy HH:mm' }}</td><td>{{ eventLabel(event.eventType) }}</td><td>{{ event.platformUsername }}</td><td class="wrap">{{ event.reason || '—' }}</td></tr></ng-template>
+      <ng-template #emptymessage><tr><td colspan="4" class="empty">Sin eventos de plataforma registrados.</td></tr></ng-template>
+    </p-table>
+  }
+  @if (error()) { <p-message severity="error" [text]="error()" /> }
+</p-dialog>

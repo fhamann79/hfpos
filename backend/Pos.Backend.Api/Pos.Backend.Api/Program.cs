@@ -81,6 +81,10 @@ builder.Services.AddDbContext<PosDbContext>(options =>
 
 //Auth
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<IPlatformAuthService, PlatformAuthService>();
+builder.Services.AddScoped<IPlatformContextAccessor, PlatformContextAccessor>();
+builder.Services.AddScoped<IPlatformTenantService, PlatformTenantService>();
+builder.Services.Configure<PlatformBootstrapOptions>(builder.Configuration.GetSection("PlatformBootstrap"));
 builder.Services.AddScoped<TenantAdministrationGuard>();
 builder.Services.AddScoped<IMasterDataLifecycleService, MasterDataLifecycleService>();
 builder.Services.AddScoped<IProductCostService, ProductCostService>();
@@ -141,6 +145,8 @@ var operationalDashboardReadPermissions = new[]
 
 builder.Services.AddAuthorization(options =>
 {
+    options.AddPolicy(AppPolicies.PlatformAdmin, policy => policy.RequireAuthenticatedUser()
+        .RequireClaim(PlatformClaims.TokenType, PlatformClaims.TokenTypeValue).RequireRole(PlatformClaims.AdminRole));
     options.AddPolicy(AppPolicies.AdminOnly, policy =>
         policy.RequireRole(AppRoles.Admin));
 
@@ -278,6 +284,13 @@ if (app.Environment.IsDevelopment())
 
         await SeedData.SeedDevelopmentAsync(context);
     }
+}
+
+// Bootstrap never applies migrations; production must apply the schema through the human runbook.
+using (var scope = app.Services.CreateScope())
+{
+    await PlatformBootstrap.RunAsync(scope.ServiceProvider.GetRequiredService<PosDbContext>(),
+        scope.ServiceProvider.GetRequiredService<IOptions<PlatformBootstrapOptions>>().Value);
 }
 
 app.UseHttpsRedirection();

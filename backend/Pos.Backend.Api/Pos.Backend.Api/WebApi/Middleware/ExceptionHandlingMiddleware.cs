@@ -61,6 +61,9 @@ public class ExceptionHandlingMiddleware
     {
         return exception switch
         {
+            PlatformException platformException => (
+                platformException.StatusCode,
+                CreateErrorResponse(platformException.Message, null)),
             MasterDataLifecycleException lifecycleException => (
                 StatusCodes.Status409Conflict,
                 CreateErrorResponse(lifecycleException.Message, null)),
@@ -92,7 +95,7 @@ public class ExceptionHandlingMiddleware
                 StatusCodes.Status409Conflict,
                 CreateErrorResponse(
                     MapUniqueViolationError(postgresException.ConstraintName),
-                    postgresException.Detail ?? postgresException.MessageText)),
+                    null)),
 
             DbUpdateException dbUpdateException when TryGetPostgresException(dbUpdateException, out var postgresException)
                 && postgresException.SqlState == "23503" => (
@@ -136,6 +139,9 @@ public class ExceptionHandlingMiddleware
         {
             "IX_Products_CompanyId_Barcode" => "PRODUCT_BARCODE_ALREADY_EXISTS",
             "IX_Products_CompanyId_InternalCode" => "PRODUCT_INTERNAL_CODE_ALREADY_EXISTS",
+            "IX_Companies_Ruc" => "TENANT_RUC_ALREADY_EXISTS",
+            "IX_Users_Username" => "USERNAME_ALREADY_EXISTS",
+            "IX_Users_Email" => "EMAIL_ALREADY_EXISTS",
             _ => "UNIQUE_VIOLATION"
         };
 }

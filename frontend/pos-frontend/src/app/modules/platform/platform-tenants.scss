@@ -1,0 +1,24 @@
+@use './platform-controls';
+
+:host { display: block; color: #253238; }
+.platform-page { max-width: 1560px; margin: 0 auto; padding: 24px 32px; }
+.platform-header, .section-heading, .header-actions, .detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.platform-header { padding-bottom: 24px; border-bottom: 1px solid #dce3e7; }
+.heading { display: flex; align-items: center; gap: 14px; .pi { color: #087f70; font-size: 28px; } small { color: #647278; } }
+h1 { margin: 4px 0 0; font-size: 28px; } h2 { margin: 0; font-size: 20px; } h3 { font-size: 16px; }
+.header-actions { color: #627178; font-size: 14px; }
+.tenant-directory { padding-top: 24px; }
+.section-heading { margin-bottom: 20px; span { margin-left: 8px; color: #627178; font-size: 15px; } }
+.filters { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; min-width: 0; }
+input, textarea { width: 100%; min-width: 0; } .filters label:first-child { width: min(100%, 350px); }
+p-message { display: block; margin: 12px 0; }
+.id { width: 4rem; } .name { width: 20%; overflow-wrap: anywhere; }
+.actions { width: 16rem; > div { display: flex; align-items: center; gap: 8px; white-space: nowrap; } }
+:host ::ng-deep .p-datatable-table th, :host ::ng-deep .p-datatable-table td { padding: 14px 12px; }
+.empty { text-align: center; padding: 28px; color: #647278; }
+.provision-form { border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; h3, .wide { grid-column: 1 / -1; } h3 { border-bottom: 1px solid #dce3e7; padding-bottom: 8px; margin: 8px 0 0; } }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 12px; padding-top: 20px; flex-wrap: wrap; }
+.reason { margin-top: 20px; } .detail-facts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 20px; padding: 20px 0; margin: 0; border-bottom: 1px solid #dce3e7; }
+dt { color: #647278; font-size: 13px; } dd { margin: 6px 0 0; overflow-wrap: anywhere; } .wrap { overflow-wrap: anywhere; max-width: 280px; }
+@media(max-width:700px) { .platform-page { padding: 16px; } .filters { align-items: stretch; > label { flex: 1 1 100%; } } .provision-form, .detail-facts { grid-template-columns: minmax(0,1fr); } .header-actions { width: 100%; } }
