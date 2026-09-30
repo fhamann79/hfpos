@@ -97,6 +97,8 @@
     </section>
   }
 
+  <app-payment-reconciliation-panel [canWrite]="canWrite()"></app-payment-reconciliation-panel>
+
   <section class="cash-section">
     <p-toolbar styleClass="cash-toolbar">
       <ng-template #start>
@@ -397,6 +399,25 @@
         <div><span>Contado</span><strong>{{ session.countedCashAmount === null ? '-' : (session.countedCashAmount | currency: 'USD' : 'symbol' : '1.2-2') }}</strong></div>
         <div><span>Diferencia</span><strong [class]="differenceClass(session.differenceAmount)">{{ session.differenceAmount === null ? '-' : (session.differenceAmount | currency: 'USD' : 'symbol' : '1.2-2') }}</strong></div>
       </div>
+
+      @if (session.reconciliation; as reconciliation) {
+        <h3>Conciliación de efectivo</h3>
+        @if (!reconciliation.isReconstructionComplete) {
+          <p-message severity="warn" text="El desglose histórico no puede reconstruirse por completo con la auditoría disponible. El efectivo esperado del cierre sigue siendo el snapshot de caja."></p-message>
+        }
+        <div class="totals-grid">
+          <div><span>Ventas efectivo brutas</span><strong>{{ reconciliation.grossCashSalesAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+          <div><span>Anulaciones en sesión</span><strong>{{ reconciliation.inSessionVoidAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+          <div><span>Ventas efectivo netas</span><strong>{{ reconciliation.netCashSalesAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+          <div><span>Ingresos manuales</span><strong>{{ reconciliation.manualCashInAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+          <div><span>Egresos manuales</span><strong>{{ reconciliation.manualCashOutAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+          <div><span>Salidas por anulación</span><strong>{{ reconciliation.saleVoidCashOutAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+          <div><span>Salidas por devoluciones</span><strong>{{ reconciliation.creditNoteRefundCashOutAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+          <div><span>Efectivo esperado</span><strong>{{ reconciliation.expectedCashAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></div>
+          <div><span>Efectivo contado</span><strong>{{ reconciliation.countedCashAmount === null ? 'Pendiente' : (reconciliation.countedCashAmount | currency: 'USD' : 'symbol' : '1.2-2') }}</strong></div>
+          <div><span>Diferencia</span><strong>{{ reconciliation.differenceAmount === null ? 'Pendiente' : (reconciliation.differenceAmount | currency: 'USD' : 'symbol' : '1.2-2') }}</strong></div>
+        </div>
+      }
 
       @if (session.openingNotes || session.closingNotes) {
         <div class="notes-grid">

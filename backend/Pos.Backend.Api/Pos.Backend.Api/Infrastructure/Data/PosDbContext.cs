@@ -37,6 +37,7 @@ public class PosDbContext : DbContext
     public DbSet<DocumentSequenceAudit> DocumentSequenceAudits { get; set; }
     public DbSet<CashSession> CashSessions { get; set; }
     public DbSet<CashMovement> CashMovements { get; set; }
+    public DbSet<PaymentSettlement> PaymentSettlements { get; set; }
     public DbSet<Sale> Sales { get; set; }
     public DbSet<SaleItem> SaleItems { get; set; }
     public DbSet<CreditNote> CreditNotes { get; set; }
@@ -832,6 +833,44 @@ public class PosDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<PaymentSettlement>(entity =>
+        {
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint("CK_PaymentSettlements_Method", "\"PaymentMethod\" IN (1, 2, 3)");
+                table.HasCheckConstraint("CK_PaymentSettlements_NonnegativeComponents",
+                    "\"GrossSalesAmount\" >= 0 AND \"VoidAmount\" >= 0 AND \"RefundAmount\" >= 0");
+                table.HasCheckConstraint("CK_PaymentSettlements_ExpectedNet",
+                    "\"ExpectedNetAmount\" = \"GrossSalesAmount\" - \"VoidAmount\" - \"RefundAmount\"");
+                table.HasCheckConstraint("CK_PaymentSettlements_Difference",
+                    "\"DifferenceAmount\" = \"SettledAmount\" - \"ExpectedNetAmount\"");
+            });
+            entity.Property(s => s.BusinessDate).HasColumnType("date");
+            entity.Property(s => s.PaymentMethod).HasConversion<int>();
+            entity.Property(s => s.GrossSalesAmount).HasPrecision(18, 2);
+            entity.Property(s => s.VoidAmount).HasPrecision(18, 2);
+            entity.Property(s => s.RefundAmount).HasPrecision(18, 2);
+            entity.Property(s => s.ExpectedNetAmount).HasPrecision(18, 2);
+            entity.Property(s => s.SettledAmount).HasPrecision(18, 2);
+            entity.Property(s => s.DifferenceAmount).HasPrecision(18, 2);
+            entity.Property(s => s.Reference).HasMaxLength(150);
+            entity.Property(s => s.Notes).HasMaxLength(500);
+            entity.Property(s => s.TimeZoneIdSnapshot).IsRequired().HasMaxLength(100);
+            entity.HasIndex(s => new { s.CompanyId, s.RequestId }).IsUnique();
+            entity.HasIndex(s => new
+            {
+                s.CompanyId, s.EstablishmentId, s.EmissionPointId, s.BusinessDate, s.PaymentMethod
+            }).IsUnique().HasDatabaseName("UX_PaymentSettlements_ContextDateMethod");
+            entity.HasOne(s => s.Company).WithMany().HasForeignKey(s => s.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(s => s.Establishment).WithMany().HasForeignKey(s => s.EstablishmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(s => s.EmissionPoint).WithMany().HasForeignKey(s => s.EmissionPointId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(s => s.ReconciledByUser).WithMany().HasForeignKey(s => s.ReconciledByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
         modelBuilder.Entity<CashMovement>(entity =>
         {
             entity.Property(m => m.Type)
@@ -1052,6 +1091,9 @@ public class PosDbContext : DbContext
                 .HasFilter(@"""Sequential"" IS NOT NULL");
             entity.HasIndex(s => new { s.CompanyId, s.EstablishmentId, s.EmissionPointId, s.CreatedAt });
             entity.HasIndex(s => new { s.CompanyId, s.EstablishmentId, s.EmissionPointId, s.BusinessDate });
+            entity.HasIndex(s => new { s.CompanyId, s.EstablishmentId, s.EmissionPointId, s.BusinessDate, s.PaymentMethod });
+            entity.HasIndex(s => new { s.CompanyId, s.EstablishmentId, s.EmissionPointId, s.VoidBusinessDate, s.PaymentMethod })
+                .HasFilter("\"VoidBusinessDate\" IS NOT NULL");
 
             entity.HasOne(s => s.User)
                 .WithMany()
@@ -1306,6 +1348,7 @@ public class PosDbContext : DbContext
 
             entity.HasIndex(r => r.CreditNoteId).IsUnique();
             entity.HasIndex(r => new { r.CompanyId, r.EstablishmentId, r.BusinessDate });
+            entity.HasIndex(r => new { r.CompanyId, r.EstablishmentId, r.EmissionPointId, r.BusinessDate, r.Method });
             entity.HasIndex(r => r.RefundedByUserId);
             entity.HasIndex(r => r.CashSessionId);
             entity.HasIndex(r => r.CashMovementId).IsUnique()

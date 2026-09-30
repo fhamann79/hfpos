@@ -41,6 +41,7 @@ internal sealed class TestServiceScope : IAsyncDisposable
             contextAccessor,
             businessClock,
             administrationGuard);
+        Settlements = new PaymentSettlementService(DbContext, contextAccessor, businessClock, administrationGuard);
 
         PurchaseReceipts = new PurchaseReceiptQueryService(DbContext, contextAccessor);
         ElectronicDocuments = new ElectronicDocumentQueryService(DbContext, contextAccessor);
@@ -72,6 +73,7 @@ internal sealed class TestServiceScope : IAsyncDisposable
     public InventoryTransferService Transfers { get; }
 
     public CashSessionService CashSessions { get; }
+    public PaymentSettlementService Settlements { get; }
 
     public PurchaseReceiptQueryService PurchaseReceipts { get; }
 

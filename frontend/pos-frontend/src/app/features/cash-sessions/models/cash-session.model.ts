@@ -53,6 +53,21 @@ export interface CashSession extends CashSessionListItem {
   establishmentId: number;
   emissionPointId: number;
   movements: CashMovement[];
+  reconciliation: CashSessionReconciliation | null;
+}
+
+export interface CashSessionReconciliation {
+  grossCashSalesAmount: number;
+  inSessionVoidAmount: number;
+  netCashSalesAmount: number;
+  manualCashInAmount: number;
+  manualCashOutAmount: number;
+  saleVoidCashOutAmount: number;
+  creditNoteRefundCashOutAmount: number;
+  expectedCashAmount: number;
+  countedCashAmount: number | null;
+  differenceAmount: number | null;
+  isReconstructionComplete: boolean;
 }
 
 export interface CashSessionFilters {
