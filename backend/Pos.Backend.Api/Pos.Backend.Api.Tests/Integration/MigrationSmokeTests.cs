@@ -23,6 +23,14 @@ public sealed class MigrationSmokeTests(PostgresDatabaseFixture database)
         Assert.Contains(definedMigrations, migration => migration.EndsWith("AddSessionAuthorizationVersions"));
         Assert.Contains(definedMigrations, migration => migration.EndsWith("AddInventoryTransfers"));
         Assert.Contains(definedMigrations, migration => migration.EndsWith("AddPaymentSettlements"));
+        Assert.Contains(definedMigrations, migration => migration.EndsWith("AddSaasPlatformControlPlane"));
+        Assert.Empty(await context.PlatformUsers.ToListAsync());
+        Assert.Empty(await context.PlatformTenantEvents.ToListAsync());
+        foreach (var index in new[] { "IX_Companies_Ruc", "IX_Users_Username", "IX_Users_Email", "IX_PlatformUsers_Username", "IX_PlatformUsers_Email" })
+        {
+            var unique = await context.Database.SqlQuery<int>($"SELECT COUNT(*)::integer AS \"Value\" FROM pg_indexes WHERE indexname = {index} AND indexdef LIKE 'CREATE UNIQUE%'").SingleAsync();
+            Assert.Equal(1, unique);
+        }
         Assert.Equal(0, await context.Companies.CountAsync());
         Assert.False(context.Database.HasPendingModelChanges());
     }

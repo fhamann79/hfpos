@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { platformGuard } from './modules/platform/platform.guard';
 import { AuthGuard } from './core/guards/auth.guard';
 import { administrationAccessGuard } from './core/guards/administration-access.guard';
 import { cashSessionsAccessGuard } from './core/guards/cash-sessions-access.guard';
@@ -14,6 +15,8 @@ import { salesReportsAccessGuard } from './core/guards/sales-reports-access.guar
 import { suppliersAccessGuard } from './core/guards/suppliers-access.guard';
 
 export const routes: Routes = [
+  { path: 'platform/login', loadComponent: () => import('./modules/platform/platform-login').then(m => m.PlatformLogin) },
+  { path: 'platform/tenants', canActivate: [platformGuard], loadComponent: () => import('./modules/platform/platform-tenants').then(m => m.PlatformTenants) },
   {
     path: 'login',
     loadComponent: () => import('./modules/auth/login/login').then((m) => m.Login),

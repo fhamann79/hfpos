@@ -1,0 +1,54 @@
+:host {
+  h1, h2, h3 { letter-spacing: 0; }
+  input.p-inputtext, textarea.p-inputtext {
+    background: #fff;
+    border: 1px solid #b9c7ce;
+    border-radius: 6px;
+    padding: 10px 12px;
+    min-height: 42px;
+    color: #253238;
+    font: inherit;
+    font-weight: 400;
+    &:focus { outline: 2px solid #087f70; outline-offset: 1px; }
+    &:disabled { background: #edf1f3; color: #63747a; }
+  }
+}
+:host ::ng-deep {
+  .p-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 9px 14px;
+    border: 1px solid #087f70;
+    border-radius: 6px;
+    background: #087f70;
+    color: #fff;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+    white-space: nowrap;
+    &:focus-visible { outline: 2px solid #253238; outline-offset: 2px; }
+    &:disabled { opacity: .55; cursor: default; }
+    &.p-button-text, &.p-button-outlined { background: transparent; color: #344d58; }
+    &.p-button-text { border-color: transparent; }
+    &.p-button-warn { color: #925908; }
+    &.p-button-success { color: #087f70; }
+    &.p-button-warn:not(.p-button-text) { background: #925908; border-color: #925908; color: #fff; }
+    &.p-button-success:not(.p-button-text) { background: #087f70; color: #fff; }
+  }
+  .p-tag { padding: 4px 8px; border-radius: 4px; font-size: 13px; font-weight: 600; }
+  .p-tag-success { background: #dff2e9; color: #176340; }
+  .p-tag-warn { background: #fff0cd; color: #865300; }
+  .p-datatable-table { border-collapse: collapse; }
+  .p-datatable-table th { background: #edf2f4; color: #455b65; font-weight: 600; }
+  .p-datatable-table th, .p-datatable-table td { border-bottom: 1px solid #dce3e7; }
+  .p-datatable-table td { background: #fff; }
+  .p-paginator { display: flex; gap: 8px; align-items: center; justify-content: flex-end; padding: 12px 0; }
+  .p-paginator button { min-width: 32px; min-height: 32px; border-radius: 4px; cursor: pointer; }
+  .p-paginator button:disabled { opacity: .4; cursor: default; }
+  .p-dialog { background: #fff !important; border-radius: 8px; border: 1px solid #dce3e7; max-height: calc(100dvh - 32px); }
+  .p-dialog-content { overflow-y: auto; }
+  .p-dialog-header { font-weight: 600; }
+}

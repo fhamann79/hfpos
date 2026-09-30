@@ -12,7 +12,7 @@ export class App {
   private readonly router = inject(Router);
   private readonly currentUrl = signal(this.router.url);
 
-  readonly showShell = computed(() => !this.currentUrl().startsWith('/login'));
+  readonly showShell = computed(() => !this.currentUrl().startsWith('/login') && !this.currentUrl().startsWith('/platform/'));
 
   constructor() {
     this.router.events.subscribe((event) => {

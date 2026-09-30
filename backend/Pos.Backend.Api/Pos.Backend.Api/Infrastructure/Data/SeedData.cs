@@ -102,39 +102,7 @@ public static class SeedData
             await context.SaveChangesAsync();
         }
 
-        var permissionDefinitions = new[]
-        {
-            new { Code = AppPermissions.AuthProbeAdmin, Description = "Acceso a prueba de autorización admin" },
-            new { Code = AppPermissions.AuthProbeSupervisor, Description = "Acceso a prueba de autorización supervisor" },
-            new { Code = AppPermissions.AuthProbeCashier, Description = "Acceso a prueba de autorización cajero" },
-            new { Code = AppPermissions.CatalogCategoriesRead, Description = "Read categories" },
-            new { Code = AppPermissions.CatalogCategoriesWrite, Description = "Write categories" },
-            new { Code = AppPermissions.CatalogProductsRead, Description = "Read products" },
-            new { Code = AppPermissions.CatalogProductsWrite, Description = "Write products" },
-            new { Code = AppPermissions.CustomersRead, Description = "Leer clientes" },
-            new { Code = AppPermissions.CustomersWrite, Description = "Escribir clientes" },
-            new { Code = AppPermissions.SuppliersRead, Description = "Leer proveedores" },
-            new { Code = AppPermissions.SuppliersWrite, Description = "Escribir proveedores" },
-            new { Code = AppPermissions.PurchasesRead, Description = "Leer recepciones de compra" },
-            new { Code = AppPermissions.PurchasesWrite, Description = "Registrar recepciones de compra" },
-            new { Code = AppPermissions.CashSessionsRead, Description = "Leer cajas" },
-            new { Code = AppPermissions.CashSessionsWrite, Description = "Administrar cajas" },
-            new { Code = AppPermissions.OpStructureRead, Description = "Read operational structure" },
-            new { Code = AppPermissions.OpStructureWrite, Description = "Write operational structure" },
-            new { Code = AppPermissions.PosSalesCreate, Description = "Crear ventas POS" },
-            new { Code = AppPermissions.InventoryRead, Description = "Leer inventario" },
-            new { Code = AppPermissions.InventoryWrite, Description = "Escribir inventario" },
-            new { Code = AppPermissions.PosSalesVoid, Description = "Anular ventas POS" },
-            new { Code = AppPermissions.ReportsSalesRead, Description = "Leer reportes de ventas" },
-            new { Code = AppPermissions.SriDocumentsSign, Description = "Firmar documentos electrónicos SRI" },
-            new { Code = AppPermissions.SriDocumentsSubmit, Description = "Enviar y consultar documentos electrónicos SRI" },
-            new { Code = AppPermissions.FiscalSettingsRead, Description = "Leer configuración fiscal y empresarial" },
-            new { Code = AppPermissions.FiscalSettingsWrite, Description = "Escribir configuración fiscal y empresarial" },
-            new { Code = AppPermissions.AdminUsersRead, Description = "Leer administración de usuarios" },
-            new { Code = AppPermissions.AdminUsersWrite, Description = "Escribir administración de usuarios" },
-            new { Code = AppPermissions.AdminRolesRead, Description = "Leer administración de roles" },
-            new { Code = AppPermissions.AdminRolesWrite, Description = "Escribir administración de roles" }
-        };
+        var permissionDefinitions = TenantDefaults.Permissions;
 
         var existingPermissions = await context.Permissions
             .ToListAsync();
@@ -176,12 +144,7 @@ public static class SeedData
 
         var permissionByCode = permissions.ToDictionary(p => p.Code, p => p);
 
-        var roleDefinitions = new[]
-        {
-            new { Code = AppRoles.Admin, Name = "Administrador" },
-            new { Code = AppRoles.Supervisor, Name = "Supervisor" },
-            new { Code = AppRoles.Cashier, Name = "Cajero" }
-        };
+        var roleDefinitions = TenantDefaults.Roles;
 
         foreach (var roleDefinition in roleDefinitions)
         {
@@ -212,94 +175,8 @@ public static class SeedData
         var cashierRole = await context.Roles
             .FirstAsync(r => r.CompanyId == company.Id && r.Code == AppRoles.Cashier);
 
-        var rolePermissionMap = new Dictionary<int, string[]>
-        {
-            {
-                adminRole.Id,
-                new[]
-                {
-                    AppPermissions.AuthProbeAdmin,
-                    AppPermissions.AuthProbeSupervisor,
-                    AppPermissions.AuthProbeCashier,
-                    AppPermissions.CatalogCategoriesRead,
-                    AppPermissions.CatalogCategoriesWrite,
-                    AppPermissions.CatalogProductsRead,
-                    AppPermissions.CatalogProductsWrite,
-                    AppPermissions.CustomersRead,
-                    AppPermissions.CustomersWrite,
-                    AppPermissions.SuppliersRead,
-                    AppPermissions.SuppliersWrite,
-                    AppPermissions.PurchasesRead,
-                    AppPermissions.PurchasesWrite,
-                    AppPermissions.CashSessionsRead,
-                    AppPermissions.CashSessionsWrite,
-                    AppPermissions.OpStructureRead,
-                    AppPermissions.OpStructureWrite,
-                    AppPermissions.PosSalesCreate,
-                    AppPermissions.PosSalesVoid,
-                    AppPermissions.InventoryRead,
-                    AppPermissions.InventoryWrite,
-                    AppPermissions.ReportsSalesRead,
-                    AppPermissions.SriDocumentsSign,
-                    AppPermissions.SriDocumentsSubmit,
-                    AppPermissions.FiscalSettingsRead,
-                    AppPermissions.FiscalSettingsWrite,
-                    AppPermissions.AdminUsersRead,
-                    AppPermissions.AdminUsersWrite,
-                    AppPermissions.AdminRolesRead,
-                    AppPermissions.AdminRolesWrite
-                }
-            },
-            {
-                supervisorRole.Id,
-                new[]
-                {
-                    AppPermissions.AuthProbeSupervisor,
-                    AppPermissions.CatalogCategoriesRead,
-                    AppPermissions.CatalogCategoriesWrite,
-                    AppPermissions.CatalogProductsRead,
-                    AppPermissions.CatalogProductsWrite,
-                    AppPermissions.CustomersRead,
-                    AppPermissions.CustomersWrite,
-                    AppPermissions.SuppliersRead,
-                    AppPermissions.SuppliersWrite,
-                    AppPermissions.PurchasesRead,
-                    AppPermissions.PurchasesWrite,
-                    AppPermissions.CashSessionsRead,
-                    AppPermissions.CashSessionsWrite,
-                    AppPermissions.OpStructureRead,
-                    AppPermissions.OpStructureWrite,
-                    AppPermissions.PosSalesCreate,
-                    AppPermissions.PosSalesVoid,
-                    AppPermissions.InventoryRead,
-                    AppPermissions.InventoryWrite,
-                    AppPermissions.ReportsSalesRead,
-                    AppPermissions.SriDocumentsSign,
-                    AppPermissions.SriDocumentsSubmit,
-                    AppPermissions.FiscalSettingsRead,
-                    AppPermissions.AdminUsersRead,
-                    AppPermissions.AdminUsersWrite,
-                    AppPermissions.AdminRolesRead,
-                    AppPermissions.AdminRolesWrite
-                }
-            },
-            {
-                cashierRole.Id,
-                new[]
-                {
-                    AppPermissions.AuthProbeCashier,
-                    AppPermissions.CatalogCategoriesRead,
-                    AppPermissions.CatalogProductsRead,
-                    AppPermissions.CustomersRead,
-                    AppPermissions.CustomersWrite,
-                    AppPermissions.CashSessionsRead,
-                    AppPermissions.CashSessionsWrite,
-                    AppPermissions.OpStructureRead,
-                    AppPermissions.PosSalesCreate,
-                    AppPermissions.InventoryRead
-                }
-            }
-        };
+        var rolePermissionMap = new[] { adminRole, supervisorRole, cashierRole }
+            .ToDictionary(role => role.Id, role => TenantDefaults.RolePermissions[role.Code]);
 
         var roleIds = rolePermissionMap.Keys.ToArray();
         var permissionIds = permissionByCode.Values.Select(p => p.Id).ToArray();

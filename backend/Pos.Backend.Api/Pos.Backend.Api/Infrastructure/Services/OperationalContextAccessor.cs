@@ -41,6 +41,8 @@ public class OperationalContextAccessor : IOperationalContextAccessor
         }
 
         var principal = httpContext.User;
+        if (principal.HasClaim(PlatformClaims.TokenType, PlatformClaims.TokenTypeValue))
+            throw LogAndCreateException("INVALID_CLAIMS", StatusCodes.Status401Unauthorized);
         var userIdValue = principal.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? principal.FindFirstValue(JwtRegisteredClaimNames.Sub);
 

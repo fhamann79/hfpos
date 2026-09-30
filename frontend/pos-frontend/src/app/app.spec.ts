@@ -48,6 +48,8 @@ describe('App', () => {
       providers: [
         provideRouter([
           { path: 'login', component: LoginRouteStub },
+          { path: 'platform/login', component: LoginRouteStub },
+          { path: 'platform/tenants', component: DashboardRouteStub },
           { path: 'dashboard', component: DashboardRouteStub },
         ]),
         { provide: AuthStore, useValue: authStore },
@@ -95,5 +97,15 @@ describe('App', () => {
     expect(compiled.querySelector('[data-testid="dashboard-route"]')?.textContent).toContain(
       'Dashboard route',
     );
+  });
+
+  it.each(['/platform/login', '/platform/tenants'])('keeps platform route %s outside the tenant shell', async url => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await router.navigateByUrl(url);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-shell')).toBeNull();
+    expect(fixture.componentInstance.showShell()).toBe(false);
   });
 });

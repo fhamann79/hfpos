@@ -15,6 +15,10 @@ export const appConfig: ApplicationConfig = {
 
     provideAppInitializer(() => {
       const store = inject(AuthStore);
+      if (location.pathname.startsWith('/platform/')) {
+        store.markLoaded();
+        return;
+      }
 
       if (store.hasSessionToken()) {
         return store.loadMe();
