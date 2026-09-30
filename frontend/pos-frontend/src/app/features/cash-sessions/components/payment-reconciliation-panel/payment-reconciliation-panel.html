@@ -1,0 +1,147 @@
+<section class="reconciliation-section">
+  <div class="section-header">
+    <div>
+      <h3>Conciliación de pagos</h3>
+      <p>El efectivo se concilia mediante sesiones de caja.</p>
+    </div>
+    <label class="field">
+      <span>Fecha de negocio</span>
+      <input pInputText type="date" [(ngModel)]="businessDate" (change)="changeDate()" />
+    </label>
+  </div>
+
+  @if (overviewError()) { <p-message severity="error" [text]="overviewError()"></p-message> }
+  @if (overviewLoading()) { <p>Consultando actividad financiera...</p> }
+  @if (overview(); as data) {
+    @if (data.businessDate >= data.currentBusinessDate) {
+      <p-message severity="info" text="La fecha actual es solo vista previa. Se puede conciliar al siguiente día de negocio."></p-message>
+    }
+    @if (data.legacyUnattributedVoidCount > 0) {
+      <p-message severity="warn" text="Existen anulaciones históricas cuya fecha de reverso no puede determinarse; no se incluyen en la conciliación diaria."></p-message>
+    }
+    <p-table styleClass="professional-table payment-table" [value]="data.methods" responsiveLayout="scroll"
+      [tableStyle]="{ 'min-width': '72rem' }">
+      <ng-template pTemplate="header">
+        <tr>
+          <th>Método</th><th class="number">Bruto</th><th class="number">Anulaciones</th>
+          <th class="number">Devoluciones</th><th class="number">Neto esperado</th>
+          <th class="number">Liquidado</th><th class="number">Diferencia</th><th>Estado</th><th>Acción</th>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="body" let-method>
+        <tr>
+          <td><strong>{{ methodLabel(method.paymentMethod) }}</strong></td>
+          <td class="number">{{ method.grossSalesAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</td>
+          <td class="number">{{ method.voidAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</td>
+          <td class="number">{{ method.refundAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</td>
+          <td class="number"><strong>{{ method.netPaymentAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong></td>
+          <td class="number">{{ method.settlement ? (method.settlement.settledAmount | currency: 'USD' : 'symbol' : '1.2-2') : '-' }}</td>
+          <td class="number">{{ method.settlement ? (method.settlement.differenceAmount | currency: 'USD' : 'symbol' : '1.2-2') : '-' }}</td>
+          <td>
+            @if (method.paymentMethod === 0) { <span>Por caja</span> }
+            @else if (method.settlement) {
+              <p-tag [severity]="method.settlement.differenceAmount === 0 ? 'success' : 'warn'"
+                [value]="differenceStatus(method.settlement.differenceAmount)"></p-tag>
+            } @else { <span>Pendiente</span> }
+          </td>
+          <td>
+            @if (method.settlement) {
+              <p-button icon="pi pi-eye" label="Detalle" severity="secondary" [outlined]="true"
+                (onClick)="openDetail(method.settlement.id)"></p-button>
+            } @else if (canWrite && method.canSettle) {
+              <p-button icon="pi pi-check" label="Conciliar" (onClick)="openSettlement(method)"></p-button>
+            }
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  }
+
+  <div class="section-header history-header">
+    <h3>Historial de conciliaciones</h3>
+    <div class="history-filters">
+      <label class="field"><span>Desde</span><input pInputText type="date" [(ngModel)]="historyFrom" /></label>
+      <label class="field"><span>Hasta</span><input pInputText type="date" [(ngModel)]="historyTo" /></label>
+      <label class="field"><span>Método</span><p-select [options]="methodOptions" [(ngModel)]="historyMethod"
+        optionLabel="label" optionValue="value" [showClear]="true" placeholder="Todos" appendTo="body"></p-select></label>
+      <p-button icon="pi pi-search" label="Buscar" [loading]="historyLoading()" (onClick)="applyHistoryFilters()"></p-button>
+    </div>
+  </div>
+  @if (historyError()) { <p-message severity="error" [text]="historyError()"></p-message> }
+  <p-table styleClass="professional-table payment-table" [value]="history()" [loading]="historyLoading()"
+    [paginator]="true" [lazy]="true" [lazyLoadOnInit]="false" [first]="first" [rows]="rows"
+    [totalRecords]="historyTotal()" [rowsPerPageOptions]="[15, 30, 50]" responsiveLayout="scroll"
+    [tableStyle]="{ 'min-width': '72rem' }" (onLazyLoad)="onHistoryLazyLoad($event)">
+    <ng-template pTemplate="header">
+      <tr><th>Fecha negocio</th><th>Método</th><th class="number">Esperado</th>
+        <th class="number">Liquidado</th><th class="number">Diferencia</th>
+        <th>Usuario</th><th>Fecha conciliación</th><th>Referencia</th><th>Detalle</th></tr>
+    </ng-template>
+    <ng-template pTemplate="body" let-item>
+      <tr><td>{{ item.businessDate }}</td><td>{{ methodLabel(item.paymentMethod) }}</td>
+        <td class="number">{{ item.expectedNetAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</td>
+        <td class="number">{{ item.settledAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</td>
+        <td class="number">{{ item.differenceAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</td>
+        <td>{{ item.reconciledByUsername }}</td><td>{{ item.reconciledAt | date: 'short' }}</td>
+        <td class="reference">{{ item.reference || '-' }}</td>
+        <td><p-button icon="pi pi-eye" label="Ver" severity="secondary" [outlined]="true"
+          (onClick)="openDetail(item.id)"></p-button></td></tr>
+    </ng-template>
+    <ng-template pTemplate="emptymessage"><tr><td colspan="9">No hay conciliaciones para los filtros seleccionados.</td></tr></ng-template>
+  </p-table>
+</section>
+
+<p-dialog [visible]="settleDialogVisible" [modal]="true" [draggable]="false"
+  [style]="{ width: '38rem', maxWidth: '94vw' }" header="Conciliar pago" (onHide)="closeSettlement()">
+  @if (overview(); as data) {
+    @if (selectedMethod; as method) {
+      <form class="settlement-form" (ngSubmit)="confirmSettlement()">
+        <dl class="settlement-summary">
+          <div><dt>Fecha</dt><dd>{{ data.businessDate }}</dd></div>
+          <div><dt>Método</dt><dd>{{ methodLabel(method.paymentMethod) }}</dd></div>
+          <div><dt>Bruto</dt><dd>{{ method.grossSalesAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</dd></div>
+          <div><dt>Anulaciones</dt><dd>{{ method.voidAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</dd></div>
+          <div><dt>Devoluciones</dt><dd>{{ method.refundAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</dd></div>
+          <div><dt>Neto esperado</dt><dd>{{ method.netPaymentAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</dd></div>
+        </dl>
+        <label class="field"><span>Monto liquidado</span><input pInputText type="number" step="0.01"
+          [(ngModel)]="settledAmount" (ngModelChange)="draftChanged()" name="settledAmount" [disabled]="saving()" required /></label>
+        <label class="field"><span>Referencia</span><input pInputText maxlength="150"
+          [(ngModel)]="reference" (ngModelChange)="draftChanged()" name="reference" [disabled]="saving()" /></label>
+        <label class="field"><span>Notas</span><textarea pTextarea rows="3" maxlength="500"
+          [(ngModel)]="notes" (ngModelChange)="draftChanged()" name="notes" [disabled]="saving()"></textarea></label>
+        <div class="difference-preview">Diferencia:
+          <strong>{{ differencePreview === null ? '-' : (differencePreview | currency: 'USD' : 'symbol' : '1.2-2') }}</strong>
+        </div>
+        @if (formError()) { <p-message severity="error" [text]="formError()"></p-message> }
+        <div class="actions">
+          <p-button label="Cancelar" severity="secondary" [outlined]="true" type="button" [disabled]="saving()"
+            (onClick)="closeSettlement()"></p-button>
+          <p-button label="Guardar conciliación" icon="pi pi-check" type="submit" [loading]="saving()"></p-button>
+        </div>
+      </form>
+    }
+  }
+</p-dialog>
+
+<p-dialog [visible]="detailDialogVisible" [modal]="true" [draggable]="false"
+  [style]="{ width: '38rem', maxWidth: '94vw' }" header="Detalle de conciliación"
+  (onHide)="detailDialogVisible = false">
+  @if (detailError()) { <p-message severity="error" [text]="detailError()"></p-message> }
+  @else if (detail(); as item) {
+    <dl class="settlement-summary">
+      <div><dt>Fecha</dt><dd>{{ item.businessDate }}</dd></div>
+      <div><dt>Método</dt><dd>{{ methodLabel(item.paymentMethod) }}</dd></div>
+      <div><dt>Bruto</dt><dd>{{ item.grossSalesAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</dd></div>
+      <div><dt>Anulaciones</dt><dd>{{ item.voidAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</dd></div>
+      <div><dt>Devoluciones</dt><dd>{{ item.refundAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</dd></div>
+      <div><dt>Esperado</dt><dd>{{ item.expectedNetAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</dd></div>
+      <div><dt>Liquidado</dt><dd>{{ item.settledAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</dd></div>
+      <div><dt>Diferencia</dt><dd>{{ item.differenceAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</dd></div>
+      <div><dt>Usuario</dt><dd>{{ item.reconciledByUsername }}</dd></div>
+      <div><dt>Registrado</dt><dd>{{ item.reconciledAt | date: 'medium' }}</dd></div>
+      <div><dt>Referencia</dt><dd>{{ item.reference || '-' }}</dd></div>
+      <div><dt>Notas</dt><dd>{{ item.notes || '-' }}</dd></div>
+    </dl>
+  } @else { <p>Cargando detalle...</p> }
+</p-dialog>

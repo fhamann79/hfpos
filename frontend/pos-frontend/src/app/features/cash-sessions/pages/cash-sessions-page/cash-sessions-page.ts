@@ -30,6 +30,7 @@ import {
   CashSessionSummary,
 } from '../../models/cash-session.model';
 import { CashSessionService } from '../../services/cash-session.service';
+import { PaymentReconciliationPanel } from '../../components/payment-reconciliation-panel/payment-reconciliation-panel';
 
 interface SelectOption<T> {
   label: string;
@@ -58,6 +59,7 @@ const EMPTY_SUMMARY: CashSessionSummary = {
     TextareaModule,
     ToastModule,
     ToolbarModule,
+    PaymentReconciliationPanel,
   ],
   providers: [MessageService],
   templateUrl: './cash-sessions-page.html',

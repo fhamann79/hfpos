@@ -32,4 +32,5 @@ public class CashSessionDto
     public string? OpeningNotes { get; set; }
     public string? ClosingNotes { get; set; }
     public List<CashMovementDto> Movements { get; set; } = new();
+    public CashSessionReconciliationDto? Reconciliation { get; set; }
 }

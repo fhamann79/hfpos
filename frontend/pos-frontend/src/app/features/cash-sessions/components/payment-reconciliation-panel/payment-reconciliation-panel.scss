@@ -1,0 +1,39 @@
+.reconciliation-section {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.section-header, .history-filters, .actions {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+
+.section-header h3 { margin: 0 0 .2rem; }
+.section-header p { margin: 0; color: var(--app-text-muted); }
+.history-header { padding-top: .6rem; border-top: 1px solid var(--app-border); }
+.field { display: grid; gap: .3rem; min-width: 10rem; color: var(--app-text-muted); font-size: .82rem; }
+.field input, .field textarea, .field p-select { width: 100%; }
+.number { text-align: right; white-space: nowrap; }
+.reference { max-width: 12rem; overflow-wrap: anywhere; }
+.settlement-form { display: grid; gap: .85rem; }
+.settlement-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; margin: 0; }
+.settlement-summary div { min-width: 0; }
+.settlement-summary dt { color: var(--app-text-muted); font-size: .78rem; }
+.settlement-summary dd { margin: .15rem 0 0; overflow-wrap: anywhere; font-weight: 600; }
+.difference-preview { display: flex; justify-content: space-between; border-top: 1px solid var(--app-border); padding-top: .65rem; }
+.actions { justify-content: flex-end; }
+:host ::ng-deep .payment-table .p-datatable-thead > tr > th,
+:host ::ng-deep .payment-table .p-datatable-tbody > tr > td { padding: .7rem .8rem; }
+@media (max-width: 640px) {
+  .section-header { align-items: stretch; }
+  .history-filters { align-items: stretch; }
+  .field { flex: 1 1 100%; }
+}

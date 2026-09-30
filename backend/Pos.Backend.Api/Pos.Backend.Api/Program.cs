@@ -95,6 +95,7 @@ builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IInventoryTransferService, InventoryTransferService>();
 builder.Services.AddScoped<IPosProductLookupService, PosProductLookupService>();
 builder.Services.AddScoped<ICashSessionService, CashSessionService>();
+builder.Services.AddScoped<IPaymentSettlementService, PaymentSettlementService>();
 builder.Services.AddScoped<IPurchaseReceiptQueryService, PurchaseReceiptQueryService>();
 builder.Services.AddScoped<ICreditNoteService, CreditNoteService>();
 builder.Services.AddScoped<ICreditNoteInventoryReturnService, CreditNoteInventoryReturnService>();

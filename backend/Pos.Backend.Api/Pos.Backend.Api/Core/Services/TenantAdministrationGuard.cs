@@ -41,6 +41,23 @@ public sealed class TenantAdministrationGuard(PosDbContext context)
         await context.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT 1 FROM \"Companies\" WHERE \"Id\" = {operationalContext.CompanyId} FOR SHARE");
 
+        await ValidateOperationalContextAsync(operationalContext);
+    }
+
+    public async Task LockPaymentSettlementFinalizationAsync(OperationalContext operationalContext)
+    {
+        if (context.Database.CurrentTransaction is null)
+            throw new InvalidOperationException("Payment settlement finalization requires a transaction.");
+
+        // Drain prior operational writers and exclude new ones until the snapshot commits/rolls back.
+        await context.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT 1 FROM \"Companies\" WHERE \"Id\" = {operationalContext.CompanyId} FOR UPDATE");
+
+        await ValidateOperationalContextAsync(operationalContext);
+    }
+
+    private async Task ValidateOperationalContextAsync(OperationalContext operationalContext)
+    {
         var valid = await context.Users.AnyAsync(u =>
             u.Id == operationalContext.UserId && u.Username == operationalContext.Username && u.IsActive
             && u.CompanyId == operationalContext.CompanyId && u.Company.IsActive

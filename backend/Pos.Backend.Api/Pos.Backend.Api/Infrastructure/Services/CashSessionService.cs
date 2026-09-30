@@ -654,6 +654,7 @@ public class CashSessionService : ICashSessionService
     private async Task<CashSessionDto> ToDtoAsync(CashSession session)
     {
         var totals = await CalculateDisplayTotalsAsync(session);
+        var reconciliation = await CalculateReconciliationAsync(session, totals);
 
         return new CashSessionDto
         {
@@ -688,7 +689,78 @@ public class CashSessionService : ICashSessionService
                 .OrderByDescending(m => m.CreatedAt)
                 .ThenByDescending(m => m.Id)
                 .Select(ToMovementDto)
-                .ToList()
+                .ToList(),
+            Reconciliation = reconciliation
+        };
+    }
+
+    private async Task<CashSessionReconciliationDto> CalculateReconciliationAsync(
+        CashSession session, CashSessionTotals totals)
+    {
+        var sales = await _context.Sales.AsNoTracking()
+            .Where(s => s.CompanyId == session.CompanyId
+                && s.EstablishmentId == session.EstablishmentId
+                && s.EmissionPointId == session.EmissionPointId
+                && s.CashSessionId == session.Id
+                && s.PaymentMethod == SalePaymentMethod.Cash
+                && (s.Status == SaleStatus.Completed || s.Status == SaleStatus.Voided))
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Gross = g.Sum(s => s.Total),
+                InSessionVoid = g.Sum(s => s.Status == SaleStatus.Voided
+                    && s.VoidCashEffect == SaleVoidCashEffect.OriginalOpenSessionRecalculated
+                    && s.VoidCashSessionId == session.Id ? s.Total : 0m)
+            }).SingleOrDefaultAsync();
+
+        var saleVoidOut = await (
+            from sale in _context.Sales.AsNoTracking()
+            join movement in _context.CashMovements.AsNoTracking()
+                on sale.VoidCashMovementId equals (int?)movement.Id
+            where sale.CompanyId == session.CompanyId
+                && sale.EstablishmentId == session.EstablishmentId
+                && sale.EmissionPointId == session.EmissionPointId
+                && sale.Status == SaleStatus.Voided
+                && sale.VoidCashEffect == SaleVoidCashEffect.CurrentSessionCashOut
+                && sale.VoidCashSessionId == session.Id
+                && movement.CashSessionId == session.Id
+                && movement.Type == CashMovementType.CashOut
+            select (decimal?)movement.Amount).SumAsync() ?? 0m;
+
+        var refundOut = await (
+            from refund in _context.CreditNoteRefunds.AsNoTracking()
+            join movement in _context.CashMovements.AsNoTracking()
+                on refund.CashMovementId equals (int?)movement.Id
+            where refund.CompanyId == session.CompanyId
+                && refund.EstablishmentId == session.EstablishmentId
+                && refund.EmissionPointId == session.EmissionPointId
+                && refund.CashSessionId == session.Id
+                && refund.Method == SalePaymentMethod.Cash
+                && movement.CashSessionId == session.Id
+                && movement.Type == CashMovementType.CashOut
+            select (decimal?)movement.Amount).SumAsync() ?? 0m;
+
+        var gross = RoundMoney(sales?.Gross ?? 0m);
+        var inSessionVoid = RoundMoney(sales?.InSessionVoid ?? 0m);
+        var voidOut = RoundMoney(saleVoidOut);
+        var refundCashOut = RoundMoney(refundOut);
+        var netCash = RoundMoney(gross - inSessionVoid);
+        var manualOut = RoundMoney(totals.CashOutAmount - voidOut - refundCashOut);
+        var reconstructed = RoundMoney(session.OpeningAmount + netCash + totals.CashInAmount
+            - manualOut - voidOut - refundCashOut);
+        return new CashSessionReconciliationDto
+        {
+            GrossCashSalesAmount = gross,
+            InSessionVoidAmount = inSessionVoid,
+            NetCashSalesAmount = netCash,
+            ManualCashInAmount = totals.CashInAmount,
+            ManualCashOutAmount = manualOut,
+            SaleVoidCashOutAmount = voidOut,
+            CreditNoteRefundCashOutAmount = refundCashOut,
+            ExpectedCashAmount = totals.ExpectedCashAmount,
+            CountedCashAmount = session.CountedCashAmount,
+            DifferenceAmount = session.DifferenceAmount,
+            IsReconstructionComplete = reconstructed == totals.ExpectedCashAmount
         };
     }
 
