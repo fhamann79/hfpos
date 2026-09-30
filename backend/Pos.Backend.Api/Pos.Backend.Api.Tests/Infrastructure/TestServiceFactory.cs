@@ -15,11 +15,19 @@ internal sealed class TestServiceScope : IAsyncDisposable
         PostgresDatabaseFixture database,
         OperationalContext operationalContext,
         params IInterceptor[] interceptors)
+        : this(database, operationalContext, new FixedBusinessClock(), interceptors)
+    {
+    }
+
+    public TestServiceScope(
+        PostgresDatabaseFixture database,
+        OperationalContext operationalContext,
+        IBusinessClockService businessClock,
+        params IInterceptor[] interceptors)
     {
         DbContext = database.CreateDbContext(interceptors);
 
         var contextAccessor = new StaticOperationalContextAccessor(operationalContext);
-        var businessClock = new FixedBusinessClock();
         var fiscalClock = new FixedSriFiscalClock(businessClock.UtcNow);
         var administrationGuard = new TenantAdministrationGuard(DbContext);
 
@@ -65,6 +73,15 @@ internal sealed class TestServiceScope : IAsyncDisposable
             UnexpectedSriDependency.Instance,
             Options.Create(new SriOptions()),
             administrationGuard);
+
+        var creditNotes = new CreditNoteService(
+            DbContext, contextAccessor, documentNumbers, businessClock,
+            UnexpectedSriDependency.Instance, UnexpectedSriDependency.Instance,
+            UnexpectedSriDependency.Instance, fiscalClock, Options.Create(new SriOptions()),
+            NullLogger<CreditNoteService>.Instance, administrationGuard);
+        Refunds = new CreditNoteRefundService(
+            DbContext, contextAccessor, CashSessions, creditNotes, businessClock,
+            NullLogger<CreditNoteRefundService>.Instance, administrationGuard);
     }
 
     public PosDbContext DbContext { get; }
@@ -80,6 +97,7 @@ internal sealed class TestServiceScope : IAsyncDisposable
     public ElectronicDocumentQueryService ElectronicDocuments { get; }
 
     public SalesService Sales { get; }
+    public CreditNoteRefundService Refunds { get; }
 
     public ValueTask DisposeAsync() => DbContext.DisposeAsync();
 }
@@ -91,11 +109,11 @@ internal sealed class StaticOperationalContextAccessor(OperationalContext operat
         => Task.FromResult(operationalContext);
 }
 
-internal sealed class FixedBusinessClock : IBusinessClockService
+internal sealed class FixedBusinessClock(DateTime? utcNow = null) : IBusinessClockService
 {
     private readonly BusinessClockService _inner = new();
 
-    public DateTime UtcNow { get; } = new(2026, 9, 18, 20, 0, 0, DateTimeKind.Utc);
+    public DateTime UtcNow { get; } = utcNow ?? new DateTime(2026, 9, 18, 20, 0, 0, DateTimeKind.Utc);
 
     public TimeZoneInfo ResolveTimeZone(string timeZoneId)
         => _inner.ResolveTimeZone(timeZoneId);
@@ -127,7 +145,9 @@ internal sealed class FixedSriFiscalClock(DateTime utcNow) : ISriFiscalClock
 internal sealed class UnexpectedSriDependency :
     ISriAccessKeyService,
     ISriXmlDraftService,
-    ISriInvoiceXmlValidator
+    ISriInvoiceXmlValidator,
+    ISriCreditNoteXmlDraftService,
+    ISriCreditNoteXmlValidator
 {
     public static UnexpectedSriDependency Instance { get; } = new();
 
@@ -148,6 +168,12 @@ internal sealed class UnexpectedSriDependency :
         => throw UnexpectedCall();
 
     public void ValidateUnsignedInvoiceXml(string xml)
+        => throw UnexpectedCall();
+
+    public string GenerateCreditNoteXmlDraft(SriCreditNoteXmlDraftRequest request)
+        => throw UnexpectedCall();
+
+    public void ValidateUnsignedCreditNoteXml(string xml)
         => throw UnexpectedCall();
 
     private static InvalidOperationException UnexpectedCall()

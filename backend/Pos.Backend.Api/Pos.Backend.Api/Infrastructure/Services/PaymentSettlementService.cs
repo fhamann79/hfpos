@@ -66,7 +66,7 @@ public sealed class PaymentSettlementService(
         try
         {
             await using var transaction = await context.Database.BeginTransactionAsync();
-            await administrationGuard.LockOperationalWriteAsync(scope);
+            await administrationGuard.LockPaymentSettlementFinalizationAsync(scope);
 
             var prior = await FindByRequestIdAsync(scope, request.RequestId);
             if (prior is not null)

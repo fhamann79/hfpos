@@ -15,6 +15,7 @@ public class CreditNoteRefundService : ICreditNoteRefundService
     private readonly ICreditNoteService _creditNoteService;
     private readonly IBusinessClockService _businessClock;
     private readonly ILogger<CreditNoteRefundService> _logger;
+    private readonly TenantAdministrationGuard _administrationGuard;
 
     public CreditNoteRefundService(
         PosDbContext context,
@@ -22,7 +23,8 @@ public class CreditNoteRefundService : ICreditNoteRefundService
         ICashSessionService cashSessionService,
         ICreditNoteService creditNoteService,
         IBusinessClockService businessClock,
-        ILogger<CreditNoteRefundService> logger)
+        ILogger<CreditNoteRefundService> logger,
+        TenantAdministrationGuard administrationGuard)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
@@ -30,6 +32,7 @@ public class CreditNoteRefundService : ICreditNoteRefundService
         _creditNoteService = creditNoteService;
         _businessClock = businessClock;
         _logger = logger;
+        _administrationGuard = administrationGuard;
     }
 
     public async Task<CreditNoteDto> RefundAsync(int creditNoteId, RefundCreditNoteDto dto)
@@ -60,6 +63,7 @@ public class CreditNoteRefundService : ICreditNoteRefundService
         {
             await using (var transaction = await _context.Database.BeginTransactionAsync())
             {
+                await _administrationGuard.LockOperationalWriteAsync(operationalContext);
                 var originalSaleId = await _context.CreditNotes.AsNoTracking()
                     .Where(note => note.Id == creditNoteId
                         && note.CompanyId == operationalContext.CompanyId
@@ -69,7 +73,7 @@ public class CreditNoteRefundService : ICreditNoteRefundService
                     .SingleOrDefaultAsync()
                     ?? throw new KeyNotFoundException("CREDIT_NOTE_NOT_FOUND");
 
-                // All note operations lock Sale -> CreditNote; cash is locked only after these.
+                // Refund lock order: Company -> Sale -> CreditNote -> CashSession.
                 var sale = await _context.Sales.FromSqlInterpolated($@"
                     SELECT * FROM ""Sales""
                     WHERE ""Id"" = {originalSaleId}
