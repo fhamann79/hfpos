@@ -12,6 +12,8 @@ public class AuthService
     private readonly PosDbContext _context;
     private readonly ILogger<AuthService> _logger;
     private readonly PasswordHasher<User> _hasher = new();
+    private static readonly User Dummy = new();
+    private static readonly string DummyHash = new PasswordHasher<User>().HashPassword(Dummy, Guid.NewGuid().ToString());
 
     public AuthService(PosDbContext context, ILogger<AuthService> logger)
     {
@@ -24,16 +26,23 @@ public class AuthService
 
     public async Task<(User? User, string Error)> ValidateLoginAsync(LoginDto dto)
     {
-        // 1) Traer user + Company + Establishment (para validar reglas)
+        var username = dto.Username.Trim();
         var user = await _context.Users
             .Include(u => u.Company)
             .Include(u => u.Establishment)
             .Include(u => u.EmissionPoint)
             .Include(u => u.Role)
-            .FirstOrDefaultAsync(u => u.Username == dto.Username);
+            .FirstOrDefaultAsync(u => u.Username == username);
+
+        var result = _hasher.VerifyHashedPassword(user ?? Dummy, user?.PasswordHash ?? DummyHash, dto.Password ?? "");
+        if (user is null || result == PasswordVerificationResult.Failed)
+        {
+            _logger.LogWarning("Login failed. ErrorCode {ErrorCode}", "INVALID_CREDENTIALS");
+            return (null, "INVALID_CREDENTIALS");
+        }
 
         // 2) Validación: usuario existe y está activo
-        if (user is null || !user.IsActive)
+        if (!user.IsActive)
         {
             _logger.LogWarning(
                 "Login failed for {Username}. ErrorCode {ErrorCode}",
@@ -106,20 +115,6 @@ public class AuthService
             || user.EmissionPoint.EstablishmentId != user.EstablishmentId)
         {
             return (null, "CONTEXT_MISMATCH");
-        }
-
-        // 8) Validación password hash
-        var result = _hasher.VerifyHashedPassword(user, user.PasswordHash, dto.Password);
-
-        if (result != PasswordVerificationResult.Success)
-        {
-            _logger.LogWarning(
-                "Login failed for {Username}. UserId {UserId}. ErrorCode {ErrorCode}",
-                dto.Username,
-                user.Id,
-                "INVALID_CREDENTIALS");
-
-            return (null, "INVALID_CREDENTIALS");
         }
 
         _logger.LogInformation(

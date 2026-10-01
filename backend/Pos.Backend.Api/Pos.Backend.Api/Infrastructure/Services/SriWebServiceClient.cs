@@ -99,6 +99,7 @@ public class SriWebServiceClient : ISriWebServiceClient
 
     private string ResolveReceptionEndpoint(int environment)
     {
+        ValidateEnvironment(environment);
         var endpoint = environment == 2
             ? _options.ReceptionProductionUrl
             : _options.ReceptionTestUrl;
@@ -113,6 +114,7 @@ public class SriWebServiceClient : ISriWebServiceClient
 
     private string ResolveAuthorizationEndpoint(int environment)
     {
+        ValidateEnvironment(environment);
         var endpoint = environment == 2
             ? _options.AuthorizationProductionUrl
             : _options.AuthorizationTestUrl;
@@ -123,6 +125,13 @@ public class SriWebServiceClient : ISriWebServiceClient
         }
 
         return endpoint.Trim();
+    }
+
+    private void ValidateEnvironment(int environment)
+    {
+        if (environment is not (1 or 2)) throw new InvalidOperationException("INVALID_SRI_ENVIRONMENT");
+        if (environment == 2 && !_options.AllowProductionSubmission)
+            throw new InvalidOperationException("SRI_PRODUCTION_SUBMISSION_DISABLED");
     }
 
     private async Task<string> PostSoapAsync(

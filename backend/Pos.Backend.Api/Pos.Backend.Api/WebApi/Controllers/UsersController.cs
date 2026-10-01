@@ -104,9 +104,9 @@ public class UsersController : ControllerBase
             return validationError;
         }
 
-        if (string.IsNullOrWhiteSpace(dto.Password))
+        if (!PasswordPolicy.IsValid(dto.Password))
         {
-            return BadRequest(new ApiErrorResponse { Error = "PASSWORD_REQUIRED" });
+            return BadRequest(new ApiErrorResponse { Error = "PASSWORD_POLICY_INVALID" });
         }
 
         var user = new User
@@ -205,9 +205,9 @@ public class UsersController : ControllerBase
             return NotFound(new ApiErrorResponse { Error = "USER_NOT_FOUND" });
         }
 
-        if (string.IsNullOrWhiteSpace(dto?.NewPassword))
+        if (!PasswordPolicy.IsValid(dto?.NewPassword))
         {
-            return BadRequest(new ApiErrorResponse { Error = "NEW_PASSWORD_REQUIRED" });
+            return BadRequest(new ApiErrorResponse { Error = "PASSWORD_POLICY_INVALID" });
         }
 
         user.PasswordHash = _hasher.HashPassword(user, dto.NewPassword);

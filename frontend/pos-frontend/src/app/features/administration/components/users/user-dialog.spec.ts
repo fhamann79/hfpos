@@ -40,7 +40,7 @@ describe('UserDialog tenant contracts', () => {
     const component = TestBed.runInInjectionContext(() => new UserDialog());
     const events: UserDialogSubmit[] = [];
     component.submitForm.subscribe((event) => events.push(event));
-    component.form.patchValue({ username: 'operator', email: 'operator@example.test', password: 'unit-only',
+    component.form.patchValue({ username: 'operator', email: 'operator@example.test', password: 'synthetic-unit-only',
       roleId: 3, establishmentId: 4, emissionPointId: 5 });
     component.save();
     component.user = { id: 2, username: 'operator', email: 'operator@example.test', roleId: 3,

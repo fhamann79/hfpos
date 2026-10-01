@@ -9,6 +9,8 @@ export interface NormalizedHttpError {
 }
 
 const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
+  RATE_LIMITED: 'Demasiados intentos. Espera un momento y vuelve a intentarlo.',
+  PASSWORD_POLICY_INVALID: 'La contrase\u00f1a debe tener entre 12 y 256 caracteres.',
   USERNAME_ALREADY_EXISTS: 'Ya existe una cuenta con ese usuario.',
   EMAIL_ALREADY_EXISTS: 'Ya existe una cuenta con ese email.',
   INVALID_PLATFORM_CLAIMS: 'La sesi\u00f3n de plataforma no es v\u00e1lida.',

@@ -48,5 +48,5 @@ public sealed class PlatformAuthService(PosDbContext database, IOptions<JwtOptio
     internal static bool ValidIdentity(string username, string email, string password)
         => !string.IsNullOrWhiteSpace(username) && username.Length <= 100
             && email.Length <= 320 && MailAddress.TryCreate(email, out var address) && address.Address == email
-            && !string.IsNullOrWhiteSpace(password) && password.Length is >= 12 and <= 256;
+            && PasswordPolicy.IsValid(password);
 }

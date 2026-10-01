@@ -120,4 +120,16 @@ describe('Platform security boundary', () => {
     expect(req.request.params.get('page')).toBe('3'); expect(req.request.params.get('pageSize')).toBe('25');
     req.flush({ items: [], totalItems: 0, page: 3, pageSize: 25, totalPages: 0 });
   });
+  it('normalizes rate limiting without clearing either authentication plane', () => {
+    const component = TestBed.runInInjectionContext(() => new PlatformLogin());
+    component.form.setValue({ username: 'synthetic', password: 'synthetic-only' }); component.submit();
+    requests.expectOne(`${environment.apiUrl}/api/platform/auth/login`).flush({ error: 'RATE_LIMITED' }, { status: 429, statusText: 'Too Many Requests' });
+    expect(component.error()).toBe('Demasiados intentos. Espera un momento y vuelve a intentarlo.');
+    expect(tenant.token()).toBeTruthy(); expect(platform.token()).toBeTruthy();
+  });
+  it('attaches a token to the explicitly configured Development API only', () => {
+    http.get(`${environment.apiUrl}/api/Users`).subscribe();
+    const req = requests.expectOne(`${environment.apiUrl}/api/Users`);
+    expect(req.request.headers.get('Authorization')).toBe('Bearer synthetic-tenant-token'); req.flush({});
+  });
 });

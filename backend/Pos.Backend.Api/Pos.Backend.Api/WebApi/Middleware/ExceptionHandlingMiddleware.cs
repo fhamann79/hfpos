@@ -78,17 +78,17 @@ public class ExceptionHandlingMiddleware
                     operationalContextException.ErrorCode,
                     operationalContextException.Details)),
 
-            KeyNotFoundException keyNotFoundException => (
+            KeyNotFoundException keyNotFoundException when PublicErrorCodes.Contains(keyNotFoundException.Message) => (
                 StatusCodes.Status404NotFound,
                 CreateErrorResponse(
                     keyNotFoundException.Message,
-                    keyNotFoundException.InnerException?.Message)),
+                    null)),
 
-            InvalidOperationException invalidOperationException => (
+            InvalidOperationException invalidOperationException when PublicErrorCodes.Contains(invalidOperationException.Message) => (
                 StatusCodes.Status400BadRequest,
                 CreateErrorResponse(
                     invalidOperationException.Message,
-                    invalidOperationException.InnerException?.Message)),
+                    null)),
 
             DbUpdateException dbUpdateException when TryGetPostgresException(dbUpdateException, out var postgresException)
                 && postgresException.SqlState == "23505" => (
@@ -102,19 +102,19 @@ public class ExceptionHandlingMiddleware
                 StatusCodes.Status409Conflict,
                 CreateErrorResponse(
                     "FOREIGN_KEY_VIOLATION",
-                    postgresException.Detail ?? postgresException.MessageText)),
+                    null)),
 
             DbUpdateException dbUpdateException => (
                 StatusCodes.Status500InternalServerError,
                 CreateErrorResponse(
                     "DB_UPDATE_ERROR",
-                    dbUpdateException.InnerException?.Message ?? dbUpdateException.Message)),
+                    null)),
 
             _ => (
                 StatusCodes.Status500InternalServerError,
                 CreateErrorResponse(
                     "INTERNAL_SERVER_ERROR",
-                    exception.Message))
+                    null))
         };
     }
 
