@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { SimpleChange } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
@@ -32,6 +33,10 @@ describe('InventoryTransferPanel', () => {
       getTransferProducts: vi.fn((_search: string | null, _take: number): Observable<InventoryTransferProduct[]> =>
         of([stock, { ...stock, productId: 10, productName: 'Keyboard' }]
           .map(item => ({ ...item, barcode: null, internalCode: null })))),
+      getStocks: vi.fn((_search: string | null, _id: number | null, _positive: boolean, _page: number, _size: number) =>
+        of({ items: [stock], page: 1, pageSize: 1, totalItems: 1, totalPages: 1,
+          summary: { totalProducts: 1, outOfStockProducts: 0, lowStockProducts: 0,
+            inactiveProducts: 1, totalInventoryUnits: 5, totalInventoryValue: 10 } })),
       createTransfer: vi.fn((_payload: InventoryTransferCreateRequest) => of(detail)),
       resolveError: vi.fn(() => 'Stock insuficiente'),
     };
@@ -80,11 +85,12 @@ describe('InventoryTransferPanel', () => {
     panel.loadProducts('old');
     panel.searchProducts('recent');
     old.next([]);
+    old.complete();
     expect(panel.products()).toHaveLength(2);
     expect(panel.productLoading()).toBe(true);
     vi.advanceTimersByTime(300);
     recent.next([{ ...stock, productId: 25, barcode: null, internalCode: null }]);
-    old.error(new HttpErrorResponse({ status: 500 }));
+    recent.complete();
     expect(panel.products().map(item => item.productId)).toEqual([25]);
     expect(panel.productError()).toBe('');
     expect(panel.productLoading()).toBe(false);
@@ -101,7 +107,26 @@ describe('InventoryTransferPanel', () => {
     panel.loadProducts('pending');
     panel.ngOnDestroy();
     response.next([]);
+    response.complete();
     expect(panel.products()).toHaveLength(2);
+  });
+
+  it('refreshes selected off-page stock by ID when the page signals a stock change', () => {
+    const { panel, inventory } = setup();
+    panel.destinationId = 2;
+    panel.lines = [{ id: 1, productId: 9, quantity: 4 }];
+    const requestId = panel.requestId;
+    inventory.getTransferProducts.mockReturnValue(of([]));
+    inventory.getStocks.mockReturnValue(of({ items: [{ ...stock, quantity: 3 }],
+      page: 1, pageSize: 1, totalItems: 1, totalPages: 1,
+      summary: { totalProducts: 1, outOfStockProducts: 0, lowStockProducts: 1,
+        inactiveProducts: 1, totalInventoryUnits: 3, totalInventoryValue: 6 } }));
+    panel.ngOnChanges({ stockRevision: new SimpleChange(0, 1, false) });
+    expect(inventory.getStocks).toHaveBeenCalledWith(null, 9, false, 1, 1);
+    expect(panel.stockFor(9)).toBe(3);
+    expect(panel.validationMessage).toContain('supera');
+    expect(panel.lines).toEqual([{ id: 1, productId: 9, quantity: 4 }]);
+    expect(panel.requestId).toBe(requestId);
   });
 
   it('hides the transfer form without write permission and excludes the origin', () => {

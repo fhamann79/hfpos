@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, EventEmitter, Input, OnDestroy, OnInit, Output, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, OnDestroy, OnInit, Output, SimpleChanges, inject, signal } from '@angular/core';
+import { forkJoin, of } from 'rxjs';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
@@ -37,14 +38,16 @@ interface TransferLine {
   templateUrl: './inventory-transfer-panel.html',
   styleUrl: './inventory-transfer-panel.scss',
 })
-export class InventoryTransferPanel implements OnInit, OnDestroy {
+export class InventoryTransferPanel implements OnInit, OnChanges, OnDestroy {
   readonly products = signal<InventoryTransferProduct[]>([]);
   readonly productLoading = signal(false);
   readonly productError = signal('');
   private productSequence = 0;
   private productTimer?: ReturnType<typeof setTimeout>;
   @Input() canWrite = false;
+  @Input() stockRevision = 0;
   @Output() transferred = new EventEmitter<void>();
+  private initialized = false;
 
   private readonly inventory = inject(InventoryService);
   readonly auth = inject(AuthStore);
@@ -80,6 +83,13 @@ export class InventoryTransferPanel implements OnInit, OnDestroy {
       this.loadProducts();
     }
     this.loadTransfers(1, this.pageSize);
+    this.initialized = true;
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (this.initialized && this.canWrite && changes['stockRevision']) {
+      this.loadProducts('', ++this.productSequence, true);
+    }
   }
 
   get productOptions(): { label: string; value: number }[] {
@@ -120,17 +130,33 @@ export class InventoryTransferPanel implements OnInit, OnDestroy {
     this.productTimer = setTimeout(() => this.loadProducts(search, sequence), 300);
   }
 
-  loadProducts(search = '', sequence = ++this.productSequence): void {
+  loadProducts(search = '', sequence = ++this.productSequence, refreshSelected = false): void {
     if (sequence !== this.productSequence) return;
     this.productLoading.set(true);
     this.productError.set('');
-    this.inventory.getTransferProducts(search.trim() || null, 30).subscribe({
-      next: products => {
+    const selectedIds = [...new Set(this.lines.map(line => line.productId)
+      .filter((id): id is number => id !== null))];
+    const selected = refreshSelected && selectedIds.length
+      ? forkJoin(selectedIds.map(id => this.inventory.getStocks(null, id, false, 1, 1)))
+      : of([]);
+    forkJoin({ products: this.inventory.getTransferProducts(search.trim() || null, 30), selected }).subscribe({
+      next: ({ products, selected }) => {
         if (sequence !== this.productSequence) return;
-        const selectedIds = new Set(this.lines.map(line => line.productId));
-        const retained = this.products().filter(product => selectedIds.has(product.productId)
-          && !products.some(item => item.productId === product.productId));
-        this.products.set([...products, ...retained]);
+        const updated = new Map(products.map(product => [product.productId, product]));
+        for (const result of selected) {
+          for (const stock of result.items) {
+            const previous = this.products().find(product => product.productId === stock.productId);
+            updated.set(stock.productId, { productId: stock.productId, productName: stock.productName,
+              quantity: stock.quantity, isActive: stock.isActive,
+              barcode: previous?.barcode ?? null, internalCode: previous?.internalCode ?? null });
+          }
+        }
+        const currentSelected = new Set(this.lines.map(line => line.productId));
+        for (const product of this.products()) {
+          if (currentSelected.has(product.productId) && !updated.has(product.productId)
+            && (!refreshSelected || !selectedIds.includes(product.productId))) updated.set(product.productId, product);
+        }
+        this.products.set([...updated.values()]);
         this.productLoading.set(false);
       },
       error: (error: HttpErrorResponse) => {

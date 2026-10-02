@@ -189,6 +189,7 @@ describe('Inventory stock server pagination', () => {
     service.registerExit.mockReturnValue(of(movement));
     service.registerAdjustment.mockReturnValue(of(movement));
     page.submitOperation();
+    expect(page.stockRevision()).toBe(1);
     expect(service.getStocks).toHaveBeenCalledWith(null, 25, false, 1, 1);
     expect(page.focusedProduct()?.quantity).toBe(9);
     page.setOperationProduct(25);
@@ -205,6 +206,7 @@ describe('Inventory stock server pagination', () => {
     service.getStocks.mockImplementation((_search, id) => of({ ...result,
       items: id === 25 ? [{ ...stock, quantity: 3 }] : [] }));
     page.onTransferComplete();
+    expect(page.stockRevision()).toBe(1);
     expect(page.selectedOperationStock()?.quantity).toBe(3);
     expect(page.projectedStock()).toBe(5);
     expect(service.getStocks.mock.calls.every(call => call[4] <= 30)).toBe(true);

@@ -532,6 +532,7 @@
         <p-tabpanel value="transfers">
           <app-inventory-transfer-panel
             [canWrite]="canWriteInventory()"
+            [stockRevision]="stockRevision()"
             (transferred)="onTransferComplete()"
           ></app-inventory-transfer-panel>
         </p-tabpanel>

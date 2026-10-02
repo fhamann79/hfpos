@@ -112,6 +112,7 @@ export class InventoryPage implements OnInit, OnDestroy {
   readonly lookupStocks = signal<InventoryStock[]>([]);
   readonly lookupLoading = signal(false);
   readonly lookupError = signal('');
+  readonly stockRevision = signal(0);
   stockFirst = 0;
   stockRows = 30;
   private stockSequence = 0;
@@ -202,6 +203,7 @@ export class InventoryPage implements OnInit, OnDestroy {
   refreshAll(): void {
     this.loadStocks();
     this.loadProductOptions('', ++this.lookupSequence, true);
+    this.stockRevision.update(revision => revision + 1);
     this.loadMovements(1, this.movementRows);
   }
 
@@ -393,6 +395,7 @@ export class InventoryPage implements OnInit, OnDestroy {
         this.movementType = movement.type;
         this.loadStocks();
         this.loadProductOptions('', ++this.lookupSequence, true);
+        this.stockRevision.update(revision => revision + 1);
         this.applyMovementFilters();
       },
       error: (error: HttpErrorResponse) => {
