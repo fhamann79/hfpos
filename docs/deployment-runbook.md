@@ -26,6 +26,9 @@ Produccion usa imagenes `vX.Y.Z` + digest confirmado, o `sha-<commit>` + digest.
 Registrar tres digests, SHA, lista EF, configuracion no secreta y ventana por release.
 El workflow publica GHCR con SBOM/provenance al crear un tag humano; NO despliega,
 no tiene credenciales cloud/SSH/Production y no publica desde PRs.
+Un release tag `vX.Y.Z` DEBE apuntar a un commit ya contenido en `main`.
+El workflow rechaza tags sobre commits no integrados antes de habilitar
+`packages: write` en el job de publicacion.
 
 ## Pre-deploy humano
 
