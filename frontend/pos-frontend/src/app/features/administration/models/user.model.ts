@@ -1,3 +1,11 @@
+export interface UserPageQuery {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  isActive?: boolean | null;
+  roleId?: number | null;
+}
+
 export interface User {
   id: number;
   username: string;

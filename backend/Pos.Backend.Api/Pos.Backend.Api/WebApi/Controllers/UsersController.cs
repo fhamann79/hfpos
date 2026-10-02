@@ -7,6 +7,7 @@ using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Infrastructure.Data;
+using Pos.Backend.Api.Infrastructure.Services;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.WebApi.Filters;
 
@@ -33,28 +34,14 @@ public class UsersController : ControllerBase
 
     [HttpGet]
     [Authorize(Policy = AppPermissions.AdminUsersRead)]
-    public async Task<ActionResult<IEnumerable<UserListDto>>> Get()
+    public async Task<ActionResult<PagedResultDto<UserListDto>>> Get(
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 30,
+        [FromQuery] string? search = null, [FromQuery] bool? isActive = null,
+        [FromQuery] int? roleId = null)
     {
         var tenant = await _operationalContext.GetRequiredContextAsync();
-        var users = await _context.Users
-            .AsNoTracking()
-            .Include(u => u.Role)
-            .Where(u => u.CompanyId == tenant.CompanyId)
-            .OrderBy(u => u.Username)
-            .Select(u => new UserListDto
-            {
-                Id = u.Id,
-                Username = u.Username,
-                Email = u.Email,
-                IsActive = u.IsActive,
-                RoleId = u.RoleId,
-                RoleCode = u.Role.Code,
-                RoleName = u.Role.Name,
-                CompanyId = u.CompanyId,
-                EstablishmentId = u.EstablishmentId,
-                EmissionPointId = u.EmissionPointId
-            })
-            .ToListAsync();
+        var users = await UserListQuery.GetPageAsync(
+            _context, tenant.CompanyId, page, pageSize, search, isActive, roleId);
 
         return Ok(users);
     }
