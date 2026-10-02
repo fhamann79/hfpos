@@ -1,7 +1,7 @@
 param([switch]$Cleanup, [switch]$SkipBuild)
 $ErrorActionPreference = 'Stop'
 $windowsPlatform = $IsWindows -or $env:OS -eq 'Windows_NT'
-$curlExecutable = (Get-Command -Name $(if ($windowsPlatform) { 'curl.exe' } else { 'curl' }) -CommandType Application).Source
+$curlExecutable = (Get-Command -Name $(if ($windowsPlatform) { 'curl.exe' } else { 'curl' }) -CommandType Application | Select-Object -First 1).Source
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $runtime = Join-Path $root 'deploy/compose/smoke-runtime'
 $compose = Join-Path $root 'deploy/compose/compose.smoke.yml'
