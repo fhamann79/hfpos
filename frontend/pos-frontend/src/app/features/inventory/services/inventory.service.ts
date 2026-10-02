@@ -5,7 +5,7 @@ import { environment } from '../../../../environments/environment';
 import { resolveHttpErrorMessage } from '../../../core/utils/http-error-normalizer';
 import { InventoryMovement } from '../models/inventory-movement.model';
 import { InventoryMovementFilters, InventoryStockFilters } from '../models/inventory-filters.model';
-import { InventoryStock } from '../models/inventory-stock.model';
+import { InventoryStockPage, InventoryTransferProduct } from '../models/inventory-stock.model';
 import { InventoryOperationRequest } from '../models/inventory-operation.model';
 import { PagedResult } from '../../../core/models/paged-result.model';
 import {
@@ -21,10 +21,17 @@ export class InventoryService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiUrl}/api/inventory`;
 
-  getStocks(search?: string | null, productId?: number | null, onlyPositive = false): Observable<InventoryStock[]> {
-    return this.http.get<InventoryStock[]>(`${this.baseUrl}/stocks`, {
-      params: this.buildStockParams({ search: search ?? null, productId: productId ?? null, onlyPositive }),
+  getStocks(search?: string | null, productId?: number | null, onlyPositive = false, page = 1, pageSize = 30): Observable<InventoryStockPage> {
+    return this.http.get<InventoryStockPage>(`${this.baseUrl}/stocks`, {
+      params: this.buildStockParams({ search: search ?? null, productId: productId ?? null, onlyPositive })
+        .set('page', page).set('pageSize', pageSize),
     });
+  }
+
+  getTransferProducts(search: string | null = null, take = 30): Observable<InventoryTransferProduct[]> {
+    let params = new HttpParams().set('take', take);
+    if (search?.trim()) params = params.set('search', search.trim());
+    return this.http.get<InventoryTransferProduct[]>(`${this.baseUrl}/transfer-products`, { params });
   }
 
   getMovements(filters: InventoryMovementFilters): Observable<PagedResult<InventoryMovement>> {

@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -17,6 +17,7 @@ import { TextareaModule } from 'primeng/textarea';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { ToastModule } from 'primeng/toast';
 import { ToolbarModule } from 'primeng/toolbar';
+import { forkJoin } from 'rxjs';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { AuthStore } from '../../../../core/stores/auth.store';
@@ -32,7 +33,7 @@ import {
 } from '../../models/inventory-movement.model';
 import { InventoryMovementFilters } from '../../models/inventory-filters.model';
 import { InventoryOperationRequest } from '../../models/inventory-operation.model';
-import { InventoryStock, StockStatus } from '../../models/inventory-stock.model';
+import { InventoryStock, InventoryStockSummary, StockStatus } from '../../models/inventory-stock.model';
 import { InventoryService } from '../../services/inventory.service';
 import { InventoryTransferPanel } from '../../components/inventory-transfer-panel/inventory-transfer-panel';
 
@@ -81,7 +82,7 @@ interface InventoryOperationForm {
   templateUrl: './inventory-page.html',
   styleUrls: ['./inventory-page.scss', './inventory-operations.scss'],
 })
-export class InventoryPage implements OnInit {
+export class InventoryPage implements OnInit, OnDestroy {
   @ViewChild('kardexSection') private kardexSection?: ElementRef<HTMLElement>;
 
   private readonly inventoryService = inject(InventoryService);
@@ -99,18 +100,23 @@ export class InventoryPage implements OnInit {
   readonly stocks = signal<InventoryStock[]>([]);
   readonly stockLoading = signal(false);
   readonly stockError = signal('');
-  readonly totalProducts = computed(() => this.stocks().length);
-  readonly outOfStockProducts = computed(() => this.stocks().filter((stock) => stock.quantity <= 0).length);
-  readonly lowStockProducts = computed(() =>
-    this.stocks().filter((stock) => this.resolveStockStatus(stock) === StockStatus.LowStock).length
-  );
-  readonly inactiveProducts = computed(() => this.stocks().filter((stock) => !stock.isActive).length);
-  readonly totalInventoryUnits = computed(() =>
-    this.stocks().reduce((total, stock) => total + stock.quantity, 0)
-  );
-  readonly totalInventoryValue = computed(() =>
-    this.stocks().reduce((total, stock) => total + stock.inventoryValue, 0)
-  );
+  readonly stockSummary = signal<InventoryStockSummary>({ totalProducts: 0, outOfStockProducts: 0,
+    lowStockProducts: 0, inactiveProducts: 0, totalInventoryUnits: 0, totalInventoryValue: 0 });
+  readonly totalProducts = computed(() => this.stockSummary().totalProducts);
+  readonly outOfStockProducts = computed(() => this.stockSummary().outOfStockProducts);
+  readonly lowStockProducts = computed(() => this.stockSummary().lowStockProducts);
+  readonly inactiveProducts = computed(() => this.stockSummary().inactiveProducts);
+  readonly totalInventoryUnits = computed(() => this.stockSummary().totalInventoryUnits);
+  readonly totalInventoryValue = computed(() => this.stockSummary().totalInventoryValue);
+  readonly totalStockItems = signal(0);
+  readonly lookupStocks = signal<InventoryStock[]>([]);
+  readonly lookupLoading = signal(false);
+  readonly lookupError = signal('');
+  stockFirst = 0;
+  stockRows = 30;
+  private stockSequence = 0;
+  private lookupSequence = 0;
+  private lookupTimer?: ReturnType<typeof setTimeout>;
   readonly companyTimeZoneId = computed(() => this.authStore.companyTimeZoneId());
 
   readonly movements = signal<InventoryMovement[]>([]);
@@ -119,17 +125,17 @@ export class InventoryPage implements OnInit {
   readonly totalMovementItems = signal(0);
   readonly totalMovementPages = signal(0);
   readonly lastMovement = computed(() => this.movements()[0] ?? null);
-  readonly focusedProduct = computed(() => {
+  focusedProduct(): InventoryStock | null {
     const productId = this.movementProductId;
-    return productId === null ? null : (this.stocks().find((stock) => stock.productId === productId) ?? null);
-  });
+    return productId === null ? null : (this.lookupStocks().find((stock) => stock.productId === productId) ?? null);
+  }
 
   readonly selectedMovement = signal<InventoryMovement | null>(null);
   readonly movementDetailLoading = signal(false);
   readonly movementDetailError = signal('');
 
   readonly productOptions = computed<SelectOption<number>[]>(() =>
-    this.stocks().map((stock) => ({
+    this.lookupStocks().map((stock) => ({
       label: `${stock.productId} - ${stock.productName}${stock.isActive ? '' : ' (Inactivo)'}`,
       value: stock.productId,
     }))
@@ -195,6 +201,7 @@ export class InventoryPage implements OnInit {
 
   refreshAll(): void {
     this.loadStocks();
+    this.loadProductOptions('', ++this.lookupSequence, true);
     this.loadMovements(1, this.movementRows);
   }
 
@@ -202,18 +209,25 @@ export class InventoryPage implements OnInit {
     this.refreshAll();
   }
 
-  loadStocks(): void {
+  loadStocks(page = Math.floor(this.stockFirst / this.stockRows) + 1, pageSize = this.stockRows): void {
+    const sequence = ++this.stockSequence;
     this.stockLoading.set(true);
     this.stockError.set('');
 
     this.inventoryService
-      .getStocks(this.cleanText(this.stockSearch), this.stockProductId, this.stockOnlyPositive)
+      .getStocks(this.cleanText(this.stockSearch), this.stockProductId, this.stockOnlyPositive, page, pageSize)
       .subscribe({
-        next: (stocks) => {
-          this.stocks.set(stocks);
+        next: (result) => {
+          if (sequence !== this.stockSequence) return;
+          this.stocks.set(result.items);
+          this.stockSummary.set(result.summary);
+          this.totalStockItems.set(result.totalItems);
+          this.stockRows = result.pageSize;
+          this.stockFirst = (result.page - 1) * result.pageSize;
           this.stockLoading.set(false);
         },
         error: (error: HttpErrorResponse) => {
+          if (sequence !== this.stockSequence) return;
           this.stockLoading.set(false);
           this.stockError.set(this.inventoryService.resolveError(error, 'No se pudo cargar el stock actual.'));
         },
@@ -221,14 +235,66 @@ export class InventoryPage implements OnInit {
   }
 
   applyStockFilters(): void {
-    this.loadStocks();
+    this.stockFirst = 0;
+    this.loadStocks(1, this.stockRows);
   }
 
   clearStockFilters(): void {
     this.stockSearch = '';
     this.stockProductId = null;
     this.stockOnlyPositive = false;
-    this.loadStocks();
+    this.applyStockFilters();
+  }
+
+  onStocksLazyLoad(event: TableLazyLoadEvent): void {
+    const rows = event.rows ?? this.stockRows;
+    this.loadStocks(Math.floor((event.first ?? 0) / rows) + 1, rows);
+  }
+
+  searchProductOptions(search: string): void {
+    clearTimeout(this.lookupTimer);
+    const sequence = ++this.lookupSequence;
+    this.lookupLoading.set(true);
+    this.lookupTimer = setTimeout(() => this.loadProductOptions(search, sequence), 300);
+  }
+
+  loadProductOptions(search = '', sequence = ++this.lookupSequence, refreshSelected = false): void {
+    if (sequence !== this.lookupSequence) return;
+    this.lookupLoading.set(true);
+    this.lookupError.set('');
+    const selected = new Set([this.stockProductId, this.movementProductId,
+      this.entryForm.productId, this.exitForm.productId, this.adjustForm.productId]);
+    const requests = [this.inventoryService.getStocks(search.trim() || null, null, false, 1, 30)];
+    if (refreshSelected) {
+      for (const id of selected) {
+        if (id !== null) requests.push(this.inventoryService.getStocks(null, id, false, 1, 1));
+      }
+    }
+    forkJoin(requests).subscribe({
+      next: results => {
+        if (sequence !== this.lookupSequence) return;
+        const products = new Map(results.flatMap(result => result.items).map(item => [item.productId, item]));
+        const currentSelected = new Set([this.stockProductId, this.movementProductId,
+          this.entryForm.productId, this.exitForm.productId, this.adjustForm.productId]);
+        for (const stock of this.lookupStocks()) {
+          if (currentSelected.has(stock.productId) && !products.has(stock.productId)
+            && (!refreshSelected || !selected.has(stock.productId))) products.set(stock.productId, stock);
+        }
+        this.lookupStocks.set([...products.values()]);
+        this.lookupLoading.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        if (sequence !== this.lookupSequence) return;
+        this.lookupLoading.set(false);
+        this.lookupError.set(this.inventoryService.resolveError(error, 'No se pudieron buscar los productos.'));
+      },
+    });
+  }
+
+  ngOnDestroy(): void {
+    clearTimeout(this.lookupTimer);
+    ++this.lookupSequence;
+    ++this.stockSequence;
   }
 
   loadMovements(page: number, pageSize: number): void {
@@ -276,6 +342,9 @@ export class InventoryPage implements OnInit {
   }
 
   focusProductMovements(stock: InventoryStock): void {
+    if (!this.lookupStocks().some(item => item.productId === stock.productId)) {
+      this.lookupStocks.update(items => [...items, stock]);
+    }
     this.movementProductId = stock.productId;
     this.movementSearch = '';
     this.movementFirst = 0;
@@ -323,6 +392,7 @@ export class InventoryPage implements OnInit {
         this.movementProductId = movement.productId;
         this.movementType = movement.type;
         this.loadStocks();
+        this.loadProductOptions('', ++this.lookupSequence, true);
         this.applyMovementFilters();
       },
       error: (error: HttpErrorResponse) => {
@@ -531,7 +601,7 @@ export class InventoryPage implements OnInit {
 
   selectedOperationStock(): InventoryStock | null {
     const productId = this.currentOperationForm().productId;
-    return productId === null ? null : (this.stocks().find((stock) => stock.productId === productId) ?? null);
+    return productId === null ? null : (this.lookupStocks().find((stock) => stock.productId === productId) ?? null);
   }
 
   projectedStock(): number | null {
