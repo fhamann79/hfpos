@@ -1,5 +1,7 @@
 param([switch]$Cleanup, [switch]$SkipBuild)
 $ErrorActionPreference = 'Stop'
+$windowsPlatform = $IsWindows -or $env:OS -eq 'Windows_NT'
+$curlExecutable = (Get-Command -Name $(if ($windowsPlatform) { 'curl.exe' } else { 'curl' }) -CommandType Application).Source
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $runtime = Join-Path $root 'deploy/compose/smoke-runtime'
 $compose = Join-Path $root 'deploy/compose/compose.smoke.yml'
@@ -28,9 +30,8 @@ function Compose([string[]]$Arguments, [switch]$ExpectFailure) {
 }
 function Check([bool]$Condition, [string]$Message) { if (!$Condition) { throw $Message } }
 function Curl([string]$Path, [string[]]$Extra = @()) {
-    $command = if ($IsWindows -or $env:OS -eq 'Windows_NT') { 'curl.exe' } else { 'curl' }
-    if ($command -eq 'curl.exe') { $Extra = @($Extra | ForEach-Object { if ($_ -eq '/dev/null') { 'NUL' } else { $_ } }) }
-    $result = & $command -ksS --max-time 15 @Extra "https://localhost:8444$Path"
+    if ($windowsPlatform) { $Extra = @($Extra | ForEach-Object { if ($_ -eq '/dev/null') { 'NUL' } else { $_ } }) }
+    $result = & $curlExecutable -ksS --max-time 15 @Extra "https://localhost:8444$Path"
     if ($LASTEXITCODE -ne 0) { throw 'Synthetic HTTPS probe failed.' }
     return ($result -join "`n")
 }
@@ -94,8 +95,7 @@ try {
     Check ((Curl '/api/missing' -Extra @('-X', 'POST', '--data-binary', "@$body", '-o', '/dev/null', '-w', '%{http_code}')) -ne '413') 'Proxy reduced the existing multipart size contract.'
     [IO.File]::WriteAllBytes($body, [byte[]]::new(4 * 1024 * 1024))
     Check ((Curl '/api/missing?password=SMOKE-QUERY-MARKER' -Extra @('-X', 'POST', '--data-binary', "@$body", '-o', '/dev/null', '-w', '%{http_code}')) -eq '413') 'Oversized edge request must be refused.'
-    $curlCommand = if ($IsWindows -or $env:OS -eq 'Windows_NT') { 'curl.exe' } else { 'curl' }
-    $redirect = & $curlCommand -sS -I --max-time 10 'http://localhost:8084/'
+    $redirect = & $curlExecutable -sS -I --max-time 10 'http://localhost:8084/'
     Check (($redirect -join "`n") -match '308' -and ($redirect -join "`n") -match 'https://localhost:8444') 'HTTP edge redirect failed.'
     foreach ($path in @('/health/live', '/health/ready')) {
         $health = Curl $path | ConvertFrom-Json
