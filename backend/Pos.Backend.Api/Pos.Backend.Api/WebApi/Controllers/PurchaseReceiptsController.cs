@@ -54,6 +54,16 @@ public class PurchaseReceiptsController : ControllerBase
         return Ok(await _purchaseReceiptQueryService.GetListAsync(query));
     }
 
+    [HttpGet("export")]
+    [Authorize(Policy = AppPermissions.PurchasesRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> Export([FromQuery] PurchaseReceiptListQueryDto query)
+    {
+        var export = await _purchaseReceiptQueryService.ExportAsync(query);
+        return File(export.Content, export.ContentType, export.FileName);
+    }
+
     [HttpGet("{id:int}")]
     [Authorize(Policy = AppPermissions.PurchasesRead)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
