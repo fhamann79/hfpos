@@ -1,0 +1,12 @@
+**/.env
+**/.env.production
+**/smoke-runtime/
+**/backups/
+**/keyring/
+**/*.pem
+**/*.key
+**/*.pfx
+**/*.p12
+**/*.dump
+**/*.tar
+**/*.sha256
