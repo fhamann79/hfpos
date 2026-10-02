@@ -90,3 +90,23 @@ No requiere database update. Pruebas de limite/proxy/key ring/errores/SRI son
 automatizadas sinteticas, no repetirlas manualmente con servicios reales.
 Revision independiente y smoke humano pendientes antes de merge. No merge autorizado.
 Deployment, observabilidad, backups/restore y disaster recovery quedan para BE-FE-520.
+
+## Runtime BE-FE-520
+
+La baseline y los procedimientos estan en `deployment-runbook.md`,
+`observability-runbook.md` y `disaster-recovery.md`. No autorizan despliegue real.
+
+| Variable | Contrato operacional |
+| --- | --- |
+| `Operations__ShutdownTimeoutSeconds` | 5..120; default 30; gracia del orchestrator mayor que este limite |
+| `Observability__Enabled` | Default false; no exporter de red si deshabilitado |
+| `Observability__ServiceName` | Default hfpos-api; requerido si habilitado |
+| `Observability__OtlpEndpoint` | Base URI absoluta HTTP/HTTPS sin userinfo/query/fragment; requerida si habilitado; HTTP/protobuf explicito |
+| `Observability__TraceSampleRatio` | 0..1; default 0.1 |
+| `HFPOS_RELEASE_VERSION` | Version no secreta, startup log/resource; fallback assembly version |
+| `HFPOS_MIGRATION_APPROVED` | YES solo en one-shot humano; CI exclusivamente efimero |
+| `HFPOS_RESTORE_APPROVED` | YES solo tras verificar destino vacio/backup; real restore R4 humano |
+
+Health HTTP interno solo para paths exactos live/ready; resto conserva HTTPS redirect.
+Readiness incluye lifecycle y DB, nunca OTLP/SRI/SMTP/backups. JSON stdout es fuente
+primaria de logs; no query/body/header/SQL capture. No cambia ningun contrato comercial.

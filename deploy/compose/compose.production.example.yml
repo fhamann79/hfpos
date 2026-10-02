@@ -1,0 +1,77 @@
+# Reference single-host topology. No production PostgreSQL or automatic migration.
+services:
+  backend:
+    image: ${HFPOS_BACKEND_IMAGE:?immutable backend image required}
+    environment: &runtime
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_HTTPS_PORT: ${HFPOS_HTTPS_PORT:-443}
+      HFPOS_RELEASE_VERSION: ${HFPOS_RELEASE_VERSION:?release required}
+      ConnectionStrings__DefaultConnection: ${HFPOS_DATABASE_CONNECTION:?external database required}
+      Jwt__Key: ${HFPOS_JWT_KEY:?runtime secret required}
+      Jwt__Issuer: ${HFPOS_JWT_ISSUER:?issuer required}
+      Jwt__Audience: ${HFPOS_JWT_AUDIENCE:?audience required}
+      AllowedHosts: ${HFPOS_ALLOWED_HOSTS:?explicit hosts required}
+      HFPOS_HEALTH_HOST: ${HFPOS_HEALTH_HOST:?probe host required}
+      SeedDemoData: 'false'
+      PlatformBootstrap__Enabled: 'false'
+      DataProtection__ApplicationName: HFPOS
+      DataProtection__KeysPath: /keys
+      ForwardedHeaders__Enabled: 'true'
+      ForwardedHeaders__KnownProxies__0: ${HFPOS_PROXY_IP:-172.30.52.10}
+      ForwardedHeaders__ForwardLimit: 1
+      Operations__ShutdownTimeoutSeconds: 30
+      Observability__Enabled: ${HFPOS_OBSERVABILITY_ENABLED:-false}
+      Observability__OtlpEndpoint: ${HFPOS_OTLP_ENDPOINT:-}
+      Sri__Environment: ${HFPOS_SRI_ENVIRONMENT:-1}
+      Sri__AllowProductionSubmission: ${HFPOS_SRI_ALLOW_PRODUCTION:-false}
+      Sri__ReceptionProductionUrl: ${HFPOS_SRI_RECEPTION_PRODUCTION:-}
+      Sri__AuthorizationProductionUrl: ${HFPOS_SRI_AUTHORIZATION_PRODUCTION:-}
+    volumes:
+      - ${HFPOS_KEYRING_PATH:?persistent keyring path required}:/keys
+    read_only: true
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=64m,uid=1654,gid=1654']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 40s
+    healthcheck:
+      test: [CMD, bash, /app/health-probe.sh]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [private]
+  web:
+    image: ${HFPOS_WEB_IMAGE:?immutable web image required}
+    environment:
+      HFPOS_HTTPS_PORT: ${HFPOS_HTTPS_PORT:-443}
+    ports:
+      - '${HFPOS_HTTPS_PORT:-443}:8443'
+    volumes:
+      - ${HFPOS_TLS_PATH:?external TLS path required}:/etc/nginx/tls:ro
+    read_only: true
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=64m,uid=101,gid=101']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      backend: {condition: service_healthy}
+    networks:
+      private:
+        ipv4_address: ${HFPOS_PROXY_IP:-172.30.52.10}
+  migrations:
+    image: ${HFPOS_MIGRATIONS_IMAGE:?immutable migration image required}
+    profiles: [migration]
+    environment:
+      <<: *runtime
+      HFPOS_MIGRATION_APPROVED: ${HFPOS_MIGRATION_APPROVED:-NO}
+    volumes:
+      - ${HFPOS_KEYRING_PATH:?persistent keyring path required}:/keys
+    read_only: true
+    tmpfs: ['/tmp:rw,nosuid,size=256m,uid=1654,gid=1654']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [private]
+networks:
+  private:
+    ipam:
+      config:
+        - subnet: ${HFPOS_PROXY_SUBNET:-172.30.52.0/24}

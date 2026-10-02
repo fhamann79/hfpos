@@ -1,0 +1,11 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0-bookworm-slim@sha256:78235e09001f52b6592c458ac010775ebac6725422e80cd0c1650590f67b2743
+WORKDIR /app
+ENV NUGET_PACKAGES=/opt/nuget
+COPY backend/Pos.Backend.Api/Pos.Backend.Api/Pos.Backend.Api.csproj ./
+RUN dotnet restore Pos.Backend.Api.csproj && dotnet tool install dotnet-ef --tool-path /opt/ef --version 8.0.4
+COPY backend/Pos.Backend.Api/Pos.Backend.Api/ ./
+RUN dotnet build -c Release --no-restore && mkdir /keys && chown 1654:1654 /keys
+COPY scripts/ops/apply-migrations.sh /app/apply-migrations.sh
+ENV ASPNETCORE_ENVIRONMENT=Production DOTNET_CLI_HOME=/tmp PlatformBootstrap__Enabled=false
+USER 1654:1654
+ENTRYPOINT ["sh", "/app/apply-migrations.sh"]

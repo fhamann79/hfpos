@@ -20,9 +20,11 @@ var builder = WebApplication.CreateBuilder(args);
 SriRidePdfFontResolver.Register();
 
 builder.Logging.ClearProviders();
+builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 builder.Logging.AddJsonConsole(options =>
 {
     options.IncludeScopes = true;
+    options.UseUtcTimestamp = true;
     options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ ";
     options.JsonWriterOptions = new System.Text.Json.JsonWriterOptions
     {
@@ -31,6 +33,7 @@ builder.Logging.AddJsonConsole(options =>
 });
 
 builder.Services.AddSecurityConfiguration(builder.Configuration, builder.Environment);
+builder.Services.AddOperations(builder.Configuration, builder.Environment);
 builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
 
 // Add services to the container.
@@ -38,7 +41,8 @@ builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy(), tags: new[] { "live" })
-    .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: new[] { "ready" });
+    .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: new[] { "ready" })
+    .AddCheck<ApplicationReadiness>("lifecycle", tags: new[] { "ready" });
 
 // DbContext
 builder.Services.AddDbContext<PosDbContext>((services, options) =>
@@ -230,14 +234,16 @@ builder.Services
 
 var app = builder.Build();
 app.Services.ValidateBeforeStartup();
+_ = app.Services.GetRequiredService<IOptions<OperationsOptions>>().Value;
+_ = app.Services.GetRequiredService<IOptions<ObservabilityOptions>>().Value;
+app.Logger.LogInformation("Starting HFPOS release {ReleaseVersion}", OperationsConfiguration.ReleaseVersion);
 
 if (app.Services.GetRequiredService<IOptions<ReverseProxyOptions>>().Value.Enabled)
     app.UseForwardedHeaders();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 if (app.Environment.IsProduction()) app.UseHsts();
-app.UseHttpsRedirection();
-
 app.UseMiddleware<RequestLoggingScopeMiddleware>();
+app.UseWhen(context => !OperationsConfiguration.IsProbe(context.Request.Path), branch => branch.UseHttpsRedirection());
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 // Swagger solo en desarrollo

@@ -1,0 +1,102 @@
+# SYNTHETIC / EPHEMERAL ONLY. Never use against shared or production databases.
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_DB: hfpos_ops_ci
+      POSTGRES_USER: hfpos_smoke
+      POSTGRES_PASSWORD: ${SMOKE_PG_PASSWORD:?synthetic password required}
+      PGDATABASE: hfpos_ops_ci
+      PGUSER: hfpos_smoke
+      PGPASSWORD: ${SMOKE_PG_PASSWORD:?synthetic password required}
+      HFPOS_RELEASE_VERSION: smoke
+    volumes:
+      - database:/var/lib/postgresql/data
+      - backups:/backups
+      - keyring:/keys:ro
+      - ../../scripts/ops:/ops:ro
+    healthcheck:
+      test: [CMD, pg_isready, -U, hfpos_smoke, -d, hfpos_ops_ci]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [private]
+  backend:
+    image: hfpos/backend:smoke
+    build: {context: ../.., dockerfile: backend/Pos.Backend.Api/Dockerfile}
+    environment: &runtime
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_HTTPS_PORT: 8444
+      HFPOS_RELEASE_VERSION: smoke
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=hfpos_ops_ci;Username=hfpos_smoke;Password=${SMOKE_PG_PASSWORD}
+      Jwt__Key: ${SMOKE_JWT_KEY:?synthetic JWT key required}
+      Jwt__Issuer: hfpos-smoke-only
+      Jwt__Audience: hfpos-smoke-only
+      AllowedHosts: localhost
+      HFPOS_HEALTH_HOST: localhost
+      SeedDemoData: 'false'
+      DataProtection__ApplicationName: HFPOS-SMOKE-ONLY
+      DataProtection__KeysPath: /keys
+      ForwardedHeaders__Enabled: 'true'
+      ForwardedHeaders__KnownProxies__0: 172.30.53.10
+      ForwardedHeaders__ForwardLimit: 1
+      Operations__ShutdownTimeoutSeconds: 30
+      Observability__Enabled: 'false'
+      Sri__AllowProductionSubmission: 'false'
+      Sri__ReceptionTestUrl: https://reception.smoke.invalid/soap
+      Sri__AuthorizationTestUrl: https://authorization.smoke.invalid/soap
+      PlatformBootstrap__Enabled: 'true'
+      PlatformBootstrap__Username: smoke-platform
+      PlatformBootstrap__Email: smoke-platform@example.invalid
+      PlatformBootstrap__Password: ${SMOKE_PLATFORM_PASSWORD:?synthetic bootstrap password required}
+    volumes: [keyring:/keys]
+    read_only: true
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=64m,uid=1654,gid=1654']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 40s
+    healthcheck:
+      test: [CMD, bash, /app/health-probe.sh]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [private]
+  web:
+    image: hfpos/web:smoke
+    build: {context: ../.., dockerfile: frontend/pos-frontend/Dockerfile}
+    environment: {HFPOS_HTTPS_PORT: 8444}
+    ports: ['127.0.0.1:8444:8443', '127.0.0.1:8084:8080']
+    volumes: [./smoke-runtime/tls:/etc/nginx/tls:ro]
+    read_only: true
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=64m,uid=101,gid=101']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      backend: {condition: service_healthy}
+    networks:
+      private: {ipv4_address: 172.30.53.10}
+  migrations:
+    image: hfpos/migrations:smoke
+    build: {context: ../.., dockerfile: backend/Pos.Backend.Api/Dockerfile.migrations}
+    profiles: [migration]
+    environment:
+      <<: *runtime
+      PlatformBootstrap__Enabled: 'false'
+      HFPOS_MIGRATION_APPROVED: ${HFPOS_MIGRATION_APPROVED:-NO}
+    volumes: [keyring:/keys]
+    read_only: true
+    tmpfs: ['/tmp:rw,nosuid,size=256m,uid=1654,gid=1654']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [private]
+volumes:
+  database:
+  keyring:
+  backups:
+networks:
+  private:
+    ipam:
+      config: [{subnet: 172.30.53.0/24}]

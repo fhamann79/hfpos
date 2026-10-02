@@ -1,0 +1,5 @@
+# Operational Linux entrypoints must remain usable after a Windows checkout.
+scripts/ops/*.sh text eol=lf
+deploy/nginx/*.conf text eol=lf
+deploy/nginx/*.template text eol=lf
+**/Dockerfile* text eol=lf
