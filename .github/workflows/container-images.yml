@@ -18,6 +18,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Test smoke native commands, cleanup and readiness helpers
+        shell: pwsh
+        run: ./scripts/ops/test-smoke-support.ps1
       - uses: docker/setup-buildx-action@v3
       - name: Build three images, smoke TLS/proxy and rehearse recovery
         shell: pwsh
@@ -26,6 +29,16 @@ jobs:
         if: always()
         shell: pwsh
         run: ./scripts/ops/stop-deployment-smoke.ps1
+  windows-smoke-support:
+    name: Windows PowerShell 5 smoke support tests
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test using Windows PowerShell, without PowerShell 7 or Docker
+        shell: powershell
+        run: ./scripts/ops/test-smoke-support.ps1
   verify-release-source:
     name: Verify release tag belongs to main
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')

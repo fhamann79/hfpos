@@ -99,12 +99,16 @@ Nunca automatizar `database update <old migration>`/EF Down ni borrar datos.
 
 ## Smoke humano simple (solo sintetico)
 
-Docker Desktop funcionando. En PowerShell:
+Docker Desktop funcionando. Windows PowerShell 5.1 es suficiente; no requiere
+PowerShell 7, WSL manual, OpenSSL local ni PostgreSQL local. En PowerShell:
 
 ```powershell
 git switch codex/be-fe-520-deployment-observability-dr
 git pull --ff-only
-pwsh -File scripts/ops/start-deployment-smoke.ps1
+Set-ExecutionPolicy -Scope Process Bypass
+& .\scripts\ops\start-deployment-smoke.ps1
+# Alternativa opcional si ya tienes PowerShell 7:
+# pwsh -File scripts/ops/start-deployment-smoke.ps1
 ```
 
 El script crea TLS localhost de un dia, JWT/passwords aleatorios, DB/keyring/backup
@@ -117,7 +121,9 @@ No requiere User Secrets/DB/certificados Development. Si falla, limpia automatic
 CI usa `-Cleanup`, no conserva credenciales ni publica dumps/keys como artifacts.
 
 ```powershell
-pwsh -File scripts/ops/stop-deployment-smoke.ps1
+& .\scripts\ops\stop-deployment-smoke.ps1
+# Alternativa opcional con PowerShell 7:
+# pwsh -File scripts/ops/stop-deployment-smoke.ps1
 ```
 
 Limpia solamente proyecto `hfpos-520-smoke`, volumenes/red y runtime temporal.
