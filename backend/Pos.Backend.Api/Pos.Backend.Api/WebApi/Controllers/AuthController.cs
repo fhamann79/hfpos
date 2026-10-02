@@ -35,6 +35,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Pos.Backend.Api.Configuration.SecurityConfiguration.LoginPolicy)]
     public async Task<IActionResult> Login(LoginDto dto)
     {
         var (user, error) = await _auth.ValidateLoginAsync(dto);

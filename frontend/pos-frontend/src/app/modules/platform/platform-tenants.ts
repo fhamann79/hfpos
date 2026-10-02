@@ -15,6 +15,7 @@ import { PlatformApi } from './platform-api.service';
 import { PlatformStore } from './platform.store';
 import { Tenant, TenantDetail, TenantDraft, TenantEvent } from './platform.model';
 import { resolveHttpErrorMessage } from '../../core/utils/http-error-normalizer';
+import { NEW_PASSWORD_VALIDATORS } from '../../core/security/password-policy';
 
 @Component({
   selector: 'app-platform-tenants', standalone: true,
@@ -50,7 +51,7 @@ export class PlatformTenants implements OnInit {
     establishment: ['Matriz', [Validators.required, Validators.maxLength(150)]],
     address: ['', Validators.maxLength(250)], emissionPoint: ['Caja Principal', [Validators.required, Validators.maxLength(150)]],
     username: ['', [Validators.required, Validators.maxLength(100)]], email: ['', [Validators.required, Validators.email, Validators.maxLength(320)]],
-    password: ['', [Validators.required, Validators.minLength(12), Validators.maxLength(256)]],
+    password: ['', NEW_PASSWORD_VALIDATORS],
   });
   constructor() {
     this.form.valueChanges.subscribe(() => { this.requestId = null; });

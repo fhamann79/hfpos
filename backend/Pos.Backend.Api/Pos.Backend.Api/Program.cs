@@ -30,61 +30,25 @@ builder.Logging.AddJsonConsole(options =>
     };
 });
 
-var defaultConnection = builder.Configuration.GetConnectionString("DefaultConnection");
-
-if (string.IsNullOrWhiteSpace(defaultConnection))
-{
-    throw new InvalidOperationException(
-        "Missing required configuration 'ConnectionStrings:DefaultConnection'. Configure it via .NET User Secrets, appsettings, or environment variables.");
-}
-
-builder.Services
-    .AddOptions<JwtOptions>()
-    .Bind(builder.Configuration.GetSection("Jwt"));
-
-builder.Services
-    .AddOptions<SriOptions>()
-    .Bind(builder.Configuration.GetSection("Sri"));
-
-var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
-
-if (string.IsNullOrWhiteSpace(jwtOptions.Key))
-{
-    throw new InvalidOperationException(
-        "Missing required configuration 'Jwt:Key'. Configure it via .NET User Secrets, appsettings, or environment variables.");
-}
+builder.Services.AddSecurityConfiguration(builder.Configuration, builder.Environment);
+builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
 
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddDataProtection();
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy(), tags: new[] { "live" })
     .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: new[] { "ready" });
 
-// CORS para Angular
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAngular",
-        policy =>
-        {
-            policy
-                .WithOrigins("http://localhost:4200")
-                .AllowAnyHeader()
-                .AllowAnyMethod();
-        });
-});
-
 // DbContext
-builder.Services.AddDbContext<PosDbContext>(options =>
-    options.UseNpgsql(defaultConnection));
+builder.Services.AddDbContext<PosDbContext>((services, options) =>
+    options.UseNpgsql(services.GetRequiredService<IOptions<StartupSafetyOptions>>().Value.ConnectionStrings.DefaultConnection));
 
 //Auth
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<IPlatformAuthService, PlatformAuthService>();
 builder.Services.AddScoped<IPlatformContextAccessor, PlatformContextAccessor>();
 builder.Services.AddScoped<IPlatformTenantService, PlatformTenantService>();
-builder.Services.Configure<PlatformBootstrapOptions>(builder.Configuration.GetSection("PlatformBootstrap"));
 builder.Services.AddScoped<TenantAdministrationGuard>();
 builder.Services.AddScoped<IMasterDataLifecycleService, MasterDataLifecycleService>();
 builder.Services.AddScoped<IProductCostService, ProductCostService>();
@@ -131,8 +95,7 @@ builder.Services.AddScoped<Pos.Backend.Api.WebApi.Filters.OperationalContextFilt
 builder.Services.AddHttpClient<ISriWebServiceClient, SriWebServiceClient>((serviceProvider, client) =>
 {
     var options = serviceProvider.GetRequiredService<IOptions<SriOptions>>().Value;
-    var timeoutSeconds = Math.Clamp(options.TimeoutSeconds, 5, 120);
-    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+    client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
 });
 
 var operationalDashboardReadPermissions = new[]
@@ -254,6 +217,10 @@ builder.Services
             ValidateAudience = true,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
+            RequireExpirationTime = true,
+            RequireSignedTokens = true,
+            ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 },
+            ClockSkew = TimeSpan.FromSeconds(jwt.ClockSkewSeconds),
             ValidIssuer = jwt.Issuer,
             ValidAudience = jwt.Audience,
             IssuerSigningKey = new SymmetricSecurityKey(
@@ -262,6 +229,13 @@ builder.Services
     });
 
 var app = builder.Build();
+app.Services.ValidateBeforeStartup();
+
+if (app.Services.GetRequiredService<IOptions<ReverseProxyOptions>>().Value.Enabled)
+    app.UseForwardedHeaders();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+if (app.Environment.IsProduction()) app.UseHsts();
+app.UseHttpsRedirection();
 
 app.UseMiddleware<RequestLoggingScopeMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
@@ -293,10 +267,10 @@ using (var scope = app.Services.CreateScope())
         scope.ServiceProvider.GetRequiredService<IOptions<PlatformBootstrapOptions>>().Value);
 }
 
-app.UseHttpsRedirection();
-
 // IMPORTANTE: antes de Authorization
 app.UseCors("AllowAngular");
+app.UseRouting();
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseMiddleware<OperationalSessionMiddleware>();

@@ -12,6 +12,7 @@ namespace Pos.Backend.Api.WebApi.Controllers;
 public sealed class PlatformAuthController(IPlatformAuthService auth, IPlatformContextAccessor accessor) : ControllerBase
 {
     [HttpPost("login")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Pos.Backend.Api.Configuration.SecurityConfiguration.LoginPolicy)]
     [AllowAnonymous]
     public async Task<IActionResult> Login(LoginDto request) => Ok(new { token = await auth.LoginAsync(request) });
 

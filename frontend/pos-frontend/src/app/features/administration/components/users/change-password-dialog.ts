@@ -5,6 +5,7 @@ import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { ChangeUserPasswordRequest, User } from '../../models/user.model';
+import { NEW_PASSWORD_VALIDATORS } from '../../../../core/security/password-policy';
 
 export interface ChangePasswordDialogSubmit {
   userId: number;
@@ -27,17 +28,18 @@ export class ChangePasswordDialog implements OnChanges {
   @Output() submitForm = new EventEmitter<ChangePasswordDialogSubmit>();
 
   readonly form = this.fb.nonNullable.group({
-    newPassword: ['', [Validators.required, Validators.minLength(6)]],
+    newPassword: ['', NEW_PASSWORD_VALIDATORS],
     confirmPassword: ['', [Validators.required]],
   });
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['visible'] && this.visible) {
+    if (changes['visible']) {
       this.form.reset({ newPassword: '', confirmPassword: '' });
     }
   }
 
   hide(): void {
+    this.form.reset({ newPassword: '', confirmPassword: '' });
     this.visibleChange.emit(false);
   }
 
@@ -54,7 +56,7 @@ export class ChangePasswordDialog implements OnChanges {
     this.submitForm.emit({
       userId: this.user.id,
       payload: {
-        newPassword: this.form.controls.newPassword.value.trim(),
+        newPassword: this.form.controls.newPassword.value,
       },
     });
   }

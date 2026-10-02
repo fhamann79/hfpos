@@ -28,9 +28,9 @@
     @if (!isEditMode) {
       <div class="field-grid">
         <label for="password">Password</label>
-        <input id="password" type="password" pInputText formControlName="password" />
+        <input id="password" type="password" pInputText formControlName="password" minlength="12" maxlength="256" autocomplete="new-password" />
         @if (form.controls.password.invalid && form.controls.password.touched) {
-          <small class="p-error">Password es obligatoria (mínimo 6 caracteres).</small>
+          <small class="p-error">La contraseña debe tener entre 12 y 256 caracteres.</small>
         }
       </div>
     }

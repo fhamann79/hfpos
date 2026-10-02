@@ -13,6 +13,7 @@ import { EstablishmentService } from '../../../operational-structure/services/es
 import { Role } from '../../models/role.model';
 import { CreateUserRequest, UpdateUserRequest, User } from '../../models/user.model';
 import { RoleService } from '../../services/role.service';
+import { NEW_PASSWORD_VALIDATORS } from '../../../../core/security/password-policy';
 
 export type UserDialogSubmit =
   | { mode: 'create'; payload: CreateUserRequest }
@@ -51,7 +52,7 @@ export class UserDialog implements OnChanges {
   readonly form = this.fb.nonNullable.group({
     username: ['', [Validators.required]],
     email: ['', [Validators.required, Validators.email]],
-    password: [''],
+    password: ['', NEW_PASSWORD_VALIDATORS],
     roleId: [0, [Validators.required, Validators.min(1)]],
     establishmentId: [0, [Validators.required, Validators.min(1)]],
     emissionPointId: [0, [Validators.required, Validators.min(1)]],
@@ -63,6 +64,7 @@ export class UserDialog implements OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['visible'] && !this.visible) this.form.controls.password.reset('');
     if (changes['visible'] && this.visible) {
       this.loadInitialCatalogs();
       this.syncForm();
@@ -74,6 +76,7 @@ export class UserDialog implements OnChanges {
   }
 
   hide(): void {
+    this.form.controls.password.reset('');
     this.visibleChange.emit(false);
   }
 
@@ -88,7 +91,7 @@ export class UserDialog implements OnChanges {
 
   save(): void {
     if (!this.isEditMode) {
-      this.form.controls.password.setValidators([Validators.required, Validators.minLength(6)]);
+      this.form.controls.password.setValidators(NEW_PASSWORD_VALIDATORS);
     } else {
       this.form.controls.password.clearValidators();
     }
@@ -122,7 +125,7 @@ export class UserDialog implements OnChanges {
       payload: {
         username: values.username.trim(),
         email: values.email.trim(),
-        password: values.password.trim(),
+        password: values.password,
         roleId: values.roleId,
         establishmentId: values.establishmentId,
         emissionPointId: values.emissionPointId,
@@ -152,6 +155,8 @@ export class UserDialog implements OnChanges {
     if (!this.visible) {
       return;
     }
+    this.form.controls.password.setValidators(this.isEditMode ? [] : NEW_PASSWORD_VALIDATORS);
+    this.form.controls.password.updateValueAndValidity({ emitEvent: false });
 
     if (this.user) {
       this.form.reset({
