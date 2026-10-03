@@ -1,4 +1,4 @@
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpParams, HttpResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
@@ -7,6 +7,7 @@ import {
   CancelPurchaseReceiptRequest,
   CreatePurchaseReceiptRequest,
   PurchaseReceipt,
+  PurchaseReceiptExportFilters,
   PurchaseReceiptFilters,
   PurchaseReceiptListItem,
   PurchaseReceiptSummary,
@@ -20,9 +21,26 @@ export class PurchaseReceiptService {
   getAll(
     filters: PurchaseReceiptFilters = {}
   ): Observable<PagedResultWithSummary<PurchaseReceiptListItem, PurchaseReceiptSummary>> {
-    let params = new HttpParams()
+    const params = this.filterParams(filters)
       .set('page', filters.page ?? 1)
       .set('pageSize', filters.pageSize ?? 50);
+
+    return this.http.get<PagedResultWithSummary<PurchaseReceiptListItem, PurchaseReceiptSummary>>(
+      this.baseUrl,
+      { params }
+    );
+  }
+
+  exportCsv(filters: PurchaseReceiptExportFilters = {}): Observable<HttpResponse<Blob>> {
+    return this.http.get(`${this.baseUrl}/export`, {
+      params: this.filterParams(filters),
+      responseType: 'blob',
+      observe: 'response',
+    });
+  }
+
+  private filterParams(filters: PurchaseReceiptExportFilters): HttpParams {
+    let params = new HttpParams();
 
     const search = filters.search?.trim();
     if (search) {
@@ -41,10 +59,7 @@ export class PurchaseReceiptService {
       params = params.set('status', filters.status);
     }
 
-    return this.http.get<PagedResultWithSummary<PurchaseReceiptListItem, PurchaseReceiptSummary>>(
-      this.baseUrl,
-      { params }
-    );
+    return params;
   }
 
   getById(id: number) {
