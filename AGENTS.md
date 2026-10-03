@@ -16,18 +16,23 @@ Nested `AGENTS.md` files may add stricter area-specific rules, but they MUST NOT
 Every change follows this order:
 
 1. **Reconcile**: inspect current `main` and repository state.
-2. **Ticket**: define problem, acceptance criteria, dependencies, invariants, non-goals, risk level and validation plan.
-3. **Plan**: identify affected layers/files and whether work can be parallelized safely.
+2. **Propose and approve**: propose a coherent development group from real product gaps; wait for Fernando's approval before creating tickets or starting a new functional group. Explicit approval of a scoped standalone ticket also satisfies this gate.
+3. **Ticket and plan**: materialize only approved tickets with acceptance criteria, dependencies, ownership, invariants, non-goals, risk and validation plan.
 4. **Implement**: use an isolated branch/worktree; keep scope limited to the ticket.
 5. **Self-check**: run the tests/checks appropriate to the declared risk.
 6. **PR**: provide evidence using the repository PR template. Do not merge.
 7. **Independent review**: a reviewer that did not author the implementation inspects the diff, architecture, tenant isolation, concurrency, SQL/data behavior, security and tests as applicable.
 8. **CI**: all required automated checks must be green.
-9. **Human validation**: perform the manual validation required by the risk matrix when it adds value or when the ticket affects critical behavior.
+9. **Human gate**: complete merge-blocking human validation; explicitly schedule eligible consolidated cycle validation under section 4.
 10. **Merge**: only Fernando authorizes the final merge after blockers are resolved. AI agents MUST NOT merge.
-11. **Post-merge**: update local `main`, confirm the merge SHA/CI, delete the local ticket branch/worktree and reassess the roadmap from the new `main`.
+11. **Post-merge**: verify GitHub merge and new `main` SHA/CI, reconcile remaining group PRs, rerun relevant tests/review/CI on their exact new HEADs and recommend the next manual merge. Continue automatically to the next human gate; no new technical prompt is needed.
+12. **Cycle closure**: verify final `main` and integration, obtain required cycle acceptance, clean only obsolete resources that no remaining front needs, then return to DISCOVER and propose the next group. Do not start it without approval.
 
 A green CI run is necessary but is never, by itself, authorization to merge.
+
+When acting as orchestrator, Codex owns discovery, proposal, internal ticket prompts/delegation, dependency and collision analysis, validation, independent review, CI and the entire merge loop. Fernando approves **what**; Codex coordinates **how**, without asking Fernando to copy prompts between agents. The coordinator is not the default feature implementer or a silent additional writer; an approved operating-policy update may be authored by the coordinator itself.
+
+Human gates are group approval, ambiguous functional/material integration decisions, required human validation, each manual merge and separately authorized R4 operations. Stop only the affected front on a material conflict; independent fronts may continue. Report unrelated findings for later prioritization, not opportunistic fixes or unapproved tickets.
 
 ## 3. Parallel agents and worktrees
 
@@ -41,7 +46,7 @@ The default is to parallelize independent work, not shared mutable work.
 - Parallel tickets must declare dependencies. If ticket B depends on unmerged ticket A, B either waits or branches from A and declares the dependency explicitly; it must not pretend to be independently based on `main`.
 - The orchestrator is responsible for detecting conflicting paths, duplicated work and stale bases before dispatching agents.
 
-Recommended maximum active writing fronts: **2–3** until the repository has enough automated integration coverage to increase safely.
+Usual active writing range: **2–3**, not a quota. The dependency graph and collision analysis determine the safe number; use one implementer for tightly coupled work.
 
 ## 4. Risk matrix
 
@@ -84,7 +89,14 @@ Minimum validation:
 - concurrency/idempotency tests when applicable;
 - migration/model verification when applicable;
 - independent architecture/security/data review;
-- explicit human validation before merge.
+- human validation with timing determined by the rules below; critical semantics require it before merge.
+
+### Human validation timing
+
+- **Merge-blocking**: validate before merge when changes actually affect critical semantics: money/transactions, stock/purchase/sale/cash mutations, concurrency/locking/idempotency, auth/RBAC/session, tenant isolation, migrations/data repair, SRI lifecycle or privileged operations. Consolidation must not defer this safety barrier.
+- **Consolidated cycle validation**: compatible UX, read-only queries, pagination, search, reporting/export and non-destructive interactions may share one smoke, including after the individual merges, only when technical tests, independent review and exact-HEAD CI are sufficient. The coordinator and independent reviewer must explicitly justify in the PR why no merge-blocking human barrier remains, list scope/steps and record Fernando's pending cycle acceptance. The category alone is not an exemption; security or critical semantics still use pre-merge validation.
+- Keep the declared/path-derived risk unchanged. A conservative R3 caused by paths may use consolidated smoke only if the effective diff changes no critical semantics and the above justification is evidenced. R3 still declares human validation required; it does not become R2 to avoid checks.
+- If there is material doubt, use pre-merge validation. A controlled temporary integration of compatible HEADs may support one consolidated **pre-merge** smoke; it is not a merge to `main` or authorization for R4.
 
 ### R4 — real-world destructive or privileged operation
 
@@ -127,7 +139,7 @@ Every PR must:
 - state scope and non-goals;
 - list migrations and contract/API changes explicitly;
 - report exact tests/checks executed and their result;
-- state what requires manual validation;
+- state what requires manual validation, its pre-merge or consolidated timing, justification and pending human acceptance;
 - state whether real environments/data/SRI/certificates were used (the expected answer for autonomous work is `NO`);
 - record independent-review findings/blockers;
 - finish with an explicit merge state. AI-authored PRs start as `PENDIENTE`.
@@ -145,18 +157,12 @@ Independent reviewers classify findings as:
 
 Only BLOCKER and MAJOR findings block readiness, unless the ticket defines a stricter bar.
 
-## 9. Definition of done
+## 9. Readiness and cycle acceptance
 
-A ticket is done only when:
-
-- acceptance criteria are evidenced;
-- required tests/builds pass;
-- required independent review is complete;
-- required manual validation is complete;
-- no unresolved BLOCKER/MAJOR finding remains;
-- CI required by `main` is green;
-- Fernando has authorized merge;
-- after merge, `main` is refreshed and the obsolete local branch/worktree is removed.
+- **PR READY TO MERGE**: acceptance criteria have technical evidence; required tests/builds and independent review are complete; exact published/tested/reviewed HEAD and required CI agree; no unresolved BLOCKER/MAJOR remains; merge-blocking human validation is complete. Any eligible consolidated validation is explicitly justified and scheduled. Readiness is a recommendation, never agent merge authority.
+- **MERGED — AWAITING CYCLE ACCEPTANCE**: Fernando merged the PR, but its declared consolidated human validation remains pending. Do not call the ticket/cycle DONE.
+- **CYCLE FUNCTIONALLY ACCEPTED**: final `main`, integrated PRs and required CI are verified, all required human validation is complete and Fernando has accepted the cycle (for example, `VALIDADO OK`). If no human smoke applies, record that justification and the human merge decision; do not invent a smoke result.
+- Cleanup is safe only for merged, integrated, clean obsolete branches/worktrees and owned test resources that no remaining front depends on. Preserve uncommitted/preexisting local work. Cleanup is not permission to discard data. After closure, return to DISCOVER; proposing the next group does not authorize implementation.
 
 ## 10. Area policies
 

@@ -1,105 +1,57 @@
-# AGENTS.md
+# HFPOS backend agent policy
 
-Este archivo define las **reglas, estándares y flujos de trabajo** para que Codex (y cualquier colaborador) pueda trabajar correctamente en el backend del sistema POS.
+La politica raiz `AGENTS.md` es normativa; estas reglas no la debilitan.
 
----
+## Arquitectura actual
 
-## Alcance del repositorio
+Backend .NET / EF Core / PostgreSQL, organizado dentro de `Pos.Backend.Api/`:
 
-Este backend implementa un sistema POS multiempresa con inventario, ventas y facturación. La arquitectura real está organizada por capas:
-
-- **Core**: entidades, DTOs, contratos y servicios de negocio.
-- **Infrastructure**: persistencia con Entity Framework Core, DbContext, repositorios y migraciones.
-- **WebApi**: controllers delgados sin lógica de negocio.
-
----
-
-## Arquitectura real del repositorio
-
-```
-Pos.Backend.Api/
- ├─ Core/
- │  ├─ Entities/
- │  ├─ DTOs/
- │  ├─ Interfaces/
- │  └─ Services/
- ├─ Infrastructure/
- │  ├─ Data/
- │  └─ Repositories/
- ├─ Migrations/
- ├─ WebApi/
- │  └─ Controllers/
- ├─ Program.cs
- └─ Pos.Backend.Api.csproj
+```text
+Core/           Entities, DTOs, Enums, Models, Security, Services, Interfaces
+Infrastructure/ Data, Services, Repositories, Assets
+WebApi/         Controllers, Filters, Middleware
+Configuration/  Opciones y validacion de configuracion
+HealthChecks/   Liveness/readiness
+Migrations/     Migraciones EF y snapshot
+Program.cs      Composicion y registro de dependencias
 ```
 
----
+Las pruebas estan en el proyecto hermano `Pos.Backend.Api.Tests/`.
 
-## Principios obligatorios
+- Core contiene modelo, contratos y reglas/servicios de negocio cuando corresponde.
+- Infrastructure contiene EF, persistencia y servicios concretos de infraestructura; queries/helpers de lectura siguen los patrones existentes aqui.
+- WebApi expone HTTP. Existen controllers actuales con `PosDbContext` directo para CRUD/admin acotado; esto describe main, no una licencia para agregar logica compleja a controllers.
+- Para codigo nuevo, preferir controllers delgados y contratos de Core con servicios apropiados. Logica de negocio no trivial, transacciones, locks e idempotencia deben permanecer fuera del controller.
+- No exigir un refactor incidental para ajustar codigo existente a una descripcion historica. Cambios arquitectonicos materiales requieren alcance/aprobacion explicitos.
 
-- **API stateless**: no almacenar estado de sesión en el servidor.
-- **Controllers sin lógica de negocio**: los controllers solo orquestan y delegan en servicios.
-- **Toda lógica vive en Core/Services**.
-- **Persistencia solo en Infrastructure** (DbContext, repositorios, EF Core).
-- **JWT** como mecanismo de autenticación.
-- **Multiempresa obligatoria**: toda operación debe considerar `CompanyId` y `EstablishmentId`.
-- **Separación estricta de capas**: no cruzar dependencias indebidas.
-- **Tests cuando aplique**: cambios en lógica o contratos requieren pruebas.
+## Invariantes
 
----
+- API stateless y autenticacion JWT. Conservar validaciones de autorizacion/session version existentes; stateless no significa omitir revocacion.
+- Contexto tenant autoritativo: `CompanyId` y contexto de establecimiento/punto de emision cuando corresponda; no confiar en IDs arbitrarios del cliente.
+- Autorizacion server-side y limites plataforma/tenant intactos. No modificar auth/RBAC desde tickets ajenos.
+- Mantener aislamiento, consistencia transaccional, locking e idempotencia; evaluar SQL, N+1 y lecturas no acotadas.
+- Persistencia/modelo EF en Infrastructure y Migrations, segun patrones existentes. No introducir dependencias indebidas en Core.
+- No crear migraciones sin necesidad de schema; mantener coherencia modelo/migraciones cuando aplique.
 
-## Convenciones de código
+## Convenciones y errores
 
-- **Controllers**: `XxxController` con endpoints REST claros (GET/POST/PUT/DELETE).
-- **DTOs**: `XxxDto`, `CreateXxxDto`, `UpdateXxxDto`.
-- **Respuestas consistentes** (si aplica):
+- Controllers `XxxController` y DTOs siguiendo nombres/contratos locales existentes.
+- Mantener respuestas HTTP y codigos de error actuales; no inventar un envelope universal ni ocultar errores.
+- Preferir manejo centralizado cuando exista; usar 400/401/403/404/409/500 segun contrato.
+- Leer implementacion y pruebas relevantes antes de editar; mantener scope y agregar regresiones cuando cambien logica o contratos.
 
-```json
-{ "success": true, "data": {}, "message": "" }
-```
+## Validacion y seguridad de persistencia
 
----
-
-## Manejo de errores
-
-- Evitar excepciones genéricas.
-- Preferir manejo centralizado de errores.
-- Usar códigos HTTP claros: 400, 401, 403, 404, 409, 500.
-
----
-
-## Comandos comunes
+Desde la raiz del monorepo, CI utiliza:
 
 ```bash
-dotnet restore
-dotnet build
-dotnet test
-dotnet ef migrations add Nombre
-dotnet ef database update
+dotnet restore backend/Pos.Backend.Api/Pos.Backend.Api.sln
+dotnet build backend/Pos.Backend.Api/Pos.Backend.Api.sln --configuration Release --no-restore
+dotnet test backend/Pos.Backend.Api/Pos.Backend.Api.sln --configuration Release --no-build
 ```
 
----
+Seleccionar pruebas adicionales por riesgo; usar PostgreSQL efimero con datos sinteticos cuando importen semanticas de persistencia. Verificar migraciones/modelo solo cuando corresponda y con configuracion de prueba que no acceda a UserSecrets ni DB persistentes.
 
-## Cómo debe trabajar Codex en este repo
+`dotnet ef database update` NO es un comando rutinario de validacion. Los agentes solo pueden usarlo en DB desechables creadas para pruebas/CI dentro del alcance autorizado. Nunca contra la DB persistente de Fernando, shared o production. Una operacion real requiere runbook y autorizacion humana especifica R4; los agentes no la ejecutan autonomamente, ni aunque reciban un generico "continua".
 
-1. **Leer este AGENTS.md antes de cambiar cualquier archivo**.
-2. Validar la estructura real del proyecto y respetar las capas.
-3. **No mover lógica al controller**: todo lo de negocio vive en `Core/Services`.
-4. **No tocar Infrastructure desde WebApi** excepto por interfaces expuestas en Core.
-5. Mantener el backend **stateless** y con autenticación JWT.
-6. Respetar la multiempresa (`CompanyId`, `EstablishmentId`) en cualquier flujo.
-7. Si un cambio afecta lógica, **agregar tests cuando aplique**.
-8. Explicar los cambios con claridad y sin asumir comportamientos no confirmados.
-
----
-
-## Objetivo del proyecto
-
-Construir un **POS sólido, mantenible y escalable**, priorizando:
-
-- Claridad
-- Seguridad
-- Facilidad de evolución
-- Aprendizaje continuo del equipo
-
-Este archivo es obligatorio y debe respetarse en cada cambio.
+No usar datos reales, endpoints SRI reales, certificados, claves o secretos reales. Limpiar solo recursos efimeros propios cuando sea seguro, respetando dependencias entre frentes.

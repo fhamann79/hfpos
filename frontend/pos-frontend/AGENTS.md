@@ -1,70 +1,47 @@
-# AGENTS.md
+# HFPOS frontend agent policy
 
-Reglas y estandares para trabajar en el frontend POS.
+La politica raiz `AGENTS.md` es normativa; estas reglas no la debilitan.
 
-## Stack
+## Stack y estructura actual
 
-- Angular (standalone APIs)
-- TypeScript (tipado estricto)
-- PrimeNG + PrimeIcons
-- SCSS
-- HttpClient
-- RxJS + Signals (cuando aplique)
-- JWT (token en localStorage)
+Angular standalone, TypeScript estricto, PrimeNG/PrimeIcons, SCSS, HttpClient, RxJS y Signals.
 
-## Estructura real del repo
-
-La convencion actual usa modules/. No cambiar la estructura sin ticket explicito.
-
-```
-pos-frontend/
-  src/app/
-    core/
-      services/
-      guards/
-      interceptors/
-      models/
-      stores/
-    modules/
-      auth/
-      dashboard/
-      inventario/
-      ventas/
-      pos/
-      sri/
-    shared/
-      components/
-      directives/
-      pipes/
+```text
+src/app/core/       Servicios, guards, interceptors, modelos, stores y utilidades comunes
+src/app/features/   Features funcionales: POS, inventario, compras, administracion, reportes, etc.
+src/app/modules/    Auth, dashboard y plataforma
+src/app/shared/     Componentes compartidos
+src/environments/  Configuracion de build y environment.apiUrl
 ```
 
-## Principios y reglas
+Respetar la ubicacion y convenciones del area real; el frontend no vive exclusivamente en `modules/`. No reorganizar carpetas sin un ticket aprobado.
 
-- Mantener la convencion actual basada en modules/.
-- Componentes delgados: sin logica de negocio pesada ni llamadas HTTP directas.
-- La logica vive en core/services o en services del modulo correspondiente.
-- Tipado estricto: prohibido usar any.
-- Auth JWT:
-  - El interceptor agrega Authorization: Bearer <token>.
-  - Las rutas protegidas usan AuthGuard.
-- Usar PrimeNG y PrimeIcons de forma consistente.
-- La URL del backend debe estar centralizada o documentada claramente.
-  - Actualmente esta en src/app/core/services/auth.ts (variable api).
-  - Si se mueve a environment, documentar la nueva ubicacion.
+## Principios
 
-## Como debe trabajar Codex
+- Componentes delgados, sin logica de negocio pesada ni HTTP directo. Usar servicios del feature/modulo o core segun ownership.
+- Tipado estricto: no usar `any`; preservar contratos API, estados loading/error/empty y manejo de respuestas obsoletas cuando corresponda.
+- Usar PrimeNG/PrimeIcons y patrones visuales existentes; layouts legibles y responsive, sin refactors cosmeticos fuera de scope.
+- Base API mediante `environment.apiUrl`; no hardcodear endpoints alternativos ni introducir secretos en environments/bundles.
+- Preservar interceptor JWT, guards, permisos y stores existentes, incluidos limites tenant/plataforma y revocacion de sesion.
+- Los guards/botones no sustituyen autorizacion backend. No cambiar auth/permisos incidentalmente.
+- La autoridad de dinero, impuestos, stock y estados transaccionales es el backend; no duplicar reglas criticas en UI.
 
-- Un PR por ticket.
-- No refactor masivo.
-- No cambiar estructura de carpetas sin ticket explicito.
-- No romper codigo existente.
-- Entregar pasos de prueba (ng build, ng serve).
+## Trabajo y validacion
 
-## Comandos de validacion
+- Un ticket aprobado, una rama/worktree aislado y un PR; correcciones en el mismo PR.
+- Leer codigo y tests relevantes; cambios de comportamiento/contrato requieren regresiones proporcionales al riesgo.
+- No ampliar scope ni convertir un hallazgo ajeno en arreglo oportunista; reportarlo al coordinador.
+- Reportar comandos/resultados reales y validacion humana pendiente conforme a la politica raiz.
+
+Desde `frontend/pos-frontend`, los scripts usados por CI son:
 
 ```bash
-npm install
-ng serve
-ng build
-ng test
+npm ci
+npm run build
+npm test -- --watch=false
+npm audit --omit=dev --audit-level=high
 ```
+
+Build/test incluyen comprobaciones de seguridad de environments. No confundir audit runtime con avisos de dependencias de desarrollo; reportarlos sin actualizar paquetes fuera del alcance.
+
+`npm start` / `ng serve` es una herramienta opcional de desarrollo, no una barrera automatizada obligatoria. Usar smoke humano conforme al riesgo y al plan aprobado; no levantar API/dev server ni usar credenciales/datos reales solo para completar un check tecnico.
