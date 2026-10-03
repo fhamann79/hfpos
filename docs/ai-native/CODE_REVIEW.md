@@ -20,7 +20,7 @@ For R2 and R3 tickets:
 5. Read all BLOCKER and MAJOR findings together.
 6. Fix them in one consolidated pass instead of one micro-commit per finding.
 7. Because the HEAD changed, request one fresh Codex review of the new HEAD.
-8. When CI is green and the current HEAD has no unresolved BLOCKER/MAJOR, perform any required human validation.
+8. When CI is green and the current HEAD has no unresolved BLOCKER/MAJOR, complete merge-blocking human validation. Eligible consolidated cycle smoke requires the explicit coordinator/reviewer justification in root AGENTS.md; retain required validation and risk classification, even when conservative R3 comes from paths.
 9. Fernando decides whether to merge.
 
 ## Anti-loop rule
@@ -28,6 +28,18 @@ For R2 and R3 tickets:
 Do not repeatedly request Codex review on an unchanged commit. Do not create a new commit only to trigger another review.
 
 A review round exists to find concrete defects. If the reviewer reports findings, batch the corrections, produce one new HEAD and re-review that new HEAD. If review hardening itself starts consuming more time than the product change it protects, stop and move that hardening into a separate ticket instead of expanding the current PR indefinitely.
+
+## Review after reconciliation
+
+The coordinator owns review continuity after each human merge; the implementer is not their own independent reviewer. For a remaining PR reconciled with new main:
+
+- Record old/new HEAD and base; inspect the **effective diff against new main**, conflicts, shared paths and semantic integration, not just the merge commit.
+- Rerun relevant checks and require CI on the exact new published HEAD. Previously green CI is not evidence for it.
+- A material effective change requires fresh independent review of the new HEAD. Do not carry an obsolete approval across altered contracts, logic or conflict resolutions.
+- If the effective patch is unchanged, an independent reconciliation review must still evidence that equivalence and inspect integration with new main. Record reviewer identity, exact HEAD/base, checks and findings in visible review/comment evidence. Prior functional review may be referenced, not silently treated as approval of the new SHA. Request a fresh external round when repository protection or applicable review requirements demand it; do not manufacture no-op commits or repeat full review without new effective risk.
+- Coordinator and independent reviewer must justify any consolidated smoke explicitly; security/critical semantics remain pre-merge. Material uncertainty blocks readiness until resolved.
+
+An unrelated defect is reported for later prioritization, not repaired by expanding the PR. Only the affected front pauses for a material integration decision.
 
 ## What is authoritative today
 
