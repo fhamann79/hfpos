@@ -135,6 +135,48 @@ describe('Platform tenant workflows', () => {
     current.next(otherDetail); current.complete(); expect(component.detail()).toEqual(otherDetail);
     expect(api.events).toHaveBeenLastCalledWith(otherTenant.id, 1, 10);
   });
+  it.each(['before', 'after'] as const)('reports the current list error %s closing an independently opened detail', timing => {
+    const list = new Subject<PlatformPage<Tenant>>(); const pendingDetail = new Subject<TenantDetail>();
+    api.tenants.mockReturnValueOnce(list); component.load();
+    api.detail.mockReturnValueOnce(pendingDetail); component.openDetail(otherTenant);
+    if (timing === 'after') component.closeDetail();
+    list.error(failure); expect(component.error()).toContain('RUC'); expect(component.loading()).toBe(false);
+    if (timing === 'before') component.closeDetail();
+    pendingDetail.error(new Error('synthetic-stale-detail'));
+    expect(component.error()).toContain('RUC'); expect(component.tenants()).toEqual([tenant]);
+    expect(component.detailVisible).toBe(false); expect(component.detailLoading()).toBe(false);
+  });
+  it('reports a current detail error after an independent list refresh starts', () => {
+    const pendingDetail = new Subject<TenantDetail>(); const list = new Subject<PlatformPage<Tenant>>();
+    api.detail.mockReturnValueOnce(pendingDetail); component.openDetail(tenant);
+    api.tenants.mockReturnValueOnce(list); component.load(); pendingDetail.error(failure);
+    expect(component.error()).toContain('RUC'); expect(component.detailLoading()).toBe(false); expect(component.loading()).toBe(true);
+    list.next(tenantPage(otherTenant)); list.complete();
+    expect(component.error()).toContain('RUC'); expect(component.tenants()).toEqual([otherTenant]);
+  });
+  it.each(['list', 'detail'] as const)('does not let an independent %s read error suppress the other current read error', first => {
+    const list = new Subject<PlatformPage<Tenant>>(); const pendingDetail = new Subject<TenantDetail>();
+    api.tenants.mockReturnValueOnce(list); component.load(); api.detail.mockReturnValueOnce(pendingDetail); component.openDetail(tenant);
+    const initial = first === 'list' ? list : pendingDetail; const last = first === 'list' ? pendingDetail : list;
+    initial.error(failure); expect(component.error()).toContain('RUC'); expect(readLoading(first)).toBe(false);
+    expect(readLoading(first === 'list' ? 'detail' : 'list')).toBe(true);
+    last.error(new HttpErrorResponse({ status: 400, error: { error: 'TENANT_REASON_REQUIRED' } }));
+    expect(component.error()).toContain('motivo'); expect(component.loading()).toBe(false); expect(component.detailLoading()).toBe(false);
+  });
+  it.each(['open', 'closed'] as const)('reports the post-provision list refresh error with the created detail %s', visibility => {
+    validForm(); const list = new Subject<PlatformPage<Tenant>>(); const pendingDetail = new Subject<TenantDetail>();
+    api.tenants.mockReturnValueOnce(list); api.detail.mockReturnValueOnce(pendingDetail);
+    api.provision.mockReturnValue(of({ tenant: otherDetail, wasAlreadyProcessed: false })); component.provision();
+    expect(api.tenants).toHaveBeenLastCalledWith('', null, 1, 20); expect(api.detail).toHaveBeenLastCalledWith(otherTenant.id);
+    expect(component.notice()).toContain('creada'); expect(component.saving()).toBe(false); expect(component.provisionVisible).toBe(false);
+    if (visibility === 'closed') component.closeDetail();
+    list.error(failure); expect(component.error()).toContain('RUC'); expect(component.loading()).toBe(false);
+    pendingDetail.next(otherDetail); pendingDetail.complete();
+    expect(component.error()).toContain('RUC'); expect(component.detail()).toEqual(visibility === 'closed' ? null : otherDetail);
+    expect(api.events).toHaveBeenCalledTimes(visibility === 'closed' ? 0 : 1);
+    expect(component.form.controls.password.value).toBe('');
+    expect(api.provision.mock.calls[0][0].requestId).toMatch(/^[0-9a-f-]{36}$/);
+  });
   describe.each<ReadScope>(['list', 'detail', 'events'])('%s read state', scope => {
     it.each(['complete', 'error'] as const)('ignores stale %s/finalize while the latest read is pending', terminal => {
       const old = new Subject<ReadResult>(); const current = new Subject<ReadResult>();

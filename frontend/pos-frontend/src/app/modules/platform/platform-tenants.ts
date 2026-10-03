@@ -47,7 +47,7 @@ export class PlatformTenants implements OnInit, OnDestroy {
   private listSequence = 0;
   private detailSequence = 0;
   private eventSequence = 0;
-  // A GET may still own its data, but not a newer shared dialog/mutation error.
+  // Only mutation/validation errors supersede independent GET error callbacks.
   private errorSequence = 0;
   private selectedDetailId: number | null = null;
   private destroyed = false;
@@ -75,7 +75,7 @@ export class PlatformTenants implements OnInit, OnDestroy {
     this.api.tenants(this.search, this.status, Math.floor(this.first / this.rows) + 1, this.rows)
       .pipe(finalize(() => { if (sequence === this.listSequence) this.loading.set(false); })).subscribe({
         next: page => { if (sequence !== this.listSequence) return; this.tenants.set(page.items); this.total.set(page.totalItems); },
-        error: error => { if (sequence === this.listSequence && errorSequence === this.errorSequence) this.fail(error); },
+        error: error => { if (sequence === this.listSequence && errorSequence === this.errorSequence) this.fail(error, false); },
       });
   }
   filter() { this.first = 0; this.load(); }
@@ -111,7 +111,7 @@ export class PlatformTenants implements OnInit, OnDestroy {
     const errorSequence = this.errorSequence;
     this.api.detail(tenant.id).pipe(finalize(() => { if (sequence === this.detailSequence) this.detailLoading.set(false); })).subscribe({
       next: detail => { if (sequence !== this.detailSequence) return; this.detail.set(detail); this.eventFirst = 0; this.loadEvents(undefined, errorSequence); },
-      error: error => { if (sequence === this.detailSequence && errorSequence === this.errorSequence) this.fail(error); },
+      error: error => { if (sequence === this.detailSequence && errorSequence === this.errorSequence) this.fail(error, false); },
     });
   }
   closeDetail() {
@@ -126,7 +126,7 @@ export class PlatformTenants implements OnInit, OnDestroy {
     this.api.events(id, Math.floor(this.eventFirst / 10) + 1, 10).pipe(finalize(() => { if (sequence === this.eventSequence) this.eventLoading.set(false); }))
       .subscribe({
         next: page => { if (sequence !== this.eventSequence) return; this.events.set(page.items); this.eventTotal.set(page.totalItems); },
-        error: error => { if (sequence === this.eventSequence && errorSequence === this.errorSequence) this.fail(error); },
+        error: error => { if (sequence === this.eventSequence && errorSequence === this.errorSequence) this.fail(error, false); },
       });
   }
   openLifecycle(tenant: Tenant, active: boolean) { this.lifecycleTarget = tenant; this.lifecycleActive = active; this.reason = ''; this.setError(''); }
@@ -146,10 +146,13 @@ export class PlatformTenants implements OnInit, OnDestroy {
   }
   eventLabel(type: TenantEvent['eventType']) { return { Provisioned: 'Provisionado', Suspended: 'Suspendido', Reactivated: 'Reactivado' }[type]; }
   logout() { this.store.clear(); this.router.navigate(['/platform/login']); }
-  private setError(message: string) { ++this.errorSequence; this.error.set(message); }
-  private fail(error: unknown) {
+  private setError(message: string, protectError = true) {
+    if (protectError && message) ++this.errorSequence;
+    this.error.set(message);
+  }
+  private fail(error: unknown, protectError = true) {
     this.setError(error instanceof HttpErrorResponse
       ? resolveHttpErrorMessage(error, 'No se pudo completar la operaci\u00f3n.')
-      : 'No se pudo completar la operaci\u00f3n.');
+      : 'No se pudo completar la operaci\u00f3n.', protectError);
   }
 }
