@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -23,7 +23,7 @@ import { NEW_PASSWORD_VALIDATORS } from '../../core/security/password-policy';
     InputTextModule, MessageModule, SelectModule, TableModule, TagModule],
   templateUrl: './platform-tenants.html', styleUrl: './platform-tenants.scss',
 })
-export class PlatformTenants implements OnInit {
+export class PlatformTenants implements OnInit, OnDestroy {
   private readonly api = inject(PlatformApi);
   readonly store = inject(PlatformStore);
   private readonly router = inject(Router);
@@ -44,6 +44,13 @@ export class PlatformTenants implements OnInit {
   provisionVisible = false; detailVisible = false;
   lifecycleTarget: Tenant | null = null; lifecycleActive = false; reason = '';
   private requestId: string | null = null;
+  private listSequence = 0;
+  private detailSequence = 0;
+  private eventSequence = 0;
+  // A GET may still own its data, but not a newer shared dialog/mutation error.
+  private errorSequence = 0;
+  private selectedDetailId: number | null = null;
+  private destroyed = false;
   readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.maxLength(150)]],
     ruc: ['', [Validators.required, Validators.pattern(/^[0-9]{13}$/)]],
@@ -57,28 +64,37 @@ export class PlatformTenants implements OnInit {
     this.form.valueChanges.subscribe(() => { this.requestId = null; });
   }
   ngOnInit() { this.load(); }
+  ngOnDestroy() {
+    this.destroyed = true; ++this.listSequence; this.loading.set(false); this.closeDetail();
+  }
   load() {
-    this.loading.set(true); this.error.set('');
+    if (this.destroyed) return;
+    const sequence = ++this.listSequence;
+    this.loading.set(true); this.setError('');
+    const errorSequence = this.errorSequence;
     this.api.tenants(this.search, this.status, Math.floor(this.first / this.rows) + 1, this.rows)
-      .pipe(finalize(() => this.loading.set(false))).subscribe({ next: page => { this.tenants.set(page.items); this.total.set(page.totalItems); }, error: error => this.fail(error) });
+      .pipe(finalize(() => { if (sequence === this.listSequence) this.loading.set(false); })).subscribe({
+        next: page => { if (sequence !== this.listSequence) return; this.tenants.set(page.items); this.total.set(page.totalItems); },
+        error: error => { if (sequence === this.listSequence && errorSequence === this.errorSequence) this.fail(error); },
+      });
   }
   filter() { this.first = 0; this.load(); }
   page(event: TableLazyLoadEvent) { this.first = event.first ?? 0; this.rows = event.rows ?? 20; this.load(); }
   openProvision() {
     this.form.reset({ name: '', ruc: '', timeZoneId: 'America/Guayaquil', establishment: 'Matriz', address: '',
       emissionPoint: 'Caja Principal', username: '', email: '', password: '' });
-    this.error.set(''); this.provisionVisible = true;
+    this.setError(''); this.provisionVisible = true;
   }
   closeProvision() { if (!this.saving()) { this.form.controls.password.reset(''); this.requestId = null; } }
   provision() {
     if (this.saving()) return;
-    if (this.form.invalid) { this.form.markAllAsTouched(); this.error.set('Revisa los campos requeridos, RUC, email y contrase\u00f1a (m\u00ednimo 12 caracteres).'); return; }
+    if (this.form.invalid) { this.form.markAllAsTouched(); this.setError('Revisa los campos requeridos, RUC, email y contrase\u00f1a (m\u00ednimo 12 caracteres).'); return; }
     const value = this.form.getRawValue();
     const draft: TenantDraft = { company: { name: value.name, ruc: value.ruc, timeZoneId: value.timeZoneId },
       initialEstablishment: { name: value.establishment, address: value.address }, initialEmissionPoint: { name: value.emissionPoint },
       initialAdmin: { username: value.username, email: value.email, password: value.password } };
     this.requestId ??= crypto.randomUUID();
-    this.saving.set(true); this.error.set('');
+    this.saving.set(true); this.setError('');
     this.api.provision({ ...draft, requestId: this.requestId }).pipe(finalize(() => this.saving.set(false))).subscribe({
       next: result => {
         this.form.controls.password.reset(''); this.requestId = null; this.provisionVisible = false;
@@ -87,32 +103,52 @@ export class PlatformTenants implements OnInit {
     });
   }
   openDetail(tenant: Tenant) {
-    this.detail.set(null); this.events.set([]); this.detailVisible = true; this.detailLoading.set(true);
-    this.api.detail(tenant.id).pipe(finalize(() => this.detailLoading.set(false))).subscribe({
-      next: detail => { this.detail.set(detail); this.eventFirst = 0; this.loadEvents(); }, error: error => this.fail(error),
+    if (this.destroyed) return;
+    this.closeDetail();
+    this.selectedDetailId = tenant.id;
+    const sequence = ++this.detailSequence;
+    this.detailVisible = true; this.detailLoading.set(true); this.setError('');
+    const errorSequence = this.errorSequence;
+    this.api.detail(tenant.id).pipe(finalize(() => { if (sequence === this.detailSequence) this.detailLoading.set(false); })).subscribe({
+      next: detail => { if (sequence !== this.detailSequence) return; this.detail.set(detail); this.eventFirst = 0; this.loadEvents(undefined, errorSequence); },
+      error: error => { if (sequence === this.detailSequence && errorSequence === this.errorSequence) this.fail(error); },
     });
   }
-  loadEvents(event?: TableLazyLoadEvent) {
-    const id = this.detail()?.company.id; if (!id) return;
-    this.eventFirst = event?.first ?? this.eventFirst; this.eventLoading.set(true);
-    this.api.events(id, Math.floor(this.eventFirst / 10) + 1, 10).pipe(finalize(() => this.eventLoading.set(false)))
-      .subscribe({ next: page => { this.events.set(page.items); this.eventTotal.set(page.totalItems); }, error: error => this.fail(error) });
+  closeDetail() {
+    ++this.detailSequence; ++this.eventSequence; this.selectedDetailId = null; this.detailVisible = false;
+    this.detail.set(null); this.events.set([]); this.eventTotal.set(0); this.eventFirst = 0;
+    this.detailLoading.set(false); this.eventLoading.set(false);
   }
-  openLifecycle(tenant: Tenant, active: boolean) { this.lifecycleTarget = tenant; this.lifecycleActive = active; this.reason = ''; this.error.set(''); }
+  loadEvents(event?: TableLazyLoadEvent, errorSequence = this.errorSequence) {
+    const id = this.detail()?.company.id; if (this.destroyed || !this.detailVisible || !id) return;
+    const sequence = ++this.eventSequence;
+    this.eventFirst = event?.first ?? this.eventFirst; this.eventLoading.set(true);
+    this.api.events(id, Math.floor(this.eventFirst / 10) + 1, 10).pipe(finalize(() => { if (sequence === this.eventSequence) this.eventLoading.set(false); }))
+      .subscribe({
+        next: page => { if (sequence !== this.eventSequence) return; this.events.set(page.items); this.eventTotal.set(page.totalItems); },
+        error: error => { if (sequence === this.eventSequence && errorSequence === this.errorSequence) this.fail(error); },
+      });
+  }
+  openLifecycle(tenant: Tenant, active: boolean) { this.lifecycleTarget = tenant; this.lifecycleActive = active; this.reason = ''; this.setError(''); }
   lifecycle() {
     if (this.saving() || !this.lifecycleTarget) return;
-    if (!this.reason.trim() || this.reason.trim().length > 500) { this.error.set('Ingresa un motivo de hasta 500 caracteres.'); return; }
+    if (!this.reason.trim() || this.reason.trim().length > 500) { this.setError('Ingresa un motivo de hasta 500 caracteres.'); return; }
     const id = this.lifecycleTarget.id; this.saving.set(true);
     this.api.setActive(id, this.lifecycleActive, this.reason.trim()).pipe(finalize(() => this.saving.set(false))).subscribe({
       next: detail => { this.lifecycleTarget = null; this.notice.set(detail.company.isActive ? 'Empresa reactivada.' : 'Empresa suspendida.');
-        this.load(); if (this.detailVisible && this.detail()?.company.id === id) { this.detail.set(detail); this.eventFirst = 0; this.loadEvents(); } },
+        this.load(); if (!this.destroyed && this.detailVisible && this.selectedDetailId === id) {
+          // The mutation result supersedes even a still-pending detail GET for this selection.
+          ++this.detailSequence; this.detailLoading.set(false);
+          this.detail.set(detail); this.eventFirst = 0; this.loadEvents();
+        } },
       error: error => this.fail(error),
     });
   }
   eventLabel(type: TenantEvent['eventType']) { return { Provisioned: 'Provisionado', Suspended: 'Suspendido', Reactivated: 'Reactivado' }[type]; }
   logout() { this.store.clear(); this.router.navigate(['/platform/login']); }
+  private setError(message: string) { ++this.errorSequence; this.error.set(message); }
   private fail(error: unknown) {
-    this.error.set(error instanceof HttpErrorResponse
+    this.setError(error instanceof HttpErrorResponse
       ? resolveHttpErrorMessage(error, 'No se pudo completar la operaci\u00f3n.')
       : 'No se pudo completar la operaci\u00f3n.');
   }
