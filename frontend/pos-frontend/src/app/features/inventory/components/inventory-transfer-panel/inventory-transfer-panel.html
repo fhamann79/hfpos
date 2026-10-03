@@ -32,6 +32,13 @@
       }
 
       <div class="transfer-lines">
+        <label>
+          <span>Buscar producto</span>
+          <input pInputText #productSearch type="search" (input)="searchProducts(productSearch.value)" />
+        </label>
+        @if (productError()) {
+          <p-message severity="error" [text]="productError()"></p-message>
+        }
         <div class="transfer-lines-heading">
           <h5>Productos</h5>
           <p-button label="Agregar línea" icon="pi pi-plus" severity="secondary" [outlined]="true"
@@ -43,7 +50,7 @@
               <span>Producto</span>
               <p-select [options]="productOptions" optionLabel="label" optionValue="value"
                 [ngModel]="line.productId" (ngModelChange)="line.productId = $event; onDraftChanged()"
-                placeholder="Selecciona producto" [filter]="true" [showClear]="true"></p-select>
+                placeholder="Selecciona producto" [loading]="productLoading()" [showClear]="true"></p-select>
             </label>
             <label>
               <span>Disponible en origen</span>

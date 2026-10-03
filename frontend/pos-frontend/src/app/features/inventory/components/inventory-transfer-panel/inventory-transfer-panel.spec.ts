@@ -1,9 +1,10 @@
 import { TestBed } from '@angular/core/testing';
+import { SimpleChange } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { of, throwError } from 'rxjs';
+import { Observable, Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { AuthStore } from '../../../../core/stores/auth.store';
-import { InventoryStock, StockStatus } from '../../models/inventory-stock.model';
+import { InventoryStock, InventoryTransferProduct, StockStatus } from '../../models/inventory-stock.model';
 import { InventoryService } from '../../services/inventory.service';
 import { InventoryTransferCreateRequest, InventoryTransferDetail } from '../../models/inventory-transfer.model';
 import { InventoryTransferPanel } from './inventory-transfer-panel';
@@ -29,6 +30,13 @@ describe('InventoryTransferPanel', () => {
       getTransferDestinations: vi.fn(() => of([{ id: 1, name: 'A' }, { id: 2, name: 'B' }])),
       getTransfers: vi.fn(() => of(history)),
       getTransferById: vi.fn(() => of(detail)),
+      getTransferProducts: vi.fn((_search: string | null, _take: number): Observable<InventoryTransferProduct[]> =>
+        of([stock, { ...stock, productId: 10, productName: 'Keyboard' }]
+          .map(item => ({ ...item, barcode: null, internalCode: null })))),
+      getStocks: vi.fn((_search: string | null, _id: number | null, _positive: boolean, _page: number, _size: number) =>
+        of({ items: [stock], page: 1, pageSize: 1, totalItems: 1, totalPages: 1,
+          summary: { totalProducts: 1, outOfStockProducts: 0, lowStockProducts: 0,
+            inactiveProducts: 1, totalInventoryUnits: 5, totalInventoryValue: 10 } })),
       createTransfer: vi.fn((_payload: InventoryTransferCreateRequest) => of(detail)),
       resolveError: vi.fn(() => 'Stock insuficiente'),
     };
@@ -40,10 +48,86 @@ describe('InventoryTransferPanel', () => {
     ] });
     const panel = TestBed.runInInjectionContext(() => new InventoryTransferPanel());
     panel.canWrite = canWrite;
-    panel.stocks = [stock, { ...stock, productId: 10, productName: 'Keyboard' }];
     panel.ngOnInit();
     return { panel, inventory };
   }
+
+  afterEach(() => vi.useRealTimers());
+
+  it('debounces remote searches and keeps selected products outside the next result', () => {
+    vi.useFakeTimers();
+    const { panel, inventory } = setup();
+    panel.lines = [{ id: 1, productId: 9, quantity: 2 }];
+    inventory.getTransferProducts.mockReturnValue(of([]));
+    panel.searchProducts('m');
+    panel.searchProducts('mouse');
+    expect(inventory.getTransferProducts).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(300);
+    expect(inventory.getTransferProducts).toHaveBeenLastCalledWith('mouse', 30);
+    expect(inventory.getTransferProducts).toHaveBeenCalledTimes(2);
+    expect(panel.products().map(item => item.productId)).toEqual([9]);
+    expect(panel.stockFor(9)).toBe(5);
+    panel.destinationId = 2;
+    expect(panel.validationMessage).toBeNull();
+    panel.submit();
+    expect(inventory.createTransfer).toHaveBeenCalledWith(expect.objectContaining({
+      items: [{ productId: 9, quantity: 2 }],
+    }));
+    panel.ngOnDestroy();
+  });
+
+  it('ignores stale responses immediately when a new search is scheduled', () => {
+    vi.useFakeTimers();
+    const { panel, inventory } = setup();
+    const old = new Subject<InventoryTransferProduct[]>();
+    const recent = new Subject<InventoryTransferProduct[]>();
+    inventory.getTransferProducts.mockReturnValueOnce(old).mockReturnValueOnce(recent);
+    panel.loadProducts('old');
+    panel.searchProducts('recent');
+    old.next([]);
+    old.complete();
+    expect(panel.products()).toHaveLength(2);
+    expect(panel.productLoading()).toBe(true);
+    vi.advanceTimersByTime(300);
+    recent.next([{ ...stock, productId: 25, barcode: null, internalCode: null }]);
+    recent.complete();
+    expect(panel.products().map(item => item.productId)).toEqual([25]);
+    expect(panel.productError()).toBe('');
+    expect(panel.productLoading()).toBe(false);
+    panel.ngOnDestroy();
+  });
+
+  it('reports lookup errors and ignores responses after destruction', () => {
+    const { panel, inventory } = setup();
+    inventory.getTransferProducts.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+    panel.loadProducts('failure');
+    expect(panel.productError()).toBe('Stock insuficiente');
+    const response = new Subject<InventoryTransferProduct[]>();
+    inventory.getTransferProducts.mockReturnValueOnce(response);
+    panel.loadProducts('pending');
+    panel.ngOnDestroy();
+    response.next([]);
+    response.complete();
+    expect(panel.products()).toHaveLength(2);
+  });
+
+  it('refreshes selected off-page stock by ID when the page signals a stock change', () => {
+    const { panel, inventory } = setup();
+    panel.destinationId = 2;
+    panel.lines = [{ id: 1, productId: 9, quantity: 4 }];
+    const requestId = panel.requestId;
+    inventory.getTransferProducts.mockReturnValue(of([]));
+    inventory.getStocks.mockReturnValue(of({ items: [{ ...stock, quantity: 3 }],
+      page: 1, pageSize: 1, totalItems: 1, totalPages: 1,
+      summary: { totalProducts: 1, outOfStockProducts: 0, lowStockProducts: 1,
+        inactiveProducts: 1, totalInventoryUnits: 3, totalInventoryValue: 6 } }));
+    panel.ngOnChanges({ stockRevision: new SimpleChange(0, 1, false) });
+    expect(inventory.getStocks).toHaveBeenCalledWith(null, 9, false, 1, 1);
+    expect(panel.stockFor(9)).toBe(3);
+    expect(panel.validationMessage).toContain('supera');
+    expect(panel.lines).toEqual([{ id: 1, productId: 9, quantity: 4 }]);
+    expect(panel.requestId).toBe(requestId);
+  });
 
   it('hides the transfer form without write permission and excludes the origin', () => {
     const { panel, inventory } = setup(false);

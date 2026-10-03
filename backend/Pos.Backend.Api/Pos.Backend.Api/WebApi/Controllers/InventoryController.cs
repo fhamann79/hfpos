@@ -29,11 +29,19 @@ public class InventoryController : ControllerBase
     [Authorize(Policy = AppPermissions.InventoryRead)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<IEnumerable<InventoryStockListItemDto>>> GetStocks([FromQuery] string? search, [FromQuery] int? productId, [FromQuery] bool onlyPositive = false)
+    public async Task<ActionResult<InventoryStockPageDto>> GetStocks([FromQuery] string? search, [FromQuery] int? productId, [FromQuery] bool onlyPositive = false, [FromQuery] int page = 1, [FromQuery] int pageSize = 30)
     {
-        var stocks = await _inventoryService.GetStocksAsync(search, productId, onlyPositive);
+        var stocks = await _inventoryService.GetStocksAsync(search, productId, onlyPositive, page, pageSize);
         return Ok(stocks);
     }
+
+    [HttpGet("transfer-products")]
+    [Authorize(Policy = AppPermissions.InventoryRead)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyList<InventoryTransferProductDto>>> GetTransferProducts(
+        [FromQuery] string? search, [FromQuery] int take = 30)
+        => Ok(await _inventoryService.GetTransferLookupAsync(search, take));
 
     [HttpGet("pos-products")]
     [Authorize(Policy = AppPermissions.InventoryRead)]

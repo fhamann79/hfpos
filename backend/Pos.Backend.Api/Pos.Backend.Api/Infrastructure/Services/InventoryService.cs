@@ -31,8 +31,10 @@ public class InventoryService : IInventoryService
         _administrationGuard = administrationGuard;
     }
 
-    public async Task<IReadOnlyList<InventoryStockListItemDto>> GetStocksAsync(string? search, int? productId, bool onlyPositive)
+    public async Task<InventoryStockPageDto> GetStocksAsync(string? search, int? productId, bool onlyPositive, int page = 1, int pageSize = 30)
     {
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 200);
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
         var query = _context.Products
@@ -66,8 +68,22 @@ public class InventoryService : IInventoryService
             query = query.Where(x => x.Quantity > 0m);
         }
 
+        var summary = await query.GroupBy(x => 1).Select(group => new InventoryStockSummaryDto
+        {
+            TotalProducts = group.Count(),
+            OutOfStockProducts = group.Count(x => x.Quantity <= 0m),
+            LowStockProducts = group.Count(x => x.Quantity > 0m && x.Product.MinimumStock > 0m && x.Quantity <= x.Product.MinimumStock),
+            InactiveProducts = group.Count(x => !x.Product.IsActive),
+            TotalInventoryUnits = group.Sum(x => x.Quantity),
+            TotalInventoryValue = group.Sum(x => x.Quantity * x.Product.Cost)
+        }).SingleOrDefaultAsync() ?? new InventoryStockSummaryDto();
+
+        var totalItems = await query.CountAsync();
         var stocks = await query
             .OrderBy(x => x.Product.Name)
+            .ThenBy(x => x.Product.Id)
+            .Skip((int)Math.Min((long)(page - 1) * pageSize, int.MaxValue))
+            .Take(pageSize)
             .Select(x => new InventoryStockListItemDto
             {
                 ProductId = x.Product.Id,
@@ -87,7 +103,46 @@ public class InventoryService : IInventoryService
             stock.StockStatus = ResolveStockStatus(stock.Quantity, stock.MinimumStock);
         }
 
-        return stocks;
+        return new InventoryStockPageDto
+        {
+            Items = stocks,
+            Page = page,
+            PageSize = pageSize,
+            TotalItems = totalItems,
+            TotalPages = (int)Math.Ceiling(totalItems / (double)pageSize),
+            Summary = summary
+        };
+    }
+
+    public async Task<IReadOnlyList<InventoryTransferProductDto>> GetTransferLookupAsync(string? search, int take = 30)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var query = _context.Products.AsNoTracking()
+            .Where(p => p.CompanyId == operationalContext.CompanyId)
+            .Select(p => new InventoryTransferProductDto
+            {
+                ProductId = p.Id,
+                ProductName = p.Name,
+                IsActive = p.IsActive,
+                Barcode = p.Barcode,
+                InternalCode = p.InternalCode,
+                Quantity = _context.ProductStocks
+                    .Where(s => s.ProductId == p.Id && s.CompanyId == operationalContext.CompanyId
+                        && s.EstablishmentId == operationalContext.EstablishmentId)
+                    .Select(s => (decimal?)s.Quantity).FirstOrDefault() ?? 0m
+            })
+            .Where(p => p.Quantity > 0m);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(p => p.ProductName.ToLower().Contains(term)
+                || (p.Barcode != null && p.Barcode.ToLower().Contains(term))
+                || (p.InternalCode != null && p.InternalCode.ToLower().Contains(term)));
+        }
+
+        return await query.OrderBy(p => p.ProductName).ThenBy(p => p.ProductId)
+            .Take(Math.Clamp(take, 1, 100)).ToListAsync();
     }
 
     public async Task<InventoryStockDto?> GetProductStockAsync(int productId)

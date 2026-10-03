@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, EventEmitter, Input, OnInit, Output, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, OnDestroy, OnInit, Output, SimpleChanges, inject, signal } from '@angular/core';
+import { forkJoin, of } from 'rxjs';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
@@ -12,7 +13,7 @@ import { TableLazyLoadEvent, TableModule } from 'primeng/table';
 import { TextareaModule } from 'primeng/textarea';
 import { AuthStore } from '../../../../core/stores/auth.store';
 import { formatBusinessDateTime } from '../../../../core/utils/business-date-format';
-import { InventoryStock } from '../../models/inventory-stock.model';
+import { InventoryTransferProduct } from '../../models/inventory-stock.model';
 import {
   InventoryTransferCreateRequest,
   InventoryTransferDestination,
@@ -37,10 +38,16 @@ interface TransferLine {
   templateUrl: './inventory-transfer-panel.html',
   styleUrl: './inventory-transfer-panel.scss',
 })
-export class InventoryTransferPanel implements OnInit {
-  @Input() stocks: InventoryStock[] = [];
+export class InventoryTransferPanel implements OnInit, OnChanges, OnDestroy {
+  readonly products = signal<InventoryTransferProduct[]>([]);
+  readonly productLoading = signal(false);
+  readonly productError = signal('');
+  private productSequence = 0;
+  private productTimer?: ReturnType<typeof setTimeout>;
   @Input() canWrite = false;
+  @Input() stockRevision = 0;
   @Output() transferred = new EventEmitter<void>();
+  private initialized = false;
 
   private readonly inventory = inject(InventoryService);
   readonly auth = inject(AuthStore);
@@ -71,13 +78,23 @@ export class InventoryTransferPanel implements OnInit {
   detailVisible = false;
 
   ngOnInit(): void {
-    if (this.canWrite) this.loadDestinations();
+    if (this.canWrite) {
+      this.loadDestinations();
+      this.loadProducts();
+    }
     this.loadTransfers(1, this.pageSize);
+    this.initialized = true;
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (this.initialized && this.canWrite && changes['stockRevision']) {
+      this.loadProducts('', ++this.productSequence, true);
+    }
   }
 
   get productOptions(): { label: string; value: number }[] {
-    return this.stocks.filter(stock => stock.quantity > 0).map(stock => ({
-      label: `${stock.productName}${stock.isActive ? '' : ' (Inactivo)'} · ${stock.quantity} disp.`,
+    return this.products().map(stock => ({
+      label: `${stock.productName}${stock.isActive ? '' : ' (Inactivo)'} · ${stock.quantity} disp. ${stock.barcode ?? ''} ${stock.internalCode ?? ''}`,
       value: stock.productId,
     }));
   }
@@ -92,7 +109,7 @@ export class InventoryTransferPanel implements OnInit {
     if (ids.some(id => !id)) return 'Selecciona un producto en cada línea.';
     if (new Set(ids).size !== ids.length) return 'No repitas productos en la transferencia.';
     for (const line of this.lines) {
-      const available = this.stocks.find(stock => stock.productId === line.productId)?.quantity ?? 0;
+      const available = this.stockFor(line.productId);
       if (!line.quantity || !Number.isFinite(line.quantity) || line.quantity <= 0)
         return 'Cada cantidad debe ser mayor a cero.';
       if (line.quantity > available) return 'La cantidad supera el stock disponible en origen.';
@@ -103,7 +120,56 @@ export class InventoryTransferPanel implements OnInit {
   }
 
   stockFor(productId: number | null): number {
-    return this.stocks.find(stock => stock.productId === productId)?.quantity ?? 0;
+    return this.products().find(stock => stock.productId === productId)?.quantity ?? 0;
+  }
+
+  searchProducts(search: string): void {
+    clearTimeout(this.productTimer);
+    const sequence = ++this.productSequence;
+    this.productLoading.set(true);
+    this.productTimer = setTimeout(() => this.loadProducts(search, sequence), 300);
+  }
+
+  loadProducts(search = '', sequence = ++this.productSequence, refreshSelected = false): void {
+    if (sequence !== this.productSequence) return;
+    this.productLoading.set(true);
+    this.productError.set('');
+    const selectedIds = [...new Set(this.lines.map(line => line.productId)
+      .filter((id): id is number => id !== null))];
+    const selected = refreshSelected && selectedIds.length
+      ? forkJoin(selectedIds.map(id => this.inventory.getStocks(null, id, false, 1, 1)))
+      : of([]);
+    forkJoin({ products: this.inventory.getTransferProducts(search.trim() || null, 30), selected }).subscribe({
+      next: ({ products, selected }) => {
+        if (sequence !== this.productSequence) return;
+        const updated = new Map(products.map(product => [product.productId, product]));
+        for (const result of selected) {
+          for (const stock of result.items) {
+            const previous = this.products().find(product => product.productId === stock.productId);
+            updated.set(stock.productId, { productId: stock.productId, productName: stock.productName,
+              quantity: stock.quantity, isActive: stock.isActive,
+              barcode: previous?.barcode ?? null, internalCode: previous?.internalCode ?? null });
+          }
+        }
+        const currentSelected = new Set(this.lines.map(line => line.productId));
+        for (const product of this.products()) {
+          if (currentSelected.has(product.productId) && !updated.has(product.productId)
+            && (!refreshSelected || !selectedIds.includes(product.productId))) updated.set(product.productId, product);
+        }
+        this.products.set([...updated.values()]);
+        this.productLoading.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        if (sequence !== this.productSequence) return;
+        this.productLoading.set(false);
+        this.productError.set(this.inventory.resolveError(error, 'No se pudieron buscar los productos.'));
+      },
+    });
+  }
+
+  ngOnDestroy(): void {
+    clearTimeout(this.productTimer);
+    ++this.productSequence;
   }
 
   onDraftChanged(): void {
@@ -150,6 +216,7 @@ export class InventoryTransferPanel implements OnInit {
         this.detail.set(transfer);
         this.detailVisible = true;
         this.resetDraft();
+        this.loadProducts();
         this.submitSuccess.set(transfer.wasAlreadyProcessed
           ? `La petición ya estaba registrada como transferencia #${transfer.id}; no se movió stock otra vez.`
           : `Transferencia #${transfer.id} registrada.`);

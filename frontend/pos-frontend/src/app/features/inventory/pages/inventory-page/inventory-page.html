@@ -194,22 +194,26 @@
               [value]="stocks()"
               [loading]="stockLoading()"
               [paginator]="true"
-              [rows]="10"
-              [rowsPerPageOptions]="[10, 25, 50]"
-              [sortMode]="'multiple'"
+              [lazy]="true"
+              [lazyLoadOnInit]="false"
+              [first]="stockFirst"
+              [rows]="stockRows"
+              [totalRecords]="totalStockItems()"
+              [rowsPerPageOptions]="[10, 30, 50, 100, 200]"
+              (onLazyLoad)="onStocksLazyLoad($event)"
               responsiveLayout="scroll"
               [tableStyle]="{ 'min-width': '92rem' }"
             >
               <ng-template pTemplate="header">
                 <tr>
-                  <th pSortableColumn="productName">Producto <p-sortIcon field="productName"></p-sortIcon></th>
-                  <th pSortableColumn="categoryName">Categoría <p-sortIcon field="categoryName"></p-sortIcon></th>
-                  <th pSortableColumn="quantity" class="numeric-column">Cantidad <p-sortIcon field="quantity"></p-sortIcon></th>
-                  <th pSortableColumn="minimumStock" class="numeric-column">Minimo <p-sortIcon field="minimumStock"></p-sortIcon></th>
-                  <th pSortableColumn="unitCost" class="numeric-column">Costo unitario <p-sortIcon field="unitCost"></p-sortIcon></th>
-                  <th pSortableColumn="inventoryValue" class="numeric-column">Valor inventario <p-sortIcon field="inventoryValue"></p-sortIcon></th>
+                  <th>Producto</th>
+                  <th>Categoría</th>
+                  <th class="numeric-column">Cantidad</th>
+                  <th class="numeric-column">Minimo</th>
+                  <th class="numeric-column">Costo unitario</th>
+                  <th class="numeric-column">Valor inventario</th>
                   <th>Riesgo</th>
-                  <th pSortableColumn="isActive">Estado <p-sortIcon field="isActive"></p-sortIcon></th>
+                  <th>Estado</th>
                   <th>Acción</th>
                 </tr>
               </ng-template>
@@ -333,8 +337,14 @@
 
                 <label class="filter-field">
                   <span>Producto</span>
+                  <input pInputText #movementProductSearch type="search" placeholder="Buscar producto"
+                    (input)="searchProductOptions(movementProductSearch.value)" />
+                  @if (lookupError()) {
+                    <p-message severity="error" [text]="lookupError()"></p-message>
+                  }
                   <p-select
                     [options]="productOptions()"
+                    [loading]="lookupLoading()"
                     [(ngModel)]="movementProductId"
                     optionLabel="label"
                     optionValue="value"
@@ -521,8 +531,8 @@
 
         <p-tabpanel value="transfers">
           <app-inventory-transfer-panel
-            [stocks]="stocks()"
             [canWrite]="canWriteInventory()"
+            [stockRevision]="stockRevision()"
             (transferred)="onTransferComplete()"
           ></app-inventory-transfer-panel>
         </p-tabpanel>
@@ -585,8 +595,14 @@
                   <div class="operation-grid">
                     <label class="filter-field operation-product">
                       <span>Producto</span>
+                      <input pInputText #operationProductSearch type="search" placeholder="Buscar producto"
+                        (input)="searchProductOptions(operationProductSearch.value)" />
+                      @if (lookupError()) {
+                        <p-message severity="error" [text]="lookupError()"></p-message>
+                      }
                       <p-select
                         [options]="productOptions()"
+                        [loading]="lookupLoading()"
                         [ngModel]="currentOperationForm().productId"
                         (ngModelChange)="setOperationProduct($event)"
                         optionLabel="label"

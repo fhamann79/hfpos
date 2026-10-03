@@ -4,7 +4,8 @@ namespace Pos.Backend.Api.Core.Services;
 
 public interface IInventoryService
 {
-    Task<IReadOnlyList<InventoryStockListItemDto>> GetStocksAsync(string? search, int? productId, bool onlyPositive);
+    Task<InventoryStockPageDto> GetStocksAsync(string? search, int? productId, bool onlyPositive, int page = 1, int pageSize = 30);
+    Task<IReadOnlyList<InventoryTransferProductDto>> GetTransferLookupAsync(string? search, int take = 30);
     Task<InventoryStockDto?> GetProductStockAsync(int productId);
     Task<PagedResultDto<InventoryMovementDto>> GetMovementsAsync(InventoryMovementQueryDto query);
     Task<InventoryMovementDto?> GetMovementByIdAsync(int id);
