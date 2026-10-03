@@ -6,12 +6,17 @@
         <input
           pInputText
           type="text"
-          [(ngModel)]="globalFilter"
-          (input)="dt.filterGlobal(globalFilter, 'contains')"
+          [(ngModel)]="search"
+          (keydown.enter)="applyFilters()"
           placeholder="Buscar usuarios"
           aria-label="Buscar usuarios"
         />
       </div>
+      <p-select [options]="statusOptions" optionLabel="label" optionValue="value"
+        [(ngModel)]="isActive" (onChange)="applyFilters()" ariaLabel="Estado de usuario"></p-select>
+      <p-select [options]="roles()" optionLabel="name" optionValue="id" [showClear]="true"
+        [(ngModel)]="roleId" (onChange)="applyFilters()" placeholder="Todos los roles" ariaLabel="Rol de usuario"></p-select>
+      <p-button icon="pi pi-search" ariaLabel="Buscar usuarios" (onClick)="applyFilters()"></p-button>
     </ng-template>
     @if (canWrite) {
       <ng-template #end>
@@ -25,14 +30,16 @@
   }
 
   <p-table
-    #dt
     [value]="users()"
     [loading]="loading()"
     [paginator]="true"
-    [rows]="10"
-    [rowsPerPageOptions]="[10, 25, 50]"
-    [globalFilterFields]="['id', 'username', 'email', 'roleName', 'companyId', 'establishmentId', 'emissionPointId']"
-    [sortMode]="'multiple'"
+    [rows]="rows"
+    [first]="first"
+    [totalRecords]="totalItems()"
+    [lazy]="true"
+    [lazyLoadOnInit]="false"
+    (onLazyLoad)="onUsersLazyLoad($event)"
+    [rowsPerPageOptions]="[30, 50, 100, 200]"
     responsiveLayout="scroll"
     [tableStyle]="{ 'min-width': '88rem' }"
   >
@@ -43,21 +50,21 @@
           icon="pi pi-filter-slash"
           severity="secondary"
           [outlined]="true"
-          (onClick)="globalFilter = ''; dt.filterGlobal('', 'contains')"
+          (onClick)="clearFilters()"
         ></p-button>
       </div>
     </ng-template>
 
     <ng-template pTemplate="header">
       <tr>
-        <th pSortableColumn="id">Id <p-sortIcon field="id"></p-sortIcon></th>
-        <th pSortableColumn="username">Username <p-sortIcon field="username"></p-sortIcon></th>
-        <th pSortableColumn="email">Email <p-sortIcon field="email"></p-sortIcon></th>
+        <th>Id</th>
+        <th>Username</th>
+        <th>Email</th>
         <th>Role</th>
-        <th pSortableColumn="companyId">CompanyId <p-sortIcon field="companyId"></p-sortIcon></th>
-        <th pSortableColumn="establishmentId">EstablishmentId <p-sortIcon field="establishmentId"></p-sortIcon></th>
-        <th pSortableColumn="emissionPointId">EmissionPointId <p-sortIcon field="emissionPointId"></p-sortIcon></th>
-        <th pSortableColumn="isActive">Estado <p-sortIcon field="isActive"></p-sortIcon></th>
+        <th>CompanyId</th>
+        <th>EstablishmentId</th>
+        <th>EmissionPointId</th>
+        <th>Estado</th>
         <th>Acciones</th>
       </tr>
     </ng-template>
