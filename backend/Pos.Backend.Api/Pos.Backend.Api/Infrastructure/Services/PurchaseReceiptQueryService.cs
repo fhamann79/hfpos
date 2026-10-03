@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Pos.Backend.Api.Core.DTOs;
+using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Enums;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.Infrastructure.Data;
@@ -22,40 +23,9 @@ public class PurchaseReceiptQueryService : IPurchaseReceiptQueryService
     public async Task<PurchaseReceiptListResultDto> GetListAsync(PurchaseReceiptListQueryDto request)
     {
         request ??= new PurchaseReceiptListQueryDto();
-        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
         var page = Math.Max(request.Page, 1);
         var pageSize = Math.Clamp(request.PageSize, 1, 200);
-        var query = _context.PurchaseReceipts
-            .AsNoTracking()
-            .Where(r => r.CompanyId == operationalContext.CompanyId
-                && r.EstablishmentId == operationalContext.EstablishmentId);
-
-        if (request.From.HasValue)
-        {
-            var fromDate = DateOnly.FromDateTime(request.From.Value);
-            query = query.Where(r => r.ReceiptBusinessDate >= fromDate);
-        }
-
-        if (request.To.HasValue)
-        {
-            var toDate = DateOnly.FromDateTime(request.To.Value);
-            query = query.Where(r => r.ReceiptBusinessDate <= toDate);
-        }
-
-        if (request.Status.HasValue)
-        {
-            query = query.Where(r => r.Status == request.Status.Value);
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Search))
-        {
-            var term = request.Search.Trim().ToLower();
-            query = query.Where(r =>
-                r.Supplier.Name.ToLower().Contains(term)
-                || (r.ReceiptNumber != null && r.ReceiptNumber.ToLower().Contains(term))
-                || (r.SupplierDocumentNumber != null && r.SupplierDocumentNumber.ToLower().Contains(term))
-                || (r.Notes != null && r.Notes.ToLower().Contains(term)));
-        }
+        var query = await BuildFilteredQueryAsync(request);
 
         var aggregate = await query
             .GroupBy(_ => 1)
@@ -69,10 +39,7 @@ public class PurchaseReceiptQueryService : IPurchaseReceiptQueryService
             .SingleOrDefaultAsync();
         var totalItems = aggregate?.TotalItems ?? 0;
 
-        var items = await query
-            .OrderByDescending(r => r.ReceiptBusinessDate)
-            .ThenByDescending(r => r.ReceiptDate)
-            .ThenByDescending(r => r.Id)
+        var items = await OrderQuery(query)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(r => new PurchaseReceiptListItemDto
@@ -115,5 +82,79 @@ public class PurchaseReceiptQueryService : IPurchaseReceiptQueryService
                 TotalReceived = aggregate?.TotalReceived ?? 0m
             }
         };
+    }
+
+    public async Task<PurchaseReceiptCsvExportDto> ExportAsync(PurchaseReceiptListQueryDto request)
+    {
+        var query = await BuildFilteredQueryAsync(request ?? new PurchaseReceiptListQueryDto());
+        var rows = await OrderQuery(query)
+            .Select(r => new PurchaseReceiptCsvRowDto
+            {
+                Id = r.Id,
+                ReceiptBusinessDate = r.ReceiptBusinessDate,
+                ReceiptTimeZoneIdSnapshot = r.ReceiptTimeZoneIdSnapshot,
+                SupplierName = r.Supplier.Name,
+                ReceiptNumber = r.ReceiptNumber,
+                SupplierDocumentNumber = r.SupplierDocumentNumber,
+                Status = r.Status,
+                Subtotal = r.Subtotal,
+                CreatedByUsername = r.CreatedByUser.Username,
+                CreatedAt = r.CreatedAt,
+                CanceledAt = r.CanceledAt,
+                CanceledBusinessDate = r.CanceledBusinessDate,
+                CanceledTimeZoneIdSnapshot = r.CanceledTimeZoneIdSnapshot,
+                CanceledByUsername = r.CanceledByUser != null ? r.CanceledByUser.Username : null,
+                CancelReason = r.CancelReason
+            })
+            .ToListAsync();
+
+        return new PurchaseReceiptCsvExportDto
+        {
+            Content = PurchaseReceiptCsvExportBuilder.Build(rows),
+            FileName = $"recepciones-compra-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv"
+        };
+    }
+
+    private static IOrderedQueryable<PurchaseReceipt> OrderQuery(IQueryable<PurchaseReceipt> query)
+        => query.OrderByDescending(r => r.ReceiptBusinessDate)
+            .ThenByDescending(r => r.ReceiptDate)
+            .ThenByDescending(r => r.Id);
+
+    private async Task<IQueryable<PurchaseReceipt>> BuildFilteredQueryAsync(PurchaseReceiptListQueryDto request)
+    {
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var query = _context.PurchaseReceipts
+            .AsNoTracking()
+            .Where(r => r.CompanyId == operationalContext.CompanyId
+                && r.EstablishmentId == operationalContext.EstablishmentId);
+
+        if (request.From.HasValue)
+        {
+            var fromDate = DateOnly.FromDateTime(request.From.Value);
+            query = query.Where(r => r.ReceiptBusinessDate >= fromDate);
+        }
+
+        if (request.To.HasValue)
+        {
+            var toDate = DateOnly.FromDateTime(request.To.Value);
+            query = query.Where(r => r.ReceiptBusinessDate <= toDate);
+        }
+
+        if (request.Status.HasValue)
+        {
+            query = query.Where(r => r.Status == request.Status.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Search))
+        {
+            var term = request.Search.Trim().ToLower();
+            query = query.Where(r =>
+                r.Supplier.Name.ToLower().Contains(term)
+                || (r.ReceiptNumber != null && r.ReceiptNumber.ToLower().Contains(term))
+                || (r.SupplierDocumentNumber != null && r.SupplierDocumentNumber.ToLower().Contains(term))
+                || (r.Notes != null && r.Notes.ToLower().Contains(term)));
+        }
+
+        return query;
     }
 }

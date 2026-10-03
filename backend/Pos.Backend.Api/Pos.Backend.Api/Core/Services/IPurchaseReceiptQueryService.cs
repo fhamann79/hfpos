@@ -5,4 +5,5 @@ namespace Pos.Backend.Api.Core.Services;
 public interface IPurchaseReceiptQueryService
 {
     Task<PurchaseReceiptListResultDto> GetListAsync(PurchaseReceiptListQueryDto query);
+    Task<PurchaseReceiptCsvExportDto> ExportAsync(PurchaseReceiptListQueryDto query);
 }

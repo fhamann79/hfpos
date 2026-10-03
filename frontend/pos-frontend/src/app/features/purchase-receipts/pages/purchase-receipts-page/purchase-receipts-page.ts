@@ -2,6 +2,7 @@ import { CommonModule, CurrencyPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { finalize } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
@@ -96,6 +97,8 @@ export class PurchaseReceiptsPage implements OnInit {
   readonly selectedReceipt = signal<PurchaseReceipt | null>(null);
   readonly draftItems = signal<ReceiptDraftItem[]>([]);
   readonly loading = signal(false);
+  readonly exporting = signal(false);
+  readonly exportError = signal('');
   readonly supplierLookupLoading = signal(false);
   readonly productLookupLoading = signal(false);
   readonly saving = signal(false);
@@ -188,6 +191,52 @@ export class PurchaseReceiptsPage implements OnInit {
           this.errorMessage.set(resolveHttpErrorMessage(error, 'No se pudieron cargar las recepciones.'));
         },
       });
+  }
+
+  exportCsv(): void {
+    if (this.exporting() || this.loading()) return;
+    this.exporting.set(true);
+    this.exportError.set('');
+    this.purchaseReceiptService.exportCsv({
+      search: this.search,
+      from: this.from,
+      to: this.to,
+      status: this.status,
+    }).pipe(finalize(() => this.exporting.set(false))).subscribe({
+      next: (response) => {
+        if (!response.body) {
+          this.exportError.set('No se pudo descargar el CSV de recepciones.');
+          return;
+        }
+        const url = URL.createObjectURL(response.body);
+        const anchor = document.createElement('a');
+        try {
+          anchor.href = url;
+          anchor.download = this.exportFileName(response.headers.get('Content-Disposition'));
+          document.body.appendChild(anchor);
+          anchor.click();
+        } finally {
+          anchor.remove();
+          URL.revokeObjectURL(url);
+        }
+      },
+      error: () => this.exportError.set('No se pudo exportar el CSV de recepciones. Intenta nuevamente.'),
+    });
+  }
+
+  private exportFileName(disposition: string | null): string {
+    const fallback = 'recepciones-compra.csv';
+    if (!disposition) return fallback;
+    const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+    const plain = /filename="([^"]+)"|filename=([^;]+)/i.exec(disposition);
+    let name: string;
+    try {
+      name = encoded ? decodeURIComponent(encoded[1]) : (plain?.[1] ?? plain?.[2] ?? '').trim();
+    } catch {
+      return fallback;
+    }
+    return name && name.length <= 180 && /^[\p{L}\p{N} _().-]+\.csv$/iu.test(name)
+      && !name.startsWith('.') ? name : fallback;
   }
 
   onReceiptsLazyLoad(event: TableLazyLoadEvent): void {

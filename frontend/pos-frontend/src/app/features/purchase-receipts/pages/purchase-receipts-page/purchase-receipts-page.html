@@ -29,6 +29,15 @@
       @if (canWrite()) {
         <p-button label="Nueva recepcion" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
       }
+      <p-button
+        label="Exportar CSV"
+        icon="pi pi-download"
+        severity="secondary"
+        [outlined]="true"
+        [loading]="exporting()"
+        [disabled]="loading() || exporting()"
+        (onClick)="exportCsv()"
+      ></p-button>
     </div>
   </header>
 
@@ -87,6 +96,9 @@
 
     @if (errorMessage()) {
       <p-message severity="error" [text]="errorMessage()"></p-message>
+    }
+    @if (exportError()) {
+      <p-message severity="error" [text]="exportError()"></p-message>
     }
 
     <p-table
