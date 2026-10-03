@@ -65,11 +65,14 @@ export interface CancelPurchaseReceiptRequest {
   reason: string;
 }
 
-export interface PurchaseReceiptFilters {
+export interface PurchaseReceiptExportFilters {
   search?: string | null;
   from?: string | null;
   to?: string | null;
   status?: PurchaseReceiptStatus | null;
+}
+
+export interface PurchaseReceiptFilters extends PurchaseReceiptExportFilters {
   page?: number;
   pageSize?: number;
 }
