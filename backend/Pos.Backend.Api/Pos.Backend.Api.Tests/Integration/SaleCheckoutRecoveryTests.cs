@@ -55,9 +55,19 @@ public sealed class SaleCheckoutRecoveryTests(PostgresDatabaseFixture database) 
         await using var b = new TestServiceScope(database, tenant.OperationalContext);
         var first = DraftService(a, tenant).CreateAsync(request);
         var second = DraftService(b, tenant).CreateAsync(request);
-        await WaitBlocked(a, owner);
-        await WaitBlocked(b, owner);
-        await tx.CommitAsync();
+        try
+        {
+            await WaitBlocked(a, owner);
+            await WaitBlocked(b, owner);
+            Assert.False(first.IsCompleted);
+            Assert.False(second.IsCompleted);
+        }
+        finally
+        {
+            // Release the test-only owner before draining or disposing waiting scopes.
+            await tx.RollbackAsync();
+            await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(30));
+        }
         var results = await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(30));
         Assert.Equal(results[0].Id, results[1].Id);
         var originalName = results[0].Items[0].ProductNameSnapshot;
@@ -286,15 +296,38 @@ public sealed class SaleCheckoutRecoveryTests(PostgresDatabaseFixture database) 
         await using var observer = new NpgsqlConnection(database.ConnectionString);
         await observer.OpenAsync(timeout.Token);
         var ownerId = ((NpgsqlConnection)owner.Database.GetDbConnection()).ProcessID;
+        int? waiterId = null;
+        int[] blockers = [];
         while (true)
         {
             if (waiter.DbContext.Database.GetDbConnection() is NpgsqlConnection { State: System.Data.ConnectionState.Open } connection)
             {
-                await using var command = new NpgsqlCommand("SELECT pg_blocking_pids(@pid)", observer);
-                command.Parameters.AddWithValue("pid", connection.ProcessID);
-                if (((int[])(await command.ExecuteScalarAsync(timeout.Token))!).Contains(ownerId)) return;
+                waiterId = connection.ProcessID;
+                // A queued row-lock waiter can be blocked by the preceding waiter, not the owner directly.
+                await using var command = new NpgsqlCommand("""
+                    WITH RECURSIVE blockers(pid) AS (
+                        SELECT unnest(pg_blocking_pids(@pid))
+                        UNION
+                        SELECT unnest(pg_blocking_pids(pid)) FROM blockers
+                    )
+                    SELECT ARRAY(SELECT pid FROM blockers ORDER BY pid)
+                    """, observer);
+                command.Parameters.AddWithValue("pid", waiterId.Value);
+                blockers = (int[])(await command.ExecuteScalarAsync(timeout.Token))!;
+                if (blockers.Contains(ownerId))
+                {
+                    Console.WriteLine($"Lock proof: waiter={waiterId}, owner={ownerId}, blocker chain=[{string.Join(",", blockers)}]");
+                    return;
+                }
             }
-            await Task.Delay(10, timeout.Token);
+            try
+            {
+                await Task.Delay(10, timeout.Token);
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+                throw new Xunit.Sdk.XunitException($"Owner lock not observed: waiter={waiterId}, owner={ownerId}, blocker chain=[{string.Join(",", blockers)}]");
+            }
         }
     }
 }

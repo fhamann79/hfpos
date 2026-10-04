@@ -70,6 +70,16 @@ ticket/impresion/cleanup. Los jobs requeridos CI ejecutan las suites completas y
 verificacion EF en HEAD publicado. Docker local sin engine: PG local NO ejecutado;
 PG CI es obligatorio, nunca se declara skip exitoso. No se levanta API/demo local.
 
+Primera ejecucion CI sobre `8d6557d667737829e70dc8e141cf387e71cf0cf0`:
+[run 37202891859](https://github.com/fhamann79/hfpos/actions/runs/37202891859),
+backend 356 passed / 2 failed / 358 total. Ambas variantes Ticket/Invoice fallaron
+en la barrera del test: exigia bloqueo directo por el propietario, ignorando el
+waiter anterior en la cola de locks. Correccion acotada al test: consulta recursiva
+de pg_blocking_pids desde observer separado, prueba de cadena hasta el propietario
+y liberacion del propietario en finally antes de drenar scopes. Sin ampliar
+timeouts, skips ni cambios de negocio. EF del job CI no se ejecuto por ese fallo;
+la evidencia local de modelo no sustituye la validacion CI final.
+
 ## Un smoke humano integrado pre-merge
 
 **VALIDACION HUMANA PRE-MERGE REQUERIDA.** Aceptacion de Fernando pendiente.
