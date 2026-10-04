@@ -66,7 +66,7 @@
       [severity]="lifecycleActive ? 'success' : 'warn'" [loading]="saving()" [disabled]="saving()" (onClick)="lifecycle()" /></div>
 </p-dialog>
 
-<p-dialog header="Detalle de empresa" [(visible)]="detailVisible" [modal]="true" [style]="{width:'880px',maxWidth:'96vw'}">
+<p-dialog header="Detalle de empresa" [visible]="detailVisible" (visibleChange)="!$event && closeDetail()" [modal]="true" [style]="{width:'880px',maxWidth:'96vw'}">
   @if (detailLoading()) { <p>Cargando empresa…</p> }
   @if (detail(); as tenant) {
     <div class="detail-heading"><h2>{{ tenant.company.name }}</h2><p-tag [value]="tenant.company.isActive ? 'Activo' : 'Suspendido'" [severity]="tenant.company.isActive ? 'success' : 'warn'" /></div>
