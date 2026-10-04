@@ -29,6 +29,7 @@ export interface ElectronicDocumentQuery {
 }
 
 export interface ElectronicDocumentListItem {
+  issuingJob?: ElectronicIssuingJob | null;
   key: string;
   kind: ElectronicDocumentKind;
   id: number;
@@ -55,6 +56,30 @@ export interface ElectronicDocumentListItem {
   hasSriSignedXml: boolean;
   originalSaleId: number | null;
   originalSaleNumber: string | null;
+}
+
+export enum ElectronicIssuingJobState {
+  Queued, Processing, WaitingAuthorization, TransientFailure, Authorized, Rejected, ManualAttention,
+}
+
+export enum ElectronicIssuingPhase {
+  ReadyToSign, ReadyToSubmit, ReceptionInFlight, UnknownReception, AwaitingAuthorization, Completed,
+}
+
+export interface ElectronicIssuingJob {
+  state: ElectronicIssuingJobState;
+  phase: ElectronicIssuingPhase;
+  attemptCount: number;
+  nextAttemptAt: string;
+  leaseExpiresAt: string | null;
+  safeError: string | null;
+  updatedAt: string;
+  receptionAdmitted: boolean;
+}
+
+export function issuingStateLabel(state: ElectronicIssuingJobState | null | undefined): string | null {
+  const labels = ['En cola', 'Procesando', 'Esperando autorizacion', 'Reintento programado', 'Autorizado', 'Rechazado', 'Requiere atencion'];
+  return state == null ? null : labels[state] ?? null;
 }
 
 export interface ElectronicDocumentDetail extends ElectronicDocumentListItem {

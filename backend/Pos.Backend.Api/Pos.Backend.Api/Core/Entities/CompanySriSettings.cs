@@ -13,6 +13,9 @@ public class CompanySriSettings
 
     public bool IsEnabled { get; set; }
 
+    public bool AutomaticProcessingEnabled { get; set; }
+    public long AutomaticProcessingRevision { get; set; }
+
     public bool CertificateConfigured { get; set; }
 
     public DateTime? CertificateExpiresAt { get; set; }

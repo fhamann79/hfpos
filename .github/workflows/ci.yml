@@ -86,6 +86,15 @@ jobs:
           --no-build
           --logger "console;verbosity=normal"
 
+      # The separate host is never referenced/published by the production API/container.
+      - name: Verify synthetic fiscal smoke host on disposable PostgreSQL
+        env:
+          PGPASSWORD: hfpos_test_password
+          HF_POS_TEST_CONNECTION_STRING: Host=localhost;Port=5432;Database=hfpos_test_528_smoke;Username=hfpos_test;Password=hfpos_test_password
+        run: |
+          psql -h localhost -U hfpos_test -d hfpos_ci -v ON_ERROR_STOP=1 -c 'CREATE DATABASE hfpos_test_528_smoke'
+          dotnet run --project backend/Pos.Backend.Api/Hfpos.FiscalSmokeHost --configuration Release --no-build -- --initialize --verify
+
       - name: Install EF CLI
         run: dotnet tool install --global dotnet-ef --version 8.0.4
 

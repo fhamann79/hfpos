@@ -6,6 +6,7 @@ using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Enums;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Services;
+using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Infrastructure.Data;
 
 namespace Pos.Backend.Api.Infrastructure.Services;
@@ -247,10 +248,46 @@ public class FiscalSettingsService : IFiscalSettingsService
     public async Task<CompanySriSettingsDto> UpdateCompanySriSettingsAsync(UpdateCompanySriSettingsDto dto)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var guard = new TenantAdministrationGuard(_context);
+        await using var tx = await guard.BeginChangeAsync(operationalContext.CompanyId);
+        await guard.LockOperationalWriteAsync(operationalContext);
+        await ElectronicIssuingCoordinator.RequirePermissionsAsync(_context, operationalContext.UserId,
+            operationalContext.CompanyId, [AppPermissions.FiscalSettingsWrite]);
 
         ValidateSriSettings(dto.Environment, dto.EmissionType);
 
         var settings = await GetOrCreateCompanySriSettingsAsync(operationalContext.CompanyId, operationalContext.UserId);
+        var enabled = dto.AutomaticProcessingEnabled && dto.IsEnabled;
+        if (enabled != settings.AutomaticProcessingEnabled)
+        {
+            if (enabled)
+                await ElectronicIssuingCoordinator.RequirePermissionsAsync(_context, operationalContext.UserId,
+                    operationalContext.CompanyId, [AppPermissions.SriDocumentsSign, AppPermissions.SriDocumentsSubmit]);
+            var now = DateTime.UtcNow;
+            var previous = settings.AutomaticProcessingEnabled;
+            settings.AutomaticProcessingRevision = checked(settings.AutomaticProcessingRevision + 1);
+            var active = await _context.FiscalDelegations.SingleOrDefaultAsync(d =>
+                d.CompanyId == operationalContext.CompanyId && d.DisabledAt == null);
+            if (active is not null)
+            {
+                active.DisabledAt = now; active.DisabledByUserId = operationalContext.UserId;
+            }
+            if (enabled)
+                _context.FiscalDelegations.Add(new FiscalDelegation
+                {
+                    CompanyId = operationalContext.CompanyId, Revision = settings.AutomaticProcessingRevision,
+                    EnabledByUserId = operationalContext.UserId, EnabledAt = now,
+                    AuthorizerEstablishmentId = operationalContext.EstablishmentId,
+                    AuthorizerEmissionPointId = operationalContext.EmissionPointId
+                });
+            _context.FiscalDelegationAudits.Add(new FiscalDelegationAudit
+            {
+                CompanyId = operationalContext.CompanyId, Revision = settings.AutomaticProcessingRevision,
+                UserId = operationalContext.UserId, CreatedAt = now, CorrelationId = Guid.NewGuid(),
+                PreviousEnabled = previous, Enabled = enabled
+            });
+            settings.AutomaticProcessingEnabled = enabled;
+        }
         settings.Environment = dto.Environment;
         settings.EmissionType = dto.EmissionType;
         settings.IsEnabled = dto.IsEnabled;
@@ -258,7 +295,7 @@ public class FiscalSettingsService : IFiscalSettingsService
         settings.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
-
+        await tx.CommitAsync();
         return MapSriSettings(settings);
     }
 
@@ -648,6 +685,8 @@ public class FiscalSettingsService : IFiscalSettingsService
             Environment = settings.Environment,
             EmissionType = settings.EmissionType,
             IsEnabled = settings.IsEnabled,
+            AutomaticProcessingEnabled = settings.AutomaticProcessingEnabled,
+            AutomaticProcessingRevision = settings.AutomaticProcessingRevision,
             CertificateConfigured = settings.CertificateConfigured,
             CertificateExpiresAt = settings.CertificateExpiresAt,
             UpdatedAt = settings.UpdatedAt

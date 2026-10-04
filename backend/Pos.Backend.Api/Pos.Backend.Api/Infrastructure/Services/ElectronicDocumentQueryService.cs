@@ -70,6 +70,17 @@ public sealed class ElectronicDocumentQueryService(
             })
             .ToListAsync();
 
+        var ids = items.Where(i => i.Kind == ElectronicDocumentKind.Invoice).Select(i => i.Id).ToArray();
+        var jobs = await JobQuery(operationalContext).Where(j => ids.Contains(j.SaleId))
+            .Select(j => new { j.SaleId, Dto = new ElectronicIssuingJobDto
+            {
+                State = j.State, Phase = j.Phase, AttemptCount = j.AttemptCount, NextAttemptAt = j.NextAttemptAt,
+                LeaseExpiresAt = j.LeaseExpiresAt, SafeError = j.SafeError, UpdatedAt = j.UpdatedAt,
+                ReceptionAdmitted = j.ReceptionStartedAt != null
+            } }).ToDictionaryAsync(j => j.SaleId, j => j.Dto);
+        foreach (var item in items.Where(i => i.Kind == ElectronicDocumentKind.Invoice))
+            item.IssuingJob = jobs.GetValueOrDefault(item.Id);
+
         return new ElectronicDocumentListResultDto
         {
             Items = items,
@@ -94,13 +105,26 @@ public sealed class ElectronicDocumentQueryService(
 
         var operationalContext = await operationalContextAccessor.GetRequiredContextAsync();
 
-        return kind switch
+        var result = kind switch
         {
             ElectronicDocumentKind.Invoice => await GetInvoiceAsync(id, operationalContext),
             ElectronicDocumentKind.CreditNote => await GetCreditNoteAsync(id, operationalContext),
             _ => null
         };
+        if (result is not null && kind == ElectronicDocumentKind.Invoice)
+            result.IssuingJob = await JobQuery(operationalContext).Where(j => j.SaleId == id)
+                .Select(j => new ElectronicIssuingJobDto
+                {
+                    State = j.State, Phase = j.Phase, AttemptCount = j.AttemptCount, NextAttemptAt = j.NextAttemptAt,
+                    LeaseExpiresAt = j.LeaseExpiresAt, SafeError = j.SafeError, UpdatedAt = j.UpdatedAt,
+                    ReceptionAdmitted = j.ReceptionStartedAt != null
+                }).SingleOrDefaultAsync();
+        return result;
     }
+
+    private IQueryable<Core.Entities.ElectronicIssuingJob> JobQuery(OperationalContext actor)
+        => context.ElectronicIssuingJobs.AsNoTracking().Where(j => j.CompanyId == actor.CompanyId
+            && j.EstablishmentId == actor.EstablishmentId && j.EmissionPointId == actor.EmissionPointId);
 
     private IQueryable<ElectronicDocumentQueryRow> BuildFilteredQuery(
         OperationalContext operationalContext,

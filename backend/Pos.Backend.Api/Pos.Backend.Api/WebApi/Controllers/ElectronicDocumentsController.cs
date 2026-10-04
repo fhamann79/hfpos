@@ -6,6 +6,7 @@ using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.WebApi.Filters;
+using Pos.Backend.Api.Infrastructure.Services;
 
 namespace Pos.Backend.Api.WebApi.Controllers;
 
@@ -14,9 +15,27 @@ namespace Pos.Backend.Api.WebApi.Controllers;
 [Authorize]
 [RequireOperationalContext]
 public sealed class ElectronicDocumentsController(
-    IElectronicDocumentQueryService electronicDocumentQueryService)
+    IElectronicDocumentQueryService electronicDocumentQueryService,
+    IElectronicIssuingRecoveryService issuing,
+    IOperationalContextAccessor contextAccessor)
     : ControllerBase
 {
+    [HttpPost("invoices/{id:int}/resume")]
+    [Authorize(Policy = AppPermissions.SriDocumentsSubmit)]
+    public async Task<IActionResult> Resume(int id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await issuing.ResumeAsync(id, await contextAccessor.GetRequiredContextAsync(), cancellationToken);
+            return Accepted();
+        }
+        catch (KeyNotFoundException ex) { return NotFound(new ApiErrorResponse { Error = ex.Message }); }
+        catch (InvalidOperationException ex)
+        {
+            if (ex.Message == "FISCAL_PERMISSION_REQUIRED") return StatusCode(403, new ApiErrorResponse { Error = ex.Message });
+            return Conflict(new ApiErrorResponse { Error = ElectronicIssuingCoordinator.SafeCode(ex.Message) });
+        }
+    }
     [HttpGet]
     [Authorize(Policy = AppPermissions.ReportsSalesRead)]
     [ProducesResponseType(typeof(ElectronicDocumentListResultDto), StatusCodes.Status200OK)]

@@ -18,6 +18,7 @@ public class ElectronicDocumentQueryDto
 
 public class ElectronicDocumentListItemDto
 {
+    public ElectronicIssuingJobDto? IssuingJob { get; set; }
     public ElectronicDocumentKind Kind { get; set; }
     public int Id { get; set; }
     public string? Number { get; set; }
@@ -43,6 +44,18 @@ public class ElectronicDocumentListItemDto
     public bool HasSriSignedXml { get; set; }
     public int? OriginalSaleId { get; set; }
     public string? OriginalSaleNumber { get; set; }
+}
+
+public sealed class ElectronicIssuingJobDto
+{
+    public ElectronicIssuingJobState State { get; set; }
+    public ElectronicIssuingPhase Phase { get; set; }
+    public int AttemptCount { get; set; }
+    public DateTime NextAttemptAt { get; set; }
+    public DateTime? LeaseExpiresAt { get; set; }
+    public string? SafeError { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public bool ReceptionAdmitted { get; set; }
 }
 
 public class ElectronicDocumentSummaryDto

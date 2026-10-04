@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { WritableSignal, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
@@ -12,6 +12,8 @@ import {
   ElectronicDocumentKind,
   ElectronicDocumentListItem,
   ElectronicDocumentSummary,
+  ElectronicIssuingJobState,
+  issuingStateLabel,
 } from '../../models/electronic-document.model';
 import { ElectronicDocumentService } from '../../services/electronic-document.service';
 import { ElectronicDocumentsPage } from './electronic-documents-page';
@@ -86,9 +88,11 @@ describe('ElectronicDocumentsPage', () => {
   let component: ElectronicDocumentsPage;
   let permissions: WritableSignal<Set<string>>;
   let service: Record<string, ReturnType<typeof vi.fn>>;
+  let company: WritableSignal<number>;
 
   beforeEach(() => {
     permissions = signal(new Set([PERMISSIONS.reportsSalesRead]));
+    company = signal(1);
     service = {
       getDocuments: vi.fn(() => of({
         items: [row(), row({ key: 'credit-note:7', kind: ElectronicDocumentKind.CreditNote })],
@@ -103,6 +107,7 @@ describe('ElectronicDocumentsPage', () => {
       signSri: vi.fn(() => of({})),
       submitSri: vi.fn(() => of({})),
       checkSriAuthorization: vi.fn(() => of({})),
+      resumeIssuing: vi.fn(() => of({})),
       getSriXmlDraft: vi.fn(() => of(new Blob(['xml']))),
       getSriSignedXml: vi.fn(() => of(new Blob(['xml']))),
       getSriAuthorizedXml: vi.fn(() => of(new Blob(['xml']))),
@@ -117,13 +122,66 @@ describe('ElectronicDocumentsPage', () => {
       providers: [
         { provide: ElectronicDocumentService, useValue: service },
         { provide: PermissionService, useValue: { hasPermission: (permission: string) => permissions().has(permission) } },
-        { provide: AuthStore, useValue: { companyTimeZoneId: () => 'America/Guayaquil' } },
+        { provide: AuthStore, useValue: { companyTimeZoneId: () => 'America/Guayaquil', companyId: company, establishmentId: () => 1, emissionPointId: () => 1, token: () => 'synthetic' } },
       ],
     });
     component = TestBed.runInInjectionContext(() => new ElectronicDocumentsPage());
   });
 
   afterEach(() => vi.restoreAllMocks());
+
+  it('renders seven processing states without inventing a queue for legacy or unknown values', () => {
+    expect(Array.from({ length: 7 }, (_, state) => issuingStateLabel(state))).toEqual([
+      'En cola', 'Procesando', 'Esperando autorizacion', 'Reintento programado',
+      'Autorizado', 'Rechazado', 'Requiere atencion',
+    ]);
+    expect(issuingStateLabel(null)).toBeNull();
+    expect(issuingStateLabel(undefined)).toBeNull();
+    expect(issuingStateLabel(99 as ElectronicIssuingJobState)).toBeNull();
+    expect(component.issuingLabel(row())).toBeNull();
+  });
+
+  it('discards late document A after B, and B after company context changes', () => {
+    const a = new Subject<ElectronicDocumentDetail>();
+    const b = new Subject<ElectronicDocumentDetail>();
+    service['getDetail'].mockReturnValueOnce(a).mockReturnValueOnce(b);
+    component.openDetail(row());
+    component.openDetail(row({ id: 8, key: 'invoice:8' }));
+    a.next(detail());
+    expect(component.selectedDocument()).toBeNull();
+    company.set(2);
+    b.next(detail({ id: 8, key: 'invoice:8' }));
+    expect(component.selectedDocument()).toBeNull();
+    component.ngOnDestroy();
+    b.next(detail({ id: 8, key: 'invoice:8' }));
+    expect(component.selectedDocument()).toBeNull();
+  });
+
+  it('retains detail and history controls after a failed fiscal action', () => {
+    permissions.update(p => new Set([...p, PERMISSIONS.sriDocumentsSign]));
+    const draft = detail({ documentStatus: SaleDocumentStatus.Draft, hasSriSignedXml: false, sriSubmittedAt: null });
+    service['getDetail'].mockReturnValue(of(draft));
+    service['signSri'].mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'ELECTRONIC_ISSUING_BUSY' } })));
+    component.openDetail(row());
+    component.signSri(draft);
+    expect(component.selectedDocument()).toEqual(draft);
+    expect(component.detailError()).toBe('');
+    expect(component.actionError()).toContain('ELECTRONIC_ISSUING_BUSY');
+    component.openAttempts(draft);
+    expect(service['getSriSubmissionAttempts']).toHaveBeenCalledOnce();
+  });
+
+  it('never calls manual SRI or recovery from a cashier with only POS create permission', () => {
+    permissions.set(new Set([PERMISSIONS.posSalesCreate]));
+    const invoice = detail({ documentStatus: SaleDocumentStatus.Draft, sriSubmittedAt: null });
+    component.signSri(invoice); component.submitSri(invoice); component.checkAuthorization(invoice); component.resumeIssuing(invoice);
+    expect(service['signSri']).not.toHaveBeenCalled();
+    expect(service['submitSri']).not.toHaveBeenCalled();
+    expect(service['checkSriAuthorization']).not.toHaveBeenCalled();
+    expect(service['resumeIssuing']).not.toHaveBeenCalled();
+    expect(permissions().has(PERMISSIONS.sriDocumentsSign)).toBe(false);
+    expect(permissions().has(PERMISSIONS.sriDocumentsSubmit)).toBe(false);
+  });
 
   it('loads once on init, uses backend summary and never triggers SRI actions automatically', () => {
     component.ngOnInit();

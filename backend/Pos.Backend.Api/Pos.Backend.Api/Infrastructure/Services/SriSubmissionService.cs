@@ -24,6 +24,7 @@ public class SriSubmissionService : ISriSubmissionService
     private readonly ISriInvoiceXmlValidator _sriInvoiceXmlValidator;
     private readonly SriOptions _sriOptions;
     private readonly ILogger<SriSubmissionService> _logger;
+    private readonly ElectronicIssuingCoordinator _coordinator;
 
     public SriSubmissionService(
         PosDbContext context,
@@ -32,7 +33,8 @@ public class SriSubmissionService : ISriSubmissionService
         ISalesService salesService,
         ISriInvoiceXmlValidator sriInvoiceXmlValidator,
         IOptions<SriOptions> sriOptions,
-        ILogger<SriSubmissionService> logger)
+        ILogger<SriSubmissionService> logger,
+        ElectronicIssuingCoordinator coordinator)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
@@ -41,12 +43,24 @@ public class SriSubmissionService : ISriSubmissionService
         _sriInvoiceXmlValidator = sriInvoiceXmlValidator;
         _sriOptions = sriOptions.Value;
         _logger = logger;
+        _coordinator = coordinator;
     }
 
     public async Task<SaleDto> SubmitSignedInvoiceAsync(int saleId)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-        var sale = await LoadSaleSnapshotAsync(saleId, operationalContext);
+        var error = await SubmitCoreAsync(saleId, operationalContext, null, CancellationToken.None);
+        if (error is not null) throw new InvalidOperationException(error);
+        return await GetSaleDtoOrThrowAsync(saleId);
+    }
+
+    internal Task<string?> SubmitClaimAsync(ElectronicIssuingJob claim, CancellationToken ct)
+        => SubmitCoreAsync(claim.SaleId, null, claim, ct);
+
+    private async Task<string?> SubmitCoreAsync(int saleId, OperationalContext? manual, ElectronicIssuingJob? claim, CancellationToken ct)
+    {
+        var admission = await _coordinator.AdmitAsync(saleId, ElectronicIssuingPhase.ReadyToSubmit, manual, claim, ct);
+        var sale = admission.Sale;
 
         ValidateSaleCanBeSubmitted(sale);
         ValidateUnsignedDraftIfPresent(sale);
@@ -57,17 +71,11 @@ public class SriSubmissionService : ISriSubmissionService
 
         try
         {
-            response = await _sriWebServiceClient.SubmitAsync(sale.SriSignedXml!, sriContext.Environment);
+            response = await _sriWebServiceClient.SubmitAsync(sale.SriSignedXml!, sriContext.Environment, ct);
         }
-        catch (InvalidOperationException ex) when (IsReceptionExternalError(ex.Message))
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            await PersistFailedAttemptAsync(
-                sale,
-                operationalContext.UserId,
-                sriContext.Environment,
-                SriSubmissionAttemptType.Reception,
-                ex.Message,
-                ex.InnerException?.Message ?? ex.Message);
+            await _coordinator.FailAsync(admission, ex is InvalidOperationException ? ex.Message : "SRI_RECEPTION_COMMUNICATION_FAILED", true, ct);
             throw;
         }
 
@@ -75,22 +83,22 @@ public class SriSubmissionService : ISriSubmissionService
         var now = DateTime.UtcNow;
         string? postCommitError = null;
 
-        await using (var transaction = await _context.Database.BeginTransactionAsync())
+        await _coordinator.CompleteAsync(admission, (trackedSale, job) =>
         {
-            var trackedSale = await LockSaleAsync(sale.Id, operationalContext);
             ValidateSaleCanBeSubmitted(trackedSale);
             ValidateUnsignedDraftIfPresent(trackedSale);
 
             var attempt = BuildBaseAttempt(
                 trackedSale,
-                operationalContext.UserId,
+                admission.AuditUserId,
                 sriContext.Environment,
                 SriSubmissionAttemptType.Reception,
                 now);
             attempt.Status = response.IsReceived
                 ? SriSubmissionAttemptStatus.Success
-                : SriSubmissionAttemptStatus.Failed;
+                : response.IsReturned ? SriSubmissionAttemptStatus.Failed : SriSubmissionAttemptStatus.Pending;
             attempt.ReceptionStatus = response.Estado;
+            attempt.FiscalDelegationId = admission.DelegationId;
             attempt.ResponseXml = response.RawResponseXml;
             ApplyMessage(attempt, responseMessage);
 
@@ -105,37 +113,56 @@ public class SriSubmissionService : ISriSubmissionService
             {
                 trackedSale.DocumentStatus = SaleDocumentStatus.PendingAuthorization;
             }
-            else
+            else if (response.IsReturned)
             {
                 trackedSale.DocumentStatus = SaleDocumentStatus.Rejected;
                 attempt.ErrorCode = "SRI_RECEPTION_REJECTED";
                 attempt.ErrorMessage ??= trackedSale.SriLastSubmissionError;
                 postCommitError = "SRI_RECEPTION_REJECTED";
             }
+            else
+            {
+                trackedSale.DocumentStatus = SaleDocumentStatus.PendingAuthorization;
+                postCommitError = "SRI_AUTHORIZATION_PENDING";
+            }
 
             _context.SriSubmissionAttempts.Add(attempt);
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-        }
-
-        if (postCommitError is not null)
-        {
-            throw new InvalidOperationException(postCommitError);
-        }
-
-        return await GetSaleDtoOrThrowAsync(sale.Id);
+            ElectronicIssuingCoordinator.Schedule(job,
+                response.IsReturned ? ElectronicIssuingJobState.Rejected : ElectronicIssuingJobState.WaitingAuthorization,
+                response.IsReturned ? ElectronicIssuingPhase.Completed : response.IsReceived
+                    ? ElectronicIssuingPhase.AwaitingAuthorization : ElectronicIssuingPhase.UnknownReception);
+            job.SafeError = postCommitError;
+            return Task.CompletedTask;
+        }, ct);
+        return postCommitError;
     }
 
     public async Task<SaleDto> CheckAuthorizationAsync(int saleId)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-        var sale = await LoadSaleSnapshotAsync(saleId, operationalContext);
+        var error = await CheckCoreAsync(saleId, operationalContext, null, CancellationToken.None);
+        if (error is not null) throw new InvalidOperationException(error);
+        return await GetSaleDtoOrThrowAsync(saleId);
+    }
+
+    internal Task<string?> CheckClaimAsync(ElectronicIssuingJob claim, CancellationToken ct)
+        => CheckCoreAsync(claim.SaleId, null, claim, ct);
+
+    private async Task<string?> CheckCoreAsync(int saleId, OperationalContext? manual, ElectronicIssuingJob? claim, CancellationToken ct)
+    {
+        var admission = await _coordinator.AdmitAsync(saleId, ElectronicIssuingPhase.AwaitingAuthorization, manual, claim, ct);
+        var sale = admission.Sale;
 
         ValidateSaleCanCheckAuthorization(sale);
 
         if (sale.DocumentStatus == SaleDocumentStatus.Authorized)
         {
-            return await GetSaleDtoOrThrowAsync(sale.Id);
+            await _coordinator.CompleteAsync(admission, (_, job) =>
+            {
+                job.State = ElectronicIssuingJobState.Authorized; job.Phase = ElectronicIssuingPhase.Completed;
+                return Task.CompletedTask;
+            }, ct);
+            return null;
         }
 
         var sriContext = await ResolveSriSubmissionContextAsync(sale.CompanyId, sale.SriEnvironment);
@@ -144,17 +171,12 @@ public class SriSubmissionService : ISriSubmissionService
 
         try
         {
-            response = await _sriWebServiceClient.CheckAuthorizationAsync(sale.AccessKey!, sriContext.Environment);
+            response = await _sriWebServiceClient.CheckAuthorizationAsync(sale.AccessKey!, sriContext.Environment, ct);
         }
-        catch (InvalidOperationException ex) when (IsAuthorizationExternalError(ex.Message))
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            await PersistFailedAttemptAsync(
-                sale,
-                operationalContext.UserId,
-                sriContext.Environment,
-                SriSubmissionAttemptType.Authorization,
-                ex.Message,
-                ex.InnerException?.Message ?? ex.Message);
+            await _coordinator.FailAsync(admission, ex is InvalidOperationException ? ex.Message : "SRI_AUTHORIZATION_COMMUNICATION_FAILED",
+                sale.SriSubmittedAt is null, ct);
             throw;
         }
 
@@ -162,20 +184,13 @@ public class SriSubmissionService : ISriSubmissionService
         var now = DateTime.UtcNow;
         string? postCommitError = null;
 
-        await using (var transaction = await _context.Database.BeginTransactionAsync())
+        await _coordinator.CompleteAsync(admission, (trackedSale, job) =>
         {
-            var trackedSale = await LockSaleAsync(sale.Id, operationalContext);
             ValidateSaleCanCheckAuthorization(trackedSale);
-
-            if (trackedSale.DocumentStatus == SaleDocumentStatus.Authorized)
-            {
-                await transaction.CommitAsync();
-                return await GetSaleDtoOrThrowAsync(trackedSale.Id);
-            }
 
             var attempt = BuildBaseAttempt(
                 trackedSale,
-                operationalContext.UserId,
+                admission.AuditUserId,
                 sriContext.Environment,
                 SriSubmissionAttemptType.Authorization,
                 now);
@@ -185,6 +200,7 @@ public class SriSubmissionService : ISriSubmissionService
                     ? SriSubmissionAttemptStatus.Failed
                     : SriSubmissionAttemptStatus.Pending;
             attempt.AuthorizationStatus = response.Estado;
+            attempt.FiscalDelegationId = admission.DelegationId;
             attempt.AuthorizationNumber = response.AuthorizationNumber;
             attempt.AuthorizationDate = response.AuthorizationDate;
             attempt.ResponseXml = response.RawResponseXml;
@@ -218,16 +234,16 @@ public class SriSubmissionService : ISriSubmissionService
             }
 
             _context.SriSubmissionAttempts.Add(attempt);
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-        }
-
-        if (postCommitError is not null)
-        {
-            throw new InvalidOperationException(postCommitError);
-        }
-
-        return await GetSaleDtoOrThrowAsync(sale.Id);
+            ElectronicIssuingCoordinator.Schedule(job,
+                response.IsAuthorized ? ElectronicIssuingJobState.Authorized : response.IsRejected
+                    ? ElectronicIssuingJobState.Rejected : ElectronicIssuingJobState.WaitingAuthorization,
+                response.IsAuthorized || response.IsRejected ? ElectronicIssuingPhase.Completed
+                    : job.ReceptionStartedAt.HasValue && trackedSale.SriSubmittedAt is null
+                        ? ElectronicIssuingPhase.UnknownReception : ElectronicIssuingPhase.AwaitingAuthorization);
+            job.SafeError = postCommitError;
+            return Task.CompletedTask;
+        }, ct);
+        return postCommitError;
     }
 
     public async Task<string> GetAuthorizedXmlAsync(int saleId)

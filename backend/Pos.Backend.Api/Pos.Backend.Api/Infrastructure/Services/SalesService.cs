@@ -677,6 +677,17 @@ public class SalesService : ISalesService
             }
 
             _context.Sales.Add(sale);
+            if (documentType == SaleDocumentType.Invoice
+                && await _context.CompanySriSettings.AsNoTracking().AnyAsync(s =>
+                    s.CompanyId == sale.CompanyId && s.IsEnabled && s.AutomaticProcessingEnabled))
+            {
+                var delegationId = await _context.FiscalDelegations.AsNoTracking()
+                    .Where(d => d.CompanyId == sale.CompanyId && d.DisabledAt == null)
+                    .Select(d => (long?)d.Id).SingleOrDefaultAsync();
+                if (delegationId.HasValue)
+                    _context.ElectronicIssuingJobs.Add(ElectronicIssuingCoordinator.NewJob(
+                        sale, operationalContext.UserId, now, delegationId));
+            }
             await _context.SaveChangesAsync();
 
             foreach (var item in sale.Items.OrderBy(i => i.ProductId))
@@ -833,7 +844,36 @@ public class SalesService : ISalesService
                 throw new InvalidOperationException("SALE_NOT_VOIDABLE");
             }
 
+            var issuingJob = await _context.ElectronicIssuingJobs.FromSqlInterpolated($@"
+                SELECT * FROM ""ElectronicIssuingJobs"" WHERE ""SaleId"" = {sale.Id} FOR UPDATE")
+                .SingleOrDefaultAsync();
+            if (issuingJob?.ReceptionStartedAt is not null)
+            {
+                var latest = await _context.SriSubmissionAttempts.AsNoTracking()
+                    .Where(a => a.SaleId == sale.Id && a.CompanyId == sale.CompanyId
+                        && a.AccessKey == sale.AccessKey && a.Environment == sale.SriEnvironment)
+                    .OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.Id)
+                    .Select(a => new { a.Status, a.ErrorCode, a.ReceptionStatus, a.AuthorizationStatus })
+                    .FirstOrDefaultAsync();
+                var definitiveRejection = issuingJob.Phase == ElectronicIssuingPhase.Completed
+                    && issuingJob.State == ElectronicIssuingJobState.Rejected && sale.DocumentStatus == SaleDocumentStatus.Rejected
+                    && latest?.Status == SriSubmissionAttemptStatus.Failed
+                    && ((latest.ErrorCode == "SRI_RECEPTION_REJECTED" && latest.ReceptionStatus == "DEVUELTA")
+                        || (latest.ErrorCode == "SRI_AUTHORIZATION_REJECTED" && latest.AuthorizationStatus == "NO AUTORIZADO"));
+                if (!definitiveRejection)
+                    throw new InvalidOperationException("SALE_INVOICE_SRI_IN_PROGRESS_NOT_VOIDABLE");
+            }
             EnsureSaleCanBeVoidedLocally(sale);
+            if (issuingJob is not null)
+            {
+                issuingJob.State = ElectronicIssuingJobState.ManualAttention;
+                issuingJob.Phase = ElectronicIssuingPhase.Completed;
+                issuingJob.SafeError = "SALE_VOIDED";
+                issuingJob.Fence++;
+                issuingJob.LeaseToken = null;
+                issuingJob.LeaseExpiresAt = null;
+                issuingJob.UpdatedAt = DateTime.UtcNow;
+            }
 
             var originalCashSession = await GetLockedOriginalCashSessionAsync(sale);
             CashMovement? voidCashMovement = null;

@@ -5,6 +5,7 @@ namespace Pos.Backend.Api.Core.Entities;
 public class SriSubmissionAttempt
 {
     public int Id { get; set; }
+    public long? FiscalDelegationId { get; set; }
 
     public int? SaleId { get; set; }
     public Sale? Sale { get; set; }
