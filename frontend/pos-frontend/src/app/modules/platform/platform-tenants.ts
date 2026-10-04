@@ -63,7 +63,9 @@ export class PlatformTenants implements OnInit, OnDestroy {
     ruc: ['', [Validators.required, Validators.pattern(/^[0-9]{13}$/)]],
     timeZoneId: ['America/Guayaquil', [Validators.required, Validators.maxLength(100)]],
     establishment: ['Matriz', [Validators.required, Validators.maxLength(150)]],
-    address: ['', Validators.maxLength(250)], emissionPoint: ['Caja Principal', [Validators.required, Validators.maxLength(150)]],
+    address: ['', [Validators.required, Validators.maxLength(250)]], emissionPoint: ['Caja Principal', [Validators.required, Validators.maxLength(150)]],
+    establishmentCode: ['001', [Validators.required, Validators.pattern(/^(?!000)[0-9]{3}$/)]],
+    emissionPointCode: ['001', [Validators.required, Validators.pattern(/^(?!000)[0-9]{3}$/)]],
     username: ['', [Validators.required, Validators.maxLength(100)]], email: ['', [Validators.required, Validators.email, Validators.maxLength(320)]],
     password: ['', NEW_PASSWORD_VALIDATORS],
   });
@@ -89,7 +91,7 @@ export class PlatformTenants implements OnInit, OnDestroy {
   page(event: TableLazyLoadEvent) { this.first = event.first ?? 0; this.rows = event.rows ?? 20; this.load(); }
   openProvision() {
     this.form.reset({ name: '', ruc: '', timeZoneId: 'America/Guayaquil', establishment: 'Matriz', address: '',
-      emissionPoint: 'Caja Principal', username: '', email: '', password: '' });
+      emissionPoint: 'Caja Principal', establishmentCode: '001', emissionPointCode: '001', username: '', email: '', password: '' });
     this.setError(''); this.provisionVisible = true;
   }
   closeProvision() { if (!this.saving()) { this.form.controls.password.reset(''); this.requestId = null; } }
@@ -98,7 +100,8 @@ export class PlatformTenants implements OnInit, OnDestroy {
     if (this.form.invalid) { this.form.markAllAsTouched(); this.setError('Revisa los campos requeridos, RUC, email y contrase\u00f1a (m\u00ednimo 12 caracteres).'); return; }
     const value = this.form.getRawValue();
     const draft: TenantDraft = { company: { name: value.name, ruc: value.ruc, timeZoneId: value.timeZoneId },
-      initialEstablishment: { name: value.establishment, address: value.address }, initialEmissionPoint: { name: value.emissionPoint },
+      initialEstablishment: { name: value.establishment, address: value.address, code: value.establishmentCode },
+      initialEmissionPoint: { name: value.emissionPoint, code: value.emissionPointCode },
       initialAdmin: { username: value.username, email: value.email, password: value.password } };
     this.requestId ??= crypto.randomUUID();
     this.saving.set(true); this.setError('');

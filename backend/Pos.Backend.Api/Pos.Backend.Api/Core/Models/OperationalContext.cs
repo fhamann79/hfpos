@@ -8,4 +8,6 @@ public class OperationalContext
     public string CompanyTimeZoneId { get; set; } = string.Empty;
     public string Username { get; set; } = string.Empty;
     public int UserId { get; set; }
+    public long? UserSessionVersion { get; set; }
+    public long? RoleAuthorizationVersion { get; set; }
 }

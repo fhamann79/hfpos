@@ -6,7 +6,7 @@ import { resolveHttpErrorMessage } from '../../../core/utils/http-error-normaliz
 import { InventoryMovement } from '../models/inventory-movement.model';
 import { InventoryMovementFilters, InventoryStockFilters } from '../models/inventory-filters.model';
 import { InventoryStockPage, InventoryTransferProduct } from '../models/inventory-stock.model';
-import { InventoryOperationRequest } from '../models/inventory-operation.model';
+import { InventoryOperationRequest, InventoryCountSnapshot } from '../models/inventory-operation.model';
 import { PagedResult } from '../../../core/models/paged-result.model';
 import {
   InventoryTransferCreateRequest,
@@ -54,6 +54,10 @@ export class InventoryService {
 
   registerAdjustment(payload: InventoryOperationRequest): Observable<InventoryMovement> {
     return this.http.post<InventoryMovement>(`${this.baseUrl}/adjust`, payload);
+  }
+
+  getCountSnapshot(productId: number): Observable<InventoryCountSnapshot> {
+    return this.http.get<InventoryCountSnapshot>(`${this.baseUrl}/products/${productId}/stock`);
   }
 
   getTransferDestinations(): Observable<InventoryTransferDestination[]> {

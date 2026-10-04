@@ -31,7 +31,7 @@ export class EmissionPointDialog implements OnChanges {
   @Output() submitForm = new EventEmitter<EmissionPointDialogSubmit>();
 
   readonly form = this.fb.nonNullable.group({
-    code: ['', [Validators.required, Validators.minLength(1)]],
+    code: ['001', [Validators.required, Validators.pattern(/^(?!000)[0-9]{3}$/)]],
     name: ['', [Validators.required, Validators.minLength(2)]],
   });
 
@@ -93,6 +93,6 @@ export class EmissionPointDialog implements OnChanges {
       return;
     }
 
-    this.form.reset({ code: '', name: '' });
+    this.form.reset({ code: '001', name: '' });
   }
 }

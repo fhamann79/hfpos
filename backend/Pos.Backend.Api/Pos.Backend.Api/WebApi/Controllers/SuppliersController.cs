@@ -113,6 +113,9 @@ public class SuppliersController : ControllerBase
             return BadRequest(new ApiErrorResponse { Error = "SUPPLIER_EMAIL_INVALID" });
         }
 
+        var guard = new TenantAdministrationGuard(_context);
+        await using var tx = await guard.BeginChangeAsync(operationalContext.CompanyId);
+        await guard.LockOperationalWriteAsync(operationalContext);
         if (await IdentificationExistsAsync(operationalContext.CompanyId, identification))
         {
             return Conflict(new ApiErrorResponse { Error = "SUPPLIER_IDENTIFICATION_ALREADY_EXISTS" });
@@ -134,6 +137,7 @@ public class SuppliersController : ControllerBase
 
         _context.Suppliers.Add(supplier);
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return CreatedAtAction(nameof(GetById), new { id = supplier.Id }, ToDto(supplier));
     }
@@ -151,6 +155,9 @@ public class SuppliersController : ControllerBase
 
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
+        var guard = new TenantAdministrationGuard(_context);
+        await using var tx = await guard.BeginChangeAsync(operationalContext.CompanyId);
+        await guard.LockOperationalWriteAsync(operationalContext);
         var supplier = await _context.Suppliers
             .FirstOrDefaultAsync(s => s.Id == id && s.CompanyId == operationalContext.CompanyId);
 
@@ -182,6 +189,7 @@ public class SuppliersController : ControllerBase
         supplier.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return NoContent();
     }
@@ -194,6 +202,9 @@ public class SuppliersController : ControllerBase
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
+        var guard = new TenantAdministrationGuard(_context);
+        await using var tx = await guard.BeginChangeAsync(operationalContext.CompanyId);
+        await guard.LockOperationalWriteAsync(operationalContext);
         var supplier = await _context.Suppliers
             .FirstOrDefaultAsync(s => s.Id == id && s.CompanyId == operationalContext.CompanyId);
 
@@ -206,6 +217,7 @@ public class SuppliersController : ControllerBase
         supplier.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return NoContent();
     }

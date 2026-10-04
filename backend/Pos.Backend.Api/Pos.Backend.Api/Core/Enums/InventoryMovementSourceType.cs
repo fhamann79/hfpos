@@ -11,5 +11,6 @@ public enum InventoryMovementSourceType
     PurchaseReceiptCancel = 7,
     CreditNoteReturn = 8,
     InventoryTransferOut = 9,
-    InventoryTransferIn = 10
+    InventoryTransferIn = 10,
+    OpeningInventory = 11
 }

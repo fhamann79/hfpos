@@ -17,12 +17,13 @@ export class EstablishmentService {
   }
 
   create(payload: CreateEstablishmentRequest) {
-    return this.http.post<Establishment>(this.baseUrl, { name: payload.name });
+    const { name, code, address } = payload;
+    return this.http.post<Establishment>(this.baseUrl, { name, code, address });
   }
 
   update(id: number, payload: UpdateEstablishmentRequest) {
-    const { name } = payload;
-    return this.http.put<void>(`${this.baseUrl}/${id}`, { name });
+    const { name, code, address } = payload;
+    return this.http.put<void>(`${this.baseUrl}/${id}`, { name, code, address });
   }
 
   activate(id: number) {

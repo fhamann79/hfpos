@@ -568,6 +568,7 @@
                     <button
                       type="button"
                       class="operation-option"
+                      [disabled]="operationLoading()"
                       [class.operation-option--active]="activeOperation === option.value"
                       (click)="activeOperation = option.value; operationError.set(''); operationResult.set(null)"
                     >
@@ -585,6 +586,11 @@
                       <p>{{ operationHelpText(activeOperation) }}</p>
                     </div>
                     @if (activeOperation === 'adjust') {
+                      <p-button icon="pi pi-refresh" label="Actualizar saldo del conteo" [loading]="countLoading()"
+                        [disabled]="operationLoading() || adjustForm.productId === null" (onClick)="loadCountSnapshot()"></p-button>
+                      @if (countSnapshot(); as snapshot) {
+                        <span>Saldo del conteo: {{ snapshot.quantity }} | Movimiento: {{ snapshot.movementWatermark }}</span>
+                      }
                       <p-message
                         severity="warn"
                         text="El ajuste establece el stock final del producto; no suma ni resta unidades."
@@ -604,6 +610,7 @@
                         [options]="productOptions()"
                         [loading]="lookupLoading()"
                         [ngModel]="currentOperationForm().productId"
+                        [disabled]="operationLoading()"
                         (ngModelChange)="setOperationProduct($event)"
                         optionLabel="label"
                         optionValue="value"
@@ -616,6 +623,7 @@
                       <span>{{ activeOperation === 'adjust' ? 'Stock final' : 'Cantidad' }}</span>
                       <p-inputnumber
                         [ngModel]="currentOperationForm().quantity"
+                        [disabled]="operationLoading()"
                         (ngModelChange)="setOperationQuantity($event)"
                         [min]="activeOperation === 'adjust' ? 0 : 0.01"
                         [minFractionDigits]="0"

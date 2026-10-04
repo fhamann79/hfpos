@@ -7,4 +7,5 @@ public class InventoryStockDto
     public decimal Quantity { get; set; }
     public int CompanyId { get; set; }
     public int EstablishmentId { get; set; }
+    public int MovementWatermark { get; set; }
 }

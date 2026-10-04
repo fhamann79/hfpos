@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Enums;
@@ -42,6 +43,9 @@ public class FiscalSettingsService : IFiscalSettingsService
     public async Task<CompanyFiscalSettingsDto> UpdateCompanyFiscalSettingsAsync(UpdateCompanyFiscalSettingsDto dto)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var guard = new TenantAdministrationGuard(_context);
+        await using var tx = await guard.BeginChangeAsync(operationalContext.CompanyId);
+        await guard.LockOperationalWriteAsync(operationalContext);
         var company = await GetCompanyAsync(operationalContext.CompanyId);
 
         var name = dto.Name?.Trim();
@@ -71,6 +75,10 @@ public class FiscalSettingsService : IFiscalSettingsService
             throw new InvalidOperationException("INVALID_COMPANY_FISCAL_SETTINGS");
         }
 
+        if (company.Ruc != ruc && await OperationalIdentityProtection.IsUsedAsync(_context, company.Id))
+            throw new InvalidOperationException("COMPANY_IDENTITY_ALREADY_USED");
+        if (await _context.Companies.AnyAsync(c => c.Id != company.Id && c.Ruc == ruc))
+            throw new InvalidOperationException("COMPANY_RUC_ALREADY_EXISTS");
         company.Name = name!;
         company.Ruc = ruc!;
         company.TradeName = tradeName;
@@ -81,7 +89,10 @@ public class FiscalSettingsService : IFiscalSettingsService
         company.SpecialTaxpayerNumber = specialTaxpayerNumber;
         company.TaxpayerRegime = taxpayerRegime;
 
-        await _context.SaveChangesAsync();
+        try { await _context.SaveChangesAsync(); }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "IX_Companies_Ruc" })
+        { throw new InvalidOperationException("COMPANY_RUC_ALREADY_EXISTS", ex); }
+        await tx.CommitAsync();
 
         return MapCompany(company);
     }
@@ -309,6 +320,9 @@ public class FiscalSettingsService : IFiscalSettingsService
     public async Task<DocumentSequenceDto> CreateDocumentSequenceAsync(CreateDocumentSequenceDto dto)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var guard = new TenantAdministrationGuard(_context);
+        await using var transaction = await guard.BeginChangeAsync(operationalContext.CompanyId);
+        await guard.LockOperationalWriteAsync(operationalContext);
         var reason = ValidateReason(dto.Reason);
         ValidateDocumentType(dto.DocumentType);
         ValidateNextNumber(dto.NextNumber);
@@ -341,8 +355,6 @@ public class FiscalSettingsService : IFiscalSettingsService
         {
             throw new InvalidOperationException("DOCUMENT_SEQUENCE_BELOW_USED_NUMBER");
         }
-
-        await using var transaction = await _context.Database.BeginTransactionAsync();
 
         var now = DateTime.UtcNow;
         var sequence = new DocumentSequence
@@ -392,6 +404,9 @@ public class FiscalSettingsService : IFiscalSettingsService
     public async Task<DocumentSequenceDto> UpdateDocumentSequenceAsync(int id, UpdateDocumentSequenceDto dto)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var guard = new TenantAdministrationGuard(_context);
+        await using var transaction = await guard.BeginChangeAsync(operationalContext.CompanyId);
+        await guard.LockOperationalWriteAsync(operationalContext);
         var reason = ValidateReason(dto.Reason);
         ValidateNextNumber(dto.NextNumber);
 
@@ -447,6 +462,7 @@ public class FiscalSettingsService : IFiscalSettingsService
 
         await _context.SaveChangesAsync();
 
+        await transaction.CommitAsync();
         return MapDocumentSequence(sequence, maxUsed);
     }
 

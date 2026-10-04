@@ -114,6 +114,9 @@ public class CustomersController : ControllerBase
 
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
+        var guard = new TenantAdministrationGuard(_context);
+        await using var tx = await guard.BeginChangeAsync(operationalContext.CompanyId);
+        await guard.LockOperationalWriteAsync(operationalContext);
         if (await ActiveIdentificationExistsAsync(operationalContext.CompanyId, input.Identification, excludedCustomerId: null))
         {
             return Conflict(new ApiErrorResponse { Error = "CUSTOMER_IDENTIFICATION_DUPLICATE" });
@@ -137,6 +140,7 @@ public class CustomersController : ControllerBase
 
         _context.Customers.Add(customer);
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return CreatedAtAction(nameof(GetById), new { id = customer.Id }, ToDto(customer));
     }
@@ -156,6 +160,9 @@ public class CustomersController : ControllerBase
         }
 
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var guard = new TenantAdministrationGuard(_context);
+        await using var tx = await guard.BeginChangeAsync(operationalContext.CompanyId);
+        await guard.LockOperationalWriteAsync(operationalContext);
         var customer = await _context.Customers
             .FirstOrDefaultAsync(c => c.Id == id && c.CompanyId == operationalContext.CompanyId);
 
@@ -180,6 +187,7 @@ public class CustomersController : ControllerBase
         customer.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return NoContent();
     }

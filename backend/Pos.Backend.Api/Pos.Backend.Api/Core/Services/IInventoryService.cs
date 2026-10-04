@@ -13,6 +13,7 @@ public interface IInventoryService
     Task<InventoryMovementDto> RegisterEntryAsync(InventoryEntryDto dto);
     Task<InventoryMovementDto> RegisterExitAsync(InventoryExitDto dto);
     Task<InventoryMovementDto> RegisterAdjustmentAsync(InventoryAdjustDto dto);
+    Task<InventoryMovementDto> RegisterOpeningAsync(int productId, decimal quantity, int batchId, int rowNumber);
     Task<InventoryMovementDto> RegisterSaleAsync(int productId, decimal quantity, int saleId, int saleItemId, string? notes);
     Task<InventoryMovementDto> RegisterVoidAsync(int productId, decimal quantity, int saleId, int saleItemId, string? notes);
     Task<InventoryMovementDto> RegisterPurchaseReceiptAsync(int productId, decimal quantity, int purchaseReceiptId, int purchaseReceiptItemId, string? notes);

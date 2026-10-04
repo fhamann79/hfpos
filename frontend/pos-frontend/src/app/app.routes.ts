@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { initialDataAccessGuard } from './core/guards/initial-data-access.guard';
 import { platformGuard } from './modules/platform/platform.guard';
 import { AuthGuard } from './core/guards/auth.guard';
 import { administrationAccessGuard } from './core/guards/administration-access.guard';
@@ -15,6 +16,8 @@ import { salesReportsAccessGuard } from './core/guards/sales-reports-access.guar
 import { suppliersAccessGuard } from './core/guards/suppliers-access.guard';
 
 export const routes: Routes = [
+  { path: 'initial-data', canActivate: [AuthGuard, initialDataAccessGuard],
+    loadComponent: () => import('./features/initial-data/initial-data-page').then(m => m.InitialDataPage) },
   { path: 'platform/login', loadComponent: () => import('./modules/platform/platform-login').then(m => m.PlatformLogin) },
   { path: 'platform/tenants', canActivate: [platformGuard], loadComponent: () => import('./modules/platform/platform-tenants').then(m => m.PlatformTenants) },
   {

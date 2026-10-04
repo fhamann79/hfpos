@@ -75,6 +75,8 @@ export const FISCAL_SETTINGS_ACCESS_REQUIREMENT: PermissionRequirement = {
 };
 
 export const NAVIGATION_ITEMS: NavigationItemConfig[] = [
+  { label: 'Preparacion del negocio', icon: 'pi pi-list-check', route: '/initial-data',
+    requiredPermissions: [PERMISSIONS.operationalStructureRead, PERMISSIONS.fiscalSettingsRead, PERMISSIONS.adminUsersRead], matchMode: 'all' },
   {
     label: 'Dashboard',
     icon: 'pi pi-chart-line',

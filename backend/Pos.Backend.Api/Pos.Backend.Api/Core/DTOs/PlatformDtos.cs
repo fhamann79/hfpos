@@ -2,8 +2,8 @@ namespace Pos.Backend.Api.Core.DTOs;
 
 public sealed record PlatformMeDto(int Id, string Username, string Email, string Role);
 public sealed record PlatformCompanyInput(string Name, string Ruc, string TimeZoneId);
-public sealed record PlatformEstablishmentInput(string Name, string? Address);
-public sealed record PlatformEmissionPointInput(string Name);
+public sealed record PlatformEstablishmentInput(string Name, string? Address, string Code = "001");
+public sealed record PlatformEmissionPointInput(string Name, string Code = "001");
 public sealed record PlatformAdminInput(string Username, string Email, string Password);
 public sealed record TenantProvisionRequest(Guid RequestId, PlatformCompanyInput Company,
     PlatformEstablishmentInput InitialEstablishment, PlatformEmissionPointInput InitialEmissionPoint,

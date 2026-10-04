@@ -44,7 +44,10 @@ public sealed class TenantAdministrationGuard(PosDbContext context)
         await ValidateOperationalContextAsync(operationalContext);
     }
 
-    public async Task LockPaymentSettlementFinalizationAsync(OperationalContext operationalContext)
+    public Task LockPaymentSettlementFinalizationAsync(OperationalContext operationalContext)
+        => LockExclusiveOperationalWriteAsync(operationalContext);
+
+    public async Task LockExclusiveOperationalWriteAsync(OperationalContext operationalContext)
     {
         if (context.Database.CurrentTransaction is null)
             throw new InvalidOperationException("Payment settlement finalization requires a transaction.");
@@ -58,6 +61,12 @@ public sealed class TenantAdministrationGuard(PosDbContext context)
 
     private async Task ValidateOperationalContextAsync(OperationalContext operationalContext)
     {
+        if ((operationalContext.UserSessionVersion.HasValue || operationalContext.RoleAuthorizationVersion.HasValue)
+            && !await context.Users.AnyAsync(u => u.Id == operationalContext.UserId
+                && u.CompanyId == operationalContext.CompanyId
+                && u.SessionVersion == operationalContext.UserSessionVersion
+                && u.Role.AuthorizationVersion == operationalContext.RoleAuthorizationVersion))
+            throw new OperationalContextException("SESSION_STALE", 401);
         var valid = await context.Users.AnyAsync(u =>
             u.Id == operationalContext.UserId && u.Username == operationalContext.Username && u.IsActive
             && u.CompanyId == operationalContext.CompanyId && u.Company.IsActive
