@@ -2,6 +2,8 @@ import { ProductVatCategory } from '../../../core/utils/vat-category';
 
 export interface SaleItem {
   productId: number;
+  productNameSnapshot?: string | null;
+  productSkuSnapshot?: string | null;
   productName: string;
   quantity: number;
   unitPrice: number;

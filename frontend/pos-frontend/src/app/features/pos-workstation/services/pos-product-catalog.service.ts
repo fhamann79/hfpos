@@ -1,6 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable, catchError, map, of } from 'rxjs';
+import { Observable, catchError, forkJoin, map, of } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { normalizeVatCategory } from '../../../core/utils/vat-category';
 import { PosProduct } from '../models/pos-product.model';
@@ -43,7 +43,19 @@ export class PosProductCatalogService {
     );
   }
 
-  private normalizeProduct(source: unknown): PosProduct | null {
+  refreshCartProducts(ids: number[]): Observable<PosProduct[]> {
+    const unique = [...new Set(ids)];
+    const batches: Observable<PosProduct[]>[] = [];
+    for (let offset = 0; offset < unique.length; offset += 100) {
+      let params = new HttpParams().set('take', '100');
+      for (const id of unique.slice(offset, offset + 100)) params = params.append('productIds', id);
+      batches.push(this.http.get<unknown[]>(this.lookupUrl, { params }).pipe(
+        map(rows => rows.map(row => this.normalizeProduct(row, true)).filter((p): p is PosProduct => p !== null))));
+    }
+    return batches.length ? forkJoin(batches).pipe(map(rows => rows.flat())) : of([]);
+  }
+
+  private normalizeProduct(source: unknown, includeInactive = false): PosProduct | null {
     const row = this.asRecord(source);
     if (!row) {
       return null;
@@ -58,7 +70,7 @@ export class PosProductCatalogService {
     const vatCategory = normalizeVatCategory(row['vatCategory'] ?? row['VatCategory']);
     const isActive = this.readBoolean(row, ['isActive', 'active'], true);
 
-    if (id === null || !name || !isActive) {
+    if (id === null || !name || (!isActive && !includeInactive)) {
       return null;
     }
 

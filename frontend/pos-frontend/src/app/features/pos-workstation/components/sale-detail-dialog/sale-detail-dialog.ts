@@ -48,6 +48,7 @@ export class SaleDetailDialog {
   @Input() canReviewCreditNote = false;
 
   @Output() visibleChange = new EventEmitter<boolean>();
+  @Output() viewReceipt = new EventEmitter<Sale>();
   @Output() signSriXml = new EventEmitter<number>();
   @Output() downloadSriXmlDraft = new EventEmitter<number>();
   @Output() downloadSriSignedXml = new EventEmitter<number>();

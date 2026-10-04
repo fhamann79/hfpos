@@ -127,6 +127,15 @@ export class ProductSearchPanel implements AfterViewInit, OnDestroy {
     setTimeout(() => this.searchInput?.nativeElement.focus(), 0);
   }
 
+  resetSearch(): void {
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = null;
+    this.searchRequestId++;
+    this.remoteProducts.set([]);
+    this.remoteLoading.set(false);
+    this.remoteError.set('');
+  }
+
   private scheduleRemoteSearch(value: string): void {
     if (this.searchTimer) {
       clearTimeout(this.searchTimer);

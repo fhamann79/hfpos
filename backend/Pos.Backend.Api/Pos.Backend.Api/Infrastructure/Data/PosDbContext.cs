@@ -965,11 +965,20 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<Sale>(entity =>
         {
+            entity.HasIndex(s => new { s.CompanyId, s.RequestId }).IsUnique()
+                .HasFilter("\"RequestId\" IS NOT NULL");
+            entity.Property(s => s.RequestHash).HasMaxLength(64);
+            entity.Property(s => s.CashReceived).HasPrecision(18, 2);
+            entity.Property(s => s.CashChange).HasPrecision(18, 2);
             entity.ToTable(table =>
             {
                 table.HasCheckConstraint(
                     "CK_Sales_VoidAuditComplete",
                     "(\"VoidCashEffect\" IS NULL OR (\"Status\" = 2 AND \"VoidedAt\" IS NOT NULL AND \"VoidedByUserId\" IS NOT NULL AND \"VoidReason\" IS NOT NULL AND \"VoidBusinessDate\" IS NOT NULL AND \"VoidTimeZoneIdSnapshot\" IS NOT NULL))");
+                table.HasCheckConstraint("CK_Sales_RequestIdentity",
+                    "(\"RequestId\" IS NULL AND \"RequestHash\" IS NULL) OR (\"RequestId\" IS NOT NULL AND \"RequestHash\" IS NOT NULL AND \"RequestId\" <> '00000000-0000-0000-0000-000000000000'::uuid AND length(\"RequestHash\") = 64)");
+                table.HasCheckConstraint("CK_Sales_CashReceived",
+                    "(\"RequestId\" IS NULL) OR (\"PaymentMethod\" = 0 AND \"CashReceived\" IS NOT NULL AND \"CashChange\" IS NOT NULL AND \"CashReceived\" >= \"Total\" AND \"CashChange\" = \"CashReceived\" - \"Total\") OR (\"PaymentMethod\" <> 0 AND \"CashReceived\" IS NULL AND \"CashChange\" IS NULL)");
                 table.HasCheckConstraint(
                     "CK_Sales_VoidCashLinks",
                     "((\"VoidCashEffect\" IS NULL AND \"VoidCashSessionId\" IS NULL AND \"VoidCashMovementId\" IS NULL) OR (\"VoidCashEffect\" = 1 AND \"VoidCashSessionId\" IS NOT NULL AND \"VoidCashMovementId\" IS NULL) OR (\"VoidCashEffect\" = 2 AND \"VoidCashSessionId\" IS NOT NULL AND \"VoidCashMovementId\" IS NOT NULL) OR (\"VoidCashEffect\" = 3 AND \"VoidCashSessionId\" IS NULL AND \"VoidCashMovementId\" IS NULL))");

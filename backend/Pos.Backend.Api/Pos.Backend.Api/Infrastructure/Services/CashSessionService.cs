@@ -322,6 +322,8 @@ public class CashSessionService : ICashSessionService
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
+        // Sales hold Company exclusively; take it first before cash and movement FK locks.
+        await _administrationGuard.LockOperationalWriteAsync(operationalContext);
         var session = await GetLockedSessionAsync(id);
         EnsureSessionExistsAndMatchesContext(session, operationalContext, requireCurrentUser: true);
 

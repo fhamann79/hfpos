@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
+import { InputNumberModule } from 'primeng/inputnumber';
 import {
   SALE_DOCUMENT_TYPE_OPTIONS,
   SaleDocumentType,
@@ -18,7 +19,7 @@ import {
 @Component({
   selector: 'app-checkout-confirm-dialog',
   standalone: true,
-  imports: [CommonModule, CurrencyPipe, FormsModule, DialogModule, ButtonModule, SelectModule],
+  imports: [CommonModule, CurrencyPipe, FormsModule, DialogModule, ButtonModule, SelectModule, InputNumberModule],
   templateUrl: './checkout-confirm-dialog.html',
   styleUrl: './checkout-confirm-dialog.scss',
 })
@@ -32,6 +33,9 @@ export class CheckoutConfirmDialog {
   @Input({ required: true }) itemCount = 0;
   @Input() notes = '';
   @Input() loading = false;
+  @Input() cashReceived: number | null = null;
+  @Output() cashReceivedChange = new EventEmitter<number | null>();
+  readonly SalePaymentMethod = SalePaymentMethod;
   @Input() documentType: SaleDocumentType = SaleDocumentType.Ticket;
   @Input() paymentMethod: SalePaymentMethod = SalePaymentMethod.Cash;
 
@@ -53,13 +57,15 @@ export class CheckoutConfirmDialog {
   }
 
   onKeydown(event: KeyboardEvent): void {
+    if (event.repeat || this.loading) { event.preventDefault(); return; }
     if (event.key === 'Escape') {
       this.visibleChange.emit(false);
       event.preventDefault();
       return;
     }
 
-    if (event.key === 'Enter' && !this.loading) {
+    const target = event.target as HTMLElement | null;
+    if (event.key === 'Enter' && !target?.closest('p-select, button, textarea') && !this.loading) {
       this.confirm.emit();
       event.preventDefault();
     }

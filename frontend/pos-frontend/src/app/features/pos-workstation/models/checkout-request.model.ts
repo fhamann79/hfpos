@@ -9,6 +9,8 @@ export interface CheckoutItemRequest {
 }
 
 export interface CheckoutRequest {
+  requestId: string;
+  cashReceived?: number;
   customerId?: number | null;
   documentType?: SaleDocumentType;
   paymentMethod?: SalePaymentMethod;

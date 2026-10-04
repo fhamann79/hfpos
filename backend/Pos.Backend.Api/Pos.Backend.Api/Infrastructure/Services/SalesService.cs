@@ -1,4 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Pos.Backend.Api.Configuration;
@@ -347,6 +351,9 @@ public class SalesService : ISalesService
             .Select(s => new SaleDto
             {
                 Id = s.Id,
+                RequestId = s.RequestId,
+                CashReceived = s.CashReceived,
+                CashChange = s.CashChange,
                 Status = s.Status,
                 CustomerId = s.CustomerId,
                 CustomerName = s.BuyerNameSnapshot ?? (s.Customer != null ? s.Customer.Name : null),
@@ -421,7 +428,9 @@ public class SalesService : ISalesService
                     {
                         Id = i.Id,
                         ProductId = i.ProductId,
-                        ProductName = i.Product.Name,
+                        ProductName = i.ProductNameSnapshot ?? i.Product.Name,
+                        ProductNameSnapshot = i.ProductNameSnapshot,
+                        ProductSkuSnapshot = i.ProductSkuSnapshot,
                         Quantity = i.Quantity,
                         UnitPrice = i.UnitPrice,
                         UnitCost = i.UnitCost,
@@ -474,6 +483,8 @@ public class SalesService : ISalesService
 
         try
         {
+            if (dto.RequestId == Guid.Empty)
+                throw new InvalidOperationException("SALE_REQUEST_ID_REQUIRED");
             if (dto.Items is null || dto.Items.Count == 0)
             {
                 throw new InvalidOperationException("SALE_ITEMS_REQUIRED");
@@ -495,9 +506,28 @@ public class SalesService : ISalesService
             }
 
             await using var transaction = await _context.Database.BeginTransactionAsync();
-            // Stable create order: Company -> CashSession -> DocumentSequence -> ProductStock.
-            await _administrationGuard.LockOperationalWriteAsync(operationalContext);
+            // Serialize tenant sales from the outset, without a SHARE -> UPDATE lock upgrade.
+            // Stable order: Company -> CashSession -> DocumentSequence -> ProductStock.
+            await _administrationGuard.LockExclusiveOperationalWriteAsync(operationalContext);
+            var requestHash = ComputeRequestHash(dto, paymentMethod, documentType);
+            var existing = await _context.Sales.AsNoTracking().SingleOrDefaultAsync(s =>
+                s.CompanyId == operationalContext.CompanyId && s.RequestId == dto.RequestId);
+            if (existing is not null)
+            {
+                if (existing.RequestHash != requestHash || existing.UserId != operationalContext.UserId
+                    || existing.EstablishmentId != operationalContext.EstablishmentId
+                    || existing.EmissionPointId != operationalContext.EmissionPointId)
+                    throw new InvalidOperationException("REQUEST_CONFLICT");
+                var replay = await GetByIdAsync(existing.Id)
+                    ?? throw new KeyNotFoundException("SALE_NOT_FOUND");
+                await transaction.CommitAsync();
+                return replay;
+            }
+            if ((dto.Notes?.Trim().Length ?? 0) > 500)
+                throw new InvalidOperationException("SALE_NOTES_TOO_LONG");
+            ValidateRequestAmounts(dto, paymentMethod);
             var cashSession = await _cashSessionService.GetRequiredOpenSessionForCurrentContextAsync();
+            await _administrationGuard.LockExclusiveOperationalWriteAsync(operationalContext);
 
             Customer? customer = null;
 
@@ -547,6 +577,8 @@ public class SalesService : ISalesService
             var buyerSnapshot = ResolveBuyerSnapshot(customer, documentType);
             var sale = new Sale
             {
+                RequestId = dto.RequestId,
+                RequestHash = requestHash,
                 CompanyId = operationalContext.CompanyId,
                 EstablishmentId = operationalContext.EstablishmentId,
                 EmissionPointId = operationalContext.EmissionPointId,
@@ -596,6 +628,8 @@ public class SalesService : ISalesService
                 sale.Items.Add(new SaleItem
                 {
                     ProductId = itemDto.ProductId,
+                    ProductNameSnapshot = product.Name,
+                    ProductSkuSnapshot = product.InternalCode,
                     Quantity = itemDto.Quantity,
                     UnitPrice = itemDto.UnitPrice,
                     UnitCost = unitCost,
@@ -613,6 +647,16 @@ public class SalesService : ISalesService
             }
 
             ApplySaleTaxTotals(sale, dto.DiscountAmount ?? 0m);
+            if (sale.Total > MaximumMoney || sale.GrossSubtotal > MaximumMoney)
+                throw new InvalidOperationException("SALE_AMOUNT_INVALID");
+            if (paymentMethod == SalePaymentMethod.Cash)
+            {
+                var received = RoundMoney(dto.CashReceived!.Value);
+                if (received < sale.Total)
+                    throw new InvalidOperationException("CASH_RECEIVED_INSUFFICIENT");
+                sale.CashReceived = received;
+                sale.CashChange = RoundMoney(received - sale.Total);
+            }
 
             var numberAssignment = await _fiscalDocumentNumberService.AssignNextAsync(
                 operationalContext,
@@ -645,6 +689,7 @@ public class SalesService : ISalesService
                     sale.Notes);
             }
 
+            await _administrationGuard.LockExclusiveOperationalWriteAsync(operationalContext);
             await transaction.CommitAsync();
 
             _logger.LogInformation(
@@ -662,6 +707,7 @@ public class SalesService : ISalesService
         }
         catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
         {
+            _context.ChangeTracker.Clear();
             _logger.LogWarning(
                 ex,
                 "Sale creation failed. ErrorCode {ErrorCode} UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId} ItemsCount {ItemsCount}",
@@ -673,8 +719,14 @@ public class SalesService : ISalesService
                 dto.Items?.Count ?? 0);
             throw;
         }
+        catch (OverflowException)
+        {
+            _context.ChangeTracker.Clear();
+            throw new InvalidOperationException("SALE_AMOUNT_INVALID");
+        }
         catch (Exception ex)
         {
+            _context.ChangeTracker.Clear();
             _logger.LogError(
                 ex,
                 "Unexpected error creating sale. UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId} ItemsCount {ItemsCount}",
@@ -685,6 +737,47 @@ public class SalesService : ISalesService
                 dto.Items?.Count ?? 0);
             throw;
         }
+    }
+
+    private const decimal MaximumMoney = 9999999999999999.99m;
+
+    private static void ValidateRequestAmounts(SaleCreateDto dto, SalePaymentMethod paymentMethod)
+    {
+        if (dto.Items.Count > 500 || dto.Items.Any(i => i.Quantity <= 0m
+            || i.Quantity > 99999999999999.9999m || decimal.Round(i.Quantity, 4) != i.Quantity
+            || i.UnitPrice < 0m || i.UnitPrice > MaximumMoney || RoundMoney(i.UnitPrice) != i.UnitPrice
+            || (i.DiscountAmount ?? 0m) < 0m || (i.DiscountAmount ?? 0m) > MaximumMoney)
+            || (dto.DiscountAmount ?? 0m) < 0m || (dto.DiscountAmount ?? 0m) > MaximumMoney)
+            throw new InvalidOperationException("SALE_AMOUNT_INVALID");
+        if (paymentMethod == SalePaymentMethod.Cash)
+        {
+            if (!dto.CashReceived.HasValue || dto.CashReceived < 0m || dto.CashReceived > MaximumMoney)
+                throw new InvalidOperationException("CASH_RECEIVED_INVALID");
+        }
+        else if (dto.CashReceived.HasValue)
+            throw new InvalidOperationException("CASH_RECEIVED_NOT_APPLICABLE");
+    }
+
+    private static string ComputeRequestHash(SaleCreateDto dto, SalePaymentMethod paymentMethod,
+        SaleDocumentType documentType)
+    {
+        static string Number(decimal value) => value.ToString("G29", CultureInfo.InvariantCulture);
+        var material = new
+        {
+            Version = 1,
+            dto.CustomerId,
+            paymentMethod,
+            documentType,
+            Discount = Number(dto.DiscountAmount ?? 0m),
+            CashReceived = dto.CashReceived.HasValue ? Number(dto.CashReceived.Value) : null,
+            Notes = dto.Notes?.Trim() ?? "",
+            Items = dto.Items.Select(i => new
+                {
+                    i.ProductId, Quantity = Number(i.Quantity), UnitPrice = Number(i.UnitPrice),
+                    Discount = Number(i.DiscountAmount ?? 0m)
+                })
+        };
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(material))));
     }
 
     public async Task<SaleDto> VoidAsync(int id, VoidSaleDto dto)

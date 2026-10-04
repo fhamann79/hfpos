@@ -10,6 +10,8 @@ public class SaleItem
     public Sale Sale { get; set; }
 
     public int ProductId { get; set; }
+    public string? ProductNameSnapshot { get; set; }
+    public string? ProductSkuSnapshot { get; set; }
     public Product Product { get; set; }
 
     public decimal Quantity { get; set; }

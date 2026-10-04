@@ -138,6 +138,7 @@
     <textarea
       pTextarea
       rows="3"
+      maxlength="500"
       [ngModel]="notes"
       (ngModelChange)="notesChange.emit($event)"
       placeholder="Notas de la venta (opcional)"

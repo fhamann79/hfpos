@@ -50,9 +50,12 @@ public class InventoryController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<IEnumerable<PosProductLookupDto>>> GetPosProducts(
         [FromQuery] string? search,
-        [FromQuery] int take = 30)
+        [FromQuery] int take = 30,
+        [FromQuery] int[]? productIds = null)
     {
-        var products = await _posProductLookupService.SearchAsync(search, take);
+        if (productIds is { Length: > 100 })
+            return BadRequest(new ApiErrorResponse { Error = "POS_PRODUCT_IDS_LIMIT" });
+        var products = await _posProductLookupService.SearchAsync(search, take, productIds);
         return Ok(products);
     }
 

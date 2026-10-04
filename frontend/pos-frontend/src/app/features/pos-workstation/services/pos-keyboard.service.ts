@@ -8,7 +8,7 @@ export class PosKeyboardService {
     const lowered = keys.map((key) => key.toLowerCase());
 
     return fromEvent<KeyboardEvent>(window, 'keydown').pipe(
-      filter((event) => lowered.includes(event.key.toLowerCase())),
+      filter((event) => !event.repeat && lowered.includes(event.key.toLowerCase())),
       map((event) => {
         event.preventDefault();
         return event;

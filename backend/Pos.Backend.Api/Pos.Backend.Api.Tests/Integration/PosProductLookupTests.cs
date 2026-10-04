@@ -172,6 +172,23 @@ public sealed class PosProductLookupTests(PostgresDatabaseFixture database) : IA
         Assert.Equal(new[] { "SKU Alpha", "SKU Beta" }, result.Skip(1).Take(2).Select(item => item.Name));
     }
 
+    [Fact]
+    public async Task Cart_refresh_is_bounded_tenant_scoped_and_includes_inactive_requested_products_only()
+    {
+        var a = await TestDataBuilder.CreateTenantAsync(database, "cart-a", 234, 2m, 3m);
+        var b = await TestDataBuilder.CreateTenantAsync(database, "cart-b", 235, 4m);
+        await using var context = database.CreateDbContext();
+        (await context.Products.SingleAsync(p => p.Id == a.Products[0].Id)).IsActive = false;
+        await context.SaveChangesAsync();
+        var service = new PosProductLookupService(context, new FixedOperationalContextAccessor(a.OperationalContext));
+        var rows = await service.SearchAsync(null, 100, [a.Products[0].Id, b.Products[0].Id]);
+        Assert.Single(rows); Assert.Equal(a.Products[0].Id, rows[0].Id); Assert.False(rows[0].IsActive);
+        Assert.Equal(2m, rows[0].Stock);
+        Assert.Empty(await service.SearchAsync(null, 100, []));
+        Assert.Equal("POS_PRODUCT_IDS_LIMIT", (await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.SearchAsync(null, 100, Enumerable.Range(1, 101).ToArray()))).Message);
+    }
+
     private sealed class FixedOperationalContextAccessor(OperationalContext context) : IOperationalContextAccessor
     {
         public Task<OperationalContext> GetRequiredContextAsync() => Task.FromResult(context);

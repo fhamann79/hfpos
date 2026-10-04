@@ -6,6 +6,10 @@ public class SaleDto
 {
     public int Id { get; set; }
 
+    public Guid? RequestId { get; set; }
+    public decimal? CashReceived { get; set; }
+    public decimal? CashChange { get; set; }
+
     public SaleStatus Status { get; set; }
 
     public int? CustomerId { get; set; }

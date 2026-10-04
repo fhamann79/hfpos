@@ -4,6 +4,10 @@ namespace Pos.Backend.Api.Core.DTOs;
 
 public class SaleCreateDto
 {
+    public Guid RequestId { get; set; }
+
+    public decimal? CashReceived { get; set; }
+
     public int? CustomerId { get; set; }
 
     public SalePaymentMethod? PaymentMethod { get; set; }

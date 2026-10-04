@@ -58,6 +58,25 @@ internal sealed class SqlCommandGateInterceptor : DbCommandInterceptor
         return result;
     }
 
+    public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+        DbCommand command, CommandEventData eventData, InterceptionResult<int> result,
+        CancellationToken cancellationToken = default)
+    {
+        if (_beforeExecution is not null && _matches(command.CommandText)
+            && Interlocked.Exchange(ref _beforeMatched, 1) == 0)
+            await _beforeExecution(cancellationToken);
+        return result;
+    }
+
+    public override ValueTask<int> NonQueryExecutedAsync(DbCommand command,
+        CommandExecutedEventData eventData, int result, CancellationToken cancellationToken = default)
+    {
+        if (_afterExecution is not null && _matches(command.CommandText)
+            && Interlocked.Exchange(ref _afterMatched, 1) == 0)
+            _afterExecution();
+        return ValueTask.FromResult(result);
+    }
+
     public override ValueTask<DbDataReader> ReaderExecutedAsync(
         DbCommand command,
         CommandExecutedEventData eventData,
@@ -77,6 +96,8 @@ internal sealed class SqlCommandGateInterceptor : DbCommandInterceptor
 
 internal static class SqlCommandMatchers
 {
+    public static bool CompanyLock(string commandText)
+        => ContainsAll(commandText, "FROM \"Companies\"", "FOR ");
     public static bool OpenCashSessionForUpdate(string commandText)
         => ContainsAll(
             commandText,
