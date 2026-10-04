@@ -143,6 +143,8 @@ public class CompanySriSettingsDto
     public int Environment { get; set; }
     public int EmissionType { get; set; }
     public bool IsEnabled { get; set; }
+    public bool AutomaticProcessingEnabled { get; set; }
+    public long AutomaticProcessingRevision { get; set; }
     public bool CertificateConfigured { get; set; }
     public DateTime? CertificateExpiresAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
@@ -207,6 +209,7 @@ public class UpdateCompanySriSettingsDto
     public int Environment { get; set; }
     public int EmissionType { get; set; }
     public bool IsEnabled { get; set; }
+    public bool AutomaticProcessingEnabled { get; set; }
 }
 
 public class DocumentSequenceDto

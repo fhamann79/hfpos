@@ -171,7 +171,12 @@
           @if (document.buyerEmail) { <small>{{ document.buyerEmail }}</small> }
         </td>
         <td class="identification-column">{{ document.buyerIdentification || '-' }}</td>
-        <td class="status-column"><p-tag [value]="statusLabel(document.documentStatus)" [severity]="statusSeverity(document.documentStatus)"></p-tag></td>
+        <td class="status-column">
+          <p-tag [value]="statusLabel(document.documentStatus)" [severity]="statusSeverity(document.documentStatus)"></p-tag>
+          @if (issuingLabel(document); as label) {
+            <p-tag [value]="label" [severity]="issuingSeverity(document)"></p-tag>
+          }
+        </td>
         <td class="reception-column"><p-tag [value]="receptionLabel(document.sriReceptionStatus)" [severity]="receptionSeverity(document.sriReceptionStatus)"></p-tag></td>
         <td class="authorization-column"><p-tag [value]="authorizationLabel(document.sriAuthorizationStatus)" [severity]="authorizationSeverity(document.sriAuthorizationStatus)"></p-tag></td>
         <td class="amount-column">{{ document.total | currency: 'USD' : 'symbol' : '1.2-2' }}</td>
@@ -217,9 +222,18 @@
 >
   @if (detailLoading()) {
     <div class="dialog-loading"><i class="pi pi-spin pi-spinner"></i><span>Cargando detalle fiscal...</span></div>
-  } @else if (detailError()) {
+  } @else if (detailError() && !selectedDocument()) {
     <p-message severity="error" [text]="detailError()"></p-message>
   } @else if (selectedDocument(); as document) {
+    @if (detailError()) { <p-message severity="error" [text]="detailError()"></p-message> }
+    @if (actionError()) { <p-message severity="error" [text]="actionError()"></p-message> }
+    @if (issuingLabel(document); as label) {
+      <p-tag [value]="label" [severity]="issuingSeverity(document)"></p-tag>
+    }
+    @if (document.issuingJob; as job) {
+      @if (job.safeError) { <p-message severity="warn" [text]="job.safeError"></p-message> }
+      <span>Intentos: {{ job.attemptCount }} · Proxima revision: {{ formatDateTime(job.nextAttemptAt) }}</span>
+    }
     <div class="detail-heading">
       <div>
         <p-tag [value]="kindLabel(document.kind)" [severity]="kindSeverity(document.kind)"></p-tag>
@@ -277,6 +291,10 @@
     <div class="action-groups">
       <div class="action-group">
         <span>Procesamiento SRI</span>
+        <button pButton type="button" icon="pi pi-refresh" label="Actualizar estado" severity="secondary" [disabled]="!!actionLoadingKey()" (click)="openDetail(document)"></button>
+        @if (canResume(document)) {
+          <button pButton type="button" icon="pi pi-play" label="Reanudar trabajo" [loading]="isActionLoading(document, 'resume')" (click)="resumeIssuing(document)"></button>
+        }
         @if (canPrepare(document)) {
           <button pButton type="button" icon="pi pi-file-plus" label="Preparar XML" [loading]="isActionLoading(document, 'prepare')" (click)="prepareSriDraft(document)"></button>
         }

@@ -18,6 +18,7 @@ import { ToastModule } from 'primeng/toast';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
+import { AuthStore } from '../../../../core/stores/auth.store';
 import { hasHttpBusinessError, resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
 import {
   CompanyBranding,
@@ -92,6 +93,15 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
   private readonly permissionService = inject(PermissionService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly authStore = inject(AuthStore);
+  private sriGeneration = 0;
+  private sriDestroyed = false;
+  private sriContext(): string {
+    return `${this.authStore.companyId()}:${this.authStore.establishmentId()}:${this.authStore.emissionPointId()}:${this.authStore.token()}`;
+  }
+  readonly canDelegate = computed(() => this.canWrite()
+    && this.permissionService.hasPermission(PERMISSIONS.sriDocumentsSign)
+    && this.permissionService.hasPermission(PERMISSIONS.sriDocumentsSubmit));
 
   readonly canRead = computed(() => this.permissionService.hasPermission(PERMISSIONS.fiscalSettingsRead));
   readonly canWrite = computed(() => this.permissionService.hasPermission(PERMISSIONS.fiscalSettingsWrite));
@@ -220,6 +230,7 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
   });
 
   readonly sriForm = this.fb.nonNullable.group({
+    automaticProcessingEnabled: [false],
     environment: [1, [Validators.required]],
     emissionType: [1, [Validators.required]],
     isEnabled: [false],
@@ -246,6 +257,8 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.sriDestroyed = true;
+    this.sriGeneration++;
     this.revokeBrandingLogoPreview();
   }
 
@@ -603,13 +616,17 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
   }
 
   loadSriSettings(): void {
+    const generation = ++this.sriGeneration;
+    const context = this.sriContext();
     this.sriLoading.set(true);
     this.sriError.set('');
 
     this.fiscalSettingsService.getSriSettings().subscribe({
       next: (settings) => {
+        if (this.sriDestroyed || generation !== this.sriGeneration || context !== this.sriContext()) return;
         this.sriSettings.set(settings);
         this.sriForm.patchValue({
+          automaticProcessingEnabled: settings.automaticProcessingEnabled ?? false,
           environment: settings.environment,
           emissionType: settings.emissionType,
           isEnabled: settings.isEnabled,
@@ -618,6 +635,7 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
         this.sriLoading.set(false);
       },
       error: (error: HttpErrorResponse) => {
+        if (this.sriDestroyed || generation !== this.sriGeneration || context !== this.sriContext()) return;
         this.sriLoading.set(false);
         this.sriError.set(resolveHttpErrorMessage(error, 'No se pudo cargar la configuración SRI.'));
       },
@@ -669,7 +687,7 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
   }
 
   saveSriSettings(): void {
-    if (!this.canWrite()) {
+    if (!this.canWrite() || this.sriLoading() || this.sriSaving()) {
       return;
     }
 
@@ -679,6 +697,36 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
     }
 
     const values = this.sriForm.getRawValue();
+    const previous = this.sriSettings()?.automaticProcessingEnabled ?? false;
+    if (values.automaticProcessingEnabled && !previous && !this.canDelegate()) return;
+    if (values.automaticProcessingEnabled !== previous) {
+      const context = this.sriContext();
+      const generation = this.sriGeneration;
+      this.confirmationService.confirm({
+        header: values.automaticProcessingEnabled ? 'Delegar emision fiscal automatica' : 'Revocar delegacion fiscal',
+        message: values.automaticProcessingEnabled
+          ? 'Confirmar delegacion para nuevas facturas de esta compania.'
+          : 'Confirmar pausa de nuevas etapas automaticas. Los documentos y trabajos se conservan.',
+        accept: () => {
+          if (!this.sriDestroyed && context === this.sriContext() && generation === this.sriGeneration)
+            this.persistSriSettings();
+        },
+        reject: () => {
+          if (!this.sriDestroyed && context === this.sriContext() && generation === this.sriGeneration)
+            this.sriForm.controls.automaticProcessingEnabled.setValue(previous);
+        },
+      });
+      return;
+    }
+    this.persistSriSettings();
+  }
+
+  private persistSriSettings(): void {
+    if (!this.canWrite() || this.sriSaving() || this.sriLoading()) return;
+    const generation = ++this.sriGeneration;
+    const context = this.sriContext();
+    const values = this.sriForm.getRawValue();
+    if (values.automaticProcessingEnabled && !this.sriSettings()?.automaticProcessingEnabled && !this.canDelegate()) return;
     this.sriSaving.set(true);
 
     this.fiscalSettingsService
@@ -686,10 +734,13 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
         environment: values.environment,
         emissionType: values.emissionType,
         isEnabled: values.isEnabled,
+        automaticProcessingEnabled: values.automaticProcessingEnabled,
       })
       .subscribe({
         next: (settings) => {
+          if (this.sriDestroyed || generation !== this.sriGeneration || context !== this.sriContext()) return;
           this.sriSettings.set(settings);
+          this.sriForm.controls.automaticProcessingEnabled.setValue(settings.automaticProcessingEnabled ?? false);
           this.sriSaving.set(false);
           this.loadSriReadiness();
           this.messageService.add({
@@ -699,7 +750,9 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
           });
         },
         error: (error: HttpErrorResponse) => {
+          if (this.sriDestroyed || generation !== this.sriGeneration || context !== this.sriContext()) return;
           this.sriSaving.set(false);
+          this.sriForm.controls.automaticProcessingEnabled.setValue(this.sriSettings()?.automaticProcessingEnabled ?? false);
           this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
         },
       });

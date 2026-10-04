@@ -80,26 +80,21 @@ export class ElectronicDocumentService {
     return this.http.post(`${this.documentUrl(kind, id)}/sri/sign`, {});
   }
 
+  resumeIssuing(id: number): Observable<unknown> {
+    return this.http.post(`${this.documentsUrl}/invoices/${id}/resume`, {});
+  }
+
   submitSri(kind: ElectronicDocumentKind, id: number): Observable<unknown> {
-    return this.http.post(`${this.documentUrl(kind, id)}/sri/submit`, {});
+    return this.fiscalAction(`${this.documentUrl(kind, id)}/sri/submit`);
   }
 
   checkSriAuthorization(kind: ElectronicDocumentKind, id: number): Observable<unknown> {
-    const url = `${this.documentUrl(kind, id)}/sri/check-authorization`;
+    return this.fiscalAction(`${this.documentUrl(kind, id)}/sri/check-authorization`);
+  }
 
+  private fiscalAction(url: string): Observable<unknown> {
     return this.http.post<unknown>(url, {}, { observe: 'response' }).pipe(
-      map((response) => {
-        if (response.status === 202 && this.isApiErrorPayload(response.body)) {
-          throw new HttpErrorResponse({
-            error: response.body,
-            status: response.status,
-            statusText: response.statusText,
-            url,
-          });
-        }
-
-        return response.body;
-      })
+      map((response) => response.status === 202 ? { pending: true } : response.body)
     );
   }
 

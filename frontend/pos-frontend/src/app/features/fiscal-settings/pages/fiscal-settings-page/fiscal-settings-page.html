@@ -706,6 +706,11 @@
                   </div>
                   <p-toggleswitch formControlName="isEnabled"></p-toggleswitch>
                 </div>
+                <div class="switch-field field-wide">
+                  <strong>Delegacion fiscal automatica de la compania</strong>
+                  <p-toggleswitch formControlName="automaticProcessingEnabled" [disabled]="sriLoading() || sriSaving() || !canWrite() || (!canDelegate() && !sriSettings()?.automaticProcessingEnabled)" ariaLabel="Delegacion fiscal automatica"></p-toggleswitch>
+                  <p-tag [value]="sriSettings()?.automaticProcessingEnabled ? 'Delegacion vigente' : 'Sin delegacion'" [severity]="sriSettings()?.automaticProcessingEnabled ? 'success' : 'secondary'"></p-tag>
+                </div>
               </div>
 
               <div class="certificate-card certificate-card--managed">

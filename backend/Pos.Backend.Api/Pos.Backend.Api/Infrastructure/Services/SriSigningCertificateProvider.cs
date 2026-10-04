@@ -32,10 +32,18 @@ public class SriSigningCertificateProvider : ISriSigningCertificateProvider
     public async Task<SriSigningCertificateMaterial> GetActiveCertificateMaterialAsync()
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        return await GetForCompanyAsync(operationalContext.CompanyId);
+    }
+
+    internal Task<SriSigningCertificateMaterial> GetForAdmissionAsync(ElectronicIssuingCoordinator.Admission authority)
+        => GetForCompanyAsync(authority.Sale.CompanyId);
+
+    private async Task<SriSigningCertificateMaterial> GetForCompanyAsync(int companyId)
+    {
 
         var storedCertificate = await _context.CompanySriCertificates
             .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.CompanyId == operationalContext.CompanyId && c.IsActive);
+            .FirstOrDefaultAsync(c => c.CompanyId == companyId && c.IsActive);
 
         if (storedCertificate is null)
         {
@@ -64,7 +72,7 @@ public class SriSigningCertificateProvider : ISriSigningCertificateProvider
                 _logger.LogWarning(
                     ex,
                     "Could not unprotect SRI certificate material. CompanyId {CompanyId} CertificateId {CertificateId}",
-                    operationalContext.CompanyId,
+                    companyId,
                     storedCertificate.Id);
 
                 throw new InvalidOperationException("CERTIFICATE_UNPROTECT_FAILED", ex);
@@ -96,6 +104,11 @@ public class SriSigningCertificateProvider : ISriSigningCertificateProvider
             {
                 certificate.Dispose();
                 throw new InvalidOperationException("CERTIFICATE_EXPIRED");
+            }
+            if (certificate.NotBefore.ToUniversalTime() > DateTime.UtcNow)
+            {
+                certificate.Dispose();
+                throw new InvalidOperationException("CERTIFICATE_NOT_YET_VALID");
             }
 
             return new SriSigningCertificateMaterial

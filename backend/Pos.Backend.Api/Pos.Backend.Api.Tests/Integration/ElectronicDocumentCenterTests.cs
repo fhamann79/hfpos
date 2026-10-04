@@ -223,7 +223,7 @@ public sealed class ElectronicDocumentCenterTests(PostgresDatabaseFixture databa
         });
         var manyRowQueries = counter.ReaderCount;
 
-        Assert.Equal(2, oneRowQueries);
+        Assert.Equal(3, oneRowQueries); // Summary/page plus one bounded job query, never one query per row.
         Assert.Equal(oneRowQueries, manyRowQueries);
     }
 

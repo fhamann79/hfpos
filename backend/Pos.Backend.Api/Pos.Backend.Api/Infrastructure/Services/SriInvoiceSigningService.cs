@@ -18,6 +18,7 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
     private readonly ISriInvoiceXmlValidator _sriInvoiceXmlValidator;
     private readonly ISalesService _salesService;
     private readonly ILogger<SriInvoiceSigningService> _logger;
+    private readonly ElectronicIssuingCoordinator _coordinator;
 
     public SriInvoiceSigningService(
         PosDbContext context,
@@ -26,7 +27,8 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
         ISriXadesBesSigner sriXadesBesSigner,
         ISriInvoiceXmlValidator sriInvoiceXmlValidator,
         ISalesService salesService,
-        ILogger<SriInvoiceSigningService> logger)
+        ILogger<SriInvoiceSigningService> logger,
+        ElectronicIssuingCoordinator coordinator)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
@@ -35,38 +37,31 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
         _sriInvoiceXmlValidator = sriInvoiceXmlValidator;
         _salesService = salesService;
         _logger = logger;
+        _coordinator = coordinator;
     }
 
     public async Task<SaleDto> SignInvoiceDraftAsync(int saleId)
     {
-        OperationalContext? operationalContext = null;
+        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        await SignCoreAsync(saleId, operationalContext, null, CancellationToken.None);
+        return await _salesService.GetByIdAsync(saleId) ?? throw new KeyNotFoundException("SALE_NOT_FOUND");
+    }
 
+    internal Task SignClaimAsync(Core.Entities.ElectronicIssuingJob claim, CancellationToken ct)
+        => SignCoreAsync(claim.SaleId, null, claim, ct);
+
+    private async Task SignCoreAsync(int saleId, OperationalContext? manual, Core.Entities.ElectronicIssuingJob? claim, CancellationToken ct)
+    {
+        var admission = await _coordinator.AdmitAsync(saleId, ElectronicIssuingPhase.ReadyToSign, manual, claim, ct);
         try
         {
-            operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-
-            var sale = await _context.Sales
-                .FromSqlInterpolated($@"
-                    SELECT *
-                    FROM ""Sales""
-                    WHERE ""Id"" = {saleId}
-                      AND ""CompanyId"" = {operationalContext.CompanyId}
-                      AND ""EstablishmentId"" = {operationalContext.EstablishmentId}
-                      AND ""EmissionPointId"" = {operationalContext.EmissionPointId}
-                    FOR UPDATE")
-                .SingleOrDefaultAsync();
-
-            if (sale is null)
+            await _coordinator.CompleteAsync(admission, async (sale, job) =>
             {
-                throw new KeyNotFoundException("SALE_NOT_FOUND");
-            }
-
             ValidateSaleCanBeSigned(sale);
             _sriInvoiceXmlValidator.ValidateUnsignedInvoiceXml(sale.SriXmlDraft!);
-
-            using var certificateMaterial = await _certificateProvider.GetActiveCertificateMaterialAsync();
+            using var certificateMaterial = _certificateProvider is SriSigningCertificateProvider provider
+                ? await provider.GetForAdmissionAsync(admission)
+                : throw new InvalidOperationException("FISCAL_CERTIFICATE_PROVIDER_REQUIRED");
             var now = DateTime.UtcNow;
             var signedXml = _sriXadesBesSigner.SignInvoiceXml(
                 sale.SriXmlDraft!,
@@ -82,42 +77,14 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
             sale.SriSigningCertificateSerialNumber = certificateMaterial.SerialNumber;
             sale.UpdatedAt = now;
 
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-
-            _logger.LogInformation(
-                "SRI XML draft signed. SaleId {SaleId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId} CertificateId {CertificateId}",
-                sale.Id,
-                operationalContext.CompanyId,
-                operationalContext.EstablishmentId,
-                operationalContext.EmissionPointId,
-                certificateMaterial.CertificateId);
-
-            return await _salesService.GetByIdAsync(sale.Id)
-                ?? throw new KeyNotFoundException("SALE_NOT_FOUND");
+            ElectronicIssuingCoordinator.Schedule(job, ElectronicIssuingJobState.Queued, ElectronicIssuingPhase.ReadyToSubmit);
+            }, ct);
         }
-        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        catch (Exception ex) when (ex is not OperationCanceledException && ex.Message != "FISCAL_LEASE_LOST")
         {
-            _logger.LogWarning(
-                ex,
-                "SRI XML signing failed. SaleId {SaleId} ErrorCode {ErrorCode} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
-                saleId,
-                ex.Message,
-                operationalContext?.CompanyId,
-                operationalContext?.EstablishmentId,
-                operationalContext?.EmissionPointId);
+            await _coordinator.FailAsync(admission, ex is InvalidOperationException or KeyNotFoundException
+                ? ex.Message : "SRI_XML_SIGNING_FAILED", false, ct);
             throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "Unexpected SRI XML signing failure. SaleId {SaleId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
-                saleId,
-                operationalContext?.CompanyId,
-                operationalContext?.EstablishmentId,
-                operationalContext?.EmissionPointId);
-            throw new InvalidOperationException("SRI_XML_SIGNING_FAILED", ex);
         }
     }
 

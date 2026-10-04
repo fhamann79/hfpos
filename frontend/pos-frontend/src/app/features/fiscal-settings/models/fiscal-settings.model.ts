@@ -88,6 +88,8 @@ export interface CompanyEmailTestResult {
 }
 
 export interface CompanySriSettings {
+  automaticProcessingEnabled?: boolean;
+  automaticProcessingRevision?: number;
   companyId: number;
   environment: number;
   emissionType: number;
@@ -151,6 +153,7 @@ export interface SriFiscalReadinessCheck {
 }
 
 export interface UpdateCompanySriSettingsRequest {
+  automaticProcessingEnabled?: boolean;
   environment: number;
   emissionType: number;
   isEnabled: boolean;

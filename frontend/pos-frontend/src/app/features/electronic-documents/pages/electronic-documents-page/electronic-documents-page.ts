@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { CheckboxModule } from 'primeng/checkbox';
@@ -52,6 +52,8 @@ import {
   ElectronicDocumentSortField,
   ElectronicDocumentSummary,
   electronicDocumentKindLabel,
+  ElectronicIssuingJobState,
+  issuingStateLabel,
 } from '../../models/electronic-document.model';
 import { ElectronicDocumentService } from '../../services/electronic-document.service';
 
@@ -93,7 +95,18 @@ const EMPTY_SUMMARY: ElectronicDocumentSummary = {
   templateUrl: './electronic-documents-page.html',
   styleUrl: './electronic-documents-page.scss',
 })
-export class ElectronicDocumentsPage implements OnInit {
+export class ElectronicDocumentsPage implements OnInit, OnDestroy {
+  private listGeneration = 0;
+  private detailGeneration = 0;
+  private destroyed = false;
+  private contextIdentity(): string {
+    return `${this.authStore.companyId()}:${this.authStore.establishmentId()}:${this.authStore.emissionPointId()}:${this.authStore.token()}`;
+  }
+  ngOnDestroy(): void {
+    this.destroyed = true;
+    this.listGeneration++;
+    this.detailGeneration++;
+  }
   private readonly documentService = inject(ElectronicDocumentService);
   private readonly permissionService = inject(PermissionService);
   private readonly authStore = inject(AuthStore);
@@ -110,6 +123,7 @@ export class ElectronicDocumentsPage implements OnInit {
   readonly detailVisible = signal(false);
   readonly detailLoading = signal(false);
   readonly detailError = signal('');
+  readonly actionError = signal('');
   readonly selectedDocument = signal<ElectronicDocumentDetail | null>(null);
   readonly actionLoadingKey = signal('');
 
@@ -178,11 +192,14 @@ export class ElectronicDocumentsPage implements OnInit {
   }
 
   loadDocuments(page = this.currentPage(), pageSize = this.rows): void {
+    const generation = ++this.listGeneration;
+    const context = this.contextIdentity();
     this.loading.set(true);
     this.errorMessage.set('');
 
     this.documentService.getDocuments(this.currentQuery(page, pageSize)).subscribe({
       next: (result) => {
+        if (this.destroyed || generation !== this.listGeneration || context !== this.contextIdentity()) return;
         if (result.totalPages > 0 && result.page > result.totalPages) {
           this.loadDocuments(result.totalPages, result.pageSize);
           return;
@@ -198,6 +215,7 @@ export class ElectronicDocumentsPage implements OnInit {
         this.loading.set(false);
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || generation !== this.listGeneration || context !== this.contextIdentity()) return;
         this.loading.set(false);
         this.errorMessage.set(this.resolveError(error, 'No se pudo cargar el centro documental.'));
       },
@@ -239,6 +257,9 @@ export class ElectronicDocumentsPage implements OnInit {
   }
 
   openDetail(row: ElectronicDocumentListItem): void {
+    const generation = ++this.detailGeneration;
+    const context = this.contextIdentity();
+    this.actionError.set('');
     this.detailVisible.set(true);
     this.detailLoading.set(true);
     this.detailError.set('');
@@ -246,10 +267,12 @@ export class ElectronicDocumentsPage implements OnInit {
 
     this.documentService.getDetail(row.kind, row.id).subscribe({
       next: (detail) => {
+        if (this.destroyed || generation !== this.detailGeneration || context !== this.contextIdentity()) return;
         this.selectedDocument.set(detail);
         this.detailLoading.set(false);
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || generation !== this.detailGeneration || context !== this.contextIdentity()) return;
         this.detailLoading.set(false);
         this.detailError.set(this.resolveError(error, 'No se pudo cargar el detalle fiscal.'));
       },
@@ -261,6 +284,7 @@ export class ElectronicDocumentsPage implements OnInit {
       return;
     }
     this.detailVisible.set(false);
+    this.detailGeneration++;
     this.selectedDocument.set(null);
     this.detailError.set('');
   }
@@ -272,21 +296,50 @@ export class ElectronicDocumentsPage implements OnInit {
   }
 
   signSri(document: ElectronicDocumentDetail): void {
+    if (!this.canSign(document)) return;
     this.runMutation(document, 'sign', () =>
       this.documentService.signSri(document.kind, document.id)
     );
   }
 
   submitSri(document: ElectronicDocumentDetail): void {
+    if (!this.canSubmit(document)) return;
     this.runMutation(document, 'submit', () =>
       this.documentService.submitSri(document.kind, document.id)
     );
   }
 
   checkAuthorization(document: ElectronicDocumentDetail): void {
+    if (!this.canCheck(document)) return;
     this.runMutation(document, 'check', () =>
       this.documentService.checkSriAuthorization(document.kind, document.id)
     );
+  }
+
+  resumeIssuing(document: ElectronicDocumentDetail): void {
+    if (!this.canResume(document)) return;
+    this.runMutation(document, 'resume', () => this.documentService.resumeIssuing(document.id));
+  }
+
+  issuingLabel(document: ElectronicDocumentListItem): string | null {
+    return issuingStateLabel(document.issuingJob?.state);
+  }
+
+  issuingSeverity(document: ElectronicDocumentListItem): DocumentTagSeverity {
+    const state = document.issuingJob?.state;
+    return state === ElectronicIssuingJobState.Authorized ? 'success'
+      : state === ElectronicIssuingJobState.Rejected ? 'danger'
+      : state === ElectronicIssuingJobState.ManualAttention || state === ElectronicIssuingJobState.TransientFailure ? 'warn' : 'info';
+  }
+
+  jobBusy(document: ElectronicDocumentListItem): boolean {
+    return document.issuingJob?.state === ElectronicIssuingJobState.Processing;
+  }
+
+  canResume(document: ElectronicDocumentDetail): boolean {
+    return document.kind === ElectronicDocumentKind.Invoice && this.canSubmitDocuments()
+      && document.issuingJob?.state === ElectronicIssuingJobState.ManualAttention
+      && document.documentStatus !== SaleDocumentStatus.Authorized && document.documentStatus !== SaleDocumentStatus.Rejected;
   }
 
   downloadDraft(document: ElectronicDocumentDetail): void {
@@ -420,6 +473,7 @@ export class ElectronicDocumentsPage implements OnInit {
 
   canSign(document: ElectronicDocumentDetail): boolean {
     return this.canSignDocuments()
+      && !this.jobBusy(document)
       && document.documentStatus === SaleDocumentStatus.Draft
       && document.hasSriXmlDraft
       && !document.hasSriSignedXml;
@@ -427,6 +481,7 @@ export class ElectronicDocumentsPage implements OnInit {
 
   canSubmit(document: ElectronicDocumentDetail): boolean {
     return this.canSubmitDocuments()
+      && !this.jobBusy(document) && !document.issuingJob?.receptionAdmitted
       && document.documentStatus === SaleDocumentStatus.Draft
       && document.hasSriSignedXml
       && !document.sriSubmittedAt
@@ -435,11 +490,14 @@ export class ElectronicDocumentsPage implements OnInit {
 
   canCheck(document: ElectronicDocumentDetail): boolean {
     return this.canSubmitDocuments()
-      && document.documentStatus === SaleDocumentStatus.PendingAuthorization
+      && !this.jobBusy(document)
+      && (document.issuingJob?.receptionAdmitted === true
+        ? !this.isAuthorized(document) && document.documentStatus !== SaleDocumentStatus.Rejected
+        : document.documentStatus === SaleDocumentStatus.PendingAuthorization
       && !!document.accessKey
       && !!document.sriSubmittedAt
       && this.normalizeSriStatus(document.sriReceptionStatus) === 'RECIBIDA'
-      && this.normalizeSriStatus(document.sriAuthorizationStatus) !== 'AUTORIZADO';
+      && this.normalizeSriStatus(document.sriAuthorizationStatus) !== 'AUTORIZADO');
   }
 
   canReadArtifacts(document: ElectronicDocumentDetail): boolean {
@@ -558,32 +616,43 @@ export class ElectronicDocumentsPage implements OnInit {
     if (this.actionLoadingKey()) {
       return;
     }
+    const generation = this.detailGeneration;
+    const context = this.contextIdentity();
 
     this.actionLoadingKey.set(`${document.key}:${action}`);
-    this.detailError.set('');
+    this.actionError.set('');
     this.successMessage.set('');
     operation().subscribe({
-      next: () => {
+      next: (result) => {
+        if (this.destroyed || generation !== this.detailGeneration || context !== this.contextIdentity()) return;
         this.actionLoadingKey.set('');
-        this.successMessage.set('Operación SRI completada.');
+        const pending = typeof result === 'object' && result !== null && 'pending' in result && result.pending === true;
+        this.successMessage.set(action === 'resume' ? 'Trabajo en cola.'
+          : pending ? 'Esperando autorización.' : 'Operación SRI completada.');
         this.reloadSelectedDocument(document);
         this.loadDocuments(this.currentPage(), this.rows);
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || generation !== this.detailGeneration || context !== this.contextIdentity()) return;
         this.actionLoadingKey.set('');
-        this.detailError.set(this.resolveError(error, 'No se pudo completar la operación SRI.'));
+        this.actionError.set(this.resolveError(error, 'No se pudo completar la operación SRI.'));
+        this.reloadSelectedDocument(document);
       },
     });
   }
 
   private reloadSelectedDocument(document: ElectronicDocumentDetail): void {
+    const generation = this.detailGeneration;
+    const context = this.contextIdentity();
     this.detailLoading.set(true);
     this.documentService.getDetail(document.kind, document.id).subscribe({
       next: (detail) => {
+        if (this.destroyed || generation !== this.detailGeneration || context !== this.contextIdentity()) return;
         this.selectedDocument.set(detail);
         this.detailLoading.set(false);
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || generation !== this.detailGeneration || context !== this.contextIdentity()) return;
         this.detailLoading.set(false);
         this.detailError.set(this.resolveError(error, 'No se pudo actualizar el detalle fiscal.'));
       },

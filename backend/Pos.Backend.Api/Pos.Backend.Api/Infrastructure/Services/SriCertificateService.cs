@@ -79,7 +79,9 @@ public class SriCertificateService : ISriCertificateService
         var fileName = NormalizeMaxLength(Path.GetFileName(file!.FileName), MaxFileNameLength);
         var contentType = NormalizeMaxLength(file.ContentType, MaxContentTypeLength);
 
-        await using var transaction = await _context.Database.BeginTransactionAsync();
+        var guard = new TenantAdministrationGuard(_context);
+        await using var transaction = await guard.BeginChangeAsync(operationalContext.CompanyId);
+        await guard.LockOperationalWriteAsync(operationalContext);
 
         var activeCertificates = await _context.CompanySriCertificates
             .Where(c => c.CompanyId == operationalContext.CompanyId && c.IsActive)
@@ -134,7 +136,9 @@ public class SriCertificateService : ISriCertificateService
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
         var now = DateTime.UtcNow;
 
-        await using var transaction = await _context.Database.BeginTransactionAsync();
+        var guard = new TenantAdministrationGuard(_context);
+        await using var transaction = await guard.BeginChangeAsync(operationalContext.CompanyId);
+        await guard.LockOperationalWriteAsync(operationalContext);
 
         var certificate = await _context.CompanySriCertificates
             .FirstOrDefaultAsync(c => c.CompanyId == operationalContext.CompanyId && c.IsActive);

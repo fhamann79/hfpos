@@ -161,8 +161,29 @@ public sealed class PlatformTenantService(PosDbContext database, IPlatformContex
                 var reason = request.Reason?.Trim();
                 if (string.IsNullOrWhiteSpace(reason) || reason.Length > 500) throw new PlatformException("TENANT_REASON_REQUIRED");
                 company.IsActive = active;
-                if (!active) await database.Users.Where(u => u.CompanyId == id)
-                    .ExecuteUpdateAsync(updates => updates.SetProperty(u => u.SessionVersion, u => u.SessionVersion + 1));
+                if (!active)
+                {
+                    await database.Users.Where(u => u.CompanyId == id)
+                        .ExecuteUpdateAsync(updates => updates.SetProperty(u => u.SessionVersion, u => u.SessionVersion + 1));
+                    var settings = await database.CompanySriSettings.SingleOrDefaultAsync(s => s.CompanyId == id);
+                    if (settings?.AutomaticProcessingEnabled == true)
+                    {
+                        settings.AutomaticProcessingEnabled = false;
+                        settings.AutomaticProcessingRevision = checked(settings.AutomaticProcessingRevision + 1);
+                        var delegation = await database.FiscalDelegations.SingleOrDefaultAsync(d => d.CompanyId == id && d.DisabledAt == null);
+                        if (delegation is not null)
+                        {
+                            delegation.DisabledAt = clock.UtcNow;
+                            delegation.DisabledByPlatformUserId = actor.UserId;
+                        }
+                        database.FiscalDelegationAudits.Add(new FiscalDelegationAudit
+                        {
+                            CompanyId = id, Revision = settings.AutomaticProcessingRevision,
+                            PreviousEnabled = true, Enabled = false, PlatformUserId = actor.UserId,
+                            CreatedAt = clock.UtcNow, CorrelationId = Guid.NewGuid()
+                        });
+                    }
+                }
                 database.PlatformTenantEvents.Add(new PlatformTenantEvent { CompanyId = id, PlatformUserId = actor.UserId,
                     EventType = active ? PlatformTenantEventType.Reactivated : PlatformTenantEventType.Suspended,
                     Reason = reason, CreatedAt = clock.UtcNow });

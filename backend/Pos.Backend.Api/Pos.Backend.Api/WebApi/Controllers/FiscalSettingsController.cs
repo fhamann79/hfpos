@@ -340,6 +340,7 @@ public class FiscalSettingsController : ControllerBase
 
         return code switch
         {
+            "FISCAL_PERMISSION_REQUIRED" => StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse { Error = code }),
             "COMPANY_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "DOCUMENT_SEQUENCE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CERTIFICATE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),

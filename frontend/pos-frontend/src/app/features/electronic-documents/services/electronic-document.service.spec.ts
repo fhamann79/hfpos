@@ -33,6 +33,14 @@ describe('ElectronicDocumentService', () => {
 
   afterEach(() => http.verify());
 
+  it('treats accepted pending authorization as waiting, not an error or an authorized document', () => {
+    service.checkSriAuthorization(ElectronicDocumentKind.Invoice, 7).subscribe(result => {
+      expect(result).toEqual({ pending: true });
+    });
+    http.expectOne(candidate => candidate.url.endsWith('/api/Sales/7/sri/check-authorization'))
+      .flush({ error: 'SRI_AUTHORIZATION_PENDING' }, { status: 202, statusText: 'Accepted' });
+  });
+
   it('sends global filters, pagination and allowlisted server sorting', () => {
     service.getDocuments(query).subscribe((result) => {
       expect(result.items[0].key).toBe('credit-note:9');

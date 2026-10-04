@@ -48,10 +48,56 @@ public class PosDbContext : DbContext
     public DbSet<CreditNoteItem> CreditNoteItems { get; set; }
     public DbSet<SriSubmissionAttempt> SriSubmissionAttempts { get; set; }
     public DbSet<SaleInvoiceEmailDelivery> SaleInvoiceEmailDeliveries { get; set; }
+    public DbSet<ElectronicIssuingJob> ElectronicIssuingJobs { get; set; }
+    public DbSet<FiscalDelegation> FiscalDelegations { get; set; }
+    public DbSet<FiscalDelegationAudit> FiscalDelegationAudits { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<ElectronicIssuingJob>(entity =>
+        {
+            entity.Property(j => j.SafeError).HasMaxLength(100);
+            entity.Property(j => j.AccessKey).HasMaxLength(49).IsRequired();
+            entity.Property(j => j.DraftHash).HasMaxLength(64).IsRequired();
+            entity.HasIndex(j => j.SaleId).IsUnique();
+            entity.HasIndex(j => new { j.AutomaticRequested, j.State, j.NextAttemptAt, j.Id });
+            entity.HasIndex(j => new { j.CompanyId, j.EstablishmentId, j.EmissionPointId });
+            entity.HasOne(j => j.Sale).WithOne().HasForeignKey<ElectronicIssuingJob>(j => j.SaleId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Company>().WithMany().HasForeignKey(j => j.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<User>().WithMany().HasForeignKey(j => j.UserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Establishment>().WithMany().HasForeignKey(j => j.EstablishmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<EmissionPoint>().WithMany().HasForeignKey(j => j.EmissionPointId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<FiscalDelegation>().WithMany().HasForeignKey(j => j.FiscalDelegationId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(t => t.HasCheckConstraint("CK_ElectronicIssuingJobs_Bounds",
+                "\"AttemptCount\" >= 0 AND \"Fence\" >= 0 AND \"DocumentType\" = 1 AND \"State\" BETWEEN 0 AND 6"));
+        });
+        modelBuilder.Entity<SriSubmissionAttempt>().HasOne<FiscalDelegation>().WithMany()
+            .HasForeignKey(a => a.FiscalDelegationId).OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<FiscalDelegation>(entity =>
+        {
+            entity.HasIndex(d => new { d.CompanyId, d.Revision }).IsUnique();
+            entity.HasIndex(d => d.CompanyId).IsUnique().HasFilter("\"DisabledAt\" IS NULL");
+            entity.HasOne<Company>().WithMany().HasForeignKey(d => d.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<User>().WithMany().HasForeignKey(d => d.EnabledByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<User>().WithMany().HasForeignKey(d => d.DisabledByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PlatformUser>().WithMany().HasForeignKey(d => d.DisabledByPlatformUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Establishment>().WithMany().HasForeignKey(d => d.AuthorizerEstablishmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<EmissionPoint>().WithMany().HasForeignKey(d => d.AuthorizerEmissionPointId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<FiscalDelegationAudit>(entity =>
+        {
+            entity.HasIndex(d => new { d.CompanyId, d.Revision }).IsUnique();
+            entity.HasOne<Company>().WithMany().HasForeignKey(d => d.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<User>().WithMany().HasForeignKey(d => d.UserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PlatformUser>().WithMany().HasForeignKey(d => d.PlatformUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(t => t.HasCheckConstraint("CK_FiscalDelegationAudits_Actor",
+                "(\"UserId\" IS NOT NULL) <> (\"PlatformUserId\" IS NOT NULL)"));
+        });
 
         modelBuilder.Entity<InitialDataBatch>(entity =>
         {
