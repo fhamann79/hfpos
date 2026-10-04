@@ -7,6 +7,8 @@ public class SaleItemDto
     public int Id { get; set; }
 
     public int ProductId { get; set; }
+    public string? ProductNameSnapshot { get; set; }
+    public string? ProductSkuSnapshot { get; set; }
 
     public string ProductName { get; set; }
 

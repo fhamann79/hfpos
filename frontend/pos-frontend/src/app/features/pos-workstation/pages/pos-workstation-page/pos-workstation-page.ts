@@ -61,6 +61,8 @@ import { SriSubmissionAttempt } from '../../models/sri-submission-attempt.model'
 import { PosKeyboardService } from '../../services/pos-keyboard.service';
 import { PosCatalogSnapshot, PosProductCatalogService } from '../../services/pos-product-catalog.service';
 import { PosWorkstationService } from '../../services/pos-workstation.service';
+import { CheckoutIntentService } from '../../services/checkout-intent.service';
+import { SaleReceiptDialog } from '../../components/sale-receipt-dialog/sale-receipt-dialog';
 
 @Component({
   selector: 'app-pos-workstation-page',
@@ -75,6 +77,7 @@ import { PosWorkstationService } from '../../services/pos-workstation.service';
     QuickProductSearchDialog,
     CartWorkstation,
     CheckoutConfirmDialog,
+    SaleReceiptDialog,
     CustomerSelectorDialog,
     CancelCreditNoteDraftDialog,
     CreditNoteDetailDialog,
@@ -103,6 +106,19 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   private readonly cashSessionService = inject(CashSessionService);
   private readonly keyboard = inject(PosKeyboardService);
   private readonly messageService = inject(MessageService);
+  private readonly intentService = inject(CheckoutIntentService);
+  private destroyed = false;
+  private pendingCheckoutScope: string | null = null;
+  private cartStockGeneration = 0;
+  private checkoutGeneration = 0;
+  readonly pendingCheckout = signal<CheckoutRequest | null>(null);
+  readonly checkoutRecoveryError = signal('');
+  readonly cashReceived = signal<number | null>(null);
+  readonly receiptSale = signal<Sale | null>(null);
+  readonly receiptReprintSale = signal<Sale | null>(null);
+  readonly receiptVisible = signal(false);
+  readonly checkoutLocked = computed(() => this.checkoutLoading() || !!this.pendingCheckout()
+    || !!this.checkoutRecoveryError() || !!this.receiptSale());
 
   @ViewChild(ProductSearchPanel) private productSearchPanel?: ProductSearchPanel;
 
@@ -251,6 +267,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   private subscriptions: Subscription[] = [];
 
   ngOnInit(): void {
+    try { this.pendingCheckoutScope = this.checkoutScope(); this.pendingCheckout.set(this.intentService.load(this.pendingCheckoutScope)); }
+    catch { this.checkoutRecoveryError.set('No se pudo recuperar el cobro pendiente. No vuelvas a cobrar sin verificar la venta.'); }
     if (this.canSell) {
       this.loadProducts();
       this.loadCurrentCashSession();
@@ -262,7 +280,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
     this.subscriptions.push(
       this.keyboard.watch(['F2']).subscribe(() => {
-        if (this.canSell) {
+        if (this.canSell && !this.checkoutLocked()) {
           this.quickSearchVisible.set(true);
         }
       }),
@@ -275,7 +293,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         }
       }),
       this.keyboard.watch(['F4']).subscribe(() => {
-        if (this.canSell) {
+        if (this.canSell && !this.checkoutLocked()) {
           this.customerSelectorVisible.set(true);
         }
       }),
@@ -297,6 +315,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
+    this.checkoutGeneration++;
     this.subscriptions.forEach((subscription) => subscription.unsubscribe());
   }
 
@@ -402,7 +422,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   addProduct(product: PosProduct): boolean {
-    if (!this.canSell) {
+    if (!this.canSell || this.checkoutLocked()) {
       return false;
     }
 
@@ -464,6 +484,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   updateQuantity(event: { productId: number; quantity: number }): void {
+    if (this.checkoutLocked()) return;
     this.activeCartProductId.set(event.productId);
 
     let limitedItemName: string | null = null;
@@ -500,6 +521,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   updateUnitPrice(event: { productId: number; unitPrice: number }): void {
+    if (this.checkoutLocked()) return;
     this.activeCartProductId.set(event.productId);
 
     this.cart.update((items) =>
@@ -517,6 +539,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   updateLineDiscount(event: { productId: number; discountAmount: number }): void {
+    if (this.checkoutLocked()) return;
     this.activeCartProductId.set(event.productId);
 
     this.cart.update((items) =>
@@ -530,10 +553,12 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   updateSaleDiscount(discountAmount: number): void {
+    if (this.checkoutLocked()) return;
     this.saleDiscountAmount.set(this.normalizeDiscount(discountAmount, this.maxSaleDiscountAmount()));
   }
 
   removeItem(productId: number): void {
+    if (this.checkoutLocked()) return;
     const items = this.cart();
     const removedIndex = items.findIndex((item) => item.productId === productId);
 
@@ -549,7 +574,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   openCustomerSelector(): void {
-    if (!this.canSell) {
+    if (!this.canSell || this.checkoutLocked()) {
       return;
     }
 
@@ -565,17 +590,21 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   selectCustomer(customer: PosCustomer): void {
+    if (this.checkoutLocked()) return;
     this.selectedCustomer.set(customer);
     this.customerSelectorVisible.set(false);
     this.focusMainSearch();
   }
 
   clearCustomer(): void {
+    if (this.checkoutLocked()) return;
     this.selectedCustomer.set(null);
     this.focusMainSearch();
   }
 
   openCheckoutDialog(): void {
+    if (this.pendingCheckout()) { this.confirmCheckout(); return; }
+    if (this.checkoutLocked()) return;
     if (!this.canSell || !this.cart().length) {
       return;
     }
@@ -604,10 +633,14 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       return;
     }
 
+    this.cashReceived.set(this.total());
     this.checkoutVisible.set(true);
   }
 
   confirmCheckout(): void {
+    if (this.destroyed || this.checkoutLoading() || this.checkoutRecoveryError() || this.receiptSale() || !this.canSell) return;
+    const pending = this.pendingCheckout();
+    if (pending) { this.sendCheckout(pending); return; }
     if (!this.canSell || !this.cart().length) {
       return;
     }
@@ -643,6 +676,9 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
 
     const payload: CheckoutRequest = {
+      requestId: crypto.randomUUID(),
+      cashReceived: this.selectedPaymentMethod() === SalePaymentMethod.Cash
+        ? this.cashReceived() ?? this.total() : undefined,
       customerId: this.selectedCustomer()?.id ?? null,
       documentType: this.selectedDocumentType(),
       paymentMethod: this.selectedPaymentMethod(),
@@ -656,51 +692,104 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       })),
     };
 
-    this.checkoutLoading.set(true);
+    if (payload.cashReceived !== undefined && (!Number.isFinite(payload.cashReceived) || payload.cashReceived < this.total())) {
+      this.messageService.add({ severity: 'warn', summary: 'Efectivo insuficiente', detail: 'El recibido debe cubrir el total.' });
+      return;
+    }
+    try { this.pendingCheckoutScope = this.checkoutScope(); this.pendingCheckout.set(this.intentService.save(this.pendingCheckoutScope, payload)); }
+    catch { this.checkoutRecoveryError.set('No se pudo guardar la intención de cobro. No se envió la venta.'); return; }
+    this.sendCheckout(this.pendingCheckout()!);
+  }
 
-    this.workstationService.createSale(payload).subscribe({
-      next: () => {
+  private checkoutScope(): string {
+    return [this.authStore.companyId(), this.authStore.establishmentId(), this.authStore.emissionPointId(), this.authStore.username()].join(':');
+  }
+
+  private sendCheckout(payload: CheckoutRequest): void {
+    const scope = this.checkoutScope();
+    if (scope !== this.pendingCheckoutScope) {
+      this.checkoutRecoveryError.set('El contexto cambió. Recupera el cobro desde el usuario y punto originales.');
+      return;
+    }
+    this.cartStockGeneration++;
+    const generation = ++this.checkoutGeneration;
+    this.checkoutLoading.set(true);
+    this.subscriptions.push(this.workstationService.createSale(payload).subscribe({
+      next: (sale) => {
+        if (this.destroyed || generation !== this.checkoutGeneration || scope !== this.checkoutScope()) return;
         this.checkoutLoading.set(false);
         this.checkoutVisible.set(false);
-        this.cart.set([]);
-        this.activeCartProductId.set(null);
-        this.selectedCustomer.set(null);
-        this.saleDiscountAmount.set(0);
-        this.selectedDocumentType.set(SaleDocumentType.Ticket);
-        this.selectedPaymentMethod.set(SalePaymentMethod.Cash);
-        this.notes.set('');
-        this.messageService.add({ severity: 'success', summary: 'Venta registrada', detail: 'La venta fue creada correctamente.' });
+        if (!sale.id || sale.requestId !== payload.requestId || !Number.isFinite(sale.total)) {
+          this.messageService.add({ severity: 'warn', summary: 'Resultado pendiente', detail: 'Reintenta recuperar el mismo cobro; no vuelvas a cobrar.' });
+          return;
+        }
+        this.intentService.clear(scope);
+        this.checkoutGeneration++;
+        this.pendingCheckout.set(null);
+        this.receiptSale.set(sale);
+        this.receiptVisible.set(true);
         this.refreshOperationalData();
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || generation !== this.checkoutGeneration || scope !== this.checkoutScope()) return;
+        this.checkoutGeneration++;
         this.checkoutLoading.set(false);
         this.checkoutVisible.set(false);
-
-        if (this.workstationService.isBusinessError(error, 'CASH_SESSION_REQUIRED')) {
-          this.currentCashSession.set(null);
-          this.messageService.add({
-            severity: 'warn',
-            summary: 'Caja requerida',
-            detail: 'Debes abrir caja antes de vender.',
-          });
-        } else if (this.workstationService.isBusinessError(error, 'INSUFFICIENT_STOCK')) {
-          this.messageService.add({
-            severity: 'warn',
-            summary: 'Stock actualizado',
-            detail:
-              'El stock cambió mientras preparabas la venta. Se refrescará el POS para reconciliar el carrito.',
-          });
+        const code = readErrorCode(error);
+        // Only known, definitive pre-commit business failures release the frozen intent.
+        const definitive = ['INSUFFICIENT_STOCK', 'CASH_SESSION_REQUIRED', 'PRODUCT_NOT_FOUND', 'PRODUCT_INACTIVE',
+          'CUSTOMER_NOT_FOUND', 'CASH_RECEIVED_INVALID', 'CASH_RECEIVED_INSUFFICIENT', 'CASH_RECEIVED_NOT_APPLICABLE',
+          'SALE_AMOUNT_INVALID', 'INVALID_LINE_DISCOUNT', 'INVALID_SALE_DISCOUNT', 'CUSTOMER_FISCAL_DATA_REQUIRED',
+          'INVALID_ISSUER_RUC', 'INVALID_SRI_DOCUMENT_CONTEXT', 'SRI_COMPANY_MATRIX_ADDRESS_REQUIRED',
+          'INVALID_SRI_CUSTOMER_IDENTIFICATION', 'SRI_XML_REQUIRED_FIELD_MISSING', 'SRI_XML_INVALID_FIELD_FORMAT',
+          'SRI_BUYER_IDENTIFICATION_TYPE_REQUIRED', 'INVALID_SRI_PRODUCT_CODE', 'INVALID_SRI_PAYMENT_METHOD',
+          'SRI_XML_DRAFT_GENERATION_FAILED', 'INVALID_PRODUCT_VAT_CATEGORY']
+          .includes(code ?? '') && (error.status === 400 || error.status === 404 || error.status === 409);
+        if (definitive) {
+          this.intentService.clear(scope);
+          this.pendingCheckout.set(null);
+          this.messageService.add({ severity: 'warn', summary: 'Venta no registrada', detail: this.workstationService.resolveBusinessError(error) });
+          this.refreshOperationalData();
+          if (code === 'INSUFFICIENT_STOCK' || code === 'PRODUCT_INACTIVE' || code === 'PRODUCT_NOT_FOUND') this.refreshCartStock();
         } else {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'No se pudo completar la venta',
-            detail: this.workstationService.resolveBusinessError(error),
-          });
+          this.messageService.add({ severity: 'warn', summary: 'Cobro pendiente de recuperar',
+            detail: code === 'REQUEST_CONFLICT' ? 'Conflicto de intención. Verifica la venta antes de volver a cobrar.'
+              : 'El resultado no está confirmado. Recupera el mismo cobro, sin crear otra venta.' });
         }
-
-        this.refreshOperationalData();
       },
-    });
+    }));
+  }
+
+  setCheckoutVisible(visible: boolean): void {
+    if (!this.checkoutLoading()) this.checkoutVisible.set(visible);
+  }
+
+  updateNotes(notes: string): void { if (!this.checkoutLocked()) this.notes.set(notes); }
+  updateDocumentType(type: SaleDocumentType): void { if (!this.checkoutLocked()) this.selectedDocumentType.set(type); }
+  updatePaymentMethod(method: SalePaymentMethod): void { if (!this.checkoutLocked()) this.selectedPaymentMethod.set(method); }
+  updateCashReceived(received: number | null): void { if (!this.checkoutLocked()) this.cashReceived.set(received); }
+  openReceipt(sale: Sale): void { this.saleDetailVisible.set(false); this.receiptReprintSale.set(sale); this.receiptVisible.set(true); }
+
+  nextCustomer(): void {
+    if (this.checkoutLoading() || this.pendingCheckout() || !this.receiptSale()) return;
+    this.cartStockGeneration++;
+    this.checkoutGeneration++;
+    this.receiptVisible.set(false);
+    this.receiptSale.set(null);
+    this.receiptReprintSale.set(null);
+    this.cart.set([]);
+    this.activeCartProductId.set(null);
+    this.selectedCustomer.set(null);
+    this.saleDiscountAmount.set(0);
+    this.selectedDocumentType.set(SaleDocumentType.Ticket);
+    this.selectedPaymentMethod.set(SalePaymentMethod.Cash);
+    this.cashReceived.set(null);
+    this.notes.set('');
+    this.searchTerm.set('');
+    this.productSearchPanel?.resetSearch();
+    this.quickSearchVisible.set(false);
+    this.customerSelectorVisible.set(false);
+    this.focusMainSearch();
   }
 
   processSriWorkflow(saleId: number): void {
@@ -2951,6 +3040,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   private reconcileCartWithCatalog(): void {
+    if (this.checkoutLocked()) return;
     const stockMap = new Map(this.allProducts().map((product) => [product.id, product]));
 
     this.cart.update((items) =>
@@ -2958,26 +3048,15 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         .map((item) => {
           const product = stockMap.get(item.productId);
 
-          if (!product) {
-            return null;
-          }
+          if (!product) return item;
 
           const nextStock = this.inventoryAvailable() ? product.stock : item.stock;
-          const nextQuantity = this.inventoryAvailable()
-            ? Math.min(item.quantity, Math.max(product.stock, 0))
-            : item.quantity;
-
-          if (this.inventoryAvailable() && nextQuantity <= 0) {
-            return null;
-          }
 
           return {
             ...item,
             productName: product.name,
             unitPrice: item.unitPrice,
-            discountAmount: this.normalizeDiscount(item.discountAmount, nextQuantity * item.unitPrice),
             stock: nextStock,
-            quantity: nextQuantity,
             product,
           };
         })
@@ -2985,6 +3064,23 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     );
 
     this.ensureActiveCartLine();
+  }
+
+  private refreshCartStock(): void {
+    const generation = ++this.cartStockGeneration;
+    const scope = this.checkoutScope();
+    const cart = this.cart();
+    this.subscriptions.push(this.catalogService.refreshCartProducts(cart.map(item => item.productId)).subscribe({
+      next: products => {
+        if (this.destroyed || generation !== this.cartStockGeneration || scope !== this.checkoutScope() || this.checkoutLocked()) return;
+        const byId = new Map(products.map(p => [p.id, p]));
+        this.cart.update(items => items.map(item => {
+          const current = byId.get(item.productId);
+          return { ...item, stock: current?.isActive ? current.stock : 0, product: current ?? item.product };
+        }));
+      },
+      error: () => { if (!this.destroyed && generation === this.cartStockGeneration && scope === this.checkoutScope()) this.inventoryAvailable.set(false); },
+    }));
   }
 
   private findCartItemsExceedingStock(): CartItem[] {
@@ -3317,6 +3413,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   private closeContextualDialog(): void {
+    if (this.checkoutLoading()) return;
     if (this.creditNoteRefundVisible()) {
       this.onCreditNoteRefundVisibleChange(false);
       return;

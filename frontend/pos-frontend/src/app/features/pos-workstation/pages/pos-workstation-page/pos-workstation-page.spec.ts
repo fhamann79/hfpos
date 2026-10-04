@@ -34,7 +34,8 @@ describe('PosWorkstationPage void refresh', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: PermissionService, useValue: { hasPermission: () => true } },
-        { provide: AuthStore, useValue: { companyTimeZoneId: () => 'America/Guayaquil' } },
+        { provide: AuthStore, useValue: { companyTimeZoneId: () => 'America/Guayaquil', companyId: () => 1,
+          establishmentId: () => 1, emissionPointId: () => 1, username: () => 'synthetic' } },
         { provide: Router, useValue: { navigateByUrl: vi.fn() } },
         { provide: PosProductCatalogService, useValue: catalogService },
         { provide: PosWorkstationService, useValue: workstationService },

@@ -389,6 +389,7 @@ public sealed class PlatformControlPlaneTests(PostgresDatabaseFixture database) 
 
     private static SaleCreateDto SaleRequest(TestTenant tenant) => new()
     {
+        RequestId = Guid.NewGuid(), CashReceived = tenant.Products[0].Price,
         DocumentType = SaleDocumentType.Ticket, PaymentMethod = SalePaymentMethod.Cash,
         Items = [new SaleItemCreateDto { ProductId = tenant.Products[0].Id, Quantity = 1m, UnitPrice = tenant.Products[0].Price }]
     };

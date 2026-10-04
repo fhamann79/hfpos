@@ -53,7 +53,7 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
             database,
             tenant.OperationalContext,
             SqlCommandGateInterceptor.WaitBefore(
-                SqlCommandMatchers.CashSessionByIdForUpdate,
+                SqlCommandMatchers.CompanyLock,
                 createLockAcquired));
 
         var closeOutcomeTask = CaptureAsync(closeServices.CashSessions.CloseAsync(
@@ -99,7 +99,7 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
             database,
             tenant.OperationalContext,
             SqlCommandGateInterceptor.WaitBefore(
-                SqlCommandMatchers.OpenCashSessionForUpdate,
+                SqlCommandMatchers.CompanyLock,
                 closeLockAcquired));
         await using var closeServices = new TestServiceScope(
             database,
@@ -341,6 +341,8 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
         await OpenCashSessionAsync(tenant);
         var request = new SaleCreateDto
         {
+            RequestId = Guid.NewGuid(),
+            CashReceived = 100m,
             PaymentMethod = SalePaymentMethod.Cash,
             DocumentType = SaleDocumentType.Ticket,
             Items = new List<SaleItemCreateDto>
@@ -413,6 +415,8 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
     private static SaleCreateDto CreateCashSaleRequest(TestProduct product)
         => new()
         {
+            RequestId = Guid.NewGuid(),
+            CashReceived = product.Price,
             PaymentMethod = SalePaymentMethod.Cash,
             DocumentType = SaleDocumentType.Ticket,
             Items = new List<SaleItemCreateDto>

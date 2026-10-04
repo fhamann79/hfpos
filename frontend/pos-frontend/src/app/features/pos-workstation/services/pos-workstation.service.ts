@@ -55,7 +55,14 @@ export class PosWorkstationService {
   }
 
   createSale(payload: CheckoutRequest): Observable<Sale> {
-    return this.http.post<unknown>(this.salesUrl, payload).pipe(map((row) => this.toSale(row)));
+    return this.http.post<unknown>(this.salesUrl, payload).pipe(map((source) => {
+      const row = this.asRecord(source);
+      if (!row || !Number.isInteger(row['id']) || Number(row['id']) <= 0
+        || typeof row['total'] !== 'number' || !Number.isFinite(row['total'])
+        || row['requestId'] !== payload.requestId || !Array.isArray(row['items']) || !row['items'].length)
+        throw new HttpErrorResponse({ status: 502, error: { error: 'SALE_RESULT_INVALID' } });
+      return this.toSale(source);
+    }));
   }
 
   voidSale(id: number, payload: VoidSaleRequest): Observable<Sale> {
@@ -186,6 +193,9 @@ export class PosWorkstationService {
       status: isVoided ? 'Anulada' : status,
       paymentMethod: normalizeSalePaymentMethod(row?.['paymentMethod']),
       cashSessionId: this.readOptionalNumber(row, ['cashSessionId']),
+      requestId: this.readString(row, ['requestId'], null),
+      cashReceived: this.readOptionalNumber(row, ['cashReceived']),
+      cashChange: this.readOptionalNumber(row, ['cashChange']),
       documentType: normalizeSaleDocumentType(row?.['documentType']),
       documentStatus: normalizeSaleDocumentStatus(row?.['documentStatus']),
       number: this.readString(row, ['number'], null),
@@ -299,6 +309,8 @@ export class PosWorkstationService {
     return {
       productId: this.readNumber(row, ['productId', 'id'], 0),
       productName: this.readString(row, ['productName', 'name'], 'Producto'),
+      productNameSnapshot: this.readString(row, ['productNameSnapshot'], null),
+      productSkuSnapshot: this.readString(row, ['productSkuSnapshot'], null),
       quantity: this.readNumber(row, ['quantity'], 0),
       unitPrice: this.readNumber(row, ['unitPrice', 'price'], 0),
       grossSubtotal: this.readNumber(row, ['grossSubtotal', 'subtotal', 'lineSubtotal'], 0),

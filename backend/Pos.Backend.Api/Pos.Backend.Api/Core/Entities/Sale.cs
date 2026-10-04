@@ -6,6 +6,11 @@ public class Sale
 {
     public int Id { get; set; }
 
+    public Guid? RequestId { get; set; }
+    public string? RequestHash { get; set; }
+    public decimal? CashReceived { get; set; }
+    public decimal? CashChange { get; set; }
+
     public int CompanyId { get; set; }
     public Company Company { get; set; }
 

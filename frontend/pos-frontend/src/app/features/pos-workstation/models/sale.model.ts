@@ -5,6 +5,9 @@ import { SaleVoidCashEffect } from './sale-void-cash-effect.model';
 
 export interface Sale {
   id: number;
+  requestId?: string | null;
+  cashReceived?: number | null;
+  cashChange?: number | null;
   businessDate: string | null;
   timeZoneIdSnapshot: string | null;
   createdAt: string;

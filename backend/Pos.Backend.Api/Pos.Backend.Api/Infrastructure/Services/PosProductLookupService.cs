@@ -22,17 +22,21 @@ public sealed class PosProductLookupService : IPosProductLookupService
         _operationalContextAccessor = operationalContextAccessor;
     }
 
-    public async Task<IReadOnlyList<PosProductLookupDto>> SearchAsync(string? search, int take)
+    public async Task<IReadOnlyList<PosProductLookupDto>> SearchAsync(string? search, int take, int[]? productIds = null)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
         var limit = Math.Clamp(take <= 0 ? DefaultTake : take, 1, MaxTake);
         var term = search?.Trim().ToLowerInvariant();
+        if (productIds is { Length: > MaxTake })
+            throw new InvalidOperationException("POS_PRODUCT_IDS_LIMIT");
 
         IQueryable<Product> query = _context.Products
             .AsNoTracking()
             .Where(product =>
                 product.CompanyId == operationalContext.CompanyId
-                && product.IsActive);
+                && (productIds != null || product.IsActive));
+        if (productIds is not null)
+            query = query.Where(product => productIds.Contains(product.Id));
 
         if (!string.IsNullOrWhiteSpace(term))
         {

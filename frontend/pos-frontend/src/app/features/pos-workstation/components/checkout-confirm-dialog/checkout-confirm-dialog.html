@@ -2,7 +2,8 @@
   header="Confirmar venta"
   [visible]="visible"
   [modal]="true"
-  [style]="{ width: '30rem' }"
+  [closable]="!loading" [closeOnEscape]="!loading"
+  [style]="{ width: '30rem', maxWidth: '96vw' }"
   (visibleChange)="visibleChange.emit($event)"
 >
   <div class="confirm-content" (keydown)="onKeydown($event)" tabindex="0">
@@ -17,6 +18,7 @@
           optionLabel="label"
           optionValue="value"
           [ngModel]="documentType"
+          [disabled]="loading"
           (ngModelChange)="documentTypeChange.emit($event)"
           appendTo="body"
         ></p-select>
@@ -39,12 +41,21 @@
           optionLabel="label"
           optionValue="value"
           [ngModel]="paymentMethod"
+          [disabled]="loading"
           (ngModelChange)="paymentMethodChange.emit($event)"
           appendTo="body"
         ></p-select>
       </div>
       <small>Se registrará como {{ paymentMethodLabel(paymentMethod) }} para el cierre de caja.</small>
     </section>
+
+    @if (paymentMethod === SalePaymentMethod.Cash) {
+      <label for="checkout-cash-received">Efectivo recibido</label>
+      <p-inputnumber inputId="checkout-cash-received" mode="currency" currency="USD" locale="en-US"
+        [min]="0" [maxFractionDigits]="2" [ngModel]="cashReceived" [disabled]="loading"
+        (ngModelChange)="cashReceivedChange.emit($event)" />
+      <p><strong>Vuelto estimado:</strong> {{ ((cashReceived ?? total) - total) | currency:'USD' }}</p>
+    }
 
     <div class="money-lines">
       <span><strong>Subtotal bruto:</strong> {{ grossSubtotal | currency: 'USD' }}</span>
@@ -56,6 +67,6 @@
     <p><strong>Notas:</strong> {{ notes || 'Sin notas' }}</p>
     <p class="hint">Presiona Enter para confirmar o Escape para cancelar.</p>
 
-    <p-button label="Confirmar" icon="pi pi-check" [loading]="loading" (onClick)="confirm.emit()"></p-button>
+    <p-button label="Confirmar" icon="pi pi-check" [loading]="loading" [disabled]="loading" (onClick)="confirm.emit()"></p-button>
   </div>
 </p-dialog>

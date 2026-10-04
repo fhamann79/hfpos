@@ -23,6 +23,20 @@
   @if (!canSell && !canReadReports) {
     <p-message severity="warn" text="No tienes permisos para usar la estación POS."></p-message>
   } @else {
+    @if (checkoutRecoveryError()) { <p-message severity="error" [text]="checkoutRecoveryError()" /> }
+    @if (pendingCheckout()) {
+      <section class="cash-context" aria-live="polite">
+        <strong>Cobro pendiente de recuperar</strong>
+        <p-button label="Recuperar cobro" icon="pi pi-refresh" [loading]="checkoutLoading()" (onClick)="confirmCheckout()" />
+      </section>
+    }
+    @if (receiptSale()) {
+      <section class="cash-context" aria-live="polite">
+        <strong>Venta {{ receiptSale()?.number }} registrada</strong>
+        <p-button label="Ticket" icon="pi pi-receipt" (onClick)="receiptVisible.set(true)" />
+        <p-button label="Siguiente cliente" icon="pi pi-arrow-right" (onClick)="nextCustomer()" />
+      </section>
+    }
     @if (canSell) {
       <section class="cash-context" [class.cash-context--blocked]="!hasOpenCashSession() && !cashSessionLoading()">
         @if (cashSessionLoading()) {
@@ -103,7 +117,7 @@
             [inventoryAvailable]="inventoryAvailable()"
             [inventoryErrorMessage]="inventoryError()"
             [searchTerm]="searchTerm()"
-            [canSell]="canSell"
+            [canSell]="canSell && !checkoutLocked()"
             (searchTermChange)="onSearchTermChange($event)"
             (submitSearch)="submitSearchTerm()"
             (addProduct)="addProduct($event)"
@@ -120,7 +134,7 @@
             [taxSummary]="taxSummary()"
             [saleDiscountAmount]="effectiveSaleDiscountAmount()"
             [notes]="notes()"
-            [canCheckout]="canSell && hasOpenCashSession()"
+            [canCheckout]="canSell && (hasOpenCashSession() || !!pendingCheckout()) && !checkoutLoading()"
             [inventoryAvailable]="inventoryAvailable()"
             [activeProductId]="activeCartProductId()"
             (updateQuantity)="updateQuantity($event)"
@@ -128,7 +142,7 @@
             (updateLineDiscount)="updateLineDiscount($event)"
             (updateSaleDiscount)="updateSaleDiscount($event)"
             (removeItem)="removeItem($event)"
-            (notesChange)="notes.set($event)"
+            (notesChange)="updateNotes($event)"
             (selectLine)="selectCartLine($event)"
             (checkout)="openCheckoutDialog()"
           ></app-cart-workstation>
@@ -193,11 +207,16 @@
     [notes]="notes()"
     [documentType]="selectedDocumentType()"
     [paymentMethod]="selectedPaymentMethod()"
-    (visibleChange)="checkoutVisible.set($event)"
-    (documentTypeChange)="selectedDocumentType.set($event)"
-    (paymentMethodChange)="selectedPaymentMethod.set($event)"
+    [cashReceived]="cashReceived()"
+    (cashReceivedChange)="updateCashReceived($event)"
+    (visibleChange)="setCheckoutVisible($event)"
+    (documentTypeChange)="updateDocumentType($event)"
+    (paymentMethodChange)="updatePaymentMethod($event)"
     (confirm)="confirmCheckout()"
   ></app-checkout-confirm-dialog>
+
+  <app-sale-receipt-dialog [visible]="receiptVisible()" [sale]="receiptSale() || receiptReprintSale()"
+    [postSale]="!!receiptSale()" (visibleChange)="receiptVisible.set($event)" (nextCustomer)="nextCustomer()" />
 
   <app-sale-detail-dialog
     [visible]="saleDetailVisible()"
@@ -212,6 +231,7 @@
     [companyTimeZoneId]="companyTimeZoneId()"
     [canReviewCreditNote]="canVoid"
     (visibleChange)="saleDetailVisible.set($event)"
+    (viewReceipt)="openReceipt($event)"
     (signSriXml)="signSriXml($event)"
     (processSriWorkflow)="processSriWorkflow($event)"
     (submitSriInvoice)="submitSriInvoice($event)"

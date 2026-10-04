@@ -17,6 +17,24 @@ describe('PosWorkstationService sale void mapping', () => {
 
   afterEach(() => http.verify());
 
+  it('keeps receipt snapshots and tendered/change from the authoritative POST response', () => {
+    const payload = { requestId: crypto.randomUUID(), cashReceived: 20, items: [{ productId: 7, quantity: 1, unitPrice: 10 }] };
+    service.createSale(payload).subscribe(sale => {
+      expect(sale.requestId).toBe(payload.requestId); expect(sale.cashReceived).toBe(20); expect(sale.cashChange).toBe(10);
+      expect(sale.items[0].productNameSnapshot).toBe('Synthetic snapshot'); expect(sale.items[0].productSkuSnapshot).toBe('SYN7');
+    });
+    const request = http.expectOne(candidate => candidate.url.endsWith('/api/Sales'));
+    expect(request.request.body).toEqual(payload);
+    request.flush({ id: 42, requestId: payload.requestId, total: 10, cashReceived: 20, cashChange: 10,
+      items: [{ productId: 7, productNameSnapshot: 'Synthetic snapshot', productSkuSnapshot: 'SYN7' }] });
+  });
+
+  it('treats malformed successful HTTP responses as ambiguous instead of inventing a sale', () => {
+    service.createSale({ requestId: crypto.randomUUID(), items: [{ productId: 7, quantity: 1, unitPrice: 10 }] })
+      .subscribe({ next: () => { throw new Error('Must not accept malformed sale'); }, error: error => expect(error.status).toBe(502) });
+    http.expectOne(candidate => candidate.url.endsWith('/api/Sales')).flush({ id: 42, total: 'bad', items: [] });
+  });
+
   it('keeps payment method in the recent-sales list', () => {
     service.getSales().subscribe((result) => {
       expect(result.items[0].paymentMethod).toBe(SalePaymentMethod.Transfer);

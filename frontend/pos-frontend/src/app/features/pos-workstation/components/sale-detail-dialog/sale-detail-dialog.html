@@ -8,6 +8,7 @@
   @if (!sale) {
     <p>Cargando...</p>
   } @else {
+    <p-button label="Ticket interno" icon="pi pi-print" (onClick)="viewReceipt.emit(sale)" />
     <div class="detail-head">
       <span><strong>ID:</strong> #{{ sale.id }}</span>
       <span><strong>Documento:</strong> {{ sale.number || ('#' + sale.id) }}</span>

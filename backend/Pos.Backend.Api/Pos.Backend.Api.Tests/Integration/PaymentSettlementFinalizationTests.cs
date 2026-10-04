@@ -212,6 +212,8 @@ public sealed class PaymentSettlementFinalizationTests(PostgresDatabaseFixture d
 
     private static SaleCreateDto SaleRequest(TestTenant tenant, SalePaymentMethod method) => new()
     {
+        RequestId = Guid.NewGuid(),
+        CashReceived = method == SalePaymentMethod.Cash ? tenant.Products[0].Price : null,
         PaymentMethod = method, DocumentType = SaleDocumentType.Ticket,
         Items = [new SaleItemCreateDto { ProductId = tenant.Products[0].Id, Quantity = 1m,
             UnitPrice = tenant.Products[0].Price }]
