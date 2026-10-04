@@ -12,4 +12,6 @@ label { display: grid; gap: .5rem; } .filename, .wrap { overflow-wrap: anywhere;
 input[type=file] { max-width: 100%; } .policy { display: flex; flex-wrap: wrap; gap: 1rem 2rem; }
 dt { color: var(--p-text-muted-color); font-size: .85rem; } dd { margin: .25rem 0; }
 .actions { justify-content: start; margin: 1rem 0; }
+.row-audit { max-height: 12rem; overflow-y: auto; overflow-wrap: anywhere; margin-top: .5rem; font-variant-numeric: tabular-nums; }
+summary { cursor: pointer; }
 @media (max-width: 600px) { .initial-data { padding: 1rem; } fieldset > * { max-width: 100%; } }

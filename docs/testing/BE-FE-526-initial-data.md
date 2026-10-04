@@ -88,7 +88,8 @@ CreatedIds/RowNumbers and movement SourceId/SourceLineId provide row-level audit
 
 Confirm acquires Company FOR UPDATE before revalidation/mutation; preview uses the existing shared Company
 guard and a single MVCC projection for opening quantity/watermark. Manual category/customer writers join
-the Company locking protocol; existing product/supplier writers already use it. Counts/opening acquire
+the Company locking protocol; existing product writers already use it. Supplier create/update/delete now
+join Company-first locking and validate operational/session context after waiting, before supplier reads. Counts/opening acquire
 Company exclusive before stock lookup/creation, including absent stock rows. Broader inventory changes remain out of scope.
 
 Do not downgrade the migration by dropping committed audit history. Revert application code first if needed;
@@ -116,6 +117,38 @@ changed payload, permissions/foreign context, revocation while waiting for Compa
 second-row rollback, absent stock concurrency, opening balance reverting to zero, count balance reverting to original,
 manual-cost events, identity protection and legacy provisioning replay. Required CI must cover the exact published HEAD.
 
+## Consolidated review correction (after ebaba32)
+
+Carson's independent baseline review: BLOCKER=0 / MAJOR=3. This batch addresses the three findings;
+it is not reviewer acceptance. Keep the corrected HEAD frozen for delta plus integration review.
+
+- MinimumStock: `.HasSentinel(3m)` preserves the legitimate CLR/database default 3 and sends explicit 0
+  on insert. Snapshot updated for runtime metadata; no schema/default change and no new SQL migration.
+  New PostgreSQL regression checks actual persisted import values 0/3 and the unchanged default 3.
+- Suppliers: manual Create, Update (including activation/identification changes), Delete now acquire
+  Company FOR UPDATE before supplier reads/writes, then use the existing guard for current context/session
+  validation. No supplier row lock is acquired first; existing centralized 23505-to-409 remains unchanged.
+  Four deterministic PG races cover create/update, both manual-first and import-first. The first writer is
+  held after acquiring Company lock; `pg_blocking_pids` proves the second is actually blocked by that owner
+  before release. Assertions cover conflict, one natural key, rollback of losing update and ledger count.
+  A separate test revokes the manual supplier session while it waits and asserts no write.
+- Audit UI: `rowNumbers` is now required in the typed result contract. Applied result and expandable history
+  show CSV physical row -> created ID, or movement ID for opening inventory; bounded scrolling preserves layout.
+  Component DOM test verifies nonconsecutive rows 2/5 against IDs 8/19 in both result and history.
+- External ambiguous exact category duplicate finding r4176370428 is rejected by the existing unique,
+  unfiltered `(CompanyId, Name)` index: PosDbContext and migration
+  `20260226090000_AddCompanyScopeToCatalogAndOperationalContext.cs:68`. Case-distinct names do not make
+  the exact reference lookup ambiguous. No functional lookup change; PG regression asserts SQLSTATE23505
+  / IX_Categories_CompanyId_Name even when the original category is inactive.
+
+Local delta checks: backend Release build succeeds; EF `has-pending-model-changes` reports no changes;
+`npm test -- --watch=false --include='src/app/features/initial-data/*.spec.ts'` passes 7/7;
+`npm run build` succeeds with 3 environment/bundle checks; diff-check succeeds.
+Docker Linux engine remains offline (named pipe missing), so **new PG tests were not run locally**.
+No fallback database, degraded Testing, persistent data or engine restart used. PG proof and exact corrected-HEAD
+full CI results must be recorded in PR #140 before considering technical evidence complete. Earlier 335/313 CI
+belongs only to ebaba32; it is not evidence for a new HEAD. Human R3 smoke and independent delta review remain pending.
+
 ## One integrated synthetic pre-merge smoke
 
 **VALIDACION HUMANA PRE-MERGE REQUERIDA.** Pending Fernando's `VALIDADO OK`; not executed by implementer.
@@ -139,3 +172,6 @@ Use only a disposable synthetic environment on the final PR HEAD. No real taxpay
    codes/RUC: expect 409. Edit name/address: expect success with sequence, historical snapshots and numbers unchanged.
 7. Return to readiness/history; verify completed data checks and safely pending fiscal metadata, pagination and error states.
    Record exact HEAD, observations and `VALIDADO OK` or defects in the PR. Independent review and exact-HEAD CI remain separate gates.
+
+For the corrected HEAD, include explicit minimum stock 0 in step 3 and inspect the saved value;
+also expand history and verify CSV physical rows against created/master movement IDs. No real data is needed.

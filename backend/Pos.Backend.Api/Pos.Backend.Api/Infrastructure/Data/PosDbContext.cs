@@ -691,6 +691,7 @@ public class PosDbContext : DbContext
 
             entity.Property(p => p.MinimumStock)
                 .HasPrecision(18, 4)
+                .HasSentinel(3m)
                 .HasDefaultValue(3m);
 
             entity.Property(p => p.VatCategory)

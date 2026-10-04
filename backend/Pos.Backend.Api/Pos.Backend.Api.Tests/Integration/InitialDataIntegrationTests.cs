@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Npgsql;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Enums;
@@ -237,6 +238,118 @@ public sealed class InitialDataIntegrationTests(PostgresDatabaseFixture database
     }
 
     [Fact]
+    public async Task Product_import_persists_explicit_zero_minimum_and_retains_default_three()
+    {
+        var tenant = await TenantAsync("minimum", 715);
+        await using var scope = new TestServiceScope(database, tenant.OperationalContext);
+        var category = await scope.DbContext.Categories.SingleAsync();
+        var input = Payload("products", $"internalCode,barcode,name,category,price,cost,minimumStock,vatCategory\nZERO,,Zero,{category.Name},1,0,0,Vat15\nTHREE,,Three,{category.Name},1,0,3,Vat15\n");
+        var service = Service(scope, tenant);
+        var preview = await service.PreviewAsync(input);
+        Assert.True(preview.CanConfirm);
+        await service.ConfirmAsync(new() { Payload = input, PreviewToken = preview.PreviewToken! });
+        await using var verify = database.CreateDbContext();
+        Assert.Equal(0m, (await verify.Products.SingleAsync(p => p.InternalCode == "ZERO")).MinimumStock);
+        Assert.Equal(3m, (await verify.Products.SingleAsync(p => p.InternalCode == "THREE")).MinimumStock);
+        var defaultProduct = new Product { CompanyId = tenant.CompanyId, CategoryId = category.Id,
+            InternalCode = "DEFAULT", Name = "Synthetic default", Price = 1m, IsActive = true, CreatedAt = DateTime.UtcNow };
+        verify.Products.Add(defaultProduct);
+        await verify.SaveChangesAsync();
+        verify.ChangeTracker.Clear();
+        Assert.Equal(3m, (await verify.Products.SingleAsync(p => p.InternalCode == "DEFAULT")).MinimumStock);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task Manual_supplier_and_import_serialize_before_supplier_reads(bool manualFirst, bool update)
+    {
+        var tenant = await TenantAsync("supplier-race", 716);
+        var originalId = 0;
+        if (update)
+        {
+            await using var setup = database.CreateDbContext();
+            var original = new Supplier { CompanyId = tenant.CompanyId, Name = "Synthetic original",
+                Identification = "OLD716", IsActive = true, CreatedAt = DateTime.UtcNow };
+            setup.Suppliers.Add(original); await setup.SaveChangesAsync(); originalId = original.Id;
+        }
+        var input = Payload("suppliers", "name,identification,phone,email,address,notes\nImported,RACE716,,,,\n");
+        await using var previewScope = new TestServiceScope(database, tenant.OperationalContext);
+        var preview = await Service(previewScope, tenant).PreviewAsync(input);
+        var firstLock = new HoldCompanyLock(); var secondLock = new ObserveCompanyLock();
+        await using var manualScope = new TestServiceScope(database, tenant.OperationalContext, manualFirst ? firstLock : secondLock);
+        await using var importScope = new TestServiceScope(database, tenant.OperationalContext, manualFirst ? secondLock : firstLock);
+        var accessor = new StaticOperationalContextAccessor(tenant.OperationalContext);
+        var controller = new SuppliersController(manualScope.DbContext, accessor, new SupplierQueryService(manualScope.DbContext, accessor));
+        async Task<string> Manual()
+        {
+            var result = update
+                ? await controller.Update(originalId, new() { Name = "Manual", Identification = "RACE716", IsActive = true })
+                : (await controller.Create(new() { Name = "Manual", Identification = "RACE716" })).Result;
+            return result is ConflictObjectResult ? "CONFLICT" : result is NoContentResult or CreatedAtActionResult ? "MANUAL" : "UNEXPECTED";
+        }
+        async Task<string> Import()
+        {
+            try { await Service(importScope, tenant).ConfirmAsync(new() { Payload = input, PreviewToken = preview.PreviewToken! }); return "IMPORTED"; }
+            catch (InvalidOperationException ex) { return ex.Message; }
+        }
+        var first = manualFirst ? Manual() : Import();
+        Task<string>? second = null;
+        try
+        {
+            await firstLock.Acquired.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            second = manualFirst ? Import() : Manual();
+            await secondLock.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            // Prove the contender is waiting on this owner in PostgreSQL, not just scheduled nearby.
+            await WaitUntilBlockedAsync(firstLock.BackendPid, secondLock.BackendPid);
+        }
+        finally { firstLock.Release.TrySetResult(); }
+        var results = await Task.WhenAll(first, second!).WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Equal(manualFirst ? ["MANUAL", "INITIAL_DATA_REVALIDATION_FAILED"] : ["IMPORTED", "CONFLICT"], results);
+        await using var verify = database.CreateDbContext();
+        Assert.Single(await verify.Suppliers.Where(s => s.Identification == "RACE716").ToListAsync());
+        Assert.Equal(manualFirst ? 0 : 1, await verify.InitialDataBatches.CountAsync());
+        if (update && !manualFirst)
+            Assert.Equal("OLD716", (await verify.Suppliers.SingleAsync(s => s.Id == originalId)).Identification);
+    }
+
+    [Fact]
+    public async Task Manual_supplier_rechecks_session_after_waiting_for_company_lock()
+    {
+        var tenant = await TenantAsync("supplier-revoke", 717);
+        tenant.OperationalContext.UserSessionVersion = 1; tenant.OperationalContext.RoleAuthorizationVersion = 1;
+        await using var lockDb = database.CreateDbContext();
+        await using var tx = await new TenantAdministrationGuard(lockDb).BeginChangeAsync(tenant.CompanyId);
+        var entered = new ObserveCompanyLock();
+        await using var scope = new TestServiceScope(database, tenant.OperationalContext, entered);
+        var accessor = new StaticOperationalContextAccessor(tenant.OperationalContext);
+        var controller = new SuppliersController(scope.DbContext, accessor, new SupplierQueryService(scope.DbContext, accessor));
+        var pending = controller.Create(new() { Name = "Manual", Identification = "REVOKED717" });
+        await entered.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await lockDb.Users.Where(u => u.Id == tenant.UserId).ExecuteUpdateAsync(s => s.SetProperty(u => u.SessionVersion, 2L));
+        await tx.CommitAsync();
+        var ex = await Assert.ThrowsAsync<OperationalContextException>(() => pending.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.Equal("SESSION_STALE", ex.ErrorCode);
+        Assert.Empty(await scope.DbContext.Suppliers.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Exact_category_duplicates_are_rejected_even_when_existing_category_is_inactive()
+    {
+        var tenant = await TenantAsync("category-unique", 718);
+        await using var db = database.CreateDbContext();
+        var original = await db.Categories.SingleAsync();
+        original.IsActive = false; await db.SaveChangesAsync();
+        db.Categories.Add(new Category { CompanyId = tenant.CompanyId, Name = original.Name, IsActive = true, CreatedAt = DateTime.UtcNow });
+        var ex = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        var postgres = Assert.IsType<PostgresException>(ex.InnerException);
+        Assert.Equal(PostgresErrorCodes.UniqueViolation, postgres.SqlState);
+        Assert.Equal("IX_Categories_CompanyId_Name", postgres.ConstraintName);
+    }
+
+    [Fact]
     public async Task Session_revoked_while_confirmation_waits_for_company_lock_is_rejected()
     {
         var tenant = await TenantAsync("revoke", 712);
@@ -344,11 +457,38 @@ public sealed class InitialDataIntegrationTests(PostgresDatabaseFixture database
     private sealed class ObserveCompanyLock : DbCommandInterceptor
     {
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int BackendPid { get; private set; }
         public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command,
             CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            if (command.CommandText.Contains("Companies") && command.CommandText.Contains("FOR UPDATE")) Started.TrySetResult();
+            if (command.CommandText.Contains("Companies") && command.CommandText.Contains("FOR UPDATE"))
+            { BackendPid = ((NpgsqlConnection)command.Connection!).ProcessID; Started.TrySetResult(); }
             return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
         }
+    }
+    private sealed class HoldCompanyLock : DbCommandInterceptor
+    {
+        public TaskCompletionSource Acquired { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int BackendPid { get; private set; }
+        private bool held;
+        public override async ValueTask<int> NonQueryExecutedAsync(DbCommand command, CommandExecutedEventData eventData,
+            int result, CancellationToken cancellationToken = default)
+        {
+            if (!held && command.CommandText.Contains("Companies") && command.CommandText.Contains("FOR UPDATE"))
+            {
+                held = true; BackendPid = ((NpgsqlConnection)command.Connection!).ProcessID; Acquired.TrySetResult();
+                await Release.Task.WaitAsync(cancellationToken);
+            }
+            return result;
+        }
+    }
+    private async Task WaitUntilBlockedAsync(int ownerPid, int waitingPid)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var db = database.CreateDbContext();
+        while (await db.Database.SqlQueryRaw<int>("SELECT CASE WHEN {0} = ANY(pg_blocking_pids({1})) THEN 1 ELSE 0 END AS \"Value\"",
+            ownerPid, waitingPid).SingleAsync(timeout.Token) != 1)
+            await Task.Delay(20, timeout.Token);
     }
 }

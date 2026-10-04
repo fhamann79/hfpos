@@ -1784,6 +1784,7 @@ namespace Pos.Backend.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)")
+                        .HasSentinel(3m)
                         .HasDefaultValue(3m);
 
                     b.Property<string>("Name")

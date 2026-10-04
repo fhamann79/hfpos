@@ -12,7 +12,7 @@ import { forkJoin } from 'rxjs';
 import { PermissionService } from '../../core/services/permission.service';
 import { resolveHttpErrorMessage } from '../../core/utils/http-error-normalizer';
 import { InitialDataService } from './initial-data.service';
-import { InitialDataKind, InitialDataPayload, InitialDataPreview, InitialDataResult, TenantReadiness } from './initial-data.model';
+import { InitialDataKind, InitialDataPayload, InitialDataPreview, InitialDataResult, InitialDataRowAudit, TenantReadiness } from './initial-data.model';
 
 @Component({
   standalone: true, selector: 'app-initial-data-page',
@@ -115,6 +115,9 @@ export class InitialDataPage implements OnInit, OnDestroy {
   page(delta: number) { this.historyPage = Math.max(1, this.historyPage + delta); this.refresh(); }
   hasFile() { return this.payload !== null; }
   values(row: Record<string, string>) { return Object.values(row).join(' | '); }
+  rowAudit(batch: InitialDataResult): InitialDataRowAudit[] {
+    return batch.rowNumbers.map((rowNumber, index) => ({ rowNumber, createdId: batch.createdIds[index] }));
+  }
   private fail(error: unknown) {
     this.error.set(error instanceof HttpErrorResponse
       ? resolveHttpErrorMessage(error, 'No se pudo completar la operacion.') : 'No se pudo completar la operacion.');

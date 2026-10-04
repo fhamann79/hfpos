@@ -7,8 +7,9 @@ export interface InitialDataPreview {
 }
 export interface InitialDataResult {
   batchId: number; requestId: string; kind: InitialDataKind; companyId: number; establishmentId: number;
-  emissionPointId: number; userId: number; rowCount: number; createdIds: number[]; createdAt: string;
+  emissionPointId: number; userId: number; rowCount: number; createdIds: number[]; rowNumbers: number[]; createdAt: string;
 }
+export interface InitialDataRowAudit { rowNumber: number; createdId: number; }
 export interface TenantReadiness {
   companyId: number; establishmentId: number; emissionPointId: number; ready: boolean;
   checks: { code: string; ready: boolean; route: string }[];
