@@ -65,7 +65,8 @@ internal sealed class AutonomousIssuingFixture(PostgresDatabaseFixture database,
             var request = new CertificateRequest("CN=HFPOS synthetic fiscal test", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
             using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(2));
             using var stream = new MemoryStream(certificate.Export(X509ContentType.Pfx, "synthetic-only"));
-            var file = new FormFile(stream, 0, stream.Length, "certificate", "synthetic.pfx") { ContentType = "application/x-pkcs12" };
+            var file = new FormFile(stream, 0, stream.Length, "certificate", "synthetic.pfx")
+            { Headers = new HeaderDictionary(), ContentType = "application/x-pkcs12" };
             await new SriCertificateService(db, new StaticOperationalContextAccessor(Admin), Protection,
                 NullLogger<SriCertificateService>.Instance).UploadCertificateAsync(file, "synthetic-only");
         }
