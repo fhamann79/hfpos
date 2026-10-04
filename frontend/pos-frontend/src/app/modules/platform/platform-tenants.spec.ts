@@ -177,6 +177,65 @@ describe('Platform tenant workflows', () => {
     expect(component.form.controls.password.value).toBe('');
     expect(api.provision.mock.calls[0][0].requestId).toMatch(/^[0-9a-f-]{36}$/);
   });
+  it('preserves an already terminated list error when a new detail succeeds', () => {
+    const list = new Subject<PlatformPage<Tenant>>(); api.tenants.mockReturnValueOnce(list); component.load(); list.error(failure);
+    expect(component.error()).toContain('RUC'); expect(component.loading()).toBe(false);
+    const pendingDetail = new Subject<TenantDetail>(); api.detail.mockReturnValueOnce(pendingDetail);
+    component.openDetail(otherTenant); expect(component.error()).toContain('RUC');
+    pendingDetail.next(otherDetail); pendingDetail.complete(); expect(component.error()).toContain('RUC');
+    component.closeDetail(); expect(component.error()).toContain('RUC'); expect(component.tenants()).toEqual([tenant]);
+  });
+  it('preserves a terminated detail error across an independent list refresh and success', () => {
+    const pendingDetail = new Subject<TenantDetail>(); api.detail.mockReturnValueOnce(pendingDetail); component.openDetail(tenant);
+    pendingDetail.error(failure); const list = new Subject<PlatformPage<Tenant>>(); api.tenants.mockReturnValueOnce(list); component.load();
+    expect(component.error()).toContain('RUC'); expect(component.loading()).toBe(true);
+    list.next(tenantPage(otherTenant)); list.complete(); expect(component.error()).toContain('RUC');
+  });
+  it.each<ReadScope>(['list', 'detail', 'events'])('clears only its own old error when retrying %s', scope => {
+    const old = new Subject<ReadResult>(); const current = new Subject<ReadResult>(); startRead(scope, old); old.error(failure);
+    expect(component.error()).toContain('RUC'); startRead(scope, current); expect(component.error()).toBe(''); expect(readLoading(scope)).toBe(true);
+    current.next(scope === 'list' ? tenantPage(otherTenant) : scope === 'detail' ? detail : eventPage(2)); current.complete();
+    expect(component.error()).toBe(''); expect(readLoading(scope)).toBe(false);
+  });
+  it.each<ReadScope>(['detail', 'events'])('clears an obsolete %s error on close/reopen without clearing a completed list error', scope => {
+    const old = new Subject<ReadResult>(); startRead(scope, old); old.error(failure);
+    const list = new Subject<PlatformPage<Tenant>>(); api.tenants.mockReturnValueOnce(list); component.load();
+    list.error(new HttpErrorResponse({ status: 400, error: { error: 'TENANT_REASON_REQUIRED' } }));
+    component.closeDetail(); expect(component.error()).toContain('motivo');
+    const current = new Subject<ReadResult>(); startRead(scope, current); expect(component.error()).toContain('motivo');
+    current.next(scope === 'detail' ? detail : eventPage(2)); current.complete(); expect(component.error()).toContain('motivo');
+  });
+  it.each<ReadScope>(['detail', 'events'])('does not carry an obsolete %s error to another company', scope => {
+    const old = new Subject<ReadResult>(); startRead(scope, old); old.error(failure); expect(component.error()).toContain('RUC');
+    api.detail.mockReturnValueOnce(of(otherDetail)); api.events.mockReturnValue(of(emptyEvents)); component.openDetail(otherTenant);
+    expect(component.error()).toBe(''); expect(component.detail()).toEqual(otherDetail);
+  });
+  it.each<ReadScope>(['detail', 'events'])('clears its terminated %s error immediately on close and keeps it clear after reopening', scope => {
+    const old = new Subject<ReadResult>(); startRead(scope, old); old.error(failure); expect(component.error()).toContain('RUC');
+    component.closeDetail(); expect(component.error()).toBe('');
+    const current = new Subject<ReadResult>(); startRead(scope, current); expect(component.error()).toBe('');
+    current.next(scope === 'detail' ? detail : eventPage(2)); current.complete(); expect(component.error()).toBe('');
+  });
+  it.each<ReadScope>(['detail', 'events'])('restores a completed list error when closing a newer %s read error', scope => {
+    const list = new Subject<PlatformPage<Tenant>>(); api.tenants.mockReturnValueOnce(list); component.load(); list.error(failure);
+    const pending = new Subject<ReadResult>(); startRead(scope, pending);
+    pending.error(new HttpErrorResponse({ status: 400, error: { error: 'TENANT_REASON_REQUIRED' } }));
+    expect(component.error()).toContain('motivo'); component.closeDetail(); expect(component.error()).toContain('RUC');
+  });
+  it('restores a completed detail error when retrying a list with a newer read error', () => {
+    const pendingDetail = new Subject<TenantDetail>(); api.detail.mockReturnValueOnce(pendingDetail); component.openDetail(tenant); pendingDetail.error(failure);
+    const oldList = new Subject<PlatformPage<Tenant>>(); api.tenants.mockReturnValueOnce(oldList); component.load();
+    oldList.error(new HttpErrorResponse({ status: 400, error: { error: 'TENANT_REASON_REQUIRED' } })); expect(component.error()).toContain('motivo');
+    const currentList = new Subject<PlatformPage<Tenant>>(); api.tenants.mockReturnValueOnce(currentList); component.load();
+    expect(component.error()).toContain('RUC'); currentList.next(tenantPage(otherTenant)); currentList.complete(); expect(component.error()).toContain('RUC');
+  });
+  it.each<ReadScope>(['list', 'detail', 'events'])('preserves a current mutation error when a new independent %s read starts and fails', scope => {
+    component.openLifecycle(tenant, false); component.reason = 'Synthetic suspension';
+    api.setActive.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'TENANT_REASON_REQUIRED' } })));
+    component.lifecycle(); expect(component.error()).toContain('motivo');
+    const current = new Subject<ReadResult>(); startRead(scope, current); expect(component.error()).toContain('motivo');
+    current.error(failure); expect(component.error()).toContain('motivo'); expect(readLoading(scope)).toBe(false);
+  });
   describe.each<ReadScope>(['list', 'detail', 'events'])('%s read state', scope => {
     it.each(['complete', 'error'] as const)('ignores stale %s/finalize while the latest read is pending', terminal => {
       const old = new Subject<ReadResult>(); const current = new Subject<ReadResult>();
@@ -270,7 +329,7 @@ describe('Platform tenant workflows', () => {
     api.setActive.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'TENANT_REASON_REQUIRED' } })));
     component.lifecycle(); expect(api.setActive).toHaveBeenCalledWith(tenant.id, true, 'Synthetic reactivation');
     expect(component.lifecycleTarget).not.toBeNull(); expect(component.error()).toContain('motivo');
-    api.setActive.mockReturnValue(of(detail)); component.lifecycle(); expect(component.notice()).toContain('reactivada');
+    api.setActive.mockReturnValue(of(detail)); component.lifecycle(); expect(component.notice()).toContain('reactivada'); expect(component.error()).toBe('');
   });
   it.each([false, true])('lifecycle active=%s supersedes a pending selected-company detail GET and stale events', active => {
     const oldDetail = new Subject<TenantDetail>(); const oldEvents = new Subject<PlatformPage<TenantEvent>>();
