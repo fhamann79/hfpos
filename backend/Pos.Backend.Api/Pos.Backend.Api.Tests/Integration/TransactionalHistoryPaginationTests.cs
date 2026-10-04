@@ -215,7 +215,7 @@ public sealed class TransactionalHistoryPaginationTests(PostgresDatabaseFixture 
             first.Total = 1.15m;
             first.Subtotal = 1.15m;
             first.GrossProfit = 1.15m - first.TotalCost;
-            first.Notes = "exportable; \"quoted\"\nline";
+            first.Notes = " \t=exportable; \"quoted\"\nline";
             await context.SaveChangesAsync();
         }
 
@@ -233,8 +233,15 @@ public sealed class TransactionalHistoryPaginationTests(PostgresDatabaseFixture 
         Assert.Contains(sales[0].Number!, csv);
         Assert.Contains(sales[^1].Number!, csv);
         Assert.Contains(";1,15;", csv);
-        Assert.Contains("\"exportable; \"\"quoted\"\"\nline\"", csv);
+        Assert.Contains("\"' \t=exportable; \"\"quoted\"\"\nline\"", csv);
         Assert.DoesNotContain('$', csv);
+
+        await using var verificationContext = database.CreateDbContext();
+        var storedNotes = await verificationContext.Sales
+            .Where(sale => sale.Id == sales[0].Id)
+            .Select(sale => sale.Notes)
+            .SingleAsync();
+        Assert.Equal(" \t=exportable; \"quoted\"\nline", storedNotes);
     }
 
     [Fact]

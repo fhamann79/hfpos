@@ -44,10 +44,10 @@ internal static class SaleCsvExportBuilder
         [
             sale.Id.ToString(CultureInfo.InvariantCulture),
             FormatDateTime(sale.CreatedAt, timeZone),
-            sale.Number ?? string.Empty,
-            sale.CustomerName ?? string.Empty,
-            sale.CustomerIdentification ?? string.Empty,
-            sale.CustomerEmail ?? string.Empty,
+            SafeText(sale.Number),
+            SafeText(sale.CustomerName),
+            SafeText(sale.CustomerIdentification),
+            SafeText(sale.CustomerEmail),
             sale.DocumentType == SaleDocumentType.Invoice ? "Factura" : "Ticket",
             SaleStatusLabel(sale.Status),
             FiscalStatusLabel(sale),
@@ -62,8 +62,8 @@ internal static class SaleCsvExportBuilder
             FormatDecimal(sale.GrossMarginPercent),
             FormatDecimal(sale.CreditNoteImpact.NetGrossProfit),
             FormatDecimal(sale.CreditNoteImpact.NetGrossMarginPercent),
-            sale.Username,
-            sale.Notes ?? string.Empty
+            SafeText(sale.Username),
+            SafeText(sale.Notes)
         ])));
 
         var content = Encoding.UTF8.GetBytes(string.Join("\r\n", lines));
@@ -76,6 +76,14 @@ internal static class SaleCsvExportBuilder
 
     private static string JoinRow(IEnumerable<string> values)
         => string.Join(';', values.Select(Escape));
+
+    private static string SafeText(string? value)
+    {
+        value ??= string.Empty;
+        // Whitespace/control prefixes must not hide a spreadsheet formula marker.
+        var first = value.FirstOrDefault(c => !char.IsWhiteSpace(c) && !char.IsControl(c));
+        return first is '=' or '+' or '-' or '@' ? "'" + value : value;
+    }
 
     private static string Escape(string value)
     {
