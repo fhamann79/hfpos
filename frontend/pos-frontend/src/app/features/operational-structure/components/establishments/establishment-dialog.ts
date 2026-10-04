@@ -31,6 +31,8 @@ export class EstablishmentDialog implements OnChanges {
 
   readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.minLength(2)]],
+    code: ['001', [Validators.required, Validators.pattern(/^(?!000)[0-9]{3}$/)]],
+    address: ['', [Validators.required, Validators.maxLength(250)]],
   });
 
   get isEditMode() {
@@ -61,6 +63,8 @@ export class EstablishmentDialog implements OnChanges {
         id: this.establishment.id,
         payload: {
           name: values.name.trim(),
+          code: values.code.trim(),
+          address: values.address.trim(),
         },
       });
       return;
@@ -70,6 +74,8 @@ export class EstablishmentDialog implements OnChanges {
       mode: 'create',
       payload: {
         name: values.name.trim(),
+        code: values.code.trim(),
+        address: values.address.trim(),
       },
     });
   }
@@ -82,10 +88,12 @@ export class EstablishmentDialog implements OnChanges {
     if (this.establishment) {
       this.form.setValue({
         name: this.establishment.name,
+        code: this.establishment.code ?? '001',
+        address: this.establishment.address ?? '',
       });
       return;
     }
 
-    this.form.reset({ name: '' });
+    this.form.reset({ name: '', code: '001', address: '' });
   }
 }

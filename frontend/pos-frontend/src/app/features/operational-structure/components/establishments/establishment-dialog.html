@@ -9,6 +9,10 @@
 >
   <form [formGroup]="form" class="establishment-form">
     <div class="field">
+      <label for="establishmentCode">Codigo</label>
+      <input id="establishmentCode" pInputText formControlName="code" maxlength="3" />
+    </div>
+    <div class="field">
       <label for="establishmentName">Nombre</label>
       <input id="establishmentName" type="text" pInputText formControlName="name" />
       @if (form.controls.name.invalid && form.controls.name.touched) {
@@ -16,6 +20,10 @@
       }
     </div>
 
+    <div class="field">
+      <label for="establishmentAddress">Direccion</label>
+      <input id="establishmentAddress" pInputText formControlName="address" maxlength="250" />
+    </div>
   </form>
 
   <ng-template #footer>

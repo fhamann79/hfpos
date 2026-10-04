@@ -2,13 +2,14 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { providePrimeNG } from 'primeng/config';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { EmissionPointService } from '../../../operational-structure/services/emission-point.service';
 import { EstablishmentService } from '../../../operational-structure/services/establishment.service';
 import { RoleService } from '../../services/role.service';
 import { UserService } from '../../services/user.service';
 import { UserDialog, UserDialogSubmit } from './user-dialog';
+import { EmissionPoint } from '../../../operational-structure/models/emission-point.model';
 
 describe('UserDialog tenant contracts', () => {
   const establishments = { getAll: vi.fn(() => of([])) };
@@ -48,6 +49,25 @@ describe('UserDialog tenant contracts', () => {
     component.save();
     expect(events.map((event) => event.mode)).toEqual(['create', 'edit']);
     for (const event of events) expect(event.payload).not.toHaveProperty('companyId');
+  });
+
+  it('keeps only the latest context points and labels codes alongside names', () => {
+    const old = new Subject<EmissionPoint[]>();
+    const current = new Subject<EmissionPoint[]>();
+    TestBed.overrideProvider(EmissionPointService, { useValue: { getAll: (id: number) => id === 4 ? old : current } });
+    const component = TestBed.runInInjectionContext(() => new UserDialog());
+    component.onEstablishmentChange(4);
+    component.onEstablishmentChange(8);
+    const point = { id: 9, establishmentId: 8, code: '009', name: 'Caja', isActive: true };
+    current.next([point]);
+    old.next([{ ...point, id: 5, establishmentId: 4 }]);
+    expect(component.emissionPoints()).toEqual([point]);
+    expect(component.emissionPointOptions()[0].label).toBe('009 - Caja');
+    component.establishments.set([{ id: 8, companyId: 1, code: '017', name: 'Local', address: 'Synthetic 123', isActive: true }]);
+    expect(component.establishmentOptions()[0].label).toBe('017 - Local');
+    component.hide();
+    current.next([]);
+    expect(component.emissionPoints()).toEqual([point]);
   });
 
   it('whitelists create and update HTTP bodies even when an object has extra tenant fields', () => {

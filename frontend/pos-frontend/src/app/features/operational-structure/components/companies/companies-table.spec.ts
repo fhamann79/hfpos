@@ -64,10 +64,10 @@ describe('Current company tenant boundary', () => {
     const list = requests.expectOne((req) => req.url.endsWith('/api/Establishments'));
     expect(list.request.params.has('companyId')).toBe(false);
     list.flush([]);
-    const input = { name: 'A2', companyId: 999 };
+    const input = { name: 'A2', companyId: 999, code: '017', address: 'Synthetic address 123' };
     establishments.create(input).subscribe();
     const create = requests.expectOne((req) => req.method === 'POST');
-    expect(create.request.body).toEqual({ name: 'A2' });
+    expect(create.request.body).toEqual({ name: 'A2', code: '017', address: 'Synthetic address 123' });
     create.flush({});
   });
 });

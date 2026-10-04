@@ -151,22 +151,24 @@ public class InventoryService : IInventoryService
 
         var product = await GetProductInCompanyAsync(productId, operationalContext.CompanyId);
 
-        var quantity = await _context.ProductStocks
-            .AsNoTracking()
-            .Where(ps => ps.ProductId == product.Id
-                && ps.CompanyId == operationalContext.CompanyId
-                && ps.EstablishmentId == operationalContext.EstablishmentId)
-            .Select(ps => (decimal?)ps.Quantity)
-            .FirstOrDefaultAsync() ?? 0m;
-
-        return new InventoryStockDto
-        {
-            ProductId = product.Id,
-            ProductName = product.Name,
-            Quantity = quantity,
-            CompanyId = operationalContext.CompanyId,
-            EstablishmentId = operationalContext.EstablishmentId
-        };
+        // One statement gives quantity and movement watermark from the same MVCC snapshot.
+        return await _context.Products.AsNoTracking()
+            .Where(p => p.Id == product.Id && p.CompanyId == operationalContext.CompanyId)
+            .Select(p => new InventoryStockDto
+            {
+                ProductId = p.Id,
+                ProductName = p.Name,
+                Quantity = _context.ProductStocks.Where(s => s.ProductId == p.Id
+                    && s.CompanyId == operationalContext.CompanyId
+                    && s.EstablishmentId == operationalContext.EstablishmentId)
+                    .Select(s => (decimal?)s.Quantity).FirstOrDefault() ?? 0m,
+                MovementWatermark = _context.InventoryMovements.Where(m => m.ProductId == p.Id
+                    && m.CompanyId == operationalContext.CompanyId
+                    && m.EstablishmentId == operationalContext.EstablishmentId)
+                    .Max(m => (int?)m.Id) ?? 0,
+                CompanyId = operationalContext.CompanyId,
+                EstablishmentId = operationalContext.EstablishmentId
+            }).SingleAsync();
     }
 
     public async Task<IReadOnlyList<InventoryMovementDto>> GetProductMovementsAsync(int productId)
@@ -365,6 +367,9 @@ public class InventoryService : IInventoryService
 
     public Task<InventoryMovementDto> RegisterAdjustmentAsync(InventoryAdjustDto dto)
     {
+        if (dto.ExpectedMovementWatermark is null || dto.ExpectedQuantity is null
+            || dto.ExpectedCompanyId is null || dto.ExpectedEstablishmentId is null)
+            throw new InvalidOperationException("INVENTORY_SNAPSHOT_REQUIRED");
         if (dto.Quantity < 0m)
         {
             throw new InvalidOperationException("INVALID_QUANTITY");
@@ -379,7 +384,16 @@ public class InventoryService : IInventoryService
             dto.Notes,
             null,
             null,
-            requireActiveProduct: false);
+            requireActiveProduct: false,
+            snapshot: dto);
+    }
+
+    public Task<InventoryMovementDto> RegisterOpeningAsync(int productId, decimal quantity, int batchId, int rowNumber)
+    {
+        if (quantity < 0m) throw new InvalidOperationException("INVALID_QUANTITY");
+        return RegisterMovementAsync(productId, InventoryMovementType.Adjustment,
+            InventoryMovementSourceType.OpeningInventory, quantity, $"OPENING-{batchId}",
+            null, batchId, rowNumber, openingOnly: true);
     }
 
     public Task<InventoryMovementDto> RegisterSaleAsync(int productId, decimal quantity, int saleId, int saleItemId, string? notes)
@@ -509,7 +523,9 @@ public class InventoryService : IInventoryService
         string? notes,
         int? sourceId,
         int? sourceLineId,
-        bool requireActiveProduct = true)
+        bool requireActiveProduct = true,
+        InventoryAdjustDto? snapshot = null,
+        bool openingOnly = false)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
@@ -520,7 +536,11 @@ public class InventoryService : IInventoryService
                 ? null
                 : await _context.Database.BeginTransactionAsync();
 
-            await _administrationGuard.LockOperationalWriteAsync(operationalContext);
+            // Counts/opening also serialize absent stock rows before creating them.
+            if (snapshot is not null || openingOnly)
+                await _administrationGuard.LockExclusiveOperationalWriteAsync(operationalContext);
+            else
+                await _administrationGuard.LockOperationalWriteAsync(operationalContext);
             var product = requireActiveProduct
                 ? await GetValidProductAsync(productId, operationalContext.CompanyId)
                 : await GetProductInCompanyAsync(productId, operationalContext.CompanyId);
@@ -544,6 +564,17 @@ public class InventoryService : IInventoryService
             }
 
             var stockBefore = productStock?.Quantity ?? 0m;
+            if (snapshot is not null || openingOnly)
+            {
+                var watermark = await BuildMovementQuery(operationalContext.CompanyId, operationalContext.EstablishmentId)
+                    .Where(m => m.ProductId == product.Id).MaxAsync(m => (int?)m.Id) ?? 0;
+                if (openingOnly && (watermark != 0 || stockBefore != 0m))
+                    throw new InvalidOperationException("OPENING_INVENTORY_ALREADY_USED");
+                if (snapshot is not null && (snapshot.ExpectedCompanyId != operationalContext.CompanyId
+                    || snapshot.ExpectedEstablishmentId != operationalContext.EstablishmentId
+                    || snapshot.ExpectedMovementWatermark != watermark || snapshot.ExpectedQuantity != stockBefore))
+                    throw new InvalidOperationException("INVENTORY_SNAPSHOT_STALE");
+            }
             decimal stockAfter;
 
             switch (type)

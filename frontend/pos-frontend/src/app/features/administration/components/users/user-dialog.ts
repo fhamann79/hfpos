@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { CheckboxModule } from 'primeng/checkbox';
@@ -34,7 +34,7 @@ export type UserDialogSubmit =
   templateUrl: './user-dialog.html',
   styleUrl: './user-dialog.scss',
 })
-export class UserDialog implements OnChanges {
+export class UserDialog implements OnChanges, OnDestroy {
   private readonly fb = inject(FormBuilder);
   private readonly roleService = inject(RoleService);
   private readonly establishmentService = inject(EstablishmentService);
@@ -48,6 +48,10 @@ export class UserDialog implements OnChanges {
   readonly roles = signal<Role[]>([]);
   readonly establishments = signal<Establishment[]>([]);
   readonly emissionPoints = signal<EmissionPoint[]>([]);
+  readonly establishmentOptions = computed(() => this.establishments().map(item => ({ ...item, label: `${item.code ?? ''} - ${item.name}` })));
+  readonly emissionPointOptions = computed(() => this.emissionPoints().map(item => ({ ...item, label: `${item.code} - ${item.name}` })));
+  private establishmentRequest = 0;
+  private pointRequest = 0;
 
   readonly form = this.fb.nonNullable.group({
     username: ['', [Validators.required]],
@@ -64,7 +68,10 @@ export class UserDialog implements OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['visible'] && !this.visible) this.form.controls.password.reset('');
+    if (changes['visible'] && !this.visible) {
+      this.invalidateContextRequests();
+      this.form.controls.password.reset('');
+    }
     if (changes['visible'] && this.visible) {
       this.loadInitialCatalogs();
       this.syncForm();
@@ -76,11 +83,13 @@ export class UserDialog implements OnChanges {
   }
 
   hide(): void {
+    this.invalidateContextRequests();
     this.form.controls.password.reset('');
     this.visibleChange.emit(false);
   }
 
   onEstablishmentChange(establishmentId: number): void {
+    ++this.pointRequest;
     this.form.patchValue({ emissionPointId: 0 });
     this.emissionPoints.set([]);
 
@@ -138,16 +147,18 @@ export class UserDialog implements OnChanges {
   }
 
   private loadEstablishments(): void {
+    const request = ++this.establishmentRequest;
     this.establishmentService.getAll().subscribe({
-      next: (establishments) => this.establishments.set(establishments.filter((item) => item.isActive)),
-      error: () => this.establishments.set([]),
+      next: (establishments) => { if (request === this.establishmentRequest) this.establishments.set(establishments.filter((item) => item.isActive)); },
+      error: () => { if (request === this.establishmentRequest) this.establishments.set([]); },
     });
   }
 
   private loadEmissionPoints(establishmentId: number): void {
+    const request = ++this.pointRequest;
     this.emissionPointService.getAll(establishmentId).subscribe({
-      next: (emissionPoints) => this.emissionPoints.set(emissionPoints.filter((item) => item.isActive)),
-      error: () => this.emissionPoints.set([]),
+      next: (emissionPoints) => { if (request === this.pointRequest) this.emissionPoints.set(emissionPoints.filter((item) => item.isActive)); },
+      error: () => { if (request === this.pointRequest) this.emissionPoints.set([]); },
     });
   }
 
@@ -155,6 +166,7 @@ export class UserDialog implements OnChanges {
     if (!this.visible) {
       return;
     }
+    this.invalidateContextRequests();
     this.form.controls.password.setValidators(this.isEditMode ? [] : NEW_PASSWORD_VALIDATORS);
     this.form.controls.password.updateValueAndValidity({ emitEvent: false });
 
@@ -184,5 +196,12 @@ export class UserDialog implements OnChanges {
     });
     this.loadEstablishments();
     this.emissionPoints.set([]);
+  }
+
+  ngOnDestroy(): void { this.invalidateContextRequests(); }
+
+  private invalidateContextRequests(): void {
+    ++this.establishmentRequest;
+    ++this.pointRequest;
   }
 }

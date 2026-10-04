@@ -19,6 +19,7 @@ export enum InventoryMovementSourceType {
   CreditNoteReturn = 8,
   InventoryTransferOut = 9,
   InventoryTransferIn = 10,
+  OpeningInventory = 11,
 }
 
 export interface InventoryMovement {

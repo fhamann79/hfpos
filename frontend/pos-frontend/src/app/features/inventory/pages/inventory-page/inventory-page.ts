@@ -163,6 +163,7 @@ export class InventoryPage implements OnInit, OnDestroy {
     { label: 'Nota de crédito', value: InventoryMovementSourceType.CreditNoteReturn },
     { label: 'Transferencia enviada', value: InventoryMovementSourceType.InventoryTransferOut },
     { label: 'Transferencia recibida', value: InventoryMovementSourceType.InventoryTransferIn },
+    { label: 'Inventario de apertura', value: InventoryMovementSourceType.OpeningInventory },
   ];
 
   readonly operationOptions: SelectOption<InventoryOperationKind>[] = [
@@ -190,6 +191,9 @@ export class InventoryPage implements OnInit, OnDestroy {
   operationLoading = signal(false);
   operationError = signal('');
   operationResult = signal<InventoryMovement | null>(null);
+  readonly countSnapshot = signal<import('../../models/inventory-operation.model').InventoryCountSnapshot | null>(null);
+  readonly countLoading = signal(false);
+  private countSequence = 0;
   entryForm: InventoryOperationForm = this.createOperationForm();
   exitForm: InventoryOperationForm = this.createOperationForm();
   adjustForm: InventoryOperationForm = this.createOperationForm();
@@ -294,6 +298,7 @@ export class InventoryPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    ++this.countSequence;
     clearTimeout(this.lookupTimer);
     ++this.lookupSequence;
     ++this.stockSequence;
@@ -360,6 +365,7 @@ export class InventoryPage implements OnInit, OnDestroy {
   }
 
   submitOperation(): void {
+    if (this.operationLoading()) return;
     const form = this.currentOperationForm();
     const validationError = this.validateOperationForm(this.activeOperation, form);
 
@@ -372,6 +378,17 @@ export class InventoryPage implements OnInit, OnDestroy {
     }
 
     const payload = this.buildOperationPayload(form);
+    if (this.activeOperation === 'adjust') {
+      const snapshot = this.countSnapshot();
+      if (!snapshot || snapshot.productId !== payload.productId || this.countLoading()) {
+        this.operationError.set('Carga el saldo del conteo antes de confirmar.');
+        return;
+      }
+      payload.expectedMovementWatermark = snapshot.movementWatermark;
+      payload.expectedQuantity = snapshot.quantity;
+      payload.expectedCompanyId = snapshot.companyId;
+      payload.expectedEstablishmentId = snapshot.establishmentId;
+    }
     this.operationLoading.set(true);
 
     const request =
@@ -401,6 +418,7 @@ export class InventoryPage implements OnInit, OnDestroy {
       error: (error: HttpErrorResponse) => {
         this.operationLoading.set(false);
         this.operationError.set(this.resolveOperationError(error));
+        if (this.activeOperation === 'adjust') this.countSnapshot.set(null);
       },
     });
   }
@@ -655,12 +673,33 @@ export class InventoryPage implements OnInit, OnDestroy {
   }
 
   canSubmitOperation(): boolean {
-    return !this.operationLoading() && !this.validateOperationForm(this.activeOperation, this.currentOperationForm());
+    return !this.operationLoading() && !this.validateOperationForm(this.activeOperation, this.currentOperationForm())
+      && (this.activeOperation !== 'adjust' || (!this.countLoading() && this.countSnapshot()?.productId === this.adjustForm.productId));
   }
 
   setOperationProduct(productId: number | null): void {
     this.currentOperationForm().productId = productId;
     this.operationError.set('');
+    if (this.activeOperation === 'adjust') this.loadCountSnapshot();
+  }
+
+  loadCountSnapshot(): void {
+    const sequence = ++this.countSequence;
+    const productId = this.adjustForm.productId;
+    this.countSnapshot.set(null); this.countLoading.set(false);
+    if (productId === null) return;
+    this.countLoading.set(true);
+    this.inventoryService.getCountSnapshot(productId).subscribe({
+      next: snapshot => {
+        if (sequence !== this.countSequence || this.adjustForm.productId !== productId) return;
+        this.countSnapshot.set(snapshot); this.countLoading.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        if (sequence !== this.countSequence) return;
+        this.countLoading.set(false);
+        this.operationError.set(this.inventoryService.resolveError(error, 'No se pudo cargar el saldo del conteo.'));
+      },
+    });
   }
 
   setOperationQuantity(quantity: number | null): void {
@@ -730,6 +769,7 @@ export class InventoryPage implements OnInit, OnDestroy {
     }
 
     this.adjustForm = this.createOperationForm();
+    ++this.countSequence; this.countSnapshot.set(null); this.countLoading.set(false);
   }
 
   private validateOperationForm(kind: InventoryOperationKind, form: InventoryOperationForm): string {
@@ -763,6 +803,9 @@ export class InventoryPage implements OnInit, OnDestroy {
 
   private resolveOperationError(error: HttpErrorResponse): string {
     const code = readErrorCode(error);
+    if (code === 'INVENTORY_SNAPSHOT_STALE' || code === 'INVENTORY_SNAPSHOT_REQUIRED') {
+      return 'El saldo del conteo esta desactualizado. Actualiza el saldo y verifica el conteo antes de confirmar.';
+    }
 
     if (code === 'INSUFFICIENT_STOCK') {
       return 'No hay stock suficiente para registrar la salida.';

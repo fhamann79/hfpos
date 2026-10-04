@@ -52,7 +52,7 @@ describe('Platform tenant workflows', () => {
   }
   function validForm() {
     component.openProvision(); component.form.patchValue({ name: tenant.name, ruc: tenant.ruc, username: 'synthetic-admin',
-      email: 'synthetic@test.local', password: 'synthetic-password-only' });
+      email: 'synthetic@test.local', password: 'synthetic-password-only', address: 'Synthetic address 123' });
   }
   it('initial load, filters and pagination send only one server-side page', () => {
     expect(component.tenants()).toHaveLength(1); expect(component.total()).toBe(42);

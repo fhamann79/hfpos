@@ -33,6 +33,7 @@ public class PosDbContext : DbContext
     public DbSet<ProductCostEvent> ProductCostEvents { get; set; }
     public DbSet<ProductStock> ProductStocks { get; set; }
     public DbSet<InventoryMovement> InventoryMovements { get; set; }
+    public DbSet<InitialDataBatch> InitialDataBatches { get; set; }
     public DbSet<InventoryTransfer> InventoryTransfers { get; set; }
     public DbSet<InventoryTransferItem> InventoryTransferItems { get; set; }
     public DbSet<DocumentSequence> DocumentSequences { get; set; }
@@ -51,6 +52,19 @@ public class PosDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<InitialDataBatch>(entity =>
+        {
+            entity.Property(b => b.Kind).IsRequired().HasMaxLength(30);
+            entity.Property(b => b.PayloadHash).IsRequired().HasMaxLength(64);
+            entity.Property(b => b.ResultJson).IsRequired();
+            entity.HasIndex(b => new { b.CompanyId, b.RequestId }).IsUnique();
+            entity.HasIndex(b => new { b.CompanyId, b.CreatedAt, b.Id });
+            entity.HasOne<Company>().WithMany().HasForeignKey(b => b.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<User>().WithMany().HasForeignKey(b => b.UserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Establishment>().WithMany().HasForeignKey(b => b.EstablishmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<EmissionPoint>().WithMany().HasForeignKey(b => b.EmissionPointId).OnDelete(DeleteBehavior.Restrict);
+        });
 
         modelBuilder.Entity<PlatformUser>(entity =>
         {

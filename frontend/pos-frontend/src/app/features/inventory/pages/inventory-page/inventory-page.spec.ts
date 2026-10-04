@@ -14,6 +14,8 @@ describe('Inactive product reconciliation', () => {
     registerEntry: vi.fn(() => EMPTY),
     registerExit: vi.fn(() => EMPTY),
     registerAdjustment: vi.fn(() => EMPTY),
+    getCountSnapshot: vi.fn((productId: number) => of({ productId, productName: 'Mouse', quantity: 5,
+      movementWatermark: 7, companyId: 1, establishmentId: 2 })),
   };
 
   beforeEach(() => {
@@ -70,6 +72,8 @@ describe('Inventory stock server pagination', () => {
       registerEntry: vi.fn((_payload: unknown): Observable<InventoryMovement> => EMPTY),
       registerExit: vi.fn((_payload: unknown): Observable<InventoryMovement> => EMPTY),
       registerAdjustment: vi.fn((_payload: unknown): Observable<InventoryMovement> => EMPTY),
+      getCountSnapshot: vi.fn((productId: number) => of({ productId, productName: 'Mouse', quantity: 5,
+        movementWatermark: 7, companyId: 1, establishmentId: 2 })),
     };
     TestBed.configureTestingModule({ providers: [MessageService,
       { provide: InventoryService, useValue: service },

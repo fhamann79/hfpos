@@ -77,7 +77,7 @@ public sealed class PlatformControlPlaneTests(PostgresDatabaseFixture database) 
         Assert.Equal(1, result.Tenant.ActiveUserCount);
         Assert.True(result.Tenant.Company.IsActive);
         Assert.Equal("001", (await context.Establishments.SingleAsync()).Code);
-        Assert.Equal("N/A", (await context.Establishments.SingleAsync()).Address);
+        Assert.Equal("Synthetic test avenue 123", (await context.Establishments.SingleAsync()).Address);
         Assert.Equal("001", (await context.EmissionPoints.SingleAsync()).Code);
         var roles = await context.Roles.Include(r => r.RolePermissions).ThenInclude(rp => rp.Permission).ToListAsync();
         Assert.Equal(3, roles.Count);
@@ -95,6 +95,45 @@ public sealed class PlatformControlPlaneTests(PostgresDatabaseFixture database) 
         using var client = factory.CreateClient();
         var token = await LoginAsync(client, "/api/Auth/login", request.InitialAdmin.Username);
         Assert.Equal(HttpStatusCode.OK, (await SendAsync(client, HttpMethod.Get, "/api/Auth/me", token)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Provision_accepts_non_default_codes_and_binds_them_to_replay_without_password_snapshot()
+    {
+        var actor = await ActorAsync();
+        await using var context = database.CreateDbContext();
+        var request = Request("codes526", 526) with
+        { InitialEstablishment = new("Matriz", " Synthetic test address 526 ", " 017 "), InitialEmissionPoint = new("Caja", " 009 ") };
+        var service = Service(context, actor);
+        await service.ProvisionAsync(request);
+        Assert.True((await service.ProvisionAsync(request)).WasAlreadyProcessed);
+        Assert.Equal("017", (await context.Establishments.SingleAsync()).Code);
+        Assert.Equal("009", (await context.EmissionPoints.SingleAsync()).Code);
+        Assert.Equal("Synthetic test address 526", (await context.Companies.SingleAsync()).MatrixAddress);
+        Assert.DoesNotContain(Password, (await context.PlatformTenantEvents.SingleAsync()).ProvisioningSnapshot!);
+        var conflict = await Assert.ThrowsAsync<PlatformException>(() => service.ProvisionAsync(request with
+            { InitialEmissionPoint = new("Caja", "010") }));
+        Assert.Equal("TENANT_PROVISIONING_REQUEST_CONFLICT", conflict.Message);
+    }
+
+    [Fact]
+    public async Task Legacy_provisioning_snapshot_without_codes_remains_replayable_without_rewriting_history()
+    {
+        var actor = await ActorAsync();
+        await using var context = database.CreateDbContext();
+        var request = Request("legacy526", 527);
+        var service = Service(context, actor);
+        await service.ProvisionAsync(request);
+        var ledger = await context.PlatformTenantEvents.SingleAsync();
+        var json = System.Text.Json.Nodes.JsonNode.Parse(ledger.ProvisioningSnapshot!)!;
+        json["InitialEstablishment"]!.AsObject().Remove("Code");
+        json["InitialEmissionPoint"]!.AsObject().Remove("Code");
+        json["InitialEstablishment"]!["Address"] = "N/A";
+        ledger.ProvisioningSnapshot = json.ToJsonString();
+        var establishment = await context.Establishments.SingleAsync(); establishment.Address = "N/A";
+        await context.SaveChangesAsync();
+        Assert.True((await service.ProvisionAsync(request with { InitialEstablishment = new("Matriz", null) })).WasAlreadyProcessed);
+        Assert.Equal("N/A", establishment.Address); Assert.Single(await context.Companies.ToListAsync());
     }
 
     [Fact]
@@ -482,7 +521,7 @@ public sealed class PlatformControlPlaneTests(PostgresDatabaseFixture database) 
     private PlatformTenantService Service(PosDbContext context, PlatformContext actor) => new(context,
         new StaticPlatformAccessor(actor), new FixedBusinessClock(), new TenantAdministrationGuard(context));
     private static TenantProvisionRequest Request(string key, int seed) => new(Guid.NewGuid(),
-        new("Tenant " + key, $"9{seed:D9}001", "America/Guayaquil"), new("Matriz", null), new("Caja Principal"),
+        new("Tenant " + key, $"9{seed:D9}001", "America/Guayaquil"), new("Matriz", "Synthetic test avenue 123"), new("Caja Principal"),
         new("admin-" + key, key + "@test.local", Password));
     private static async Task<string> LoginAsync(HttpClient client, string url, string username)
     {

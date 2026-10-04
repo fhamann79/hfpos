@@ -166,6 +166,8 @@ public class OperationalContextAccessor : IOperationalContextAccessor
         var operationalContext = new OperationalContext
         {
             UserId = userId,
+            UserSessionVersion = userVersion,
+            RoleAuthorizationVersion = roleVersion,
             Username = username,
             CompanyId = companyId,
             EstablishmentId = establishmentId,

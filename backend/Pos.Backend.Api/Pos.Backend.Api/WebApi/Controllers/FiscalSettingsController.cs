@@ -346,6 +346,8 @@ public class FiscalSettingsController : ControllerBase
             "COMPANY_LOGO_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "INVALID_COMPANY_RUC" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_COMPANY_FISCAL_SETTINGS" => BadRequest(new ApiErrorResponse { Error = code }),
+            "COMPANY_IDENTITY_ALREADY_USED" => Conflict(new ApiErrorResponse { Error = code }),
+            "COMPANY_RUC_ALREADY_EXISTS" => Conflict(new ApiErrorResponse { Error = code }),
             "COMPANY_BRANDING_OPERATION_FAILED" => BadRequest(new ApiErrorResponse { Error = code }),
             "COMPANY_LOGO_FILE_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "COMPANY_LOGO_INVALID" => BadRequest(new ApiErrorResponse { Error = code }),

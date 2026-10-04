@@ -64,6 +64,9 @@ public class CategoriesController : ControllerBase
 
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
         var normalizedName = dto.Name.Trim();
+        var guard = new TenantAdministrationGuard(_context);
+        await using var tx = await guard.BeginChangeAsync(operationalContext.CompanyId);
+        await guard.LockOperationalWriteAsync(operationalContext);
 
         var nameExists = await _context.Categories.AnyAsync(c =>
             c.CompanyId == operationalContext.CompanyId && c.Name == normalizedName);
@@ -83,6 +86,7 @@ public class CategoriesController : ControllerBase
 
         _context.Categories.Add(category);
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
 
         var response = new CategoryDto
         {
@@ -132,6 +136,9 @@ public class CategoriesController : ControllerBase
         }
 
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
+        var guard = new TenantAdministrationGuard(_context);
+        await using var tx = await guard.BeginChangeAsync(operationalContext.CompanyId);
+        await guard.LockOperationalWriteAsync(operationalContext);
 
         var category = await _context.Categories
             .FirstOrDefaultAsync(c => c.Id == id && c.CompanyId == operationalContext.CompanyId);
@@ -144,6 +151,7 @@ public class CategoriesController : ControllerBase
         category.Name = dto.Name.Trim();
 
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return NoContent();
     }

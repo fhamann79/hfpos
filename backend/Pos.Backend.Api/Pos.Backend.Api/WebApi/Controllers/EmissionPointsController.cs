@@ -8,6 +8,7 @@ using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Infrastructure.Data;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.WebApi.Filters;
+using Pos.Backend.Api.Infrastructure.Services;
 
 namespace Pos.Backend.Api.WebApi.Controllers;
 
@@ -84,6 +85,7 @@ public class EmissionPointsController : ControllerBase
         }
 
         await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        await _administrationGuard.LockOperationalWriteAsync(tenant);
         var establishment = await _context.Establishments.SingleOrDefaultAsync(e => e.Id == dto.EstablishmentId && e.CompanyId == tenant.CompanyId);
         if (establishment is null)
         {
@@ -93,6 +95,8 @@ public class EmissionPointsController : ControllerBase
             return Conflict(new ApiErrorResponse { Error = "ESTABLISHMENT_INACTIVE" });
 
         var normalizedCode = dto.Code.Trim();
+        if (!OperationalIdentityProtection.ValidCode(normalizedCode) || dto.Name.Trim().Length > 150)
+            return BadRequest(new ApiErrorResponse { Error = "EMISSION_POINT_INPUT_INVALID" });
         var codeExists = await _context.EmissionPoints.AnyAsync(ep =>
             ep.EstablishmentId == dto.EstablishmentId && ep.Code == normalizedCode);
 
@@ -155,6 +159,7 @@ public class EmissionPointsController : ControllerBase
     {
         var tenant = await _operationalContext.GetRequiredContextAsync();
         await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        await _administrationGuard.LockOperationalWriteAsync(tenant);
         var emissionPoint = await _context.EmissionPoints.FirstOrDefaultAsync(ep => ep.Id == id && ep.Establishment.CompanyId == tenant.CompanyId);
         if (emissionPoint is null)
         {
@@ -172,6 +177,11 @@ public class EmissionPointsController : ControllerBase
         }
 
         var normalizedCode = dto.Code.Trim();
+        if (!OperationalIdentityProtection.ValidCode(normalizedCode) || dto.Name.Trim().Length > 150)
+            return BadRequest(new ApiErrorResponse { Error = "EMISSION_POINT_INPUT_INVALID" });
+        if (normalizedCode != emissionPoint.Code
+            && await OperationalIdentityProtection.IsUsedAsync(_context, tenant.CompanyId, emissionPoint.EstablishmentId, id))
+            return Conflict(new ApiErrorResponse { Error = "OPERATIONAL_IDENTITY_ALREADY_USED" });
         var codeExists = await _context.EmissionPoints.AnyAsync(ep =>
             ep.Id != id && ep.EstablishmentId == emissionPoint.EstablishmentId && ep.Code == normalizedCode);
 

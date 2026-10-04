@@ -51,8 +51,8 @@
       <label for="establishment">Establishment</label>
       <p-select
         inputId="establishment"
-        [options]="establishments()"
-        optionLabel="name"
+        [options]="establishmentOptions()"
+        optionLabel="label"
         optionValue="id"
         formControlName="establishmentId"
         placeholder="Selecciona establishment"
@@ -64,8 +64,8 @@
       <label for="emissionPoint">Emission Point</label>
       <p-select
         inputId="emissionPoint"
-        [options]="emissionPoints()"
-        optionLabel="name"
+        [options]="emissionPointOptions()"
+        optionLabel="label"
         optionValue="id"
         formControlName="emissionPointId"
         placeholder="Selecciona emission point"

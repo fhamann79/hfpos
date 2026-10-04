@@ -73,7 +73,7 @@ describe('Establishment lifecycle', () => {
     const dialog = TestBed.runInInjectionContext(() => new EstablishmentDialog());
     dialog.establishment = item;
 
-    dialog.form.patchValue({ name: item.name });
+    dialog.form.patchValue({ name: item.name, code: '017', address: 'Synthetic address 123' });
     const events: EstablishmentDialogSubmit[] = [];
     dialog.submitForm.subscribe((event) => events.push(event));
     dialog.save();

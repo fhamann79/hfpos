@@ -90,12 +90,15 @@ public sealed class PlatformTenantService(PosDbContext database, IPlatformContex
             await LockPlatformActorAsync(actor);
             var prior = await ReplayAsync(actor, request, snapshot);
             if (prior is not null) return prior;
+            if (!OperationalIdentityProtection.ValidAddress(request.InitialEstablishment.Address))
+                throw new PlatformException("TENANT_PROVISIONING_INVALID");
             var now = clock.UtcNow;
             var company = new Company { Name = request.Company.Name, Ruc = request.Company.Ruc,
+                MatrixAddress = request.InitialEstablishment.Address,
                 TimeZoneId = request.Company.TimeZoneId, IsActive = true, CreatedAt = now };
-            var establishment = new Establishment { Company = company, Code = "001", Name = request.InitialEstablishment.Name,
+            var establishment = new Establishment { Company = company, Code = request.InitialEstablishment.Code, Name = request.InitialEstablishment.Name,
                 Address = request.InitialEstablishment.Address!, IsActive = true, CreatedAt = now };
-            var point = new EmissionPoint { Establishment = establishment, Code = "001", Name = request.InitialEmissionPoint.Name,
+            var point = new EmissionPoint { Establishment = establishment, Code = request.InitialEmissionPoint.Code, Name = request.InitialEmissionPoint.Name,
                 IsActive = true, CreatedAt = now };
             database.Companies.Add(company);
             database.Establishments.Add(establishment);
@@ -182,7 +185,10 @@ public sealed class PlatformTenantService(PosDbContext database, IPlatformContex
             .Select(e => new { e.CompanyId, e.PlatformUserId, e.ProvisioningSnapshot,
                 e.InitialAdminUser!.PasswordHash }).SingleOrDefaultAsync();
         if (prior is null) return null;
-        if (prior.PlatformUserId != actor.UserId || prior.ProvisioningSnapshot != snapshot
+        // Deserialize old snapshots so missing code fields retain their historical 001 defaults.
+        var stored = JsonSerializer.Deserialize<TenantProvisionRequest>(prior.ProvisioningSnapshot!);
+        var canonicalStored = stored is null ? null : JsonSerializer.Serialize(stored);
+        if (prior.PlatformUserId != actor.UserId || canonicalStored != snapshot
             || new PasswordHasher<User>().VerifyHashedPassword(new User(), prior.PasswordHash, request.InitialAdmin.Password)
                 == PasswordVerificationResult.Failed)
             throw new PlatformException("TENANT_PROVISIONING_REQUEST_CONFLICT", 409);
@@ -210,8 +216,12 @@ public sealed class PlatformTenantService(PosDbContext database, IPlatformContex
         if (!PlatformAuthService.ValidIdentity(username, email, request.InitialAdmin.Password))
             throw new PlatformException("TENANT_ADMIN_INVALID");
         var address = string.IsNullOrWhiteSpace(request.InitialEstablishment.Address) ? "N/A" : Required(request.InitialEstablishment.Address, 250);
-        return request with { Company = new(name, ruc, zone), InitialEstablishment = new(Required(request.InitialEstablishment.Name, 150), address),
-            InitialEmissionPoint = new(Required(request.InitialEmissionPoint.Name, 150)),
+        var establishmentCode = Required(request.InitialEstablishment.Code, 3);
+        var pointCode = Required(request.InitialEmissionPoint.Code, 3);
+        if (!OperationalIdentityProtection.ValidCode(establishmentCode) || !OperationalIdentityProtection.ValidCode(pointCode))
+            throw new PlatformException("TENANT_PROVISIONING_INVALID");
+        return request with { Company = new(name, ruc, zone), InitialEstablishment = new(Required(request.InitialEstablishment.Name, 150), address, establishmentCode),
+            InitialEmissionPoint = new(Required(request.InitialEmissionPoint.Name, 150), pointCode),
             InitialAdmin = new(username, email, request.InitialAdmin.Password) };
     }
 }

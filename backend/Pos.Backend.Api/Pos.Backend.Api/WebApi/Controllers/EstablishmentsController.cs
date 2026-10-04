@@ -8,6 +8,7 @@ using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Infrastructure.Data;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.WebApi.Filters;
+using Pos.Backend.Api.Infrastructure.Services;
 
 namespace Pos.Backend.Api.WebApi.Controllers;
 
@@ -44,6 +45,8 @@ public class EstablishmentsController : ControllerBase
                 Id = e.Id,
                 CompanyId = e.CompanyId,
                 Name = e.Name,
+                Code = e.Code,
+                Address = e.Address,
                 IsActive = e.IsActive
             })
             .ToListAsync();
@@ -61,26 +64,36 @@ public class EstablishmentsController : ControllerBase
             return BadRequest(new ApiErrorResponse { Error = "NAME_REQUIRED" });
         }
 
-        var generatedCode = await GenerateNextEstablishmentCodeAsync(tenant.CompanyId);
+        var code = dto.Code?.Trim();
+        var address = dto.Address?.Trim();
+        if (!OperationalIdentityProtection.ValidCode(code) || !OperationalIdentityProtection.ValidAddress(address) || dto.Name.Trim().Length > 150)
+            return BadRequest(new ApiErrorResponse { Error = "ESTABLISHMENT_INPUT_INVALID" });
+        await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        await _administrationGuard.LockOperationalWriteAsync(tenant);
+        if (await _context.Establishments.AnyAsync(e => e.CompanyId == tenant.CompanyId && e.Code == code))
+            return Conflict(new ApiErrorResponse { Error = "ESTABLISHMENT_CODE_ALREADY_EXISTS" });
 
         var establishment = new Establishment
         {
             CompanyId = tenant.CompanyId,
-            Code = generatedCode,
+            Code = code!,
             Name = dto.Name.Trim(),
-            Address = "N/A",
+            Address = address!,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
 
         _context.Establishments.Add(establishment);
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return CreatedAtAction(nameof(GetById), new { id = establishment.Id }, new EstablishmentDto
         {
             Id = establishment.Id,
             CompanyId = establishment.CompanyId,
             Name = establishment.Name,
+            Code = establishment.Code,
+            Address = establishment.Address,
             IsActive = establishment.IsActive
         });
     }
@@ -97,6 +110,8 @@ public class EstablishmentsController : ControllerBase
                 Id = e.Id,
                 CompanyId = e.CompanyId,
                 Name = e.Name,
+                Code = e.Code,
+                Address = e.Address,
                 IsActive = e.IsActive
             })
             .FirstOrDefaultAsync();
@@ -115,6 +130,7 @@ public class EstablishmentsController : ControllerBase
     {
         var tenant = await _operationalContext.GetRequiredContextAsync();
         await using var tx = await _administrationGuard.BeginChangeAsync(tenant.CompanyId);
+        await _administrationGuard.LockOperationalWriteAsync(tenant);
         var establishment = await _context.Establishments.FirstOrDefaultAsync(e => e.Id == id && e.CompanyId == tenant.CompanyId);
         if (establishment is null)
         {
@@ -126,7 +142,17 @@ public class EstablishmentsController : ControllerBase
             return BadRequest(new ApiErrorResponse { Error = "NAME_REQUIRED" });
         }
 
+        var code = dto.Code?.Trim() ?? establishment.Code;
+        var address = dto.Address?.Trim() ?? establishment.Address;
+        if (!OperationalIdentityProtection.ValidCode(code) || !OperationalIdentityProtection.ValidAddress(address) || dto.Name.Trim().Length > 150)
+            return BadRequest(new ApiErrorResponse { Error = "ESTABLISHMENT_INPUT_INVALID" });
+        if (code != establishment.Code && await OperationalIdentityProtection.IsUsedAsync(_context, tenant.CompanyId, id))
+            return Conflict(new ApiErrorResponse { Error = "OPERATIONAL_IDENTITY_ALREADY_USED" });
+        if (await _context.Establishments.AnyAsync(e => e.CompanyId == tenant.CompanyId && e.Id != id && e.Code == code))
+            return Conflict(new ApiErrorResponse { Error = "ESTABLISHMENT_CODE_ALREADY_EXISTS" });
         establishment.Name = dto.Name.Trim();
+        establishment.Code = code;
+        establishment.Address = address;
 
         await _context.SaveChangesAsync();
         if (!await _administrationGuard.HasActiveAdministratorAsync(tenant.CompanyId))
@@ -147,21 +173,6 @@ public class EstablishmentsController : ControllerBase
         await _lifecycle.SetEstablishmentActiveAsync(tenant.CompanyId, id, false);
 
         return NoContent();
-    }
-
-    private async Task<string> GenerateNextEstablishmentCodeAsync(int companyId)
-    {
-        var numericCodes = await _context.Establishments
-            .Where(e => e.CompanyId == companyId)
-            .Select(e => e.Code)
-            .ToListAsync();
-
-        var maxCode = numericCodes
-            .Select(code => int.TryParse(code, out var parsedCode) ? parsedCode : 0)
-            .DefaultIfEmpty(0)
-            .Max();
-
-        return (maxCode + 1).ToString("D3");
     }
 
     [HttpPost("{id:int}/activate")]

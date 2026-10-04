@@ -8,8 +8,8 @@ export interface TenantDetail {
 export interface PlatformPage<T> { items: T[]; page: number; pageSize: number; totalItems: number; totalPages: number; }
 export interface TenantDraft {
   company: { name: string; ruc: string; timeZoneId: string };
-  initialEstablishment: { name: string; address: string };
-  initialEmissionPoint: { name: string };
+  initialEstablishment: { name: string; address: string; code?: string };
+  initialEmissionPoint: { name: string; code?: string };
   initialAdmin: { username: string; email: string; password: string };
 }
 export interface ProvisionRequest extends TenantDraft { requestId: string; }

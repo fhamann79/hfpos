@@ -13,4 +13,8 @@ public class InventoryAdjustDto
     public string? Reference { get; set; }
 
     public string? Notes { get; set; }
+    public int? ExpectedMovementWatermark { get; set; }
+    public decimal? ExpectedQuantity { get; set; }
+    public int? ExpectedCompanyId { get; set; }
+    public int? ExpectedEstablishmentId { get; set; }
 }
