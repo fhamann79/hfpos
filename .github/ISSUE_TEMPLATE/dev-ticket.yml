@@ -109,5 +109,5 @@ body:
           required: true
         - label: No se llamarán endpoints reales del SRI desde agentes o CI.
           required: true
-        - label: El agente no hará merge; la autorización final corresponde a Fernando.
+        - label: El coordinador solo ejecutara merge si la politica vigente en main ya lo permite y todos sus gates estan satisfechos; R4 nunca autonomo, sin bypass ni autoautorizar un cambio de politica.
           required: true
