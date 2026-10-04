@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Data.Common;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -171,6 +172,137 @@ public sealed class AutonomousElectronicIssuingTests(PostgresDatabaseFixture dat
         await tx.CommitAsync();
         var other = await f.ClaimAsync(); Assert.Equal(first.Id, other.SaleId); Assert.NotEqual(other.LeaseToken, skipped.LeaseToken);
         await using var third = f.Worker(); Assert.Empty(await third.Coordinator.ClaimBatchAsync(2, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("ready-sign", "FISCAL_RECEPTION_NOT_ADMITTED")]
+    [InlineData("ready-submit", "FISCAL_RECEPTION_NOT_ADMITTED")]
+    [InlineData("rejected", "FISCAL_DOCUMENT_TERMINAL")]
+    public async Task Manual_query_cannot_skip_reception_or_reopen_definitive_rejection(string stage, string error)
+    {
+        var f = await Setup(); var sale = await f.SellAsync();
+        if (stage != "ready-sign") await f.ProcessNextAsync();
+        if (stage == "rejected")
+        {
+            f.Transport.Reception = _ => Task.FromResult(new Core.Models.SriReceptionResponse { Estado = "DEVUELTA" });
+            await f.ProcessNextAsync();
+        }
+        await using var before = database.CreateDbContext();
+        var original = await before.ElectronicIssuingJobs.AsNoTracking().SingleAsync();
+        var attempts = await before.SriSubmissionAttempts.CountAsync();
+        f.Transport.Authorization = _ => Task.FromResult(new Core.Models.SriAuthorizationResponse { Estado = "NOT_FOUND" });
+        await using (var manual = new FiscalWorkerTestScope(database.CreateDbContext(), f.Protection, f.Transport, f.Options,
+            new StaticOperationalContextAccessor(f.Admin)))
+            Assert.Equal(error, (await Assert.ThrowsAsync<InvalidOperationException>(() => manual.Submission.CheckAuthorizationAsync(sale.Id))).Message);
+        using (var factory = new FiscalApiFactory(database, f.Transport))
+        using (var client = factory.CreateClient())
+        {
+            var admin = await before.Users.SingleAsync(u => u.Id == f.Admin.UserId);
+            var jwt = new JwtService(Options.Create(new JwtOptions
+            { Key = FiscalApiFactory.Key, Issuer = "hfpos-528", Audience = "hfpos-528", ExpiresMinutes = 10 }), before).GenerateToken(admin);
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", jwt);
+            using var response = await client.PostAsync($"/api/Sales/{sale.Id}/sri/check-authorization", null);
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal(error, (await response.Content.ReadFromJsonAsync<Dictionary<string, string>>())!["error"]);
+        }
+        Assert.Equal(0, f.Transport.Queries);
+        await using var verify = database.CreateDbContext();
+        var unchanged = await verify.ElectronicIssuingJobs.SingleAsync();
+        Assert.Equal(original.Phase, unchanged.Phase); Assert.Equal(original.State, unchanged.State);
+        Assert.Equal(original.Fence, unchanged.Fence); Assert.Equal(original.AttemptCount, unchanged.AttemptCount);
+        Assert.Equal(original.LeaseToken, unchanged.LeaseToken); Assert.Equal(original.LeaseExpiresAt, unchanged.LeaseExpiresAt);
+        Assert.Equal(original.NextAttemptAt, unchanged.NextAttemptAt); Assert.Equal(original.UpdatedAt, unchanged.UpdatedAt);
+        Assert.Equal(original.ReceptionStartedAt, unchanged.ReceptionStartedAt);
+        Assert.Equal(attempts, await verify.SriSubmissionAttempts.CountAsync());
+        if (stage == "rejected")
+        {
+            await using var scope = new TestServiceScope(database, f.Tenant.OperationalContext);
+            Assert.Equal(SaleStatus.Voided, (await f.Sales(scope).VoidAsync(sale.Id, new() { Reason = "Synthetic terminal query guard" })).Status);
+            Assert.Equal(50m, await TestDataBuilder.GetStockAsync(scope.DbContext, f.Tenant, f.Tenant.Products[0].Id));
+            Assert.Equal(0m, (await scope.CashSessions.GetCurrentAsync())!.ExpectedCashAmount);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Legacy_known_reception_can_be_queried_but_definitive_rejection_stays_terminal(bool rejected)
+    {
+        var f = await Setup(); var sale = await f.SellAsync(); await f.ProcessNextAsync();
+        if (rejected) f.Transport.Reception = _ => Task.FromResult(new Core.Models.SriReceptionResponse { Estado = "DEVUELTA" });
+        await f.ProcessNextAsync();
+        await using (var db = database.CreateDbContext())
+        { db.ElectronicIssuingJobs.Remove(await db.ElectronicIssuingJobs.SingleAsync()); await db.SaveChangesAsync(); }
+        f.Transport.Authorization = _ => Task.FromResult(new Core.Models.SriAuthorizationResponse { Estado = "NOT_FOUND" });
+        await using (var manual = new FiscalWorkerTestScope(database.CreateDbContext(), f.Protection, f.Transport, f.Options,
+            new StaticOperationalContextAccessor(f.Admin)))
+            Assert.Equal(rejected ? "FISCAL_DOCUMENT_TERMINAL" : "SRI_AUTHORIZATION_PENDING",
+                (await Assert.ThrowsAsync<InvalidOperationException>(() => manual.Submission.CheckAuthorizationAsync(sale.Id))).Message);
+        Assert.Equal(rejected ? 0 : 1, f.Transport.Queries);
+        await using var verify = database.CreateDbContext();
+        if (rejected) Assert.Empty(await verify.ElectronicIssuingJobs.ToListAsync());
+        else
+        {
+            var job = await verify.ElectronicIssuingJobs.SingleAsync();
+            Assert.Equal(ElectronicIssuingJobState.WaitingAuthorization, job.State);
+            Assert.False(job.AutomaticRequested); Assert.Equal(sale.AccessKey, job.AccessKey);
+        }
+    }
+
+    [Fact]
+    public async Task Hosted_worker_claims_second_job_only_after_long_first_call_with_its_own_lease_and_attempt_budget()
+    {
+        var f = await Setup(); var first = await f.SellAsync(); await f.ProcessNextAsync();
+        // Hide the first ready reception briefly so the second can be signed before starting the actual hosted worker.
+        await using (var db = database.CreateDbContext())
+            await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"ElectronicIssuingJobs\" SET \"NextAttemptAt\" = clock_timestamp() + interval '1 hour' WHERE \"SaleId\" = {first.Id}");
+        var second = await f.SellAsync(); await f.ProcessNextAsync();
+        await using (var db = database.CreateDbContext())
+            await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"ElectronicIssuingJobs\" SET \"NextAttemptAt\" = clock_timestamp() - interval '1 hour' WHERE \"SaleId\" = {first.Id}");
+        var enteredFirst = new AsyncTestSignal(); var enteredSecond = new AsyncTestSignal();
+        var releaseFirst = new AsyncTestSignal(); var releaseSecond = new AsyncTestSignal();
+        f.Transport.Reception = async ct =>
+        {
+            if (f.Transport.Submissions == 1) { enteredFirst.Set(); await releaseFirst.WaitAsync(ct); }
+            else { enteredSecond.Set(); await releaseSecond.WaitAsync(ct); }
+            return new() { Estado = "RECIBIDA" };
+        };
+        var services = new ServiceCollection();
+        services.AddScoped(_ => f.Worker());
+        services.AddScoped(sp => sp.GetRequiredService<FiscalWorkerTestScope>().Coordinator);
+        services.AddScoped(sp => sp.GetRequiredService<FiscalWorkerTestScope>().Processor);
+        await using var provider = services.BuildServiceProvider();
+        using var worker = new ElectronicIssuingWorker(provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<ElectronicIssuingWorker>.Instance);
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            await enteredFirst.WaitAsync();
+            await using (var db = database.CreateDbContext())
+            {
+                var waiting = await db.ElectronicIssuingJobs.SingleAsync(j => j.SaleId == second.Id);
+                Assert.Null(waiting.LeaseToken); Assert.Null(waiting.LeaseExpiresAt);
+                Assert.Equal(1, waiting.AttemptCount); // Signing only; not preclaimed while first reception is held.
+                // Controlled real SQL expiry represents a first call consuming its entire lease, without a 120s sleep.
+                await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"ElectronicIssuingJobs\" SET \"LeaseExpiresAt\" = clock_timestamp() - interval '1 second', \"NextAttemptAt\" = clock_timestamp() + interval '1 hour' WHERE \"SaleId\" = {first.Id}");
+            }
+            releaseFirst.Set(); await enteredSecond.WaitAsync();
+            await using var verify = database.CreateDbContext();
+            var ownLease = await verify.ElectronicIssuingJobs.SingleAsync(j => j.SaleId == second.Id);
+            Assert.NotNull(ownLease.LeaseToken); Assert.Equal(2, ownLease.AttemptCount);
+            Assert.Equal(ElectronicIssuingPhase.ReceptionInFlight, ownLease.Phase);
+            Assert.True(await verify.Database.SqlQuery<bool>($"SELECT \"LeaseExpiresAt\" > clock_timestamp() + interval '100 seconds' AS \"Value\" FROM \"ElectronicIssuingJobs\" WHERE \"SaleId\" = {second.Id}").SingleAsync());
+        }
+        finally
+        {
+            releaseFirst.Set(); releaseSecond.Set();
+            using var shutdown = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await worker.StopAsync(shutdown.Token);
+        }
+        Assert.Equal(2, f.Transport.Submissions); Assert.Equal(0, f.Transport.Queries);
+        await using var final = database.CreateDbContext();
+        var untouched = await final.ElectronicIssuingJobs.SingleAsync(j => j.SaleId == first.Id);
+        Assert.Equal(ElectronicIssuingPhase.ReceptionInFlight, untouched.Phase); // Expired result stayed fenced.
+        Assert.Null((await final.Sales.SingleAsync(s => s.Id == first.Id)).SriSubmittedAt);
     }
 
     [Theory]
@@ -492,7 +624,7 @@ public sealed class AutonomousElectronicIssuingTests(PostgresDatabaseFixture dat
         }
     }
 
-    private sealed class FiscalApiFactory(PostgresDatabaseFixture database) : WebApplicationFactory<Program>
+    private sealed class FiscalApiFactory(PostgresDatabaseFixture database, ISriWebServiceClient? transport = null) : WebApplicationFactory<Program>
     {
         public const string Key = "hfpos-528-synthetic-test-only-jwt-key-long-enough-for-hmac";
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -505,6 +637,7 @@ public sealed class AutonomousElectronicIssuingTests(PostgresDatabaseFixture dat
             }));
             builder.ConfigureServices(services =>
             {
+                if (transport is not null) services.AddSingleton(transport);
                 var worker = services.Single(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(ElectronicIssuingWorker));
                 services.Remove(worker); // Deterministic HTTP boundary checks; actual processor exercised above.
             });

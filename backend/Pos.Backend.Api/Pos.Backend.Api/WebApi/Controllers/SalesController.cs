@@ -332,6 +332,7 @@ public class SalesController : ControllerBase
         {
             "FISCAL_PERMISSION_REQUIRED" => StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse { Error = code }),
             "FISCAL_DOCUMENT_BUSY" or "FISCAL_LEASE_LOST" or "FISCAL_RECEPTION_ALREADY_ADMITTED"
+                or "FISCAL_RECEPTION_NOT_ADMITTED" or "FISCAL_DOCUMENT_TERMINAL"
                 or "FISCAL_DELEGATION_REVOKED" or "FISCAL_DOCUMENT_CONTEXT_CHANGED" or "FISCAL_TENANT_INACTIVE"
                 or "FISCAL_ATTEMPTS_EXHAUSTED" or "CERTIFICATE_NOT_VALID_YET"
                 => Conflict(new ApiErrorResponse { Error = code }),

@@ -53,7 +53,7 @@ public sealed class ElectronicIssuingWorker(IServiceScopeFactory scopes, ILogger
                 IReadOnlyList<ElectronicIssuingJob> claims;
                 await using (var scope = scopes.CreateAsyncScope())
                     claims = await scope.ServiceProvider.GetRequiredService<ElectronicIssuingCoordinator>()
-                        .ClaimBatchAsync(2, stoppingToken);
+                        .ClaimBatchAsync(1, stoppingToken); // No waiting job spends its lease behind an external call.
                 foreach (var claim in claims)
                 {
                     stoppingToken.ThrowIfCancellationRequested();

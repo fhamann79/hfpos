@@ -32,15 +32,14 @@ public static class SmokeMain
         Set("ASPNETCORE_ENVIRONMENT", "Testing"); Set("DOTNET_ENVIRONMENT", "Testing");
         Set("HF_POS_SYNTHETIC_FISCAL_HOST", "1");
         Set("ASPNETCORE_HOSTINGSTARTUPASSEMBLIES", typeof(SmokeMain).Assembly.GetName().Name!);
-        Set("ConnectionStrings__DefaultConnection", connection); Set("SeedDemoData", "false");
-        Set("Jwt__Key", "hfpos-528-smoke-synthetic-only-key-never-used-in-real-environments");
-        Set("Jwt__Issuer", "hfpos-528-smoke"); Set("Jwt__Audience", "hfpos-528-smoke");
-        Set("Sri__AllowProductionSubmission", "false");
-        foreach (var endpoint in new[] { "ReceptionTestUrl", "AuthorizationTestUrl", "ReceptionProductionUrl", "AuthorizationProductionUrl" })
-            Set($"Sri__{endpoint}", "https://synthetic-sri.invalid/never-called");
-        Set("DataProtection__KeysPath", keys.FullName); Set("DataProtection__ApplicationName", "hfpos-528-smoke");
-        Set("Cors__AllowedOrigins__0", "http://localhost:4200");
-        Set("PlatformBootstrap__Enabled", "false");
+        Set("ASPNETCORE_FORWARDEDHEADERS_ENABLED", "false");
+        if (args.Contains("--verify-configuration"))
+        {
+            SmokeConfiguration.VerifyStartup();
+            return;
+        }
+        // Validate the exact human startup configuration before any disposable fixture initialization.
+        SmokeConfiguration.VerifyStartup();
         AutonomousIssuingFixture? initialized = null;
         if (args.Contains("--initialize"))
         {
@@ -93,6 +92,12 @@ public sealed class SmokeStartup : IHostingStartup
         if (Environment.GetEnvironmentVariable("HF_POS_SYNTHETIC_FISCAL_HOST") != "1"
             || Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") != "Testing")
             throw new InvalidOperationException("Synthetic hosting startup is test-only.");
+        builder.ConfigureAppConfiguration((context, configuration) =>
+        {
+            if (!context.HostingEnvironment.IsEnvironment("Testing"))
+                throw new InvalidOperationException("Synthetic hosting startup requires the Testing environment.");
+            SmokeConfiguration.Apply(configuration);
+        });
         builder.ConfigureKestrel(options =>
         {
             using var rsa = RSA.Create(2048);

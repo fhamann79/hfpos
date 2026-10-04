@@ -92,6 +92,8 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
         var job = await context.ElectronicIssuingJobs.FromSqlInterpolated($@"
             SELECT * FROM ""ElectronicIssuingJobs"" WHERE ""SaleId"" = {saleId} FOR UPDATE")
             .SingleOrDefaultAsync(ct);
+        if (purpose == ElectronicIssuingPhase.AwaitingAuthorization)
+            await ValidateAuthorizationEvidenceAsync(sale, job, ct);
         if (job is null)
         {
             if (claim is not null) throw new InvalidOperationException("FISCAL_LEASE_LOST");
@@ -272,6 +274,33 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
     }
 
     internal static string Hash(string? value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value ?? string.Empty)));
+
+    private async Task ValidateAuthorizationEvidenceAsync(Sale sale, ElectronicIssuingJob? job, CancellationToken ct)
+    {
+        // Querying is recovery, not permission to skip signing/reception or reopen a terminal job.
+        if (job is { Phase: ElectronicIssuingPhase.Completed, State: ElectronicIssuingJobState.Rejected })
+            throw new InvalidOperationException("FISCAL_DOCUMENT_TERMINAL");
+        if (sale.DocumentStatus == SaleDocumentStatus.Authorized) return;
+        var latest = await context.SriSubmissionAttempts.AsNoTracking()
+            .Where(a => a.SaleId == sale.Id && a.CompanyId == sale.CompanyId
+                && a.AccessKey == sale.AccessKey && a.Environment == sale.SriEnvironment)
+            .OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.Id)
+            .Select(a => new { a.Status, a.ErrorCode, a.ReceptionStatus, a.AuthorizationStatus })
+            .FirstOrDefaultAsync(ct);
+        if (job is null && sale.DocumentStatus == SaleDocumentStatus.Rejected
+            && ((latest?.Status == SriSubmissionAttemptStatus.Failed
+                && ((latest.ErrorCode == "SRI_RECEPTION_REJECTED" && latest.ReceptionStatus == "DEVUELTA")
+                    || (latest.ErrorCode == "SRI_AUTHORIZATION_REJECTED" && latest.AuthorizationStatus == "NO AUTORIZADO")))
+                || (latest is null && (sale.SriReceptionStatus == "DEVUELTA" || sale.SriAuthorizationStatus == "NO AUTORIZADO"))))
+            throw new InvalidOperationException("FISCAL_DOCUMENT_TERMINAL");
+        if (job?.ReceptionStartedAt.HasValue == true || sale.SriSubmittedAt.HasValue
+            || !string.IsNullOrWhiteSpace(sale.SriReceptionStatus)) return;
+        // Legacy failed reception attempts also require query-only reconciliation, never a blind resend.
+        if (!await context.SriSubmissionAttempts.AnyAsync(a => a.SaleId == sale.Id && a.CompanyId == sale.CompanyId
+            && a.AccessKey == sale.AccessKey && a.Environment == sale.SriEnvironment
+            && a.AttemptType == SriSubmissionAttemptType.Reception, ct))
+            throw new InvalidOperationException("FISCAL_RECEPTION_NOT_ADMITTED");
+    }
 
     internal static async Task RequirePermissionsAsync(PosDbContext db, int userId, int companyId, string[] permissions)
     {

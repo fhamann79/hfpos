@@ -23,7 +23,8 @@ internal static class SmokeVerification
     // Human mode uses the same startup/filter against the disposable loopback database.
     internal static async Task RunAsync(AutonomousIssuingFixture fixture, string connection)
     {
-        await using var app = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.UseEnvironment("Testing"));
+        await using var app = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            builder.UseEnvironment("Testing").UseContentRoot(Directory.GetCurrentDirectory()));
         using var admin = app.CreateClient(); using var cashier = app.CreateClient();
         async Task Login(HttpClient client, string username)
         {

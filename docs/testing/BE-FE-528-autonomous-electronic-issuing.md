@@ -23,11 +23,15 @@ No merge por el implementer. No R4, datos/certificados reales ni endpoints SRI r
   actual. Devuelve 202; no significa Authorized. Reanuda un documento no terminal
   con delegacion vigente, sin resetear una recepcion ambigua para reenviar.
   SIGN/SUBMIT/check manual conservan sus policies. CASHIER no gana permisos.
+- Check antes de una recepcion admitida devuelve 409 FISCAL_RECEPTION_NOT_ADMITTED
+  sin alterar fase/intentos. Rechazo definitivo devuelve 409 FISCAL_DOCUMENT_TERMINAL;
+  no reabre jobs ni bloquea VOID compatible. Recepcion legacy conocida sigue consultable.
 - Migracion aditiva 20261004161731_AddAutonomousElectronicIssuing: jobs,
   delegaciones/auditoria, settings OFF/revision cero y referencia de autoridad en
   intentos. Sin migrar bases persistentes ni transformar documentos legacy.
-- Claim job-only SKIP LOCKED, batch maximo 8 (worker 2), owner UUID, fence y lease
+- Claim job-only SKIP LOCKED, batch maximo 8 (worker 1 justo antes de ejecutar), owner UUID, fence y lease
   UTC 2 minutos. Scopes separados por claim/ejecucion, cancelacion y shutdown.
+  Ningun segundo job gasta su lease/intentos esperando el HTTP del primero.
   Mutaciones cortas Company -> Sale -> Job; nunca locks DB alrededor del HTTP.
   Cierre condicional por owner/fence/lease: cero filas revierte sale/attempt/job.
 - Cada etapa nueva valida delegacion, tenant/contexto y defensas fiscales vigentes.
@@ -64,6 +68,10 @@ rollback 403/500, permisos, load/save y destruccion/contexto.
 CI agrega verificacion del host sintetico separado con PostgreSQL descartable:
 auth HTTP real, worker real, XAdES real y cliente/parser SOAP real con HTTP
 interceptado exclusivamente a synthetic-sri.invalid; produccion bloqueada.
+El arranque usa configuracion test-only completa, sin appsettings del API ni
+overrides de ambiente/CLI para gates. --verify-configuration comprueba el mismo
+CreateBuilder/HostingStartup y todos los options de seguridad/operacion, sin
+Build/Run, listener ni conexion DB; --verify CI usa el mismo content root humano.
 La API/container publica SOLO Pos.Backend.Api: no referencia al host/test assemblies,
 no control sintetico ni configuracion privilegiada accesible en produccion.
 Docker local OFF: PG local NO ejecutado; CI no omite/simula estos tests.
@@ -87,6 +95,7 @@ docker run --name hfpos-528-smoke-pg --rm -d -p 127.0.0.1:65428:5432 -e POSTGRES
 docker exec hfpos-528-smoke-pg pg_isready -U hfpos_test -d hfpos_test_528_smoke
 $env:HF_POS_TEST_CONNECTION_STRING='Host=localhost;Port=65428;Database=hfpos_test_528_smoke;Username=hfpos_test;Password=synthetic-only-528'
 $env:HF_POS_SMOKE_WORKDIR=Join-Path $env:TEMP 'hfpos-528-synthetic-smoke'
+dotnet run --project backend/Pos.Backend.Api/Hfpos.FiscalSmokeHost --configuration Release -- --verify-configuration
 dotnet run --project backend/Pos.Backend.Api/Hfpos.FiscalSmokeHost --configuration Release -- --initialize
 ```
 
