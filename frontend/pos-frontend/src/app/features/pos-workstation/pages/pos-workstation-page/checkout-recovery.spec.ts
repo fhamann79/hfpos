@@ -15,7 +15,9 @@ import { CheckoutRequest } from '../../models/checkout-request.model';
 import { Sale } from '../../models/sale.model';
 import { SaleDocumentType } from '../../models/sale-document.model';
 import { SalePaymentMethod } from '../../models/sale-payment-method.model';
-import { CheckoutIntentService } from '../../services/checkout-intent.service';
+import { ReceiptPrintService } from '../../services/receipt-print.service';
+import { SaleReceiptDialog } from '../../components/sale-receipt-dialog/sale-receipt-dialog';
+import { CartWorkstation } from '../../components/cart-workstation/cart-workstation';
 import { PosKeyboardService } from '../../services/pos-keyboard.service';
 import { PosProductCatalogService } from '../../services/pos-product-catalog.service';
 import { PosWorkstationService } from '../../services/pos-workstation.service';
@@ -27,13 +29,13 @@ describe('Checkout recovery', () => {
   const api = { createSale: vi.fn(), resolveBusinessError: () => 'Synthetic rejection' };
   const catalog = { refreshCartProducts: vi.fn(() => of([])) };
   const context = { companyTimeZoneId: () => 'America/Guayaquil', companyId: () => 1,
-    establishmentId: () => 2, emissionPointId: () => 3, username: () => 'synthetic' };
+    establishmentId: () => 2, emissionPointId: () => 3, username: () => 'synthetic', me: () => ({ userId: '10' }) };
   const product = { id: 7, name: 'Synthetic product', barcode: 'SYN7', internalCode: 'SYN7',
     price: 10, stock: 5, isActive: true, vatCategory: ProductVatCategory.Vat0 };
 
   beforeEach(() => {
     sessionStorage.clear(); vi.clearAllMocks(); response = new Subject<Sale>(); api.createSale.mockReturnValue(response);
-    TestBed.configureTestingModule({ providers: [
+    TestBed.configureTestingModule({ imports: [SaleReceiptDialog, CartWorkstation], providers: [
       { provide: PermissionService, useValue: { hasPermission: (permission: string) => permission !== PERMISSIONS.reportsSalesRead } },
       { provide: AuthStore, useValue: context }, { provide: Router, useValue: { navigateByUrl: vi.fn() } },
       { provide: PosWorkstationService, useValue: api }, { provide: PosProductCatalogService, useValue: catalog },
@@ -43,14 +45,17 @@ describe('Checkout recovery', () => {
     ] });
   });
 
-  function page(): PosWorkstationPage {
+  function page(seedCart = true): PosWorkstationPage {
     const p = TestBed.runInInjectionContext(() => new PosWorkstationPage());
     vi.spyOn(p, 'loadProducts').mockImplementation(() => undefined);
     vi.spyOn(p, 'loadCurrentCashSession').mockImplementation(() => undefined);
     vi.spyOn(p, 'loadSales').mockImplementation(() => undefined);
     p.inventoryAvailable.set(true); p.currentCashSession.set({ id: 1, status: CashSessionStatus.Open } as CashSession);
-    p.cart.set([{ productId: 7, productName: product.name, product, stock: 5, quantity: 1, unitPrice: 10, discountAmount: 0 }]);
-    p.cashReceived.set(20); return p;
+    if (seedCart) {
+      p.cart.set([{ productId: 7, productName: product.name, product, stock: 5, quantity: 1, unitPrice: 10, discountAmount: 0 }]);
+      p.cashReceived.set(20);
+    }
+    return p;
   }
   function sent(): CheckoutRequest { return api.createSale.mock.calls.at(-1)![0] as CheckoutRequest; }
   function success(request: CheckoutRequest): Sale {
@@ -84,7 +89,7 @@ describe('Checkout recovery', () => {
   it('retains ambiguous intent across destroy/recreation and ignores destroyed result', () => {
     const p = page(); p.confirmCheckout(); const first = sent(); p.ngOnDestroy();
     response.next(success(first)); expect(p.receiptSale()).toBeNull();
-    const recreated = page(); recreated.ngOnInit(); recreated.confirmCheckout();
+    const recreated = page(false); expect(recreated.cart()).toEqual([]); recreated.ngOnInit(); recreated.confirmCheckout();
     expect(sent()).toEqual(first); expect(sent().requestId).toBe(first.requestId);
     recreated.ngOnDestroy();
   });
@@ -105,6 +110,95 @@ describe('Checkout recovery', () => {
     const original = context.companyId; context.companyId = () => 99;
     try { p.confirmCheckout(); expect(api.createSale).toHaveBeenCalledTimes(1); expect(p.pendingCheckout()?.requestId).toBe(first.requestId); }
     finally { context.companyId = original; }
+  });
+
+  it('discovers pending by immutable actor after point and username change, without cross-actor/tenant leakage', () => {
+    const p = page(); p.confirmCheckout(); const first = sent(); response.error(new HttpErrorResponse({ status: 0 })); p.ngOnDestroy();
+    const originalPoint = context.emissionPointId; const originalName = context.username;
+    const originalActor = context.me; const originalCompany = context.companyId;
+    context.emissionPointId = () => 9; context.username = () => 'renamed-synthetic';
+    try {
+      const moved = page(false); moved.ngOnInit();
+      expect(moved.pendingCheckout()?.requestId).toBe(first.requestId); expect(moved.cart()).toEqual([]);
+      expect(moved.checkoutRecoveryError()).not.toBe(''); moved.confirmCheckout();
+      expect(api.createSale).toHaveBeenCalledTimes(1); moved.ngOnDestroy();
+      context.me = () => ({ userId: '11' });
+      const otherActor = page(false); otherActor.ngOnInit();
+      expect(otherActor.pendingCheckout()).toBeNull(); expect(otherActor.cart()).toEqual([]);
+      expect(otherActor.checkoutRecoveryError()).toBe(''); otherActor.ngOnDestroy();
+      context.me = originalActor; context.companyId = () => 99;
+      const otherTenant = page(false); otherTenant.ngOnInit();
+      expect(otherTenant.pendingCheckout()).toBeNull(); expect(otherTenant.cart()).toEqual([]); otherTenant.ngOnDestroy();
+      context.companyId = originalCompany; context.emissionPointId = originalPoint;
+      response = new Subject<Sale>(); api.createSale.mockReturnValue(response);
+      const restored = page(false); restored.ngOnInit(); restored.confirmCheckout();
+      expect(sent()).toEqual(first); expect(restored.checkoutRecoveryError()).toBe(''); restored.ngOnDestroy();
+    } finally {
+      context.emissionPointId = originalPoint; context.username = originalName;
+      context.me = originalActor; context.companyId = originalCompany;
+    }
+  });
+
+  it('restores an empty fresh page draft before releasing a definitive stock rejection', () => {
+    const p = page(); p.cart.update(items => [
+      { ...items[0], quantity: 2, unitPrice: 11, discountAmount: 1 },
+      { ...items[0], productId: 8, productName: 'Other synthetic', product: { ...product, id: 8 }, quantity: 3, unitPrice: 4, discountAmount: 2 },
+    ]);
+    const originalCart = p.cart();
+    const customer = { id: 9, name: 'Synthetic buyer', identificationType: '06', identification: 'SYNBUYER',
+      email: 'buyer@hfpos.test', address: 'Synthetic address', isActive: true };
+    p.selectedCustomer.set(customer); p.selectedDocumentType.set(SaleDocumentType.Invoice);
+    p.saleDiscountAmount.set(2); p.notes.set('Draft notes'); p.cashReceived.set(50); p.confirmCheckout();
+    const first = sent(); response.error(new HttpErrorResponse({ status: 0 })); p.ngOnDestroy();
+    response = new Subject<Sale>(); api.createSale.mockReturnValue(response);
+    const fresh = page(false); expect(fresh.cart()).toEqual([]); expect(fresh.selectedCustomer()).toBeNull(); fresh.ngOnInit();
+    fresh.confirmCheckout(); expect(sent()).toEqual(first);
+    response.error(new HttpErrorResponse({ status: 409, error: { error: 'INSUFFICIENT_STOCK' } }));
+    expect(fresh.cart().map(i => [i.productId, i.quantity, i.unitPrice, i.discountAmount, i.productName]))
+      .toEqual(originalCart.map(i => [i.productId, i.quantity, i.unitPrice, i.discountAmount, i.productName]));
+    expect(fresh.selectedCustomer()).toEqual(customer); expect(fresh.saleDiscountAmount()).toBe(2);
+    expect(fresh.selectedDocumentType()).toBe(SaleDocumentType.Invoice); expect(fresh.notes()).toBe('Draft notes');
+    expect(fresh.cashReceived()).toBe(50); expect(fresh.pendingCheckout()).toBeNull(); expect(sessionStorage.length).toBe(0);
+    expect(catalog.refreshCartProducts).toHaveBeenCalledWith([7, 8]);
+    fresh.updateNotes('Corrected draft'); fresh.cart.update(items => items.map(item => ({ ...item, stock: 5 })));
+    response = new Subject<Sale>(); api.createSale.mockReturnValue(response); fresh.confirmCheckout();
+    expect(sent().requestId).not.toBe(first.requestId); expect(sent().customerId).toBe(9); expect(sent().items).toHaveLength(2);
+    fresh.ngOnDestroy();
+  });
+
+  it('validates long notes without truncating and only known 400 notes failure releases a restored draft', async () => {
+    const p = page(); p.notes.set('x'.repeat(501)); p.confirmCheckout();
+    expect(api.createSale).not.toHaveBeenCalled(); expect(p.notes()).toHaveLength(501);
+    const fixture = TestBed.createComponent(CartWorkstation);
+    fixture.componentRef.setInput('items', p.cart()); fixture.componentRef.setInput('notes', p.notes());
+    fixture.detectChanges(); await fixture.whenStable();
+    const textarea = (fixture.nativeElement as HTMLElement).querySelector('textarea')!;
+    expect(textarea.maxLength).toBe(500); expect(textarea.value).toHaveLength(501); fixture.destroy();
+    p.notes.set('x'.repeat(500)); p.confirmCheckout(); const first = sent();
+    response.error(new HttpErrorResponse({ status: 500, error: { error: 'SALE_NOTES_TOO_LONG' } }));
+    expect(p.pendingCheckout()?.requestId).toBe(first.requestId); p.ngOnDestroy();
+    response = new Subject<Sale>(); api.createSale.mockReturnValue(response);
+    const fresh = page(false); fresh.ngOnInit(); fresh.confirmCheckout();
+    response.error(new HttpErrorResponse({ status: 400, error: { error: 'SALE_NOTES_TOO_LONG' } }));
+    expect(fresh.pendingCheckout()).toBeNull(); expect(fresh.notes()).toHaveLength(500); expect(fresh.cart()).toHaveLength(1);
+    fresh.updateNotes('corrected'); response = new Subject<Sale>(); api.createSale.mockReturnValue(response); fresh.confirmCheckout();
+    expect(sent().requestId).not.toBe(first.requestId); fresh.ngOnDestroy();
+  });
+
+  it('renders and prints B after retained post-sale A, then uses updated A state on reprint', async () => {
+    const p = page(); p.confirmCheckout(); response.next(success(sent())); const a = p.receiptSale()!;
+    const b = { ...a, id: 43, number: 'SYNTHETIC-B', status: 'Anulada' } as Sale;
+    p.openReceipt(b); expect(p.receiptSale()?.id).toBe(42); expect(p.activeReceipt()).toBe(b); expect(p.receiptPostSale()).toBe(false);
+    const fixture = TestBed.createComponent(SaleReceiptDialog);
+    fixture.componentRef.setInput('sale', p.activeReceipt()); fixture.componentRef.setInput('postSale', p.receiptPostSale());
+    fixture.componentRef.setInput('visible', true); fixture.detectChanges(); await fixture.whenStable();
+    const print = vi.spyOn(TestBed.inject(ReceiptPrintService), 'print').mockReturnValue({ ok: true, cleanup: vi.fn() });
+    fixture.componentInstance.printReceipt();
+    expect(print.mock.calls[0][0].textContent).toContain('SYNTHETIC-B'); expect(print.mock.calls[0][0].textContent).not.toContain(a.number);
+    const updated = { ...a, status: 'Anulada' } as Sale; p.openReceipt(updated);
+    expect(p.activeReceipt()).toBe(updated); p.receiptVisible.set(false); p.openPostSaleReceipt();
+    expect(p.activeReceipt()?.status).toBe('Anulada'); expect(p.receiptPostSale()).toBe(true);
+    expect(api.createSale).toHaveBeenCalledTimes(1); fixture.destroy();
   });
 
   it('keeps every cart line/quantity/price/discount after stock rejection and creates a new key for the correction', () => {

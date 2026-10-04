@@ -523,6 +523,8 @@ public class SalesService : ISalesService
                 await transaction.CommitAsync();
                 return replay;
             }
+            if ((dto.Notes?.Trim().Length ?? 0) > 500)
+                throw new InvalidOperationException("SALE_NOTES_TOO_LONG");
             ValidateRequestAmounts(dto, paymentMethod);
             var cashSession = await _cashSessionService.GetRequiredOpenSessionForCurrentContextAsync();
             await _administrationGuard.LockExclusiveOperationalWriteAsync(operationalContext);

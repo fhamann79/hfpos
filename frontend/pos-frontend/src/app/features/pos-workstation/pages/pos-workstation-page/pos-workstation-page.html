@@ -33,7 +33,7 @@
     @if (receiptSale()) {
       <section class="cash-context" aria-live="polite">
         <strong>Venta {{ receiptSale()?.number }} registrada</strong>
-        <p-button label="Ticket" icon="pi pi-receipt" (onClick)="receiptVisible.set(true)" />
+        <p-button label="Ticket" icon="pi pi-receipt" (onClick)="openPostSaleReceipt()" />
         <p-button label="Siguiente cliente" icon="pi pi-arrow-right" (onClick)="nextCustomer()" />
       </section>
     }
@@ -215,8 +215,8 @@
     (confirm)="confirmCheckout()"
   ></app-checkout-confirm-dialog>
 
-  <app-sale-receipt-dialog [visible]="receiptVisible()" [sale]="receiptSale() || receiptReprintSale()"
-    [postSale]="!!receiptSale()" (visibleChange)="receiptVisible.set($event)" (nextCustomer)="nextCustomer()" />
+  <app-sale-receipt-dialog [visible]="receiptVisible()" [sale]="activeReceipt()"
+    [postSale]="receiptPostSale()" (visibleChange)="receiptVisible.set($event)" (nextCustomer)="nextCustomer()" />
 
   <app-sale-detail-dialog
     [visible]="saleDetailVisible()"

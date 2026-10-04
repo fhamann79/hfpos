@@ -35,7 +35,7 @@ describe('PosWorkstationPage void refresh', () => {
       providers: [
         { provide: PermissionService, useValue: { hasPermission: () => true } },
         { provide: AuthStore, useValue: { companyTimeZoneId: () => 'America/Guayaquil', companyId: () => 1,
-          establishmentId: () => 1, emissionPointId: () => 1, username: () => 'synthetic' } },
+          establishmentId: () => 1, emissionPointId: () => 1, username: () => 'synthetic', me: () => ({ userId: '10' }) } },
         { provide: Router, useValue: { navigateByUrl: vi.fn() } },
         { provide: PosProductCatalogService, useValue: catalogService },
         { provide: PosWorkstationService, useValue: workstationService },

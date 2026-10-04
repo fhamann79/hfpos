@@ -20,6 +20,8 @@ certificados, secretos ni bases persistentes/compartidas.
   mismo tenant. Orden: Company -> CashSession -> DocumentSequence -> stock.
   Se revalidan versiones de sesion/rol y contexto al adquirir el lock, despues
   de caja y antes del commit. Administracion/lifecycle comparte ese guard.
+  Movimiento manual de caja tambien adquiere Company FOR SHARE antes de caja:
+  evita inversion por el KEY SHARE implicito del FK CashMovement.CompanyId.
 - El replay se resuelve antes de exigir caja abierta, cliente/productos activos,
   stock o configuracion fiscal vigente. No recrea draft, numero ni movimientos.
 - Efectivo requiere `cashReceived` no negativo y dentro de numeric(18,2).
@@ -30,6 +32,9 @@ certificados, secretos ni bases persistentes/compartidas.
   una venta con numero y movimiento de stock si corresponde.
 - Cantidad admite cuatro decimales; precio dos. Hay limites de precision,
   cantidad de lineas (500), y rechazo de overflow antes de persistir efectos.
+  Notas trim de mas de 500 caracteres: `400 SALE_NOTES_TOO_LONG`, sin truncar
+  ni efectos; UI maxlength y validacion previa. Solo ese 400 conocido libera
+  la intencion, nunca un 500 generico.
 - Migracion aditiva `20261004084857_AddRecoverableSaleCheckout`: RequestId/hash,
   CashReceived/CashChange y ProductNameSnapshot/ProductSkuSnapshot nullable;
   indice unico filtrado y checks. Sin backfill inventado. MinimumStock de 526
@@ -38,10 +43,22 @@ certificados, secretos ni bases persistentes/compartidas.
   comprador y producto, cantidades/importes/pago persistidos. Para legacy sin
   snapshots indica historia no disponible; no sustituye nombres desde catalogo
   o cliente actuales, ni fabrica recibido/vuelto cero. No muestra costo/margen.
-- El POS conserva en sessionStorage del tab la intencion congelada, separada
-  por tenant/punto/actor, antes del POST. Red/5xx/respuesta malformada/conflicto
+- El POS conserva en sessionStorage del tab la intencion congelada, bajo clave
+  CompanyId+UserId inmutable de /me (no username ni punto), antes del POST.
+  Guarda el contexto original y draft UI separado del payload autoritativo.
+  Otro punto del mismo actor descubre el pendiente y bloquea nuevo cobro, sin
+  reenviarlo fuera del contexto original; otro tenant/actor no carga su payload.
+  Red/5xx/respuesta malformada/conflicto
   retienen esa intencion. Reintento no pasa por gates mutables de caja/stock.
   Cambio de contexto bloquea su reenvio. No hay soporte offline.
+- Reload desde pagina vacia restaura carrito/cliente/precios/cantidades/descuentos,
+  notas/documento/pago/recibido del draft solo en contexto original. Rechazo
+  definitivo restaura ese material ANTES de limpiar la intencion. Un stock refresh
+  acotado no cambia sus cantidades ni importa un catalogo completo.
+- Las entradas v1 del build pre-merge no tienen identidad inmutable demostrable:
+  se bloquea por existencia dentro del tenant sin leer/migrar/borrar el payload.
+  Verificar el resultado desde su build/contexto original antes de resolver una
+  entrada antigua; nunca limpiar storage ambiguo para habilitar otro cobro.
 - Solo errores de negocio definitivos conocidos liberan la intencion para
   corregir el carrito y emitir una nueva clave. Stock rechazado conserva todas
   las cantidades, precios y descuentos; refresca solo IDs del carrito en lotes
@@ -51,6 +68,8 @@ certificados, secretos ni bases persistentes/compartidas.
   Impresion crea un documento iframe exclusivo para el article del ticket,
   pagina de 80mm con altura calculada, sin navegacion/dialogos ni estilos RIDE.
   Error/cancelacion de impresion nunca llama POST. Siguiente cliente es explicito.
+  activeReceipt selecciona el DTO abierto, sin priorizar el resultado postventa
+  anterior. Reimpresion B tras A imprime B; A actualizado no vuelve a estado viejo.
 
 ## Evidencia automatica
 
@@ -61,12 +80,18 @@ commit y replay en otro scope, caja cerrada/catalogo/fiscal config cambiados,
 hash/defaults/duplicados, tenant/actor/punto, revocacion de sesion y rol durante
 espera, efectivo/otros metodos/cero/precision/overflow, rollback de segundo item
 y retry del mismo DbContext, y migracion legacy down/up en DB propia descartable.
+Regresiones del lote de review: Company-first entre movimiento manual y venta
+en ambos ordenes, con ganador retenido y pg_blocking_pids del perdedor; notas
+normalizadas 501 -> controller 400/rollback y 500 -> venta/replay mismo UUID.
 No se simula el motor SQL. El descarte de respuesta es una prueba de recuperacion
 post-commit a nivel servicio, no una prueba de transporte HTTP ni impresion fisica.
 
 Frontend focused cubre intencion/doble submit/retry/destruccion/contexto, errores
 ambiguos y definitivos, carrito recuperable, recibido, siguiente cliente y DOM de
-ticket/impresion/cleanup. Los jobs requeridos CI ejecutan las suites completas y
+ticket/impresion/cleanup. Incluye
+regresiones de storage por identidad inmutable, punto cambiado tras reload,
+draft desde pagina realmente vacia, notas y B/reprint actualizado despues de A.
+Los jobs requeridos CI ejecutan las suites completas y
 verificacion EF en HEAD publicado. Docker local sin engine: PG local NO ejecutado;
 PG CI es obligatorio, nunca se declara skip exitoso. No se levanta API/demo local.
 
@@ -112,6 +137,15 @@ No enviar/fimar documentos SRI, usar certificados ni infraestructura real.
 6. Cerrar caja y conciliar Total por metodo. Confirmar aislamiento con otro tenant
    y que un usuario sin permiso crear no cobra, sin permiso reportes no reimprime
    desde detalle. Usuario solo POS create puede imprimir su respuesta inmediata.
+7. Mientras una venta espera, ingresar un movimiento manual de caja, y repetir
+   invirtiendo el orden en el harness sintetico: ambos completan, sin deadlock,
+   una venta/un movimiento y esperado = apertura + Total + entrada manual.
+   Dejar un cobro ambiguo, cambiar punto (o username) del mismo UserId y recargar:
+   nuevo cobro bloqueado, no replay fuera del punto original ni datos a otro actor.
+   Volver al punto original y forzar rechazo definitivo tras reload: conservar
+   todo el draft y corregir solo lo necesario. Probar notas 500 y rechazo 501
+   via harness API sintetico (400, nunca truncar/500). Registrar A, abrir ticket B
+   desde detalle: vista previa debe mostrar B; reabrir A actualizado conserva estado.
 
 Registrar HEAD probado y resultado. Solo Fernando declara `VALIDADO OK`.
 Impresion fisica/ergonomia y perdida HTTP real siguen pendientes de este smoke;

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -12,6 +13,7 @@ using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.Infrastructure.Services;
 using Pos.Backend.Api.Tests.Infrastructure;
+using Pos.Backend.Api.WebApi.Controllers;
 
 namespace Pos.Backend.Api.Tests.Integration;
 
@@ -31,6 +33,80 @@ public sealed class SaleCheckoutRecoveryTests(PostgresDatabaseFixture database) 
     {
         await using var scope = new TestServiceScope(database, tenant.OperationalContext);
         return (await scope.CashSessions.OpenAsync(new() { OpeningAmount = 5m })).Id;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Manual_cash_movement_and_sale_take_company_before_cash_in_both_orders(bool movementFirst)
+    {
+        var tenant = await TestDataBuilder.CreateTenantAsync(database, "cash-order", 812, 5m);
+        var cash = await Open(tenant);
+        var companyAcquired = new AsyncTestSignal();
+        var releaseCash = new AsyncTestSignal();
+        var winnerInterceptors = new Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] {
+            SqlCommandGateInterceptor.SignalAfter(SqlCommandMatchers.CompanyLock, companyAcquired),
+            SqlCommandGateInterceptor.WaitBefore(movementFirst
+                ? SqlCommandMatchers.CashSessionByIdForUpdate : SqlCommandMatchers.OpenCashSessionForUpdate, releaseCash)
+        };
+        await using var movement = new TestServiceScope(database, tenant.OperationalContext,
+            movementFirst ? winnerInterceptors : []);
+        await using var sale = new TestServiceScope(database, tenant.OperationalContext,
+            movementFirst ? [] : winnerInterceptors);
+        Task? first = null;
+        Task? second = null;
+        Task Move() => movement.CashSessions.AddMovementAsync(cash,
+            new() { Type = CashMovementType.CashIn, Amount = 2m, Reason = "Synthetic manual cash" });
+        Task Sell() => sale.Sales.CreateAsync(Request(tenant));
+        try
+        {
+            first = movementFirst ? Move() : Sell();
+            await companyAcquired.WaitAsync();
+            second = movementFirst ? Sell() : Move();
+            await WaitBlocked(movementFirst ? sale : movement, (movementFirst ? movement : sale).DbContext);
+            Assert.False(first.IsCompleted);
+            Assert.False(second.IsCompleted);
+        }
+        finally
+        {
+            releaseCash.Set();
+            await Task.WhenAll(new[] { first, second }.OfType<Task>()).WaitAsync(TimeSpan.FromSeconds(30));
+        }
+        await using var verify = database.CreateDbContext();
+        Assert.Single(await verify.Sales.ToListAsync());
+        Assert.Single(await verify.CashMovements.ToListAsync());
+        Assert.Single(await verify.DocumentSequences.ToListAsync());
+        Assert.Single(await verify.InventoryMovements.ToListAsync());
+        Assert.Equal(4m, await TestDataBuilder.GetStockAsync(verify, tenant, tenant.Products[0].Id));
+        await using var final = new TestServiceScope(database, tenant.OperationalContext);
+        var session = await final.CashSessions.GetByIdAsync(cash);
+        Assert.NotNull(session);
+        Assert.Equal(10m, session.CashSalesAmount);
+        Assert.Equal(2m, session.CashInAmount);
+        Assert.Equal(17m, session.ExpectedCashAmount);
+    }
+
+    [Fact]
+    public async Task Normalized_notes_limit_returns_definitive_400_without_effects_and_uuid_remains_retryable()
+    {
+        var tenant = await TestDataBuilder.CreateTenantAsync(database, "notes", 813, 5m);
+        await Open(tenant);
+        await using var scope = new TestServiceScope(database, tenant.OperationalContext);
+        var controller = new SalesController(scope.Sales, null!, null!, null!, null!);
+        var request = Request(tenant); request.Notes = "  " + new string('x', 501) + "  ";
+        var response = await controller.Create(request);
+        var rejection = Assert.IsType<BadRequestObjectResult>(response.Result);
+        Assert.Equal("SALE_NOTES_TOO_LONG", Assert.IsType<ApiErrorResponse>(rejection.Value).Error);
+        Assert.Empty(await scope.DbContext.Sales.ToListAsync());
+        Assert.Empty(await scope.DbContext.DocumentSequences.ToListAsync());
+        Assert.Empty(await scope.DbContext.InventoryMovements.ToListAsync());
+        request.Notes = "  " + new string('x', 500) + "  ";
+        var sale = await scope.Sales.CreateAsync(request);
+        Assert.Equal(new string('x', 500), sale.Notes);
+        Assert.Equal(request.RequestId, sale.RequestId);
+        request.Notes = new string('x', 500);
+        Assert.Equal(sale.Id, (await scope.Sales.CreateAsync(request)).Id);
+        Assert.Single(await scope.DbContext.Sales.ToListAsync());
     }
 
     [Theory]

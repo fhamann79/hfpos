@@ -45,6 +45,7 @@ import {
 import { CreditNoteService } from '../../../credit-notes/services/credit-note.service';
 import { CartItem } from '../../models/cart-item.model';
 import { CheckoutRequest } from '../../models/checkout-request.model';
+import { CheckoutDraft, CheckoutIntent } from '../../models/checkout-intent.model';
 import { PosCustomer } from '../../models/pos-customer.model';
 import { PosProduct } from '../../models/pos-product.model';
 import { SaleDocumentStatus, SaleDocumentType } from '../../models/sale-document.model';
@@ -109,13 +110,15 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   private readonly intentService = inject(CheckoutIntentService);
   private destroyed = false;
   private pendingCheckoutScope: string | null = null;
+  private pendingIntent: CheckoutIntent | null = null;
   private cartStockGeneration = 0;
   private checkoutGeneration = 0;
   readonly pendingCheckout = signal<CheckoutRequest | null>(null);
   readonly checkoutRecoveryError = signal('');
   readonly cashReceived = signal<number | null>(null);
   readonly receiptSale = signal<Sale | null>(null);
-  readonly receiptReprintSale = signal<Sale | null>(null);
+  readonly activeReceipt = signal<Sale | null>(null);
+  readonly receiptPostSale = signal(false);
   readonly receiptVisible = signal(false);
   readonly checkoutLocked = computed(() => this.checkoutLoading() || !!this.pendingCheckout()
     || !!this.checkoutRecoveryError() || !!this.receiptSale());
@@ -267,7 +270,15 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   private subscriptions: Subscription[] = [];
 
   ngOnInit(): void {
-    try { this.pendingCheckoutScope = this.checkoutScope(); this.pendingCheckout.set(this.intentService.load(this.pendingCheckoutScope)); }
+    try {
+      this.pendingIntent = this.intentService.load(this.checkoutActor());
+      if (this.pendingIntent) {
+        this.pendingCheckoutScope = this.pendingIntent.scope;
+        this.pendingCheckout.set(this.pendingIntent.request);
+        if (this.pendingCheckoutScope === this.checkoutScope()) this.restoreCheckoutDraft(this.pendingIntent.draft);
+        else this.checkoutRecoveryError.set('Hay un cobro pendiente en otro punto. Recupera desde el punto original antes de volver a cobrar.');
+      }
+    }
     catch { this.checkoutRecoveryError.set('No se pudo recuperar el cobro pendiente. No vuelvas a cobrar sin verificar la venta.'); }
     if (this.canSell) {
       this.loadProducts();
@@ -641,6 +652,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     if (this.destroyed || this.checkoutLoading() || this.checkoutRecoveryError() || this.receiptSale() || !this.canSell) return;
     const pending = this.pendingCheckout();
     if (pending) { this.sendCheckout(pending); return; }
+    if (this.notes().trim().length > 500) {
+      this.messageService.add({ severity: 'warn', summary: 'Notas demasiado largas', detail: 'Las notas admiten hasta 500 caracteres. Corrige el texto sin truncarlo.' });
+      return;
+    }
     if (!this.canSell || !this.cart().length) {
       return;
     }
@@ -696,18 +711,49 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       this.messageService.add({ severity: 'warn', summary: 'Efectivo insuficiente', detail: 'El recibido debe cubrir el total.' });
       return;
     }
-    try { this.pendingCheckoutScope = this.checkoutScope(); this.pendingCheckout.set(this.intentService.save(this.pendingCheckoutScope, payload)); }
+    try {
+      this.pendingCheckoutScope = this.checkoutScope();
+      this.pendingIntent = this.intentService.save(this.checkoutActor(), this.pendingCheckoutScope, payload, {
+        cart: this.cart(), customer: this.selectedCustomer(), discountAmount: this.saleDiscountAmount(),
+        notes: this.notes(), documentType: this.selectedDocumentType(), paymentMethod: this.selectedPaymentMethod(),
+        cashReceived: this.cashReceived(),
+      });
+      this.pendingCheckout.set(this.pendingIntent.request);
+    }
     catch { this.checkoutRecoveryError.set('No se pudo guardar la intención de cobro. No se envió la venta.'); return; }
     this.sendCheckout(this.pendingCheckout()!);
   }
 
   private checkoutScope(): string {
-    return [this.authStore.companyId(), this.authStore.establishmentId(), this.authStore.emissionPointId(), this.authStore.username()].join(':');
+    return [this.checkoutActor(), this.authStore.establishmentId(), this.authStore.emissionPointId()].join(':');
+  }
+
+  private checkoutActor(): string {
+    const company = this.authStore.companyId();
+    const userId = this.authStore.me()?.userId;
+    if (!company || !userId) throw new Error('Checkout identity unavailable');
+    return `${company}:${encodeURIComponent(userId)}`;
+  }
+
+  private isCurrentCheckoutScope(scope: string): boolean {
+    try { return scope === this.checkoutScope(); }
+    catch { return false; }
+  }
+
+  private restoreCheckoutDraft(draft: CheckoutDraft): void {
+    this.cart.set(draft.cart.map(item => ({ ...item, product: { ...item.product } })));
+    this.activeCartProductId.set(draft.cart[0]?.productId ?? null);
+    this.selectedCustomer.set(draft.customer ? { ...draft.customer } : null);
+    this.saleDiscountAmount.set(draft.discountAmount);
+    this.notes.set(draft.notes);
+    this.selectedDocumentType.set(draft.documentType);
+    this.selectedPaymentMethod.set(draft.paymentMethod);
+    this.cashReceived.set(draft.cashReceived);
   }
 
   private sendCheckout(payload: CheckoutRequest): void {
-    const scope = this.checkoutScope();
-    if (scope !== this.pendingCheckoutScope) {
+    const scope = this.pendingCheckoutScope;
+    if (!scope || !this.isCurrentCheckoutScope(scope)) {
       this.checkoutRecoveryError.set('El contexto cambió. Recupera el cobro desde el usuario y punto originales.');
       return;
     }
@@ -716,22 +762,25 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.checkoutLoading.set(true);
     this.subscriptions.push(this.workstationService.createSale(payload).subscribe({
       next: (sale) => {
-        if (this.destroyed || generation !== this.checkoutGeneration || scope !== this.checkoutScope()) return;
+        if (this.destroyed || generation !== this.checkoutGeneration || !this.isCurrentCheckoutScope(scope)) return;
         this.checkoutLoading.set(false);
         this.checkoutVisible.set(false);
         if (!sale.id || sale.requestId !== payload.requestId || !Number.isFinite(sale.total)) {
           this.messageService.add({ severity: 'warn', summary: 'Resultado pendiente', detail: 'Reintenta recuperar el mismo cobro; no vuelvas a cobrar.' });
           return;
         }
-        this.intentService.clear(scope);
+        this.intentService.clear(this.checkoutActor());
         this.checkoutGeneration++;
         this.pendingCheckout.set(null);
+        this.pendingIntent = null;
         this.receiptSale.set(sale);
+        this.activeReceipt.set(sale);
+        this.receiptPostSale.set(true);
         this.receiptVisible.set(true);
         this.refreshOperationalData();
       },
       error: (error: HttpErrorResponse) => {
-        if (this.destroyed || generation !== this.checkoutGeneration || scope !== this.checkoutScope()) return;
+        if (this.destroyed || generation !== this.checkoutGeneration || !this.isCurrentCheckoutScope(scope)) return;
         this.checkoutGeneration++;
         this.checkoutLoading.set(false);
         this.checkoutVisible.set(false);
@@ -744,11 +793,15 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
           'INVALID_SRI_CUSTOMER_IDENTIFICATION', 'SRI_XML_REQUIRED_FIELD_MISSING', 'SRI_XML_INVALID_FIELD_FORMAT',
           'SRI_BUYER_IDENTIFICATION_TYPE_REQUIRED', 'INVALID_SRI_PRODUCT_CODE', 'INVALID_SRI_PAYMENT_METHOD',
           'SRI_XML_DRAFT_GENERATION_FAILED', 'INVALID_PRODUCT_VAT_CATEGORY']
-          .includes(code ?? '') && (error.status === 400 || error.status === 404 || error.status === 409);
+          .includes(code ?? '') && (error.status === 400 || error.status === 404 || error.status === 409)
+          || (code === 'SALE_NOTES_TOO_LONG' && error.status === 400);
         if (definitive) {
-          this.intentService.clear(scope);
+          if (this.pendingIntent) this.restoreCheckoutDraft(this.pendingIntent.draft);
+          this.intentService.clear(this.checkoutActor());
           this.pendingCheckout.set(null);
-          this.messageService.add({ severity: 'warn', summary: 'Venta no registrada', detail: this.workstationService.resolveBusinessError(error) });
+          this.pendingIntent = null;
+          this.messageService.add({ severity: 'warn', summary: 'Venta no registrada', detail: code === 'SALE_NOTES_TOO_LONG'
+            ? 'Las notas admiten hasta 500 caracteres. Corrige el texto sin truncarlo.' : this.workstationService.resolveBusinessError(error) });
           this.refreshOperationalData();
           if (code === 'INSUFFICIENT_STOCK' || code === 'PRODUCT_INACTIVE' || code === 'PRODUCT_NOT_FOUND') this.refreshCartStock();
         } else {
@@ -768,7 +821,21 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   updateDocumentType(type: SaleDocumentType): void { if (!this.checkoutLocked()) this.selectedDocumentType.set(type); }
   updatePaymentMethod(method: SalePaymentMethod): void { if (!this.checkoutLocked()) this.selectedPaymentMethod.set(method); }
   updateCashReceived(received: number | null): void { if (!this.checkoutLocked()) this.cashReceived.set(received); }
-  openReceipt(sale: Sale): void { this.saleDetailVisible.set(false); this.receiptReprintSale.set(sale); this.receiptVisible.set(true); }
+  openReceipt(sale: Sale): void {
+    this.saleDetailVisible.set(false);
+    if (this.receiptSale()?.id === sale.id) this.receiptSale.set(sale);
+    this.activeReceipt.set(sale);
+    this.receiptPostSale.set(false);
+    this.receiptVisible.set(true);
+  }
+
+  openPostSaleReceipt(): void {
+    const sale = this.receiptSale();
+    if (!sale) return;
+    this.activeReceipt.set(sale);
+    this.receiptPostSale.set(true);
+    this.receiptVisible.set(true);
+  }
 
   nextCustomer(): void {
     if (this.checkoutLoading() || this.pendingCheckout() || !this.receiptSale()) return;
@@ -776,7 +843,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.checkoutGeneration++;
     this.receiptVisible.set(false);
     this.receiptSale.set(null);
-    this.receiptReprintSale.set(null);
+    this.activeReceipt.set(null);
+    this.receiptPostSale.set(false);
     this.cart.set([]);
     this.activeCartProductId.set(null);
     this.selectedCustomer.set(null);

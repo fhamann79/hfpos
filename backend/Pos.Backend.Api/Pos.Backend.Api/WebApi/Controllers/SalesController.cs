@@ -331,7 +331,7 @@ public class SalesController : ControllerBase
         return code switch
         {
             "REQUEST_CONFLICT" => Conflict(new ApiErrorResponse { Error = code }),
-            "SALE_REQUEST_ID_REQUIRED" or "SALE_AMOUNT_INVALID" or "CASH_RECEIVED_INVALID"
+            "SALE_REQUEST_ID_REQUIRED" or "SALE_AMOUNT_INVALID" or "SALE_NOTES_TOO_LONG" or "CASH_RECEIVED_INVALID"
                 or "CASH_RECEIVED_INSUFFICIENT" or "CASH_RECEIVED_NOT_APPLICABLE"
                 => BadRequest(new ApiErrorResponse { Error = code }),
             "SALE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
