@@ -41,6 +41,8 @@ No merge por el implementer. No R4, datos/certificados reales ni endpoints SRI r
   ambiguo recupera consultando MISMA clave/ambiente, nunca blind resend.
   NOT_FOUND/pendiente/respuesta vacia no prueban no recepcion. Backoff exponencial
   acotado a 900 segundos, maximo 12 etapas/intentos antes de atencion manual.
+  La recuperacion puntual legacy importa intentos previos de recepcion y fases
+  irreversibles al marcador durable; check/resume/regrant no habilitan reenvio.
 - VOID cancela/fence trabajos que no llegaron al remoto. En vuelo/incertidumbre
   bloquean void. Rechazo DEFINITIVO corroborado por el ultimo intento de la misma
   clave/ambiente conserva la semantica main de void/stock/caja; AdmittedAt no es

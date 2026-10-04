@@ -249,6 +249,130 @@ public sealed class AutonomousElectronicIssuingTests(PostgresDatabaseFixture dat
         }
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task Legacy_ambiguous_reception_remains_query_only_after_check_resume_and_regrant(bool checkFirst, bool existingJob)
+    {
+        var f = await Setup(); var sale = await f.SellAsync(); await f.ProcessNextAsync();
+        DateTime priorReception;
+        string draftHash;
+        await using (var db = database.CreateDbContext())
+        {
+            var signed = await db.Sales.SingleAsync();
+            Assert.Null(signed.SriSubmittedAt); Assert.Null(signed.SriReceptionStatus);
+            var originalJob = await db.ElectronicIssuingJobs.SingleAsync();
+            draftHash = originalJob.DraftHash;
+            if (!existingJob) db.ElectronicIssuingJobs.Remove(originalJob);
+            // Legacy failed reception is the only evidence; optionally a pre-fix job already exists.
+            db.SriSubmissionAttempts.Add(new Core.Entities.SriSubmissionAttempt
+            {
+                SaleId = sale.Id, CompanyId = signed.CompanyId, EstablishmentId = signed.EstablishmentId,
+                EmissionPointId = signed.EmissionPointId, AccessKey = signed.AccessKey!, Environment = signed.SriEnvironment!.Value,
+                AttemptType = SriSubmissionAttemptType.Reception, Status = SriSubmissionAttemptStatus.Failed,
+                ErrorCode = "SRI_RECEPTION_COMMUNICATION_FAILED", ErrorMessage = "SRI_RECEPTION_COMMUNICATION_FAILED",
+                CreatedAt = DateTime.UtcNow, CreatedByUserId = f.Admin.UserId
+            });
+            await db.SaveChangesAsync();
+            priorReception = await db.SriSubmissionAttempts.Select(a => a.CreatedAt).SingleAsync();
+        }
+        f.Transport.Authorization = _ =>
+        {
+            Assert.Equal(sale.AccessKey, f.Transport.LastKey); Assert.Equal(sale.SriEnvironment, f.Transport.LastEnvironment);
+            return Task.FromResult(new Core.Models.SriAuthorizationResponse { Estado = "NOT_FOUND" });
+        };
+        if (checkFirst)
+        {
+            await using var manual = new FiscalWorkerTestScope(database.CreateDbContext(), f.Protection, f.Transport, f.Options,
+                new StaticOperationalContextAccessor(f.Admin));
+            Assert.Equal("SRI_AUTHORIZATION_PENDING", (await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                manual.Submission.CheckAuthorizationAsync(sale.Id))).Message);
+            await using var verify = database.CreateDbContext();
+            var imported = await verify.ElectronicIssuingJobs.SingleAsync();
+            Assert.Equal(priorReception, imported.ReceptionStartedAt);
+            Assert.Equal(ElectronicIssuingPhase.UnknownReception, imported.Phase);
+        }
+        await using (var manual = new FiscalWorkerTestScope(database.CreateDbContext(), f.Protection, f.Transport, f.Options,
+            new StaticOperationalContextAccessor(f.Admin)))
+            Assert.Equal("FISCAL_RECEPTION_ALREADY_ADMITTED", (await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                manual.Submission.SubmitSignedInvoiceAsync(sale.Id))).Message);
+        await f.SetDelegationAsync(false); await f.SetDelegationAsync(true);
+        await using (var scope = f.Worker()) await scope.Coordinator.ResumeAsync(sale.Id, f.Admin, CancellationToken.None);
+        await using (var verify = database.CreateDbContext())
+        {
+            var resumed = await verify.ElectronicIssuingJobs.SingleAsync();
+            Assert.Equal(priorReception, resumed.ReceptionStartedAt);
+            Assert.Equal(ElectronicIssuingPhase.UnknownReception, resumed.Phase);
+            Assert.Equal(sale.AccessKey, resumed.AccessKey); Assert.Equal(sale.SriEnvironment, resumed.Environment);
+            Assert.Equal(draftHash, resumed.DraftHash);
+        }
+        await f.ProcessNextAsync(); // NOT_FOUND is still not permission to resend.
+        await using (var scope = f.Worker()) await scope.Coordinator.ResumeAsync(sale.Id, f.Admin, CancellationToken.None);
+        f.Transport.Authorization = null; await f.ProcessNextAsync();
+        Assert.Equal(0, f.Transport.Submissions); Assert.Equal(checkFirst ? 3 : 2, f.Transport.Queries);
+        Assert.Equal(sale.AccessKey, f.Transport.LastKey);
+        Assert.Equal(sale.SriEnvironment, f.Transport.LastEnvironment);
+        await using var final = database.CreateDbContext();
+        var job = await final.ElectronicIssuingJobs.SingleAsync();
+        Assert.Equal(ElectronicIssuingJobState.Authorized, job.State);
+        Assert.Equal(priorReception, job.ReceptionStartedAt);
+        Assert.Equal(draftHash, job.DraftHash); Assert.Equal(sale.SriEnvironment, job.Environment);
+        Assert.Equal(SaleDocumentStatus.Authorized, (await final.Sales.SingleAsync()).DocumentStatus);
+        Assert.Equal(1, await final.SriSubmissionAttempts.CountAsync(a => a.AttemptType == SriSubmissionAttemptType.Reception));
+    }
+
+    [Theory]
+    [InlineData(ElectronicIssuingPhase.UnknownReception)]
+    [InlineData(ElectronicIssuingPhase.AwaitingAuthorization)]
+    public async Task Resume_retains_irreversible_phase_evidence_when_legacy_marker_is_missing(ElectronicIssuingPhase phase)
+    {
+        var f = await Setup(); var sale = await f.SellAsync(); await f.ProcessNextAsync();
+        DateTime intentAt;
+        await using (var db = database.CreateDbContext())
+        {
+            var job = await db.ElectronicIssuingJobs.SingleAsync();
+            Assert.Null(job.ReceptionStartedAt);
+            job.Phase = phase; // Persisted pre-fix query/recovery state with a missing marker.
+            await db.SaveChangesAsync(); intentAt = job.CreatedAt;
+        }
+        await using (var scope = f.Worker()) await scope.Coordinator.ResumeAsync(sale.Id, f.Admin, CancellationToken.None);
+        f.Transport.Authorization = _ => Task.FromResult(new Core.Models.SriAuthorizationResponse { Estado = "NOT_FOUND" });
+        await f.ProcessNextAsync();
+        Assert.Equal(0, f.Transport.Submissions); Assert.Equal(1, f.Transport.Queries);
+        await using var verify = database.CreateDbContext();
+        var retained = await verify.ElectronicIssuingJobs.SingleAsync();
+        Assert.Equal(intentAt, retained.ReceptionStartedAt); Assert.Equal(ElectronicIssuingPhase.UnknownReception, retained.Phase);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Legacy_never_received_document_resumes_signing_or_submission_and_authorizes_normally(bool signed)
+    {
+        var f = await Setup(); var sale = await f.SellAsync();
+        if (signed) await f.ProcessNextAsync();
+        await using (var db = database.CreateDbContext())
+        {
+            db.ElectronicIssuingJobs.Remove(await db.ElectronicIssuingJobs.SingleAsync());
+            Assert.Empty(await db.SriSubmissionAttempts.ToListAsync());
+            await db.SaveChangesAsync();
+        }
+        await using (var scope = f.Worker()) await scope.Coordinator.ResumeAsync(sale.Id, f.Admin, CancellationToken.None);
+        await using (var verify = database.CreateDbContext())
+        {
+            var resumed = await verify.ElectronicIssuingJobs.SingleAsync();
+            Assert.Null(resumed.ReceptionStartedAt);
+            Assert.Equal(signed ? ElectronicIssuingPhase.ReadyToSubmit : ElectronicIssuingPhase.ReadyToSign, resumed.Phase);
+        }
+        if (!signed) await f.ProcessNextAsync();
+        await f.ProcessNextAsync(); await f.DueAsync(sale.Id); await f.ProcessNextAsync();
+        Assert.Equal(1, f.Transport.Submissions); Assert.Equal(1, f.Transport.Queries);
+        await using var final = database.CreateDbContext();
+        Assert.Equal(ElectronicIssuingJobState.Authorized, (await final.ElectronicIssuingJobs.SingleAsync()).State);
+    }
+
     [Fact]
     public async Task Hosted_worker_claims_second_job_only_after_long_first_call_with_its_own_lease_and_attempt_budget()
     {

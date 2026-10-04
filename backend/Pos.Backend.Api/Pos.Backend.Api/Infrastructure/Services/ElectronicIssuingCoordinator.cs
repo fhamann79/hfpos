@@ -92,8 +92,9 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
         var job = await context.ElectronicIssuingJobs.FromSqlInterpolated($@"
             SELECT * FROM ""ElectronicIssuingJobs"" WHERE ""SaleId"" = {saleId} FOR UPDATE")
             .SingleOrDefaultAsync(ct);
+        var receptionEvidenceAt = await ResolveReceptionEvidenceAtAsync(sale, job, ct);
         if (purpose == ElectronicIssuingPhase.AwaitingAuthorization)
-            await ValidateAuthorizationEvidenceAsync(sale, job, ct);
+            await ValidateAuthorizationEvidenceAsync(sale, job, receptionEvidenceAt, ct);
         if (job is null)
         {
             if (claim is not null) throw new InvalidOperationException("FISCAL_LEASE_LOST");
@@ -131,6 +132,9 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
             throw new InvalidOperationException("FISCAL_DOCUMENT_CONTEXT_CHANGED");
         if (job.AttemptCount > MaximumAttempts && claim is not null)
             throw new InvalidOperationException("FISCAL_ATTEMPTS_EXHAUSTED");
+        job.ReceptionStartedAt ??= receptionEvidenceAt;
+        if (job.ReceptionStartedAt.HasValue && job.Phase is ElectronicIssuingPhase.ReadyToSign or ElectronicIssuingPhase.ReadyToSubmit)
+            job.Phase = ElectronicIssuingPhase.UnknownReception;
         if (purpose == ElectronicIssuingPhase.ReadyToSign)
         {
             if (job.ReceptionStartedAt.HasValue || job.Phase != ElectronicIssuingPhase.ReadyToSign)
@@ -233,6 +237,7 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
             context.ElectronicIssuingJobs.Add(job);
         }
         if (await LeaseIsLiveAsync(job.Id, ct)) throw new InvalidOperationException("FISCAL_DOCUMENT_BUSY");
+        job.ReceptionStartedAt ??= await ResolveReceptionEvidenceAtAsync(sale, job, ct);
         job.FiscalDelegationId = delegation.Id; job.AutomaticRequested = true; job.Fence++;
         job.LeaseToken = null; job.LeaseExpiresAt = null; job.AttemptCount = 0; job.SafeError = null;
         job.Phase = job.ReceptionStartedAt.HasValue ? ElectronicIssuingPhase.UnknownReception
@@ -275,7 +280,25 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
 
     internal static string Hash(string? value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value ?? string.Empty)));
 
-    private async Task ValidateAuthorizationEvidenceAsync(Sale sale, ElectronicIssuingJob? job, CancellationToken ct)
+    private async Task<DateTime?> ResolveReceptionEvidenceAtAsync(Sale sale, ElectronicIssuingJob? job, CancellationToken ct)
+    {
+        if (job?.ReceptionStartedAt is not null) return job.ReceptionStartedAt;
+        if (sale.SriSubmittedAt.HasValue) return sale.SriSubmittedAt;
+        if (!string.IsNullOrWhiteSpace(sale.SriReceptionStatus)) return job?.CreatedAt ?? DateTime.UtcNow;
+        if (job?.Phase is ElectronicIssuingPhase.ReceptionInFlight or ElectronicIssuingPhase.UnknownReception
+            or ElectronicIssuingPhase.AwaitingAuthorization) return job.CreatedAt;
+        // Import legacy reception intent even after later NOT_FOUND queries. Evidence is irreversible.
+        return await context.SriSubmissionAttempts.AsNoTracking()
+            .Where(a => a.SaleId == sale.Id && a.CompanyId == sale.CompanyId
+                && a.EstablishmentId == sale.EstablishmentId && a.EmissionPointId == sale.EmissionPointId
+                && a.AccessKey == sale.AccessKey && a.Environment == sale.SriEnvironment
+                && a.AttemptType == SriSubmissionAttemptType.Reception)
+            .OrderBy(a => a.CreatedAt).ThenBy(a => a.Id)
+            .Select(a => (DateTime?)a.CreatedAt).FirstOrDefaultAsync(ct);
+    }
+
+    private async Task ValidateAuthorizationEvidenceAsync(Sale sale, ElectronicIssuingJob? job,
+        DateTime? receptionEvidenceAt, CancellationToken ct)
     {
         // Querying is recovery, not permission to skip signing/reception or reopen a terminal job.
         if (job is { Phase: ElectronicIssuingPhase.Completed, State: ElectronicIssuingJobState.Rejected })
@@ -293,12 +316,7 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
                     || (latest.ErrorCode == "SRI_AUTHORIZATION_REJECTED" && latest.AuthorizationStatus == "NO AUTORIZADO")))
                 || (latest is null && (sale.SriReceptionStatus == "DEVUELTA" || sale.SriAuthorizationStatus == "NO AUTORIZADO"))))
             throw new InvalidOperationException("FISCAL_DOCUMENT_TERMINAL");
-        if (job?.ReceptionStartedAt.HasValue == true || sale.SriSubmittedAt.HasValue
-            || !string.IsNullOrWhiteSpace(sale.SriReceptionStatus)) return;
-        // Legacy failed reception attempts also require query-only reconciliation, never a blind resend.
-        if (!await context.SriSubmissionAttempts.AnyAsync(a => a.SaleId == sale.Id && a.CompanyId == sale.CompanyId
-            && a.AccessKey == sale.AccessKey && a.Environment == sale.SriEnvironment
-            && a.AttemptType == SriSubmissionAttemptType.Reception, ct))
+        if (!receptionEvidenceAt.HasValue)
             throw new InvalidOperationException("FISCAL_RECEPTION_NOT_ADMITTED");
     }
 
