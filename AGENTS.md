@@ -20,19 +20,32 @@ Every change follows this order:
 3. **Ticket and plan**: materialize only approved tickets with acceptance criteria, dependencies, ownership, invariants, non-goals, risk and validation plan.
 4. **Implement**: use an isolated branch/worktree; keep scope limited to the ticket.
 5. **Self-check**: run the tests/checks appropriate to the declared risk.
-6. **PR**: provide evidence using the repository PR template. Do not merge.
+6. **PR**: provide evidence using the repository PR template. Implementers do not merge.
 7. **Independent review**: a reviewer that did not author the implementation inspects the diff, architecture, tenant isolation, concurrency, SQL/data behavior, security and tests as applicable.
 8. **CI**: all required automated checks must be green.
 9. **Human gate**: complete merge-blocking human validation; explicitly schedule eligible consolidated cycle validation under section 4.
-10. **Merge**: only Fernando authorizes the final merge after blockers are resolved. AI agents MUST NOT merge.
-11. **Post-merge**: verify GitHub merge and new `main` SHA/CI, reconcile remaining group PRs, rerun relevant tests/review/CI on their exact new HEADs and recommend the next manual merge. Continue automatically to the next human gate; no new technical prompt is needed.
+10. **Conditional merge**: the coordinator may merge an approved ticket only after every condition below is evidenced; otherwise stop at the applicable human gate.
+11. **Post-merge**: verify GitHub merge and new `main` SHA/CI, reconcile remaining group PRs and validate their effective diffs proportionally on exact new HEADs. Continue the integration loop automatically; no `MERGEADO` prompt is needed.
 12. **Cycle closure**: verify final `main` and integration, obtain required cycle acceptance, clean only obsolete resources that no remaining front needs, then return to DISCOVER and propose the next group. Do not start it without approval.
 
-A green CI run is necessary but is never, by itself, authorization to merge.
+A green CI run is necessary but never sufficient to merge. Authority comes from Fernando's approved scope and the policy already integrated in `main`, not a proposed policy in a ticket branch. A PR changing merge authority follows the policy on its base `main`; it MUST NOT grant itself new authority. The PR introducing conditional merge therefore ends at **LISTO. HAZ MERGE MANUAL #<PR>**. Only after Fernando's merge is verified in `main` does this delegation apply to later cycles.
 
 When acting as orchestrator, Codex owns discovery, proposal, internal ticket prompts/delegation, dependency and collision analysis, validation, independent review, CI and the entire merge loop. Fernando approves **what**; Codex coordinates **how**, without asking Fernando to copy prompts between agents. The coordinator is not the default feature implementer or a silent additional writer; an approved operating-policy update may be authored by the coordinator itself.
 
-Human gates are group approval, ambiguous functional/material integration decisions, required human validation, each manual merge and separately authorized R4 operations. Stop only the affected front on a material conflict; independent fronts may continue. Report unrelated findings for later prioritization, not opportunistic fixes or unapproved tickets.
+Human gates are scope approval, ambiguous functional/material decisions, required pre-merge or cycle validation, and separately authorized R4 operations. Do not ask for ceremonial merges when conditional authority applies. Stop only the affected front on a material conflict; independent fronts may continue. Report unrelated findings for later prioritization, not opportunistic fixes or unapproved tickets.
+
+### Conditional merge gate
+
+The coordinator, never the implementer acting as its own reviewer, may execute a merge only when ALL are true:
+
+- Fernando approved the ticket's actual scope; no scope expansion or functional decision remains pending.
+- The final published HEAD has required CI green and independent review with **BLOCKER=0 / MAJOR=0**; review/evidence covers that exact effective change and its current integration base.
+- There is no material conflict, unexplained interaction or unresolved doubt, and any required **pre-merge** human validation has been accepted by Fernando for the relevant change.
+- The merge crosses no pending critical safety barrier; eligible consolidated cycle smoke is explicitly justified by coordinator and independent reviewer, scheduled and still recorded as pending acceptance.
+- It is not R4 and uses no real business data, production infrastructure operations, secrets, certificates or real SRI. A code merge is not deployment authorization.
+- Immediately before merge, recheck HEAD/base and gates. Bind the merge request to the verified HEAD and honor GitHub required checks/rules (including merge-queue checks when configured). Never bypass protections, use an admin override or arm unattended auto-merge before gates are complete. If safe execution cannot be demonstrated, stop.
+
+For critical semantics or material doubt, say **VALIDACION HUMANA PRE-MERGE REQUERIDA**, give concrete steps and wait for **VALIDADO OK**. Then recheck all remaining conditions; that reply alone is not sufficient. Explicit human restrictions such as `NO MERGE` always take precedence. R4 remains human-controlled, never autonomous.
 
 ## 3. Parallel agents and worktrees
 
@@ -51,6 +64,18 @@ Usual active writing range: **2–3**, not a quota. The dependency graph and col
 ## 4. Risk matrix
 
 Declare one level in every development ticket and PR. The automated governance check may raise the minimum level based on modified paths.
+
+### Proportional fast path
+
+Validation follows real risk and the effective diff: maximize safety per unit of time/token, not check count. **Do not repeat a demonstrated test/review when its relevant code and integration assumptions have not changed.** Reuse prior evidence with its original SHA/scope and explain equivalence; never claim old CI as CI for a new HEAD. Required CI must still be green on the final published HEAD, without disabling required jobs.
+
+- During implementation, use focused tests for feedback. A full relevant suite already run by final CI need not also run locally unless needed for diagnosis or a concrete risk.
+- Frontend-only: relevant frontend tests, build, runtime audit when applicable and CI. No local backend/PostgreSQL/EF/recovery unless a real dependency or interaction justifies it.
+- Backend read-only/reporting/export: pertinent backend tests and CI; no full frontend suite unless a shared contract/interaction changes.
+- PostgreSQL, EF/model/migrations, concurrency and Containers/recovery are required when the effective persistence, integration or operational risk warrants them, not by ceremony. Automatically required CI is never waived.
+- Critical money/transactions, mutable stock, locking/idempotency, auth/RBAC/session, tenancy, migrations/data repair, SRI lifecycle and privileged operations retain deep proportional validation and pre-merge human barriers.
+- Keep conservative path-derived R3 and required human validation, but justify read-only/output/UX fast paths from the effective diff; a path alone does not mandate a full transactional audit. See the timing rules below.
+- Batch BLOCKER/MAJOR corrections. Review a focused correction's delta plus integration impact; do not restart an already demonstrated full functional review or review the review without new material risk.
 
 ### R0 — documentation / non-executable metadata
 
@@ -139,12 +164,12 @@ Every PR must:
 - state scope and non-goals;
 - list migrations and contract/API changes explicitly;
 - report exact tests/checks executed and their result;
-- state what requires manual validation, its pre-merge or consolidated timing, justification and pending human acceptance;
+- state what requires manual validation, its pre-merge or consolidated timing, justification and pending human acceptance; evidence conditional merge eligibility or the remaining human gate;
 - state whether real environments/data/SRI/certificates were used (the expected answer for autonomous work is `NO`);
 - record independent-review findings/blockers;
 - finish with an explicit merge state. AI-authored PRs start as `PENDIENTE`.
 
-Agents MUST NOT change a PR to a human-authorized merge state on Fernando's behalf.
+Agents MUST NOT invent Fernando's approval/acceptance or mark `AUTORIZADO_POR_FERNANDO` on his behalf. Conditional execution is delegated by this policy plus approved scope and evidenced gates, not an editable PR-body approval flag. Keep `PENDIENTE` until actual integration, then record the real merge and acceptance state.
 
 ## 8. Review severity
 
@@ -159,9 +184,9 @@ Only BLOCKER and MAJOR findings block readiness, unless the ticket defines a str
 
 ## 9. Readiness and cycle acceptance
 
-- **PR READY TO MERGE**: acceptance criteria have technical evidence; required tests/builds and independent review are complete; exact published/tested/reviewed HEAD and required CI agree; no unresolved BLOCKER/MAJOR remains; merge-blocking human validation is complete. Any eligible consolidated validation is explicitly justified and scheduled. Readiness is a recommendation, never agent merge authority.
-- **MERGED — AWAITING CYCLE ACCEPTANCE**: Fernando merged the PR, but its declared consolidated human validation remains pending. Do not call the ticket/cycle DONE.
-- **CYCLE FUNCTIONALLY ACCEPTED**: final `main`, integrated PRs and required CI are verified, all required human validation is complete and Fernando has accepted the cycle (for example, `VALIDADO OK`). If no human smoke applies, record that justification and the human merge decision; do not invent a smoke result.
+- **PR READY TO MERGE**: acceptance criteria have technical evidence; required tests/builds and independent review are complete; evidence covers the final effective change and required CI is green on its exact published HEAD; no unresolved BLOCKER/MAJOR remains; merge-blocking human validation is complete. Any eligible consolidated validation is explicitly justified and scheduled. The coordinator merges only if the conditional gate is fully satisfied.
+- **MERGED — AWAITING CYCLE ACCEPTANCE**: the PR is integrated, but its declared consolidated human validation remains pending. Do not call the ticket/cycle DONE.
+- **CYCLE FUNCTIONALLY ACCEPTED**: final `main`, integrated PRs and required CI are verified, all required human validation is complete and Fernando has accepted the cycle (for example, `VALIDADO OK`). If no human smoke applies, record why, the approved scope and actual integration evidence; do not invent a smoke result or request acceptance that adds no information.
 - Cleanup is safe only for merged, integrated, clean obsolete branches/worktrees and owned test resources that no remaining front depends on. Preserve uncommitted/preexisting local work. Cleanup is not permission to discard data. After closure, return to DISCOVER; proposing the next group does not authorize implementation.
 
 ## 10. Area policies

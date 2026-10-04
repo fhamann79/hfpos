@@ -68,7 +68,7 @@ Evidencia/resultados:
 
 ## Revisión independiente
 
-<!-- Para R2/R3: congelar HEAD, pedir una revisión, corregir hallazgos en lote y volver a revisar solo si el HEAD cambió. Ver docs/ai-native/CODE_REVIEW.md. -->
+<!-- Para R2/R3: congelar HEAD, revision independiente, corregir hallazgos en lote; re-review proporcional del delta/integracion. Ver docs/ai-native/CODE_REVIEW.md. -->
 
 - Reviewer independiente: Pendiente
 - HEAD revisado: `PENDIENTE`
@@ -90,4 +90,4 @@ Evidencia/resultados:
 
 `PENDIENTE`
 
-> Los agentes de IA no autorizan ni ejecutan el merge. Fernando cambia la decisión de merge solo después de revisión, CI y validación requerida.
+> Merge condicionado solo por el coordinador y bajo la politica ya vigente en main, con alcance aprobado, CI del HEAD final, review independiente y sin barreras pendientes. No inventar autorizacion/aceptacion humana. Un PR que introduce autoridad de merge no puede aplicarsela a si mismo; respeta la politica de su base.
