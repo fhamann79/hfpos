@@ -290,7 +290,8 @@ public sealed class CriticalOperationReliabilityTests(PostgresDatabaseFixture da
         await db.SaveChangesAsync();
         await using var revoked = new TestServiceScope(database, op.Tenant.OperationalContext);
         var rejection = await Assert.ThrowsAsync<OperationalContextException>(() => Send(revoked, op));
-        Assert.Equal("SESSION_STALE", rejection.Message);
+        Assert.Equal("SESSION_STALE", rejection.ErrorCode);
+        Assert.Equal(401, rejection.StatusCode);
     }
 
     [Fact]
