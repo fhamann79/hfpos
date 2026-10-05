@@ -471,6 +471,7 @@
   header="Cancelar recepcion"
 >
   <div class="cancel-dialog">
+    <strong>Recepcion #{{ cancelTargetId }}</strong>
     <div class="warning-callout">
       <i class="pi pi-exclamation-triangle"></i>
       <span>
@@ -482,7 +483,7 @@
 
     <label class="field">
       <span>Razon de cancelacion</span>
-      <textarea pTextarea rows="4" [(ngModel)]="cancelReason" maxlength="500"></textarea>
+      <textarea pTextarea rows="4" [(ngModel)]="cancelReason" maxlength="500" [disabled]="canceling()"></textarea>
     </label>
 
     @if (cancelError()) {

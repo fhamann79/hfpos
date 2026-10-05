@@ -162,6 +162,10 @@ debe quedar sincronizada sin borrar UUID/payload/target. Tras el error incierto,
 MISMA pagina (sin navegar ni recargar), comprobar error y controles de recuperacion accesibles
 y reintentar el intento original. Tambien cerrar con X despues del error y reabrir otra vez.
 En CANCEL, comprobar que onHide durante el envio no borra razon ni target original.
+Reabrir con el BOTON "Cancelar recepcion" del detalle ANTES de terminar el POST:
+debe conservar el intento original; la respuesta success/error debe liberar canceling.
+Tras error incierto, cerrar con X y reabrir con ese mismo boton: mismo ID/razon/error,
+sin recrear pagina. Si cambia el detalle o contexto, no retargetear la cancelacion pendiente.
 Para dos pestañas sin caja inicial: una abre; la otra recibe CASH_SESSION_ALREADY_OPEN con
 un intento distinto. Ese primer rechazo libera su borrador; despues de cerrar la caja ajena,
 puede abrir con importe/notas nuevos y UUID nueva. Si hubo respuesta incierta ANTES del 409,

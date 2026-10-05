@@ -90,6 +90,8 @@ export class PurchaseReceiptsPage implements OnInit, OnDestroy {
   private selectedReceiptScope: string | null = null;
   private destroyed = false;
   private cancelTarget: { id: number; scope: string } | null = null;
+  private cancelRecoveryPending = false;
+  get cancelTargetId(): number | null { return this.cancelTarget?.id ?? null; }
   readonly receiptLocked = signal(this.receiptIntent.pending);
 
   ngOnDestroy(): void {
@@ -484,6 +486,13 @@ export class PurchaseReceiptsPage implements OnInit, OnDestroy {
   }
 
   openCancelDialog(): void {
+    if (!this.canWrite() || this.destroyed) return;
+    const scope = operationScope(this.authStore);
+    if (this.cancelTarget) {
+      if (this.cancelTarget.scope === scope) this.cancelDialogVisible = true;
+      return;
+    }
+    if (this.canceling()) return;
     const receipt = this.selectedReceipt();
     if (!this.canWrite() || !receipt || receipt.status !== PurchaseReceiptStatus.Posted
       || this.selectedReceiptScope !== operationScope(this.authStore)) {
@@ -498,8 +507,9 @@ export class PurchaseReceiptsPage implements OnInit, OnDestroy {
 
   closeCancelDialog(): void {
     if (this.canceling()) return;
-    this.cancelTarget = null;
     this.cancelDialogVisible = false;
+    if (this.cancelRecoveryPending) return;
+    this.cancelTarget = null;
     this.cancelReason = '';
     this.cancelError.set('');
     this.canceling.set(false);
@@ -526,6 +536,7 @@ export class PurchaseReceiptsPage implements OnInit, OnDestroy {
       next: (updatedReceipt) => {
         if (this.destroyed || this.cancelTarget !== target || target.scope !== operationScope(this.authStore)) return;
         this.canceling.set(false);
+        this.cancelRecoveryPending = false;
         if (this.selectedReceipt()?.id === target.id) this.selectedReceipt.set(updatedReceipt);
         this.closeCancelDialog();
         this.messageService.add({
@@ -538,6 +549,7 @@ export class PurchaseReceiptsPage implements OnInit, OnDestroy {
       error: (error: HttpErrorResponse) => {
         if (this.destroyed || this.cancelTarget !== target || target.scope !== operationScope(this.authStore)) return;
         this.canceling.set(false);
+        this.cancelRecoveryPending ||= !definitiveOperationRejection(error);
         this.cancelError.set(resolveHttpErrorMessage(error, 'No se pudo cancelar la recepción.'));
       },
     });

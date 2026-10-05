@@ -128,28 +128,62 @@ describe('529 receipt recovery and immutable cancellation target', () => {
     expect(state.api.create.mock.calls[1][0]).toEqual(original);
   });
 
-  it('physical onHide during CANCEL preserves its immutable target and later error/retry controls', async () => {
+  it.each(['success', 'error'] as const)('real detail button reopens pending CANCEL without replacing its target; %s still completes', async outcome => {
     const state = setup(true), fixture = state.fixture!, pending = new Subject<PurchaseReceipt>();
     state.page.createDialogVisible = false;
-    state.page.openDetail(receipt(2)); state.page.openCancelDialog();
+    state.page.openDetail(receipt(2));
     await render(fixture);
+    const detail = renderedDialog(fixture, 'Detalle de recepcion');
+    const detailButton = () => Array.from(detail.host.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Cancelar recepcion')!;
+    detailButton().click(); await render(fixture);
     const { dialog, host } = renderedDialog(fixture, 'Cancelar recepcion');
+    const confirmButton = () => Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Confirmar cancelacion')!;
     const hide = vi.spyOn(dialog.onHide, 'emit');
     state.api.cancel.mockReturnValueOnce(pending);
-    state.page.cancelReason = 'Synthetic reason'; state.page.confirmCancelReceipt();
+    const reason = host.querySelector<HTMLTextAreaElement>('textarea')!;
+    reason.value = 'Synthetic reason'; reason.dispatchEvent(new Event('input', { bubbles: true }));
+    await render(fixture); confirmButton().click();
     await render(fixture); expect(closeIcon(host)).toBeNull();
-    await escape(fixture, () => pending.error(new HttpErrorResponse({ status: 0 })));
+    expect(reason.disabled).toBe(true);
+    await escape(fixture);
     expect(state.page.cancelDialogVisible).toBe(dialog.visible);
+    expect(dialog.visible).toBe(false);
     expect(hide).toHaveBeenCalled();
     expect(state.page.cancelReason).toBe('Synthetic reason');
+    expect(state.page.canceling()).toBe(true);
+    detailButton().click(); await render(fixture);
+    expect(dialog.visible).toBe(true);
+    expect(state.page.cancelTargetId).toBe(2);
+    expect(state.page.cancelReason).toBe('Synthetic reason');
+    expect(state.api.cancel).toHaveBeenCalledTimes(1);
+    if (outcome === 'success') {
+      pending.next({ ...receipt(2), status: 2 }); await render(fixture);
+      expect(state.page.canceling()).toBe(false);
+      expect(state.page.cancelDialogVisible).toBe(false);
+      expect(state.page.selectedReceipt()?.status).toBe(2);
+      return;
+    }
+    pending.error(new HttpErrorResponse({ status: 0 })); await render(fixture);
+    expect(state.page.canceling()).toBe(false);
+    expect(reason.disabled).toBe(false);
     expect(state.page.cancelError()).not.toBe('');
-    // Reopen without reselecting: the physical hide did not discard the original target.
-    state.page.cancelDialogVisible = true; await render(fixture);
+    const error = state.page.cancelError();
+    closeIcon(host)!.click(); await render(fixture);
+    expect(state.page.cancelDialogVisible).toBe(false);
+    state.page.selectedReceipt.set(receipt(3)); await render(fixture);
+    // This is the same real detail action, now displaying another receipt.
+    detailButton().click(); await render(fixture);
     expect(host.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(host.textContent).toContain(state.page.cancelError());
-    state.page.selectedReceipt.set(receipt(3));
-    state.page.confirmCancelReceipt();
+    expect(state.page.cancelError()).toBe(error); expect(host.textContent).toContain(error);
+    expect(host.textContent).toContain('Recepcion #2');
+    expect(state.page.cancelReason).toBe('Synthetic reason');
+    state.ctx.point.set(4); confirmButton().click(); await render(fixture);
+    expect(state.api.cancel).toHaveBeenCalledTimes(1);
+    state.ctx.point.set(3); confirmButton().click(); await render(fixture);
     expect(state.api.cancel.mock.calls[1]).toEqual([2, { reason: 'Synthetic reason' }]);
+    expect(state.page.canceling()).toBe(false);
   });
 
   it('blocks cancellation for selection from an earlier context', () => {
