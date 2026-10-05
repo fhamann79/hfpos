@@ -15,8 +15,8 @@ import { resolveHttpErrorMessage } from '../../core/utils/http-error-normalizer'
   template: `
     <main class="platform-login">
       <form [formGroup]="form" (ngSubmit)="submit()">
-        <i class="pi pi-building" aria-hidden="true"></i>
-        <h1>HFPOS Plataforma</h1>
+        <img src="/hf-one-logo.svg" alt="HF One" width="200" height="56" />
+        <h1>HF One Plataforma</h1>
         <p>Administraci\u00f3n de empresas</p>
         <label for="platform-user">Usuario</label>
         <input id="platform-user" pInputText formControlName="username" autocomplete="username" maxlength="100" />

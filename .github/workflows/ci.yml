@@ -98,6 +98,20 @@ jobs:
       - name: Install EF CLI
         run: dotnet tool install --global dotnet-ef --version 8.0.4
 
+      # Separate disposable DB; no fiscal/signing fixture or SMTP delivery.
+      - name: Verify synthetic assisted recovery host
+        env:
+          PGPASSWORD: hfpos_test_password
+          HF_POS_TEST_CONNECTION_STRING: Host=localhost;Port=5432;Database=hfpos_test_530_smoke;Username=hfpos_test;Password=hfpos_test_password
+        run: |
+          psql -h localhost -U hfpos_test -d hfpos_ci -v ON_ERROR_STOP=1 -c 'CREATE DATABASE hfpos_test_530_smoke'
+          dotnet run --project backend/Pos.Backend.Api/Hfpos.FiscalSmokeHost --configuration Release --no-build -- --assisted-recovery --initialize --verify
+
+      - name: Verify assisted recovery configuration guard
+        env:
+          HF_POS_TEST_CONNECTION_STRING: Host=localhost;Port=5432;Database=hfpos_test_530_smoke;Username=hfpos_test;Password=hfpos_test_password
+        run: dotnet run --project backend/Pos.Backend.Api/Hfpos.FiscalSmokeHost --configuration Release --no-build -- --assisted-recovery --verify-configuration
+
       - name: List migrations
         run: >-
           dotnet ef migrations list

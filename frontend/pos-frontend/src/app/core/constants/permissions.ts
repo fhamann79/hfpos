@@ -15,6 +15,7 @@ export const PERMISSIONS = {
   operationalStructureWrite: 'OP_STRUCTURE_WRITE',
   adminUsersRead: 'ADMIN_USERS_READ',
   adminUsersWrite: 'ADMIN_USERS_WRITE',
+  usersRecoveryManage: 'USERS_RECOVERY_MANAGE',
   adminRolesRead: 'ADMIN_ROLES_READ',
   adminRolesWrite: 'ADMIN_ROLES_WRITE',
   posSalesCreate: 'POS_SALES_CREATE',

@@ -12,7 +12,11 @@ export class App {
   private readonly router = inject(Router);
   private readonly currentUrl = signal(this.router.url);
 
-  readonly showShell = computed(() => !this.currentUrl().startsWith('/login') && !this.currentUrl().startsWith('/platform/'));
+  readonly showShell = computed(() => {
+    const path = this.currentUrl().split(/[?#]/, 1)[0];
+    return path !== '/login' && path !== '/recover-access' && path !== '/recover-access/complete'
+      && !path.startsWith('/platform/');
+  });
 
   constructor() {
     this.router.events.subscribe((event) => {

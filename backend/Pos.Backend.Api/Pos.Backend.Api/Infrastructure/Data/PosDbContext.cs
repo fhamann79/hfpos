@@ -12,6 +12,8 @@ public class PosDbContext : DbContext
     }
 
     public DbSet<User> Users { get; set; }
+    public DbSet<PasswordRecoveryChallenge> PasswordRecoveryChallenges { get; set; }
+    public DbSet<PasswordSecurityAudit> PasswordSecurityAudits { get; set; }
     public DbSet<PlatformUser> PlatformUsers { get; set; }
     public DbSet<PlatformTenantEvent> PlatformTenantEvents { get; set; }
     public DbSet<Role> Roles { get; set; }
@@ -55,6 +57,32 @@ public class PosDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<PasswordRecoveryChallenge>(e =>
+        {
+            e.Property(c => c.TokenHash).IsRequired();
+            e.Property(c => c.PasswordFingerprint).IsRequired();
+            e.Property(c => c.Reason).HasMaxLength(500);
+            e.Property(c => c.DeliveryReference).HasMaxLength(500);
+            e.HasIndex(c => new { c.CompanyId, c.UserId, c.CreatedAt });
+            e.HasIndex(c => new { c.PlatformUserId, c.CreatedAt });
+            e.HasOne<Company>().WithMany().HasForeignKey(c => c.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<PlatformUser>().WithMany().HasForeignKey(c => c.PlatformUserId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_PasswordRecoveryChallenges_Scope", "(\"IsPlatform\" AND \"CompanyId\" IS NULL AND \"UserId\" IS NULL AND \"PlatformUserId\" IS NOT NULL AND \"RoleId\" IS NULL AND \"RoleVersion\" IS NULL AND \"EstablishmentId\" IS NULL AND \"EmissionPointId\" IS NULL) OR (NOT \"IsPlatform\" AND \"CompanyId\" IS NOT NULL AND \"UserId\" IS NOT NULL AND \"PlatformUserId\" IS NULL AND \"RoleId\" IS NOT NULL AND \"RoleVersion\" IS NOT NULL AND \"EstablishmentId\" IS NOT NULL AND \"EmissionPointId\" IS NOT NULL)");
+                t.HasCheckConstraint("CK_PasswordRecoveryChallenges_Bounds", "octet_length(\"TokenHash\") = 32 AND octet_length(\"PasswordFingerprint\") = 32 AND \"SessionVersion\" > 0 AND \"AttemptCount\" >= 0 AND \"ExpiresAt\" > \"CreatedAt\" AND length(trim(\"Reason\")) > 0 AND length(trim(\"DeliveryReference\")) > 0 AND NOT (\"ConsumedAt\" IS NOT NULL AND \"RevokedAt\" IS NOT NULL)");
+            });
+        });
+        modelBuilder.Entity<PasswordSecurityAudit>(e =>
+        {
+            e.Property(a => a.Event).HasMaxLength(30);
+            e.Property(a => a.Reason).HasMaxLength(500);
+            e.Property(a => a.DeliveryReference).HasMaxLength(500);
+            e.HasIndex(a => new { a.CompanyId, a.CreatedAt });
+            e.ToTable(t => t.HasCheckConstraint("CK_PasswordSecurityAudits_Scope", "NOT \"IsPlatform\" OR \"CompanyId\" IS NULL"));
+        });
 
         modelBuilder.Entity<ElectronicIssuingJob>(entity =>
         {

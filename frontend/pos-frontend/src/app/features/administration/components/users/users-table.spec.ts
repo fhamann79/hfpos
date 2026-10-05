@@ -146,7 +146,7 @@ describe('UsersTable server pagination', () => {
     expect(table.errorMessage()).not.toBe('');
   });
 
-  it.each(['create', 'edit', 'deactivate', 'password', 'revoke'])('preserves %s and refreshes the current filtered page', action => {
+  it.each(['create', 'edit', 'deactivate', 'revoke'])('preserves %s and refreshes the current filtered page', action => {
     const table = component();
     table.canWrite = true; table.isActive = true;
     table.loadUsers(2);
@@ -158,10 +158,6 @@ describe('UsersTable server pagination', () => {
     if (action === 'edit') {
       table.submitUserDialog({ mode: 'edit', id: user.id, payload: { email: user.email, roleId: 2, establishmentId: 3, emissionPointId: 4, isActive: true } });
       expect(update).toHaveBeenCalledOnce();
-    }
-    if (action === 'password') {
-      table.submitPasswordDialog({ userId: user.id, payload: { newPassword: 'Test-only-123' } });
-      expect(updatePassword).toHaveBeenCalledWith(user.id, { newPassword: 'Test-only-123' });
     }
     if (action === 'deactivate' || action === 'revoke') {
       if (action === 'deactivate') table.confirmDelete(user);

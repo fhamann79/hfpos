@@ -2,7 +2,7 @@ import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
@@ -21,7 +21,7 @@ type TenantReadScope = 'list' | 'detail' | 'events';
 
 @Component({
   selector: 'app-platform-tenants', standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, ButtonModule, DialogModule,
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink, ButtonModule, DialogModule,
     InputTextModule, MessageModule, SelectModule, TableModule, TagModule],
   templateUrl: './platform-tenants.html', styleUrl: './platform-tenants.scss',
 })

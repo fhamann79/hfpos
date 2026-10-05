@@ -192,17 +192,7 @@ public class UsersController : ControllerBase
             return NotFound(new ApiErrorResponse { Error = "USER_NOT_FOUND" });
         }
 
-        if (!PasswordPolicy.IsValid(dto?.NewPassword))
-        {
-            return BadRequest(new ApiErrorResponse { Error = "PASSWORD_POLICY_INVALID" });
-        }
-
-        user.PasswordHash = _hasher.HashPassword(user, dto.NewPassword);
-        user.SessionVersion = checked(user.SessionVersion + 1);
-        await _context.SaveChangesAsync();
-        await tx.CommitAsync();
-
-        return NoContent();
+        return Conflict(new ApiErrorResponse { Error = "ASSISTED_RECOVERY_REQUIRED" });
     }
 
     [HttpDelete("{id:int}")]

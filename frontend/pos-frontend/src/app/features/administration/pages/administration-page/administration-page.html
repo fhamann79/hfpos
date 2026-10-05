@@ -17,7 +17,7 @@
       <p-tabpanels>
         @if (canReadUsers()) {
           <p-tabpanel value="0">
-            <app-users-table [canWrite]="canWriteUsers()"></app-users-table>
+            <app-users-table [canWrite]="canWriteUsers()" [canRecover]="canRecoverUsers()"></app-users-table>
           </p-tabpanel>
         }
         @if (canReadRoles()) {

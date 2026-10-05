@@ -1,10 +1,10 @@
 <div class="app-shell" [class.app-shell--collapsed]="sidebarCollapsed()">
   <aside class="sidebar">
     <div class="sidebar__brand">
-      <span class="sidebar__logo">PE</span>
+      <img class="sidebar__logo" src="/hf-one-mark.svg" alt="HF One" width="40" height="40" />
       @if (!sidebarCollapsed()) {
         <div>
-          <h1>POS Ecuador</h1>
+          <h1>HF One</h1>
           <small>SaaS Foundation</small>
         </div>
       }
@@ -61,6 +61,7 @@
             [outlined]="true"
             (onClick)="logout()"
           ></p-button>
+          <a routerLink="/account/password" aria-label="Cambiar mi contraseña" title="Cambiar mi contraseña"><i class="pi pi-key" aria-hidden="true"></i></a>
         </div>
       </ng-template>
     </p-toolbar>

@@ -20,6 +20,11 @@ public static class SmokeMain
 {
     public static async Task Main(string[] args)
     {
+        if (args.Contains("--assisted-recovery"))
+        {
+            await AssistedRecoverySmoke.RunAsync(args);
+            return;
+        }
         if (args.Contains("--critical-operations"))
         {
             await CriticalOperationsSmoke.RunAsync(args);

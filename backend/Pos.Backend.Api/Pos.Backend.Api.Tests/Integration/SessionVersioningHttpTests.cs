@@ -141,8 +141,8 @@ public sealed class SessionVersioningHttpTests(PostgresDatabaseFixture database)
         var staff = await LoginAsync(client, tenant.StaffName);
         var userUrl = $"/api/Users/{tenant.StaffId}";
 
-        await AssertStatusAsync(SendAsync(client, HttpMethod.Put, userUrl + "/password", admin,
-            new { newPassword = ChangedPassword }), HttpStatusCode.NoContent);
+        await AssertStatusAsync(SendAsync(client, HttpMethod.Put, "/api/account/recovery/password", staff,
+            new { currentPassword = Password, newPassword = ChangedPassword }), HttpStatusCode.NoContent);
         Assert.Equal(2, await UserVersionAsync(tenant.StaffId));
         await AssertErrorAsync(await SendAsync(client, HttpMethod.Get, "/api/Auth/me", staff),
             HttpStatusCode.Unauthorized, "SESSION_STALE");

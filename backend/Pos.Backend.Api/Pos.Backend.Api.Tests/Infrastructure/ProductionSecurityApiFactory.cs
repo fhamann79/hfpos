@@ -29,8 +29,23 @@ internal sealed class ProductionSecurityApiFactory : WebApplicationFactory<Progr
             builder.ConfigureServices(services => services.AddSingleton<IStartupFilter>(new SyntheticRemoteIp(_remoteIp)));
     }
 
-    public HttpClient Client() => CreateClient(new WebApplicationFactoryClientOptions
-    { BaseAddress = new Uri("https://example.test"), AllowAutoRedirect = false });
+    public HttpClient Client(bool preventHostingStartup = false)
+    {
+        // A smoke executable carries an assembly HostingStartup attribute. Suppress its
+        // discovery only while this in-process Production test server is constructed.
+        const string setting = "ASPNETCORE_PREVENTHOSTINGSTARTUP";
+        var previous = Environment.GetEnvironmentVariable(setting);
+        try
+        {
+            if (preventHostingStartup) Environment.SetEnvironmentVariable(setting, "true");
+            return CreateClient(new WebApplicationFactoryClientOptions
+            { BaseAddress = new Uri("https://example.test"), AllowAutoRedirect = false });
+        }
+        finally
+        {
+            if (preventHostingStartup) Environment.SetEnvironmentVariable(setting, previous);
+        }
+    }
 
     protected override void Dispose(bool disposing)
     { base.Dispose(disposing); if (disposing && Directory.Exists(_keys)) Directory.Delete(_keys, true); }

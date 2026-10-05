@@ -82,16 +82,12 @@
           <p-tag [severity]="user.isActive ? 'success' : 'danger'" [value]="user.isActive ? 'Activo' : 'Inactivo'"></p-tag>
         </td>
         <td>
+          @if (canRecover && user.isActive) {
+            <p-button label="Iniciar recuperación" icon="pi pi-key" [text]="true" (onClick)="openChangePasswordDialog(user)"></p-button>
+          }
           @if (canWrite) {
             <div class="actions">
               <p-button icon="pi pi-pencil" [rounded]="true" [text]="true" (onClick)="openEditDialog(user)"></p-button>
-              <p-button
-                icon="pi pi-key"
-                severity="secondary"
-                [rounded]="true"
-                [text]="true"
-                (onClick)="openChangePasswordDialog(user)"
-              ></p-button>
               <p-button
                 icon="pi pi-trash"
                 severity="danger"
@@ -140,10 +136,9 @@
     (submitForm)="submitUserDialog($event)"
   ></app-user-dialog>
 
-  <app-change-password-dialog
-    [visible]="passwordDialogVisible"
-    [user]="selectedUser"
-    (visibleChange)="onPasswordDialogVisibleChange($event)"
-    (submitForm)="submitPasswordDialog($event)"
-  ></app-change-password-dialog>
+}
+
+@if (canRecover && passwordDialogVisible && selectedUser) {
+  <app-recovery-dialog [visible]="true" [userId]="selectedUser.id" [username]="selectedUser.username"
+    (visibleChange)="onPasswordDialogVisibleChange($event)"></app-recovery-dialog>
 }

@@ -51,6 +51,7 @@ builder.Services.AddDbContext<PosDbContext>((services, options) =>
 //Auth
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<IPlatformAuthService, PlatformAuthService>();
+builder.Services.AddScoped<PasswordRecoveryService>();
 builder.Services.AddScoped<IPlatformContextAccessor, PlatformContextAccessor>();
 builder.Services.AddScoped<IPlatformTenantService, PlatformTenantService>();
 builder.Services.AddScoped<TenantAdministrationGuard>();
@@ -164,6 +165,7 @@ builder.Services.AddAuthorization(options =>
         AppPermissions.FiscalSettingsWrite,
         AppPermissions.AdminUsersRead,
         AppPermissions.AdminUsersWrite,
+        AppPermissions.UsersRecoveryManage,
         AppPermissions.AdminRolesRead,
         AppPermissions.AdminRolesWrite
     });

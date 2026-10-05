@@ -22,6 +22,7 @@ export class AdministrationPage {
 
   readonly canReadUsers = computed(() => this.permissionService.hasPermission(PERMISSIONS.adminUsersRead));
   readonly canWriteUsers = computed(() => this.permissionService.hasPermission(PERMISSIONS.adminUsersWrite));
+  readonly canRecoverUsers = computed(() => this.permissionService.hasPermission(PERMISSIONS.usersRecoveryManage));
   readonly canReadRoles = computed(() => this.permissionService.hasPermission(PERMISSIONS.adminRolesRead));
   readonly canWriteRoles = computed(() => this.permissionService.hasPermission(PERMISSIONS.adminRolesWrite));
 

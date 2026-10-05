@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="64" viewBox="0 0 240 64" role="img" aria-labelledby="title">
+  <title id="title">HF One</title>
+  <path fill="#087f70" d="M4 8h10v19h18V8h10v48H32V37H14v19H4z"/>
+  <path fill="#202825" d="M46 8h26v10H56v9h13v10H56v19H46z"/>
+  <path fill="#dba943" d="M63 46h9v10h-9z"/>
+  <text x="88" y="47" font-family="Arial, Helvetica, sans-serif" font-size="40" font-weight="600" fill="#202825">One</text>
+</svg>

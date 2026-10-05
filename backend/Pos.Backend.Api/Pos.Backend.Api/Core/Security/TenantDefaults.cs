@@ -35,6 +35,7 @@ public static class TenantDefaults
             new(AppPermissions.FiscalSettingsWrite, "Escribir configuración fiscal y empresarial"),
             new(AppPermissions.AdminUsersRead, "Leer administración de usuarios"),
             new(AppPermissions.AdminUsersWrite, "Escribir administración de usuarios"),
+            new(AppPermissions.UsersRecoveryManage, "Gestionar recuperacion asistida de usuarios"),
             new(AppPermissions.AdminRolesRead, "Leer administración de roles"),
             new(AppPermissions.AdminRolesWrite, "Escribir administración de roles")
         };
@@ -80,6 +81,7 @@ public static class TenantDefaults
                     AppPermissions.FiscalSettingsWrite,
                     AppPermissions.AdminUsersRead,
                     AppPermissions.AdminUsersWrite,
+                    AppPermissions.UsersRecoveryManage,
                     AppPermissions.AdminRolesRead,
                     AppPermissions.AdminRolesWrite
                 }
