@@ -18,6 +18,21 @@ function Test-Case([string]$Name, [scriptblock]$Action) {
     Write-Host "PASS $Name"
 }
 
+Test-Case 'restored proxy overrides the template actually consumed by its entrypoint' {
+    $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+    $entrypoint = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'web-entrypoint.sh') -Raw
+    $compose = Get-Content -LiteralPath (Join-Path $root 'deploy/compose/compose.smoke.yml') -Raw
+    Assert-Test ($entrypoint.Contains('< /etc/nginx/default.conf.template')) 'Entrypoint template contract changed.'
+    Assert-Test ($compose.Contains('./smoke-runtime/restored.conf.template:/etc/nginx/default.conf.template:ro')) 'Restored proxy still consumes the original upstream template.'
+}
+
+Test-Case 'rehearsal identity is isolated from legacy and cleanup matches its owner' {
+    $identity = Get-SmokeIdentity -Root $PSScriptRoot
+    Assert-Test ($identity.Project -match '^hfpos-dev531-[a-f0-9]{12}$') 'Rehearsal must not target the legacy project.'
+    Assert-Test ($identity.Project -eq (Get-SmokeIdentity -Root $PSScriptRoot).Project) 'Cleanup identity must be stable.'
+    Assert-Test ($identity.Project -ne (Get-SmokeIdentity -Root ($PSScriptRoot + '-other')).Project) 'Worktrees must not share resources.'
+}
+
 Test-Case 'native stderr with exit zero is not a failure' {
     $result = Invoke-SmokeNativeCommand -FilePath $processExecutable -Arguments @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $testScript, '-NativeFixture', '-FixtureArgument', 'fixture-output')
     Assert-Test ($result.ExitCode -eq 0) 'Native stderr was treated as failure.'
@@ -47,7 +62,7 @@ try {
     # Cleanup tests substitute Docker only; no container or database is touched.
     function Invoke-SmokeNativeCommand {
         param([string]$FilePath, [string[]]$Arguments)
-        Assert-Test ($FilePath -eq 'docker' -and $Arguments -contains 'hfpos-520-smoke' -and $Arguments -contains '--remove-orphans') 'Unexpected cleanup command.'
+        Assert-Test ($FilePath -eq 'docker' -and $Arguments -contains (Get-SmokeIdentity -Root $fixtureRoot).Project -and $Arguments -contains '--context' -and $Arguments -contains '--profile' -and $Arguments -contains '*' -and $Arguments -contains '--remove-orphans') 'Unexpected cleanup command or incomplete profile cleanup.'
         return [pscustomobject]@{ ExitCode = $script:fixtureCode; Output = 'SYNTHETIC-SECRET-DO-NOT-LOG' }
     }
     Test-Case 'successful cleanup deletes runtime and keeps adjacent files' {

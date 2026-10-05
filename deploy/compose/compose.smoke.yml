@@ -22,7 +22,7 @@ services:
       retries: 30
     networks: [private]
   backend:
-    image: hfpos/backend:smoke
+    image: ${SMOKE_PROJECT:?owned project required}/backend:smoke
     build: {context: ../.., dockerfile: backend/Pos.Backend.Api/Dockerfile}
     environment: &runtime
       ASPNETCORE_ENVIRONMENT: Production
@@ -39,7 +39,7 @@ services:
       DataProtection__ApplicationName: HFPOS-SMOKE-ONLY
       DataProtection__KeysPath: /keys
       ForwardedHeaders__Enabled: 'true'
-      ForwardedHeaders__KnownProxies__0: 172.30.53.10
+      ForwardedHeaders__KnownProxies__0: 172.30.153.10
       ForwardedHeaders__ForwardLimit: 1
       Operations__ShutdownTimeoutSeconds: 30
       Observability__Enabled: 'false'
@@ -65,7 +65,7 @@ services:
       postgres: {condition: service_healthy}
     networks: [private]
   web:
-    image: hfpos/web:smoke
+    image: ${SMOKE_PROJECT:?owned project required}/web:smoke
     build: {context: ../.., dockerfile: frontend/pos-frontend/Dockerfile}
     environment: {HFPOS_HTTPS_PORT: 8444}
     ports: ['127.0.0.1:8444:8443', '127.0.0.1:8084:8080']
@@ -77,9 +77,9 @@ services:
     depends_on:
       backend: {condition: service_healthy}
     networks:
-      private: {ipv4_address: 172.30.53.10}
+      private: {ipv4_address: 172.30.153.10}
   migrations:
-    image: hfpos/migrations:smoke
+    image: ${SMOKE_PROJECT:?owned project required}/migrations:smoke
     build: {context: ../.., dockerfile: backend/Pos.Backend.Api/Dockerfile.migrations}
     profiles: [migration]
     environment:
@@ -92,6 +92,55 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     networks: [private]
+  pilot-proof:
+    image: ${SMOKE_PROJECT:?owned project required}/pilot-proof:synthetic
+    build: {context: ../.., dockerfile: backend/Pos.Backend.Api/Hfpos.FiscalSmokeHost/Dockerfile}
+    profiles: [proof]
+    environment: &proof
+      HF_POS_RELEASE_COMPOSE: '1'
+      HF_POS_TEST_CONNECTION_STRING: Host=postgres;Database=hfpos_ops_ci;Username=hfpos_smoke;Password=${SMOKE_PG_PASSWORD}
+      HF_POS_RELEASE_KEYS: /keys
+      SMOKE_PLATFORM_PASSWORD: ${SMOKE_PLATFORM_PASSWORD}
+    volumes: [keyring:/keys]
+    read_only: true
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=128m,uid=1654,gid=1654']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [private]
+  restored-proof:
+    image: ${SMOKE_PROJECT:?owned project required}/pilot-proof:synthetic
+    profiles: [proof]
+    environment:
+      <<: *proof
+      HF_POS_TEST_CONNECTION_STRING: Host=postgres;Database=hfpos_ops_restore;Username=hfpos_smoke;Password=${SMOKE_PG_PASSWORD}
+      HF_POS_RELEASE_KEYS: /recovery/restored-keys
+    volumes: [backups:/recovery]
+    read_only: true
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=128m,uid=1654,gid=1654']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [private]
+  restored-backend:
+    extends: backend
+    profiles: [proof]
+    environment:
+      <<: *runtime
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=hfpos_ops_restore;Username=hfpos_smoke;Password=${SMOKE_PG_PASSWORD}
+      DataProtection__KeysPath: /recovery/restored-keys
+      PlatformBootstrap__Enabled: 'false'
+      ForwardedHeaders__KnownProxies__0: 172.30.153.11
+    volumes: !override [backups:/recovery]
+  restored-web:
+    extends: web
+    profiles: [proof]
+    environment: {HFPOS_HTTPS_PORT: 8445}
+    ports: !override ['127.0.0.1:8445:8443', '127.0.0.1:8085:8080']
+    volumes:
+      - ./smoke-runtime/restored.conf.template:/etc/nginx/default.conf.template:ro
+    depends_on: !override
+      restored-backend: {condition: service_healthy}
+    networks: !override
+      private: {ipv4_address: 172.30.153.11}
 volumes:
   database:
   keyring:
@@ -99,4 +148,4 @@ volumes:
 networks:
   private:
     ipam:
-      config: [{subnet: 172.30.53.0/24}]
+      config: [{subnet: 172.30.153.0/24}]

@@ -20,6 +20,16 @@ public static class SmokeMain
 {
     public static async Task Main(string[] args)
     {
+        if (args.Contains("--release-pilot"))
+        {
+            try { await ReleasePilotSmoke.RunAsync(args); }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine($"PILOT PROOF FAILED step={ReleasePilotSmoke.Step} type={error.GetType().Name}");
+                Environment.ExitCode = 1;
+            }
+            return;
+        }
         if (args.Contains("--assisted-recovery"))
         {
             await AssistedRecoverySmoke.RunAsync(args);

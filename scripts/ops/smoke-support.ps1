@@ -24,7 +24,8 @@ function Invoke-SmokeResourceCleanup {
     if (!$runtime.StartsWith($expected, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe cleanup target.' }
     $envFile = Join-Path $runtime 'smoke.env'
     if (Test-Path -LiteralPath $envFile) {
-        $result = Invoke-SmokeNativeCommand -FilePath 'docker' -Arguments @('compose', '--project-name', 'hfpos-520-smoke', '--env-file', $envFile, '-f', (Join-Path $Root 'deploy/compose/compose.smoke.yml'), 'down', '-v', '--remove-orphans')
+        $identity = Get-SmokeIdentity -Root $Root
+        $result = Invoke-SmokeNativeCommand -FilePath 'docker' -Arguments @('--context', $identity.Context, 'compose', '--project-name', $identity.Project, '--env-file', $envFile, '-f', (Join-Path $Root 'deploy/compose/compose.smoke.yml'), '--profile', '*', 'down', '-v', '--remove-orphans')
         if ($result.ExitCode -ne 0) { throw 'Smoke resource cleanup failed; runtime preserved for retry.' }
         Remove-Item -LiteralPath $runtime -Recurse -Force
         Write-Host 'SMOKE CLEANUP PASS'
@@ -51,4 +52,12 @@ function Wait-SmokeWebReady {
         if ($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds) { Start-Sleep -Milliseconds $RetryMilliseconds }
     } while ($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
     throw "Synthetic web readiness timed out after $TimeoutSeconds seconds (HTTPS Angular bundle probe)."
+}
+function Get-SmokeIdentity {
+    param([string]$Root)
+    $canonical = [IO.Path]::GetFullPath($Root).TrimEnd([IO.Path]::DirectorySeparatorChar).ToLowerInvariant()
+    $hash = [Security.Cryptography.SHA256]::Create()
+    try { $suffix = ([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonical)))).Replace('-', '').Substring(0, 12).ToLowerInvariant() }
+    finally { $hash.Dispose() }
+    [pscustomobject]@{ Project = "hfpos-dev531-$suffix"; Context = $(if ($env:OS -eq 'Windows_NT') { 'desktop-linux' } else { 'default' }) }
 }
