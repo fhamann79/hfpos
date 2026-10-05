@@ -26,6 +26,7 @@ import {
   formatBusinessTime as formatBusinessTimeValue,
 } from '../../../../core/utils/business-date-format';
 import { readErrorCode } from '../../../../core/utils/http-error-normalizer';
+import { OperationIntent, definitiveOperationRejection, operationActor, operationScope } from '../../../../core/utils/operation-intent';
 import {
   InventoryMovement,
   InventoryMovementSourceType,
@@ -194,11 +195,27 @@ export class InventoryPage implements OnInit, OnDestroy {
   readonly countSnapshot = signal<import('../../models/inventory-operation.model').InventoryCountSnapshot | null>(null);
   readonly countLoading = signal(false);
   private countSequence = 0;
+  private movementSequence = 0;
+  private detailSequence = 0;
+  private destroyed = false;
+  private readonly operationIntent = new OperationIntent<{ kind: InventoryOperationKind; payload: InventoryOperationRequest }>(
+    'inventory', operationActor(this.authStore));
+  readonly operationLocked = signal(this.operationIntent.pending);
   entryForm: InventoryOperationForm = this.createOperationForm();
   exitForm: InventoryOperationForm = this.createOperationForm();
   adjustForm: InventoryOperationForm = this.createOperationForm();
 
   ngOnInit(): void {
+    if (this.operationIntent.pending) {
+      try {
+        const pending = this.operationIntent.retry(operationScope(this.authStore));
+        this.activeOperation = pending.kind;
+        Object.assign(this.currentOperationForm(), pending.payload);
+        this.operationError.set('Resultado pendiente. Reintenta la misma operacion para recuperarlo.');
+      } catch (error) {
+        this.operationError.set(error instanceof Error ? error.message : 'Operacion pendiente.');
+      }
+    }
     if (this.canReadInventory()) {
       this.refreshAll();
     }
@@ -298,6 +315,9 @@ export class InventoryPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
+    ++this.movementSequence;
+    ++this.detailSequence;
     ++this.countSequence;
     clearTimeout(this.lookupTimer);
     ++this.lookupSequence;
@@ -305,11 +325,14 @@ export class InventoryPage implements OnInit, OnDestroy {
   }
 
   loadMovements(page: number, pageSize: number): void {
+    const sequence = ++this.movementSequence;
+    const scope = operationScope(this.authStore);
     this.movementsLoading.set(true);
     this.movementsError.set('');
 
     this.inventoryService.getMovements(this.buildMovementFilters(page, pageSize)).subscribe({
       next: (result) => {
+        if (this.destroyed || sequence !== this.movementSequence || scope !== operationScope(this.authStore)) return;
         this.movements.set(result.items);
         this.totalMovementItems.set(result.totalItems);
         this.totalMovementPages.set(result.totalPages);
@@ -318,6 +341,7 @@ export class InventoryPage implements OnInit, OnDestroy {
         this.movementsLoading.set(false);
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || sequence !== this.movementSequence || scope !== operationScope(this.authStore)) return;
         this.movementsLoading.set(false);
         this.movementsError.set(this.inventoryService.resolveError(error, 'No se pudo cargar el kardex.'));
       },
@@ -365,9 +389,11 @@ export class InventoryPage implements OnInit, OnDestroy {
   }
 
   submitOperation(): void {
-    if (this.operationLoading()) return;
+    if (this.operationLoading() || this.destroyed || !this.canWriteInventory()) return;
+    const wasRetry = this.operationIntent.pending;
+    const scope = operationScope(this.authStore);
     const form = this.currentOperationForm();
-    const validationError = this.validateOperationForm(this.activeOperation, form);
+    const validationError = wasRetry ? '' : this.validateOperationForm(this.activeOperation, form);
 
     this.operationError.set('');
     this.operationResult.set(null);
@@ -377,8 +403,9 @@ export class InventoryPage implements OnInit, OnDestroy {
       return;
     }
 
-    const payload = this.buildOperationPayload(form);
-    if (this.activeOperation === 'adjust') {
+    let payload = this.buildOperationPayload(form);
+    let kind = this.activeOperation;
+    if (kind === 'adjust' && !wasRetry) {
       const snapshot = this.countSnapshot();
       if (!snapshot || snapshot.productId !== payload.productId || this.countLoading()) {
         this.operationError.set('Carga el saldo del conteo antes de confirmar.');
@@ -389,23 +416,35 @@ export class InventoryPage implements OnInit, OnDestroy {
       payload.expectedCompanyId = snapshot.companyId;
       payload.expectedEstablishmentId = snapshot.establishmentId;
     }
+    try {
+      const frozen = this.operationIntent.capture(scope, { kind, payload });
+      payload = frozen.payload;
+      kind = frozen.kind;
+    } catch (error) {
+      this.operationError.set(error instanceof Error ? error.message : 'No se pudo conservar la solicitud.');
+      return;
+    }
+    this.operationLocked.set(true);
     this.operationLoading.set(true);
 
     const request =
-      this.activeOperation === 'entry'
+      kind === 'entry'
         ? this.inventoryService.registerEntry(payload)
-        : this.activeOperation === 'exit'
+        : kind === 'exit'
           ? this.inventoryService.registerExit(payload)
           : this.inventoryService.registerAdjustment(payload);
 
     request.subscribe({
       next: (movement) => {
+        if (this.destroyed || scope !== operationScope(this.authStore)) return;
+        this.operationIntent.clear();
+        this.operationLocked.set(false);
         this.operationLoading.set(false);
         this.operationResult.set(movement);
         this.messageService.add({
           severity: 'success',
           summary: 'Inventario actualizado',
-          detail: `${this.operationLabel(this.activeOperation)} registrada correctamente.`,
+          detail: `${this.operationLabel(kind)} registrada correctamente.`,
         });
         this.resetCurrentOperationForm();
         this.movementProductId = movement.productId;
@@ -416,14 +455,21 @@ export class InventoryPage implements OnInit, OnDestroy {
         this.applyMovementFilters();
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || scope !== operationScope(this.authStore)) return;
         this.operationLoading.set(false);
+        if (!wasRetry && definitiveOperationRejection(error)) {
+          this.operationIntent.clear();
+          this.operationLocked.set(false);
+        }
         this.operationError.set(this.resolveOperationError(error));
-        if (this.activeOperation === 'adjust') this.countSnapshot.set(null);
+        if (kind === 'adjust' && !this.operationIntent.pending) this.countSnapshot.set(null);
       },
     });
   }
 
   openMovementDetail(movement: InventoryMovement): void {
+    const sequence = ++this.detailSequence;
+    const scope = operationScope(this.authStore);
     this.movementDetailVisible = true;
     this.selectedMovement.set(null);
     this.movementDetailError.set('');
@@ -431,10 +477,14 @@ export class InventoryPage implements OnInit, OnDestroy {
 
     this.inventoryService.getMovementById(movement.id).subscribe({
       next: (detail) => {
+        if (this.destroyed || sequence !== this.detailSequence || !this.movementDetailVisible
+          || scope !== operationScope(this.authStore) || detail.id !== movement.id) return;
         this.selectedMovement.set(detail);
         this.movementDetailLoading.set(false);
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || sequence !== this.detailSequence || !this.movementDetailVisible
+          || scope !== operationScope(this.authStore)) return;
         this.movementDetailLoading.set(false);
         this.movementDetailError.set(this.inventoryService.resolveError(error, 'No se pudo cargar el movimiento.'));
       },
@@ -444,6 +494,8 @@ export class InventoryPage implements OnInit, OnDestroy {
   onMovementDetailVisibleChange(visible: boolean): void {
     this.movementDetailVisible = visible;
     if (!visible) {
+      ++this.detailSequence;
+      this.movementDetailLoading.set(false);
       this.selectedMovement.set(null);
       this.movementDetailError.set('');
     }
@@ -673,17 +725,20 @@ export class InventoryPage implements OnInit, OnDestroy {
   }
 
   canSubmitOperation(): boolean {
+    if (this.operationIntent.pending) return !this.operationLoading();
     return !this.operationLoading() && !this.validateOperationForm(this.activeOperation, this.currentOperationForm())
       && (this.activeOperation !== 'adjust' || (!this.countLoading() && this.countSnapshot()?.productId === this.adjustForm.productId));
   }
 
   setOperationProduct(productId: number | null): void {
+    if (this.operationLocked()) return;
     this.currentOperationForm().productId = productId;
     this.operationError.set('');
     if (this.activeOperation === 'adjust') this.loadCountSnapshot();
   }
 
   loadCountSnapshot(): void {
+    if (this.operationLocked()) return;
     const sequence = ++this.countSequence;
     const productId = this.adjustForm.productId;
     this.countSnapshot.set(null); this.countLoading.set(false);
@@ -703,15 +758,18 @@ export class InventoryPage implements OnInit, OnDestroy {
   }
 
   setOperationQuantity(quantity: number | null): void {
+    if (this.operationLocked()) return;
     this.currentOperationForm().quantity = quantity;
     this.operationError.set('');
   }
 
   setOperationReference(reference: string): void {
+    if (this.operationLocked()) return;
     this.currentOperationForm().reference = reference;
   }
 
   setOperationNotes(notes: string): void {
+    if (this.operationLocked()) return;
     this.currentOperationForm().notes = notes;
   }
 
@@ -794,6 +852,7 @@ export class InventoryPage implements OnInit, OnDestroy {
 
   private buildOperationPayload(form: InventoryOperationForm): InventoryOperationRequest {
     return {
+      requestId: crypto.randomUUID(),
       productId: form.productId ?? 0,
       quantity: form.quantity ?? 0,
       reference: this.cleanText(form.reference) ?? undefined,

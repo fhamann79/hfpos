@@ -185,6 +185,7 @@ public class InventoryService : IInventoryService
             .Select(m => new InventoryMovementDto
             {
                 Id = m.Id,
+                RequestId = m.RequestId,
                 ProductId = m.ProductId,
                 ProductName = m.Product.Name,
                 Type = m.Type,
@@ -270,6 +271,7 @@ public class InventoryService : IInventoryService
             .Select(m => new InventoryMovementDto
             {
                 Id = m.Id,
+                RequestId = m.RequestId,
                 ProductId = m.ProductId,
                 ProductName = m.Product.Name,
                 Type = m.Type,
@@ -308,6 +310,7 @@ public class InventoryService : IInventoryService
             .Select(m => new InventoryMovementDto
             {
                 Id = m.Id,
+                RequestId = m.RequestId,
                 ProductId = m.ProductId,
                 ProductName = m.Product.Name,
                 Type = m.Type,
@@ -329,6 +332,7 @@ public class InventoryService : IInventoryService
 
     public Task<InventoryMovementDto> RegisterEntryAsync(InventoryEntryDto dto)
     {
+        CriticalOperationRequest.RequireId(dto.RequestId);
         if (dto.Quantity <= 0m)
         {
             throw new InvalidOperationException("INVALID_QUANTITY");
@@ -343,11 +347,12 @@ public class InventoryService : IInventoryService
             dto.Notes,
             null,
             null,
-            requireActiveProduct: false);
+            requireActiveProduct: false, requestId: dto.RequestId);
     }
 
     public Task<InventoryMovementDto> RegisterExitAsync(InventoryExitDto dto)
     {
+        CriticalOperationRequest.RequireId(dto.RequestId);
         if (dto.Quantity <= 0m)
         {
             throw new InvalidOperationException("INVALID_QUANTITY");
@@ -362,11 +367,12 @@ public class InventoryService : IInventoryService
             dto.Notes,
             null,
             null,
-            requireActiveProduct: false);
+            requireActiveProduct: false, requestId: dto.RequestId);
     }
 
     public Task<InventoryMovementDto> RegisterAdjustmentAsync(InventoryAdjustDto dto)
     {
+        CriticalOperationRequest.RequireId(dto.RequestId);
         if (dto.ExpectedMovementWatermark is null || dto.ExpectedQuantity is null
             || dto.ExpectedCompanyId is null || dto.ExpectedEstablishmentId is null)
             throw new InvalidOperationException("INVENTORY_SNAPSHOT_REQUIRED");
@@ -385,7 +391,7 @@ public class InventoryService : IInventoryService
             null,
             null,
             requireActiveProduct: false,
-            snapshot: dto);
+            snapshot: dto, requestId: dto.RequestId);
     }
 
     public Task<InventoryMovementDto> RegisterOpeningAsync(int productId, decimal quantity, int batchId, int rowNumber)
@@ -525,7 +531,8 @@ public class InventoryService : IInventoryService
         int? sourceLineId,
         bool requireActiveProduct = true,
         InventoryAdjustDto? snapshot = null,
-        bool openingOnly = false)
+        bool openingOnly = false,
+        Guid? requestId = null)
     {
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
@@ -537,10 +544,38 @@ public class InventoryService : IInventoryService
                 : await _context.Database.BeginTransactionAsync();
 
             // Counts/opening also serialize absent stock rows before creating them.
-            if (snapshot is not null || openingOnly)
+            if (snapshot is not null || openingOnly || requestId.HasValue)
                 await _administrationGuard.LockExclusiveOperationalWriteAsync(operationalContext);
             else
                 await _administrationGuard.LockOperationalWriteAsync(operationalContext);
+            string? hash = null;
+            if (requestId.HasValue)
+            {
+                quantity = CriticalOperationRequest.Amount(quantity);
+                reference = CriticalOperationRequest.Text(reference);
+                notes = CriticalOperationRequest.Text(notes);
+                if (quantity < 0m || (type != InventoryMovementType.Adjustment && quantity == 0m))
+                    throw new InvalidOperationException("INVALID_QUANTITY");
+                hash = CriticalOperationRequest.Hash(new
+                {
+                    Version = 1, sourceType, productId, quantity, reference, notes,
+                    snapshot?.ExpectedCompanyId, snapshot?.ExpectedEstablishmentId,
+                    snapshot?.ExpectedMovementWatermark, snapshot?.ExpectedQuantity
+                });
+                var existing = await _context.InventoryMovements.AsNoTracking().SingleOrDefaultAsync(m =>
+                    m.CompanyId == operationalContext.CompanyId && m.RequestId == requestId);
+                if (existing is not null)
+                {
+                    if (existing.RequestHash != hash || existing.UserId != operationalContext.UserId
+                        || existing.EstablishmentId != operationalContext.EstablishmentId
+                        || existing.RequestEmissionPointId != operationalContext.EmissionPointId)
+                        throw new InvalidOperationException("REQUEST_CONFLICT");
+                    var replay = await GetMovementByIdAsync(existing.Id)
+                        ?? throw new KeyNotFoundException("INVENTORY_MOVEMENT_NOT_FOUND");
+                    if (transaction is not null) await transaction.CommitAsync();
+                    return replay;
+                }
+            }
             var product = requireActiveProduct
                 ? await GetValidProductAsync(productId, operationalContext.CompanyId)
                 : await GetProductInCompanyAsync(productId, operationalContext.CompanyId);
@@ -637,6 +672,9 @@ public class InventoryService : IInventoryService
 
             var movement = new InventoryMovement
             {
+                RequestId = requestId,
+                RequestHash = hash,
+                RequestEmissionPointId = requestId.HasValue ? operationalContext.EmissionPointId : null,
                 ProductId = product.Id,
                 CompanyId = operationalContext.CompanyId,
                 EstablishmentId = operationalContext.EstablishmentId,
@@ -666,6 +704,7 @@ public class InventoryService : IInventoryService
             return new InventoryMovementDto
             {
                 Id = movement.Id,
+                RequestId = movement.RequestId,
                 ProductId = product.Id,
                 ProductName = product.Name,
                 Type = movement.Type,
@@ -685,6 +724,7 @@ public class InventoryService : IInventoryService
         }
         catch (Exception ex) when (IsConcurrencyFailure(ex))
         {
+            if (requestId.HasValue) _context.ChangeTracker.Clear();
             _logger.LogWarning(
                 ex,
                 "Inventory concurrency conflict. ProductId {ProductId} MovementType {MovementType} Quantity {Quantity}",
@@ -692,6 +732,11 @@ public class InventoryService : IInventoryService
                 type,
                 quantity);
             throw new InvalidOperationException("INVENTORY_CONCURRENCY_CONFLICT", ex);
+        }
+        catch
+        {
+            if (requestId.HasValue) _context.ChangeTracker.Clear();
+            throw;
         }
     }
 

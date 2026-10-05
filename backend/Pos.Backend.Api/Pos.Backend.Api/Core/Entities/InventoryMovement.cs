@@ -4,6 +4,9 @@ namespace Pos.Backend.Api.Core.Entities;
 
 public class InventoryMovement
 {
+    public Guid? RequestId { get; set; }
+    public string? RequestHash { get; set; }
+    public int? RequestEmissionPointId { get; set; }
     public int Id { get; set; }
 
     public int ProductId { get; set; }

@@ -194,6 +194,8 @@
   (onHide)="closeCreateDialog()"
 >
   <form class="receipt-form" (ngSubmit)="saveReceipt()">
+    <fieldset [disabled]="receiptLocked() || saving()" [attr.inert]="receiptLocked() || saving() ? '' : null"
+      style="border: 0; padding: 0; margin: 0; min-width: 0;">
     <div class="form-grid">
       <label class="field field-wide">
         <span>Proveedor</span>
@@ -315,6 +317,7 @@
       </div>
     </section>
 
+    </fieldset>
     @if (formError()) {
       <p-message severity="error" [text]="formError()"></p-message>
     }
@@ -326,7 +329,7 @@
 
     <div class="dialog-actions">
       <p-button label="Cancelar" severity="secondary" [outlined]="true" type="button" (onClick)="closeCreateDialog()"></p-button>
-      <p-button label="Registrar recepcion" icon="pi pi-check" type="submit" [loading]="saving()"></p-button>
+      <p-button [label]="receiptLocked() ? 'Recuperar recepcion' : 'Registrar recepcion'" icon="pi pi-check" type="submit" [loading]="saving()"></p-button>
     </div>
   </form>
 </p-dialog>

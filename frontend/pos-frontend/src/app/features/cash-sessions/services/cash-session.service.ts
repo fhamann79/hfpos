@@ -1,6 +1,7 @@
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
+import { operationResult } from '../../../core/utils/operation-intent';
 import { PagedResultWithSummary } from '../../../core/models/paged-result.model';
 import { environment } from '../../../../environments/environment';
 import {
@@ -19,7 +20,7 @@ export class CashSessionService {
   private readonly baseUrl = `${environment.apiUrl}/api/CashSessions`;
 
   getCurrent(): Observable<CashSession | null> {
-    return this.http.get<CashSession | null>(`${this.baseUrl}/current`);
+    return this.http.get<CashSession | null>(`${this.baseUrl}/current`).pipe(map(value => value === null ? null : operationResult(value)));
   }
 
   getAll(
@@ -49,18 +50,27 @@ export class CashSessionService {
   }
 
   getById(id: number): Observable<CashSession> {
-    return this.http.get<CashSession>(`${this.baseUrl}/${id}`);
+    return this.http.get<CashSession>(`${this.baseUrl}/${id}`).pipe(map(value => operationResult(value, undefined, id)));
   }
 
   open(payload: OpenCashSessionRequest): Observable<CashSession> {
-    return this.http.post<CashSession>(`${this.baseUrl}/open`, payload);
+    return this.http.post<CashSession>(`${this.baseUrl}/open`, payload).pipe(map(value => operationResult(value, payload.requestId)));
   }
 
   addMovement(id: number, payload: CreateCashMovementRequest): Observable<CashSession> {
-    return this.http.post<CashSession>(`${this.baseUrl}/${id}/movements`, payload);
+    return this.http.post<CashSession>(`${this.baseUrl}/${id}/movements`, payload).pipe(map(value => {
+      operationResult(value, undefined, id);
+      if (!Array.isArray(value.movements) || !value.movements.some(m => m.requestId === payload.requestId && m.id > 0))
+        throw new HttpErrorResponse({ status: 200, error: { error: 'OPERATION_RESULT_UNKNOWN' } });
+      return value;
+    }));
   }
 
   close(id: number, payload: CloseCashSessionRequest): Observable<CashSession> {
-    return this.http.post<CashSession>(`${this.baseUrl}/${id}/close`, payload);
+    return this.http.post<CashSession>(`${this.baseUrl}/${id}/close`, payload).pipe(map(value => {
+      operationResult(value, undefined, id);
+      if (value.status !== 2) throw new HttpErrorResponse({ status: 200, error: { error: 'OPERATION_RESULT_UNKNOWN' } });
+      return value;
+    }));
   }
 }

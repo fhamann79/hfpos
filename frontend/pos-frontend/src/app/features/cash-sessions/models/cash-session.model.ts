@@ -9,6 +9,7 @@ export enum CashMovementType {
 }
 
 export interface CashMovement {
+  requestId?: string | null;
   id: number;
   cashSessionId: number;
   type: CashMovementType;
@@ -49,6 +50,7 @@ export interface CashSessionListItem {
 }
 
 export interface CashSession extends CashSessionListItem {
+  requestId?: string | null;
   companyId: number;
   establishmentId: number;
   emissionPointId: number;
@@ -85,11 +87,13 @@ export interface CashSessionSummary {
 }
 
 export interface OpenCashSessionRequest {
+  requestId: string;
   openingAmount: number;
   openingNotes?: string | null;
 }
 
 export interface CreateCashMovementRequest {
+  requestId: string;
   type: CashMovementType;
   amount: number;
   reason: string;

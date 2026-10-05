@@ -25,6 +25,7 @@ public class PurchaseReceiptsController : ControllerBase
     private readonly TenantAdministrationGuard _administrationGuard;
     private readonly IProductCostService _productCostService;
     private readonly IPurchaseReceiptQueryService _purchaseReceiptQueryService;
+    private readonly IPurchaseReceiptService _purchaseReceiptService;
 
     public PurchaseReceiptsController(
         PosDbContext context,
@@ -33,7 +34,8 @@ public class PurchaseReceiptsController : ControllerBase
         IBusinessClockService businessClock,
         TenantAdministrationGuard administrationGuard,
         IProductCostService productCostService,
-        IPurchaseReceiptQueryService purchaseReceiptQueryService)
+        IPurchaseReceiptQueryService purchaseReceiptQueryService,
+        IPurchaseReceiptService purchaseReceiptService)
     {
         _context = context;
         _inventoryService = inventoryService;
@@ -42,6 +44,7 @@ public class PurchaseReceiptsController : ControllerBase
         _administrationGuard = administrationGuard;
         _productCostService = productCostService;
         _purchaseReceiptQueryService = purchaseReceiptQueryService;
+        _purchaseReceiptService = purchaseReceiptService;
     }
 
     [HttpGet]
@@ -80,6 +83,7 @@ public class PurchaseReceiptsController : ControllerBase
             .Select(r => new PurchaseReceiptDto
             {
                 Id = r.Id,
+                RequestId = r.RequestId,
                 SupplierId = r.SupplierId,
                 SupplierName = r.Supplier.Name,
                 ReceiptNumber = r.ReceiptNumber,
@@ -134,138 +138,24 @@ public class PurchaseReceiptsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<PurchaseReceiptDto>> Create([FromBody] PurchaseReceiptCreateDto dto)
     {
-        if (dto is null || dto.SupplierId <= 0)
-        {
-            return BadRequest(new ApiErrorResponse { Error = "PURCHASE_RECEIPT_SUPPLIER_REQUIRED" });
-        }
-
-        if (dto.Items is null || dto.Items.Count == 0)
-        {
-            return BadRequest(new ApiErrorResponse { Error = "PURCHASE_RECEIPT_ITEMS_REQUIRED" });
-        }
-
-        foreach (var item in dto.Items)
-        {
-            if (item.Quantity <= 0m)
-            {
-                return BadRequest(new ApiErrorResponse { Error = "PURCHASE_RECEIPT_QUANTITY_INVALID" });
-            }
-
-            if (item.UnitCost < 0m)
-            {
-                return BadRequest(new ApiErrorResponse { Error = "PURCHASE_RECEIPT_UNIT_COST_INVALID" });
-            }
-        }
-
-        var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
-
-        await using var transaction = await _context.Database.BeginTransactionAsync();
-
         try
         {
-            await _administrationGuard.LockOperationalWriteAsync(operationalContext);
-
-            var supplierExists = await _context.Suppliers.AnyAsync(s =>
-                s.Id == dto.SupplierId
-                && s.CompanyId == operationalContext.CompanyId
-                && s.IsActive);
-
-            if (!supplierExists)
-            {
-                return NotFound(new ApiErrorResponse { Error = "SUPPLIER_NOT_FOUND" });
-            }
-
-            var productIds = dto.Items
-                .Select(item => item.ProductId)
-                .Distinct()
-                .ToArray();
-            var productById = await _productCostService.LockProductsAsync(
-                operationalContext.CompanyId,
-                productIds);
-
-            if (productById.Count != productIds.Length)
-            {
-                return NotFound(new ApiErrorResponse { Error = "PRODUCT_NOT_FOUND" });
-            }
-
-            if (productById.Values.Any(product => !product.IsActive))
-            {
-                return BadRequest(new ApiErrorResponse { Error = "PRODUCT_INACTIVE" });
-            }
-
-            var now = _businessClock.UtcNow;
-            var businessDate = dto.ReceiptDate == default
-                ? _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId)
-                : DateOnly.FromDateTime(dto.ReceiptDate);
-            var receiptDate = _businessClock.GetBusinessDateStartUtc(
-                businessDate,
-                operationalContext.CompanyTimeZoneId);
-            var receiptItems = new List<PurchaseReceiptItem>();
-
-            foreach (var itemDto in dto.Items)
-            {
-                var product = productById[itemDto.ProductId];
-                var unitCost = RoundMoney(itemDto.UnitCost);
-                var quantity = RoundQuantity(itemDto.Quantity);
-                var lineTotal = RoundMoney(quantity * unitCost);
-                var receiptItem = new PurchaseReceiptItem
-                {
-                    ProductId = product.Id,
-                    Quantity = quantity,
-                    UnitCost = unitCost,
-                    LineTotal = lineTotal,
-                    Notes = NormalizeOptionalText(itemDto.Notes)
-                };
-
-                receiptItems.Add(receiptItem);
-                _productCostService.ApplyPurchaseReceiptCost(
-                    product,
-                    receiptItem,
-                    operationalContext.UserId,
-                    now);
-            }
-
-            var receipt = new PurchaseReceipt
-            {
-                CompanyId = operationalContext.CompanyId,
-                EstablishmentId = operationalContext.EstablishmentId,
-                SupplierId = dto.SupplierId,
-                ReceiptNumber = NormalizeOptionalText(dto.ReceiptNumber),
-                SupplierDocumentNumber = NormalizeOptionalText(dto.SupplierDocumentNumber),
-                ReceiptDate = receiptDate,
-                ReceiptBusinessDate = businessDate,
-                ReceiptTimeZoneIdSnapshot = operationalContext.CompanyTimeZoneId,
-                Status = PurchaseReceiptStatus.Posted,
-                Subtotal = RoundMoney(receiptItems.Sum(i => i.LineTotal)),
-                Notes = NormalizeOptionalText(dto.Notes),
-                CreatedAt = now,
-                CreatedByUserId = operationalContext.UserId,
-                PostedAt = now,
-                Items = receiptItems
-            };
-
-            _context.PurchaseReceipts.Add(receipt);
-            await _context.SaveChangesAsync();
-
-            foreach (var item in receipt.Items.OrderBy(item => item.ProductId).ThenBy(item => item.Id))
-            {
-                await _inventoryService.RegisterPurchaseReceiptAsync(
-                    item.ProductId,
-                    item.Quantity,
-                    receipt.Id,
-                    item.Id,
-                    item.Notes ?? receipt.SupplierDocumentNumber);
-            }
-
-            await transaction.CommitAsync();
-
-            var response = await LoadReceiptDtoAsync(receipt.Id, operationalContext.CompanyId, operationalContext.EstablishmentId);
-            return CreatedAtAction(nameof(GetById), new { id = receipt.Id }, response);
+            var response = await _purchaseReceiptService.CreateAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
         }
-        catch (InvalidOperationException ex) when (TryMapInventoryError(ex.Message, out var result))
+        catch (KeyNotFoundException ex)
         {
-            await transaction.RollbackAsync();
-            return result;
+            return NotFound(new ApiErrorResponse { Error = ex.Message });
+        }
+        catch (InvalidOperationException ex) when (ex.Message is "REQUEST_CONFLICT" or "INVENTORY_CONCURRENCY_CONFLICT")
+        {
+            return Conflict(new ApiErrorResponse { Error = ex.Message });
+        }
+        catch (InvalidOperationException ex) when (ex.Message is "REQUEST_ID_REQUIRED" or "PURCHASE_RECEIPT_SUPPLIER_REQUIRED"
+            or "PURCHASE_RECEIPT_ITEMS_REQUIRED" or "PURCHASE_RECEIPT_QUANTITY_INVALID"
+            or "PURCHASE_RECEIPT_UNIT_COST_INVALID" or "PRODUCT_INACTIVE" or "INVALID_QUANTITY")
+        {
+            return BadRequest(new ApiErrorResponse { Error = ex.Message });
         }
     }
 
@@ -382,6 +272,7 @@ public class PurchaseReceiptsController : ControllerBase
             .Select(r => new PurchaseReceiptDto
             {
                 Id = r.Id,
+                RequestId = r.RequestId,
                 SupplierId = r.SupplierId,
                 SupplierName = r.Supplier.Name,
                 ReceiptNumber = r.ReceiptNumber,

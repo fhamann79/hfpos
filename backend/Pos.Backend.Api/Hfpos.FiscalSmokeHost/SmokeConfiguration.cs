@@ -7,16 +7,17 @@ namespace Hfpos.FiscalSmokeHost;
 
 internal static class SmokeConfiguration
 {
+    internal static bool CriticalOperations => Environment.GetEnvironmentVariable("HF_POS_SYNTHETIC_CRITICAL_HOST") == "1";
     internal static void Apply(IConfigurationBuilder configuration)
     {
         var connection = Environment.GetEnvironmentVariable("HF_POS_TEST_CONNECTION_STRING")
             ?? throw new InvalidOperationException("HF_POS_TEST_CONNECTION_STRING is required.");
         var parsed = new NpgsqlConnectionStringBuilder(connection);
-        if (parsed.Database != "hfpos_test_528_smoke" || parsed.Username != "hfpos_test"
+        if (parsed.Database != (CriticalOperations ? "hfpos_test_529" : "hfpos_test_528_smoke") || parsed.Username != "hfpos_test"
             || parsed.Host is not ("localhost" or "127.0.0.1"))
-            throw new InvalidOperationException("Smoke host accepts only the dedicated loopback hfpos_test_528_smoke database/user.");
+            throw new InvalidOperationException("Smoke host accepts only its dedicated loopback test database / hfpos_test user.");
         var work = Path.GetFullPath(Environment.GetEnvironmentVariable("HF_POS_SMOKE_WORKDIR")
-            ?? Path.Combine(Path.GetTempPath(), "hfpos-528-synthetic-smoke"));
+            ?? Path.Combine(Path.GetTempPath(), CriticalOperations ? "hfpos-529-synthetic-smoke" : "hfpos-528-synthetic-smoke"));
         var keys = Directory.CreateDirectory(Path.Combine(work, "keys"));
         // No API appsettings, ambient configuration or command-line override is trusted by this test-only host.
         configuration.Sources.Clear();

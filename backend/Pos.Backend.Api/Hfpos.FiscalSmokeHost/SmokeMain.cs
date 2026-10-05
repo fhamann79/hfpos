@@ -20,6 +20,11 @@ public static class SmokeMain
 {
     public static async Task Main(string[] args)
     {
+        if (args.Contains("--critical-operations"))
+        {
+            await CriticalOperationsSmoke.RunAsync(args);
+            return;
+        }
         var connection = Environment.GetEnvironmentVariable(PostgresDatabaseFixture.ConnectionStringEnvironmentVariable)
             ?? throw new InvalidOperationException("HF_POS_TEST_CONNECTION_STRING is required.");
         var parsed = new NpgsqlConnectionStringBuilder(connection);
@@ -111,6 +116,8 @@ public sealed class SmokeStartup : IHostingStartup
         {
             services.AddSingleton<SmokeTransport>();
             services.AddSingleton<IHttpMessageHandlerBuilderFilter, SyntheticHttpFilter>();
+            if (SmokeConfiguration.CriticalOperations)
+                services.AddSingleton<IStartupFilter, CriticalOperationsFaultFilter>();
             services.AddControllers().AddApplicationPart(typeof(SmokeStartup).Assembly)
                 .AddApplicationPart(typeof(PosDbContext).Assembly);
         });

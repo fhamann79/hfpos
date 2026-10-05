@@ -56,7 +56,7 @@ public sealed class SaleCheckoutRecoveryTests(PostgresDatabaseFixture database) 
         Task? first = null;
         Task? second = null;
         Task Move() => movement.CashSessions.AddMovementAsync(cash,
-            new() { Type = CashMovementType.CashIn, Amount = 2m, Reason = "Synthetic manual cash" });
+            new() { RequestId = Guid.NewGuid(), Type = CashMovementType.CashIn, Amount = 2m, Reason = "Synthetic manual cash" });
         Task Sell() => sale.Sales.CreateAsync(Request(tenant));
         try
         {

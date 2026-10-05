@@ -453,6 +453,11 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<PurchaseReceipt>(entity =>
         {
+            entity.Property(e => e.RequestHash).HasMaxLength(64);
+            entity.HasIndex(e => new { e.CompanyId, e.RequestId }).IsUnique()
+                .HasFilter("\"RequestId\" IS NOT NULL");
+            entity.ToTable(t => t.HasCheckConstraint("CK_PurchaseReceipt_Request",
+                """("RequestId" IS NULL AND "RequestHash" IS NULL AND "RequestEmissionPointId" IS NULL) OR ("RequestId" IS NOT NULL AND "RequestId" <> '00000000-0000-0000-0000-000000000000'::uuid AND "RequestHash" IS NOT NULL AND "RequestHash" ~ '^[0-9A-F]{64}$' AND "RequestEmissionPointId" IS NOT NULL AND "RequestEmissionPointId" > 0)"""));
             entity.Property(r => r.ReceiptNumber)
                 .HasMaxLength(50);
 
@@ -630,6 +635,11 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<InventoryMovement>(entity =>
         {
+            entity.Property(e => e.RequestHash).HasMaxLength(64);
+            entity.HasIndex(e => new { e.CompanyId, e.RequestId }).IsUnique()
+                .HasFilter("\"RequestId\" IS NOT NULL");
+            entity.ToTable(t => t.HasCheckConstraint("CK_InventoryMovement_Request",
+                """("RequestId" IS NULL AND "RequestHash" IS NULL AND "RequestEmissionPointId" IS NULL) OR ("RequestId" IS NOT NULL AND "RequestId" <> '00000000-0000-0000-0000-000000000000'::uuid AND "RequestHash" IS NOT NULL AND "RequestHash" ~ '^[0-9A-F]{64}$' AND "RequestEmissionPointId" IS NOT NULL AND "RequestEmissionPointId" > 0 AND "SourceType" IN (1, 2, 3))"""));
             entity.Property(im => im.SourceType)
                 .HasConversion<int>();
 
@@ -836,6 +846,11 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<CashSession>(entity =>
         {
+            entity.Property(e => e.RequestHash).HasMaxLength(64);
+            entity.HasIndex(e => new { e.CompanyId, e.RequestId }).IsUnique()
+                .HasFilter("\"RequestId\" IS NOT NULL");
+            entity.ToTable(t => t.HasCheckConstraint("CK_CashSession_Request",
+                """("RequestId" IS NULL AND "RequestHash" IS NULL) OR ("RequestId" IS NOT NULL AND "RequestId" <> '00000000-0000-0000-0000-000000000000'::uuid AND "RequestHash" IS NOT NULL AND "RequestHash" ~ '^[0-9A-F]{64}$')"""));
             entity.Property(s => s.Status)
                 .HasConversion<int>();
 
@@ -962,6 +977,12 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<CashMovement>(entity =>
         {
+            entity.HasIndex(e => e.CompanyId);
+            entity.Property(e => e.RequestHash).HasMaxLength(64);
+            entity.HasIndex(e => new { e.CompanyId, e.RequestId }).IsUnique()
+                .HasFilter("\"RequestId\" IS NOT NULL");
+            entity.ToTable(t => t.HasCheckConstraint("CK_CashMovement_Request",
+                """("RequestId" IS NULL AND "RequestHash" IS NULL) OR ("RequestId" IS NOT NULL AND "RequestId" <> '00000000-0000-0000-0000-000000000000'::uuid AND "RequestHash" IS NOT NULL AND "RequestHash" ~ '^[0-9A-F]{64}$')"""));
             entity.Property(m => m.Type)
                 .HasConversion<int>();
 

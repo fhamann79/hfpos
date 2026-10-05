@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+
+beforeEach(() => sessionStorage.clear());
 import { Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { HttpErrorResponse } from '@angular/common/http';

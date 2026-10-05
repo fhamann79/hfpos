@@ -1,4 +1,5 @@
 export interface InventoryOperationRequest {
+  requestId: string;
   productId: number;
   quantity: number;
   reference?: string;

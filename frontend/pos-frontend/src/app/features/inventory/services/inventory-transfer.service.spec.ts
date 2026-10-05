@@ -25,7 +25,7 @@ describe('InventoryService transfer API', () => {
     const post = http.expectOne(request => request.url.endsWith('/api/inventory/transfers'));
     expect(post.request.method).toBe('POST');
     expect(post.request.body).toEqual(payload);
-    post.flush({});
+    post.flush({ id: 41, requestId: payload.requestId });
 
     service.getTransferById(41).subscribe();
     const detail = http.expectOne(request => request.url.endsWith('/api/inventory/transfers/41'));

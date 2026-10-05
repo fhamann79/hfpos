@@ -6,11 +6,15 @@
     </div>
     <label class="field">
       <span>Fecha de negocio</span>
-      <input pInputText type="date" [(ngModel)]="businessDate" (change)="changeDate()" />
+      <input pInputText type="date" [(ngModel)]="businessDate" (change)="changeDate()" [disabled]="saving() || intentLocked()" />
     </label>
   </div>
 
   @if (overviewError()) { <p-message severity="error" [text]="overviewError()"></p-message> }
+  @if (intentLocked()) {
+    <p-button label="Recuperar conciliacion pendiente" icon="pi pi-refresh" [loading]="saving()" (onClick)="recoverSettlement()"></p-button>
+    @if (formError()) { <p-message severity="error" [text]="formError()"></p-message> }
+  }
   @if (overviewLoading()) { <p>Consultando actividad financiera...</p> }
   @if (overview(); as data) {
     @if (data.businessDate >= data.currentBusinessDate) {
@@ -97,7 +101,7 @@
     @if (selectedMethod; as method) {
       <form class="settlement-form" (ngSubmit)="confirmSettlement()">
         <dl class="settlement-summary">
-          <div><dt>Fecha</dt><dd>{{ data.businessDate }}</dd></div>
+          <div><dt>Fecha</dt><dd>{{ selectedDate }}</dd></div>
           <div><dt>Método</dt><dd>{{ methodLabel(method.paymentMethod) }}</dd></div>
           <div><dt>Bruto</dt><dd>{{ method.grossSalesAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</dd></div>
           <div><dt>Anulaciones</dt><dd>{{ method.voidAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</dd></div>
@@ -105,11 +109,11 @@
           <div><dt>Neto esperado</dt><dd>{{ method.netPaymentAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</dd></div>
         </dl>
         <label class="field"><span>Monto liquidado</span><input pInputText type="number" step="0.01"
-          [(ngModel)]="settledAmount" (ngModelChange)="draftChanged()" name="settledAmount" [disabled]="saving()" required /></label>
+          [(ngModel)]="settledAmount" (ngModelChange)="draftChanged()" name="settledAmount" [disabled]="saving() || intentLocked()" required /></label>
         <label class="field"><span>Referencia</span><input pInputText maxlength="150"
-          [(ngModel)]="reference" (ngModelChange)="draftChanged()" name="reference" [disabled]="saving()" /></label>
+          [(ngModel)]="reference" (ngModelChange)="draftChanged()" name="reference" [disabled]="saving() || intentLocked()" /></label>
         <label class="field"><span>Notas</span><textarea pTextarea rows="3" maxlength="500"
-          [(ngModel)]="notes" (ngModelChange)="draftChanged()" name="notes" [disabled]="saving()"></textarea></label>
+          [(ngModel)]="notes" (ngModelChange)="draftChanged()" name="notes" [disabled]="saving() || intentLocked()"></textarea></label>
         <div class="difference-preview">Diferencia:
           <strong>{{ differencePreview === null ? '-' : (differencePreview | currency: 'USD' : 'symbol' : '1.2-2') }}</strong>
         </div>

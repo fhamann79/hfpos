@@ -4,6 +4,7 @@ namespace Pos.Backend.Api.Core.DTOs;
 
 public class CashMovementDto
 {
+    public Guid? RequestId { get; set; }
     public int Id { get; set; }
     public int CashSessionId { get; set; }
     public CashMovementType Type { get; set; }

@@ -97,6 +97,13 @@
     </section>
   }
 
+  @if (canWrite()) {
+    <div class="current-actions">
+      @if (openLocked()) { <p-button label="Consultar apertura pendiente" icon="pi pi-refresh" (onClick)="openCashDialog()"></p-button> }
+      @if (movementLocked()) { <p-button label="Recuperar movimiento pendiente" icon="pi pi-refresh" (onClick)="openMovementDialog(1)"></p-button> }
+      @if (closeLocked()) { <p-button label="Recuperar cierre pendiente" icon="pi pi-refresh" (onClick)="openCloseDialog()"></p-button> }
+    </div>
+  }
   <app-payment-reconciliation-panel [canWrite]="canWrite()"></app-payment-reconciliation-panel>
 
   <section class="cash-section">
@@ -250,11 +257,11 @@
   <form class="cash-form" (ngSubmit)="confirmOpen()">
     <label class="field">
       <span>Monto inicial</span>
-      <input pInputText type="number" min="0" step="0.01" [(ngModel)]="openingAmount" name="openingAmount" />
+      <input pInputText type="number" min="0" step="0.01" [(ngModel)]="openingAmount" name="openingAmount" [disabled]="saving() || openLocked()" />
     </label>
     <label class="field">
       <span>Notas</span>
-      <textarea pTextarea rows="3" maxlength="500" [(ngModel)]="openingNotes" name="openingNotes"></textarea>
+      <textarea pTextarea rows="3" maxlength="500" [(ngModel)]="openingNotes" name="openingNotes" [disabled]="saving() || openLocked()"></textarea>
     </label>
 
     @if (formError()) {
@@ -263,7 +270,7 @@
 
     <div class="dialog-actions">
       <p-button label="Cancelar" severity="secondary" [outlined]="true" type="button" (onClick)="closeOpenDialog()"></p-button>
-      <p-button label="Abrir caja" icon="pi pi-check" type="submit" [loading]="saving()"></p-button>
+      <p-button [label]="openLocked() ? 'Consultar estado' : 'Abrir caja'" icon="pi pi-check" type="submit" [loading]="saving()"></p-button>
     </div>
   </form>
 </p-dialog>
@@ -278,12 +285,14 @@
   (onHide)="closeMovementDialog()"
 >
   <form class="cash-form" (ngSubmit)="confirmMovement()">
+    <strong>Caja #{{ movementTargetId }}</strong>
     <label class="field">
       <span>Tipo</span>
       <p-select
         [options]="movementOptions"
         [(ngModel)]="movementType"
         name="movementType"
+        [disabled]="saving() || movementLocked()"
         optionLabel="label"
         optionValue="value"
         appendTo="body"
@@ -291,11 +300,11 @@
     </label>
     <label class="field">
       <span>Monto</span>
-      <input pInputText type="number" min="0.01" step="0.01" [(ngModel)]="movementAmount" name="movementAmount" />
+      <input pInputText type="number" min="0.01" step="0.01" [(ngModel)]="movementAmount" name="movementAmount" [disabled]="saving() || movementLocked()" />
     </label>
     <label class="field">
       <span>Razón</span>
-      <textarea pTextarea rows="3" maxlength="300" [(ngModel)]="movementReason" name="movementReason"></textarea>
+      <textarea pTextarea rows="3" maxlength="300" [(ngModel)]="movementReason" name="movementReason" [disabled]="saving() || movementLocked()"></textarea>
     </label>
 
     @if (formError()) {
@@ -304,7 +313,7 @@
 
     <div class="dialog-actions">
       <p-button label="Cancelar" severity="secondary" [outlined]="true" type="button" (onClick)="closeMovementDialog()"></p-button>
-      <p-button label="Registrar" icon="pi pi-check" type="submit" [loading]="saving()"></p-button>
+      <p-button [label]="movementLocked() ? 'Recuperar movimiento' : 'Registrar'" icon="pi pi-check" type="submit" [loading]="saving()"></p-button>
     </div>
   </form>
 </p-dialog>
@@ -318,19 +327,19 @@
   header="Cerrar caja"
   (onHide)="closeCloseDialog()"
 >
-  @if (currentSession(); as session) {
+  @if (closeDialogVisible) {
     <form class="cash-form" (ngSubmit)="confirmClose()">
       <div class="closing-summary">
-        <span>Efectivo esperado</span>
-        <strong>{{ session.expectedCashAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong>
+        <span>Caja #{{ closeTargetId }}</span>
+        <strong>{{ closingSession()?.expectedCashAmount | currency: 'USD' : 'symbol' : '1.2-2' }}</strong>
       </div>
       <label class="field">
         <span>Efectivo contado</span>
-        <input pInputText type="number" min="0" step="0.01" [(ngModel)]="countedCashAmount" name="countedCashAmount" />
+        <input pInputText type="number" min="0" step="0.01" [(ngModel)]="countedCashAmount" name="countedCashAmount" [disabled]="saving() || closeLocked()" />
       </label>
       <label class="field">
         <span>Notas de cierre</span>
-        <textarea pTextarea rows="3" maxlength="500" [(ngModel)]="closingNotes" name="closingNotes"></textarea>
+        <textarea pTextarea rows="3" maxlength="500" [(ngModel)]="closingNotes" name="closingNotes" [disabled]="saving() || closeLocked()"></textarea>
       </label>
 
       @if (formError()) {
@@ -339,7 +348,7 @@
 
       <div class="dialog-actions">
         <p-button label="Volver" severity="secondary" [outlined]="true" type="button" (onClick)="closeCloseDialog()"></p-button>
-        <p-button label="Confirmar cierre" icon="pi pi-lock" type="submit" [loading]="saving()"></p-button>
+        <p-button [label]="closeLocked() ? 'Recuperar cierre' : 'Confirmar cierre'" icon="pi pi-lock" type="submit" [loading]="saving()"></p-button>
       </div>
     </form>
   }

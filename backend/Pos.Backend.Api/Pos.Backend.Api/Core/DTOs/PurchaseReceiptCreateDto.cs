@@ -2,6 +2,7 @@ namespace Pos.Backend.Api.Core.DTOs;
 
 public class PurchaseReceiptCreateDto
 {
+    public Guid RequestId { get; set; }
     public int SupplierId { get; set; }
     public string? ReceiptNumber { get; set; }
     public string? SupplierDocumentNumber { get; set; }

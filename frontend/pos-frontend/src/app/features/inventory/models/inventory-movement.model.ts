@@ -23,6 +23,7 @@ export enum InventoryMovementSourceType {
 }
 
 export interface InventoryMovement {
+  requestId?: string | null;
   id: number;
   productId: number;
   productName: string;

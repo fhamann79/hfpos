@@ -126,6 +126,8 @@ public class CashSessionsController : ControllerBase
 
         return code switch
         {
+            "REQUEST_CONFLICT" => Conflict(new ApiErrorResponse { Error = code }),
+            "REQUEST_ID_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "CASH_SESSION_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CASH_SESSION_CONTEXT_MISMATCH" => StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse { Error = code }),
             "CASH_SESSION_ALREADY_OPEN" => Conflict(new ApiErrorResponse { Error = code }),

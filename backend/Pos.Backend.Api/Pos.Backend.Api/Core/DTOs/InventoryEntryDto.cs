@@ -4,6 +4,7 @@ namespace Pos.Backend.Api.Core.DTOs;
 
 public class InventoryEntryDto
 {
+    public Guid RequestId { get; set; }
     [Required]
     public int ProductId { get; set; }
 

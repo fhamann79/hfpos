@@ -1,4 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+
+beforeEach(() => sessionStorage.clear());
 import { of } from 'rxjs';
 import { vi } from 'vitest';
 import { PermissionService } from '../../../../core/services/permission.service';
@@ -80,7 +82,9 @@ describe('PurchaseReceiptsPage', () => {
   });
 
   it('explains inventory reversal and provenance-aware cost resolution before canceling', async () => {
-    component.selectedReceipt.set(receipt(PurchaseReceiptStatus.Posted, null, null));
+    const selected = receipt(PurchaseReceiptStatus.Posted, null, null);
+    purchaseReceiptService.getById.mockReturnValueOnce(of(selected));
+    component.openDetail(selected);
     component.openCancelDialog();
     fixture.detectChanges();
     await fixture.whenStable();

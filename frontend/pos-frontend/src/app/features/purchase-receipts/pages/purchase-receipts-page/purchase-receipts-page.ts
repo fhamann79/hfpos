@@ -1,6 +1,6 @@
 import { CommonModule, CurrencyPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { finalize } from 'rxjs';
 import { MessageService } from 'primeng/api';
@@ -23,6 +23,7 @@ import {
   formatBusinessTime as formatBusinessTimeValue,
 } from '../../../../core/utils/business-date-format';
 import { resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
+import { OperationIntent, definitiveOperationRejection, operationActor, operationScope } from '../../../../core/utils/operation-intent';
 import { Product } from '../../../catalog/models/product.model';
 import { ProductService } from '../../../catalog/services/product.service';
 import { Supplier } from '../../../suppliers/models/supplier.model';
@@ -77,13 +78,26 @@ const EMPTY_SUMMARY: PurchaseReceiptSummary = {
   templateUrl: './purchase-receipts-page.html',
   styleUrl: './purchase-receipts-page.scss',
 })
-export class PurchaseReceiptsPage implements OnInit {
+export class PurchaseReceiptsPage implements OnInit, OnDestroy {
   private readonly purchaseReceiptService = inject(PurchaseReceiptService);
   private readonly supplierService = inject(SupplierService);
   private readonly productService = inject(ProductService);
   private readonly permissionService = inject(PermissionService);
   private readonly authStore = inject(AuthStore);
   private readonly messageService = inject(MessageService);
+  private readonly receiptIntent = new OperationIntent<CreatePurchaseReceiptRequest>('receipt', operationActor(this.authStore));
+  private detailSequence = 0;
+  private selectedReceiptScope: string | null = null;
+  private destroyed = false;
+  private cancelTarget: { id: number; scope: string } | null = null;
+  readonly receiptLocked = signal(this.receiptIntent.pending);
+
+  ngOnDestroy(): void {
+    this.destroyed = true;
+    ++this.detailSequence;
+    ++this.supplierLookupRequestId;
+    ++this.productLookupRequestId;
+  }
   private supplierLookupRequestId = 0;
   private productLookupRequestId = 0;
 
@@ -264,13 +278,29 @@ export class PurchaseReceiptsPage implements OnInit {
       return;
     }
 
-    this.resetForm();
+    if (this.saving()) return;
+    if (!this.receiptIntent.pending) this.resetForm();
+    else {
+      try {
+        const payload = this.receiptIntent.retry(operationScope(this.authStore));
+        this.supplierId = payload.supplierId;
+        this.receiptNumber = payload.receiptNumber ?? '';
+        this.supplierDocumentNumber = payload.supplierDocumentNumber ?? '';
+        this.receiptDate = payload.receiptDate;
+        this.notes = payload.notes ?? '';
+        this.draftItems.set(payload.items.map((item, uid) => ({ ...item, uid, notes: item.notes ?? '' })));
+        this.formError.set('Resultado pendiente. Reintenta la misma recepcion para recuperarlo.');
+      } catch (error) {
+        this.formError.set(error instanceof Error ? error.message : 'Operacion pendiente.');
+      }
+    }
     this.createDialogVisible = true;
     this.searchSuppliers('');
     this.searchProducts('');
   }
 
   closeCreateDialog(): void {
+    if (this.saving()) { this.createDialogVisible = true; return; }
     this.createDialogVisible = false;
     this.formError.set('');
     this.saving.set(false);
@@ -367,21 +397,33 @@ export class PurchaseReceiptsPage implements OnInit {
   }
 
   saveReceipt(): void {
-    if (!this.canWrite()) {
+    if (!this.canWrite() || this.saving() || this.destroyed) {
       return;
     }
 
-    const validationError = this.validateForm();
+    const wasRetry = this.receiptIntent.pending;
+    const validationError = wasRetry ? '' : this.validateForm();
     this.formError.set(validationError);
 
     if (validationError) {
       return;
     }
 
+    const scope = operationScope(this.authStore);
+    let payload: CreatePurchaseReceiptRequest;
+    try {
+      payload = this.receiptIntent.capture(scope, this.buildPayload());
+    } catch (error) {
+      this.formError.set(error instanceof Error ? error.message : 'No se pudo conservar la solicitud.');
+      return;
+    }
+    this.receiptLocked.set(true);
     this.saving.set(true);
-
-    this.purchaseReceiptService.create(this.buildPayload()).subscribe({
+    this.purchaseReceiptService.create(payload).subscribe({
       next: (receipt) => {
+        if (this.destroyed || scope !== operationScope(this.authStore)) return;
+        this.receiptIntent.clear();
+        this.receiptLocked.set(false);
         this.saving.set(false);
         this.messageService.add({
           severity: 'success',
@@ -389,29 +431,43 @@ export class PurchaseReceiptsPage implements OnInit {
           detail: 'El inventario fue actualizado correctamente.',
         });
         this.closeCreateDialog();
+        ++this.detailSequence;
+        this.selectedReceiptScope = scope;
         this.selectedReceipt.set(receipt);
         this.detailDialogVisible = true;
         this.loadReceipts();
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || scope !== operationScope(this.authStore)) return;
         this.saving.set(false);
+        if (!wasRetry && definitiveOperationRejection(error)) {
+          this.receiptIntent.clear();
+          this.receiptLocked.set(false);
+        }
         this.formError.set(resolveHttpErrorMessage(error, 'No se pudo registrar la recepcion.'));
       },
     });
   }
 
   openDetail(receipt: PurchaseReceiptListItem): void {
+    const sequence = ++this.detailSequence;
+    const scope = operationScope(this.authStore);
     this.detailDialogVisible = true;
+    this.selectedReceiptScope = scope;
     this.detailLoading.set(true);
     this.detailError.set('');
     this.selectedReceipt.set(null);
 
     this.purchaseReceiptService.getById(receipt.id).subscribe({
       next: (detail) => {
+        if (this.destroyed || sequence !== this.detailSequence || scope !== operationScope(this.authStore)
+          || !this.detailDialogVisible || detail.id !== receipt.id) return;
         this.selectedReceipt.set(detail);
         this.detailLoading.set(false);
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || sequence !== this.detailSequence || scope !== operationScope(this.authStore)
+          || !this.detailDialogVisible) return;
         this.detailLoading.set(false);
         this.detailError.set(resolveHttpErrorMessage(error, 'No se pudo cargar el detalle de la recepcion.'));
       },
@@ -419,23 +475,30 @@ export class PurchaseReceiptsPage implements OnInit {
   }
 
   closeDetailDialog(): void {
+    ++this.detailSequence;
+    this.detailLoading.set(false);
     this.detailDialogVisible = false;
     this.selectedReceipt.set(null);
     this.detailError.set('');
+    this.selectedReceiptScope = null;
   }
 
   openCancelDialog(): void {
     const receipt = this.selectedReceipt();
-    if (!this.canWrite() || !receipt || receipt.status !== PurchaseReceiptStatus.Posted) {
+    if (!this.canWrite() || !receipt || receipt.status !== PurchaseReceiptStatus.Posted
+      || this.selectedReceiptScope !== operationScope(this.authStore)) {
       return;
     }
 
     this.cancelReason = '';
+    this.cancelTarget = { id: receipt.id, scope: operationScope(this.authStore) };
     this.cancelError.set('');
     this.cancelDialogVisible = true;
   }
 
   closeCancelDialog(): void {
+    if (this.canceling()) { this.cancelDialogVisible = true; return; }
+    this.cancelTarget = null;
     this.cancelDialogVisible = false;
     this.cancelReason = '';
     this.cancelError.set('');
@@ -443,8 +506,9 @@ export class PurchaseReceiptsPage implements OnInit {
   }
 
   confirmCancelReceipt(): void {
-    const receipt = this.selectedReceipt();
-    if (!this.canWrite() || !receipt || receipt.status !== PurchaseReceiptStatus.Posted) {
+    const target = this.cancelTarget;
+    if (!this.canWrite() || !target || this.canceling() || this.destroyed
+      || target.scope !== operationScope(this.authStore)) {
       return;
     }
 
@@ -457,10 +521,12 @@ export class PurchaseReceiptsPage implements OnInit {
     this.canceling.set(true);
     this.cancelError.set('');
 
-    this.purchaseReceiptService.cancel(receipt.id, { reason }).subscribe({
+    ++this.detailSequence;
+    this.purchaseReceiptService.cancel(target.id, { reason }).subscribe({
       next: (updatedReceipt) => {
+        if (this.destroyed || this.cancelTarget !== target || target.scope !== operationScope(this.authStore)) return;
         this.canceling.set(false);
-        this.selectedReceipt.set(updatedReceipt);
+        if (this.selectedReceipt()?.id === target.id) this.selectedReceipt.set(updatedReceipt);
         this.closeCancelDialog();
         this.messageService.add({
           severity: 'success',
@@ -470,6 +536,7 @@ export class PurchaseReceiptsPage implements OnInit {
         this.loadReceipts();
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || this.cancelTarget !== target || target.scope !== operationScope(this.authStore)) return;
         this.canceling.set(false);
         this.cancelError.set(resolveHttpErrorMessage(error, 'No se pudo cancelar la recepción.'));
       },
@@ -619,6 +686,7 @@ export class PurchaseReceiptsPage implements OnInit {
 
   private buildPayload(): CreatePurchaseReceiptRequest {
     return {
+      requestId: crypto.randomUUID(),
       supplierId: this.supplierId ?? 0,
       receiptNumber: this.normalizeOptionalText(this.receiptNumber),
       supplierDocumentNumber: this.normalizeOptionalText(this.supplierDocumentNumber),
