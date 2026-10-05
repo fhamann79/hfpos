@@ -248,11 +248,13 @@
 <p-dialog
   [visible]="openDialogVisible"
   [modal]="true"
-  [closable]="true"
+  [closable]="!saving()"
+  [closeOnEscape]="!saving()"
+  [dismissableMask]="false"
+  (visibleChange)="openDialogVisible = $event; !$event && closeOpenDialog()"
   [draggable]="false"
   [style]="{ width: '34rem', maxWidth: '94vw' }"
   header="Abrir caja"
-  (onHide)="closeOpenDialog()"
 >
   <form class="cash-form" (ngSubmit)="confirmOpen()">
     <label class="field">
@@ -278,11 +280,13 @@
 <p-dialog
   [visible]="movementDialogVisible"
   [modal]="true"
-  [closable]="true"
+  [closable]="!saving()"
+  [closeOnEscape]="!saving()"
+  [dismissableMask]="false"
+  (visibleChange)="movementDialogVisible = $event; !$event && closeMovementDialog()"
   [draggable]="false"
   [style]="{ width: '36rem', maxWidth: '94vw' }"
   [header]="movementType === 1 ? 'Ingreso de efectivo' : 'Egreso de efectivo'"
-  (onHide)="closeMovementDialog()"
 >
   <form class="cash-form" (ngSubmit)="confirmMovement()">
     <strong>Caja #{{ movementTargetId }}</strong>
@@ -321,11 +325,13 @@
 <p-dialog
   [visible]="closeDialogVisible"
   [modal]="true"
-  [closable]="true"
+  [closable]="!saving()"
+  [closeOnEscape]="!saving()"
+  [dismissableMask]="false"
+  (visibleChange)="closeDialogVisible = $event; !$event && closeCloseDialog()"
   [draggable]="false"
   [style]="{ width: '38rem', maxWidth: '94vw' }"
   header="Cerrar caja"
-  (onHide)="closeCloseDialog()"
 >
   @if (closeDialogVisible) {
     <form class="cash-form" (ngSubmit)="confirmClose()">

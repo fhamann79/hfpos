@@ -38,6 +38,8 @@ describe('OperationIntent', () => {
     for (const status of [0, 200, 408, 500, 502])
       expect(definitiveOperationRejection(new HttpErrorResponse({ status }))).toBe(false);
     expect(definitiveOperationRejection(new HttpErrorResponse({ status: 409, error: { error: 'REQUEST_CONFLICT' } }))).toBe(false);
+    expect(definitiveOperationRejection(new HttpErrorResponse({ status: 409 }))).toBe(false);
+    expect(definitiveOperationRejection(new HttpErrorResponse({ status: 409, error: { error: 'CASH_SESSION_ALREADY_OPEN' } }))).toBe(true);
     expect(() => operationResult({ id: 1 }, 'original')).toThrow();
     expect(() => operationResult({ id: 2, requestId: 'wrong' }, 'original')).toThrow();
     expect(() => operationResult({ id: 2 }, undefined, 1)).toThrow();

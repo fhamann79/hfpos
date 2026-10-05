@@ -300,7 +300,7 @@ export class PurchaseReceiptsPage implements OnInit, OnDestroy {
   }
 
   closeCreateDialog(): void {
-    if (this.saving()) { this.createDialogVisible = true; return; }
+    if (this.saving()) return;
     this.createDialogVisible = false;
     this.formError.set('');
     this.saving.set(false);
@@ -497,7 +497,7 @@ export class PurchaseReceiptsPage implements OnInit, OnDestroy {
   }
 
   closeCancelDialog(): void {
-    if (this.canceling()) { this.cancelDialogVisible = true; return; }
+    if (this.canceling()) return;
     this.cancelTarget = null;
     this.cancelDialogVisible = false;
     this.cancelReason = '';

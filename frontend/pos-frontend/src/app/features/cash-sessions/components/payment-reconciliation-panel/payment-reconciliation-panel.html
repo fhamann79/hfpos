@@ -96,7 +96,9 @@
 </section>
 
 <p-dialog [visible]="settleDialogVisible" [modal]="true" [draggable]="false"
-  [style]="{ width: '38rem', maxWidth: '94vw' }" header="Conciliar pago" (onHide)="closeSettlement()">
+  [closable]="!saving()" [closeOnEscape]="!saving()" [dismissableMask]="false"
+  (visibleChange)="settleDialogVisible = $event; !$event && closeSettlement()"
+  [style]="{ width: '38rem', maxWidth: '94vw' }" header="Conciliar pago">
   @if (overview(); as data) {
     @if (selectedMethod; as method) {
       <form class="settlement-form" (ngSubmit)="confirmSettlement()">

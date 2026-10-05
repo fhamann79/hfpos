@@ -14,7 +14,7 @@ export function operationActor(auth: AuthStore): string {
 export function definitiveOperationRejection(error: HttpErrorResponse): boolean {
   return [400, 401, 403, 404, 422].includes(error.status)
     || (error.status === 409 && ['INVENTORY_SNAPSHOT_STALE', 'INSUFFICIENT_STOCK',
-      'CASH_SESSION_NOT_OPEN', 'INVENTORY_TRANSFER_INSUFFICIENT_STOCK',
+      'CASH_SESSION_NOT_OPEN', 'CASH_SESSION_ALREADY_OPEN', 'INVENTORY_TRANSFER_INSUFFICIENT_STOCK',
       'PAYMENT_SETTLEMENT_ALREADY_RECONCILED'].includes(readErrorCode(error) ?? ''));
 }
 

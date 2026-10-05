@@ -187,11 +187,13 @@
 <p-dialog
   [visible]="createDialogVisible"
   [modal]="true"
-  [closable]="true"
+  [closable]="!saving()"
+  [closeOnEscape]="!saving()"
+  [dismissableMask]="false"
+  (visibleChange)="createDialogVisible = $event; !$event && closeCreateDialog()"
   [draggable]="false"
   [style]="{ width: '74rem', maxWidth: '96vw' }"
   header="Nueva recepcion"
-  (onHide)="closeCreateDialog()"
 >
   <form class="receipt-form" (ngSubmit)="saveReceipt()">
     <fieldset [disabled]="receiptLocked() || saving()" [attr.inert]="receiptLocked() || saving() ? '' : null"
@@ -460,11 +462,13 @@
 <p-dialog
   [visible]="cancelDialogVisible"
   [modal]="true"
-  [closable]="true"
+  [closable]="!canceling()"
+  [closeOnEscape]="!canceling()"
+  [dismissableMask]="false"
+  (visibleChange)="cancelDialogVisible = $event; !$event && closeCancelDialog()"
   [draggable]="false"
   [style]="{ width: '34rem', maxWidth: '94vw' }"
   header="Cancelar recepcion"
-  (onHide)="closeCancelDialog()"
 >
   <div class="cancel-dialog">
     <div class="warning-callout">

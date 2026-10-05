@@ -155,6 +155,18 @@ Confirmar header/drop/delay en Network. Si no se aplico, NO declarar ese paso pr
 
 ### Recorrido unico y aceptacion
 
+En los dialogos de CREATE/CANCEL recepcion, apertura/movimiento/cierre de caja y Settlement:
+con POST pendiente, la X no aparece, Escape se configura deshabilitado y la mascara no cierra.
+Si un Escape ya registrado por PrimeNG alcanza a ocultar el dialogo, la visibilidad del padre
+debe quedar sincronizada sin borrar UUID/payload/target. Tras el error incierto, reabrir en la
+MISMA pagina (sin navegar ni recargar), comprobar error y controles de recuperacion accesibles
+y reintentar el intento original. Tambien cerrar con X despues del error y reabrir otra vez.
+En CANCEL, comprobar que onHide durante el envio no borra razon ni target original.
+Para dos pestañas sin caja inicial: una abre; la otra recibe CASH_SESSION_ALREADY_OPEN con
+un intento distinto. Ese primer rechazo libera su borrador; despues de cerrar la caja ajena,
+puede abrir con importe/notas nuevos y UUID nueva. Si hubo respuesta incierta ANTES del 409,
+el intento original sigue congelado; ni ese 409 ni REQUEST_CONFLICT autorizan una UUID nueva.
+
 1. Crear recepcion A con drop after-commit, doble click y cierre mientras pendiente.
    Ver error incierto/formulario retenido; registrar UUID/body. Recuperar y comprobar misma A,
    stock/costo/lineas una vez. Repetir mismo body/UUID por Network sin hook: mismo ID.

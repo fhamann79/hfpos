@@ -236,7 +236,7 @@ export class CashSessionsPage implements OnInit, OnDestroy {
 
     this.openingAmount = 0;
     this.openingNotes = '';
-    this.formError.set('');
+    if (!this.openIntent.pending) this.formError.set('');
     this.openDialogVisible = true;
     if (this.openIntent.pending) {
       try {
@@ -248,7 +248,7 @@ export class CashSessionsPage implements OnInit, OnDestroy {
   }
 
   closeOpenDialog(): void {
-    if (this.saving()) { this.openDialogVisible = true; return; }
+    if (this.saving()) return;
     this.openDialogVisible = false;
     this.formError.set('');
     this.saving.set(false);
@@ -319,7 +319,7 @@ export class CashSessionsPage implements OnInit, OnDestroy {
     this.movementType = type;
     this.movementAmount = null;
     this.movementReason = '';
-    this.formError.set('');
+    if (!this.movementIntent.pending) this.formError.set('');
     this.movementDialogVisible = true;
     const scope = operationScope(this.authStore);
     this.movementTarget = this.currentSession() ? { id: this.currentSession()!.id, scope } : null;
@@ -335,7 +335,7 @@ export class CashSessionsPage implements OnInit, OnDestroy {
   }
 
   closeMovementDialog(): void {
-    if (this.saving()) { this.movementDialogVisible = true; return; }
+    if (this.saving()) return;
     this.movementDialogVisible = false;
     this.formError.set('');
     this.saving.set(false);
@@ -408,7 +408,7 @@ export class CashSessionsPage implements OnInit, OnDestroy {
     this.closingSession.set(session);
     this.countedCashAmount = session?.expectedCashAmount ?? 0;
     this.closingNotes = '';
-    this.formError.set('');
+    if (!this.closeIntent.pending) this.formError.set('');
     this.closeDialogVisible = true;
     if (this.closeIntent.pending) {
       try {
@@ -421,7 +421,7 @@ export class CashSessionsPage implements OnInit, OnDestroy {
   }
 
   closeCloseDialog(): void {
-    if (this.saving()) { this.closeDialogVisible = true; return; }
+    if (this.saving()) return;
     this.closeDialogVisible = false;
     this.formError.set('');
     this.saving.set(false);

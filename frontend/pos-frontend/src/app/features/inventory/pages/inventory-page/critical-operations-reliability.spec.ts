@@ -1,5 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { Dialog } from 'primeng/dialog';
 import { signal } from '@angular/core';
 import { MessageService } from 'primeng/api';
 import { Observable, Subject, of } from 'rxjs';
@@ -55,8 +57,32 @@ const cash = (id: number, status: 1 | 2 = 1): CashSession => ({ id, status, expe
   closedTimeZoneIdSnapshot: null, openingNotes: null, closingNotes: null, reconciliation: null });
 const emptyPage = { items: [], page: 1, pageSize: 25, totalItems: 0, totalPages: 0 };
 
+async function render<T>(fixture: ComponentFixture<T>): Promise<void> {
+  fixture.changeDetectorRef.markForCheck();
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+}
+
+function renderedDialog<T>(fixture: ComponentFixture<T>, header: string) {
+  const element = fixture.debugElement.queryAll(By.directive(Dialog))
+    .find(item => (item.componentInstance as Dialog).header === header)!;
+  expect(element).toBeTruthy();
+  return { dialog: element.componentInstance as Dialog, host: element.nativeElement as HTMLElement };
+}
+
+function closeIcon(host: HTMLElement): HTMLButtonElement | null {
+  return host.querySelector('.p-dialog-close-button');
+}
+
+async function escape<T>(fixture: ComponentFixture<T>, beforeHide?: () => void): Promise<void> {
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  beforeHide?.();
+  await render(fixture);
+}
+
 describe('529 receipt recovery and immutable cancellation target', () => {
-  function setup() {
+  function setup(rendered = false) {
     const ctx = context();
     let response = new Subject<PurchaseReceipt>();
     const api = { getAll: vi.fn(() => of({ ...emptyPage, summary: { postedCount: 0, canceledCount: 0, totalReceived: 0 } })),
@@ -68,11 +94,63 @@ describe('529 receipt recovery and immutable cancellation target', () => {
       { provide: ProductService, useValue: { lookup: () => of([]) } },
       { provide: SupplierService, useValue: { lookup: () => of([]) } },
     ] });
-    const page = TestBed.runInInjectionContext(() => new PurchaseReceiptsPage());
+    const fixture = rendered ? TestBed.createComponent(PurchaseReceiptsPage) : null;
+    const page = fixture?.componentInstance ?? TestBed.runInInjectionContext(() => new PurchaseReceiptsPage());
     page.supplierId = 4; page.createDialogVisible = true;
     page.draftItems.set([{ uid: 1, productId: 7, quantity: 2, unitCost: 4, notes: 'Original' }]);
-    return { page, api, ctx, get response() { return response; }, retryResponse() { response = new Subject(); return response; } };
+    return { page, fixture, api, ctx, get response() { return response; }, retryResponse() { response = new Subject(); return response; } };
   }
+
+  it('real PrimeNG X/Escape cannot strand CREATE recovery after a pending response is lost', async () => {
+    const state = setup(true), fixture = state.fixture!;
+    await render(fixture);
+    const { dialog, host } = renderedDialog(fixture, 'Nueva recepcion');
+    closeIcon(host)!.click(); await render(fixture);
+    expect(state.page.createDialogVisible).toBe(false);
+    state.page.openCreateDialog(); await render(fixture);
+    state.page.supplierId = 4;
+    state.page.draftItems.set([{ uid: 1, productId: 7, quantity: 2, unitCost: 4, notes: 'Original' }]);
+    state.page.saveReceipt(); const original = state.api.create.mock.calls[0][0];
+    await render(fixture);
+    expect(closeIcon(host)).toBeNull();
+    expect(dialog.closeOnEscape).toBe(false); expect(dialog.dismissableMask).toBe(false);
+    await escape(fixture, () => state.response.error(new HttpErrorResponse({ status: 0 })));
+    expect(state.page.createDialogVisible).toBe(dialog.visible);
+    expect(state.page.receiptLocked()).toBe(true);
+    state.page.openCreateDialog(); await render(fixture);
+    expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(host.textContent).toContain(state.page.formError());
+    expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
+    closeIcon(host)!.click(); await render(fixture);
+    expect(state.page.createDialogVisible).toBe(false);
+    state.page.openCreateDialog(); await render(fixture);
+    state.retryResponse(); state.page.saveReceipt();
+    expect(state.api.create.mock.calls[1][0]).toEqual(original);
+  });
+
+  it('physical onHide during CANCEL preserves its immutable target and later error/retry controls', async () => {
+    const state = setup(true), fixture = state.fixture!, pending = new Subject<PurchaseReceipt>();
+    state.page.createDialogVisible = false;
+    state.page.openDetail(receipt(2)); state.page.openCancelDialog();
+    await render(fixture);
+    const { dialog, host } = renderedDialog(fixture, 'Cancelar recepcion');
+    const hide = vi.spyOn(dialog.onHide, 'emit');
+    state.api.cancel.mockReturnValueOnce(pending);
+    state.page.cancelReason = 'Synthetic reason'; state.page.confirmCancelReceipt();
+    await render(fixture); expect(closeIcon(host)).toBeNull();
+    await escape(fixture, () => pending.error(new HttpErrorResponse({ status: 0 })));
+    expect(state.page.cancelDialogVisible).toBe(dialog.visible);
+    expect(hide).toHaveBeenCalled();
+    expect(state.page.cancelReason).toBe('Synthetic reason');
+    expect(state.page.cancelError()).not.toBe('');
+    // Reopen without reselecting: the physical hide did not discard the original target.
+    state.page.cancelDialogVisible = true; await render(fixture);
+    expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(host.textContent).toContain(state.page.cancelError());
+    state.page.selectedReceipt.set(receipt(3));
+    state.page.confirmCancelReceipt();
+    expect(state.api.cancel.mock.calls[1]).toEqual([2, { reason: 'Synthetic reason' }]);
+  });
 
   it('blocks cancellation for selection from an earlier context', () => {
     const state = setup(); state.page.openDetail(receipt(2));
@@ -200,15 +278,87 @@ describe('529 manual inventory and Kardex', () => {
 });
 
 describe('529 cash recovery and frozen targets', () => {
-  function setup() {
+  function setup(rendered = false) {
     const ctx = context(), movement = new Subject<CashSession>(), open = new Subject<CashSession>(), close = new Subject<CashSession>();
     const api = { getCurrent: vi.fn((): Observable<CashSession | null> => of(null)), getAll: vi.fn(() => of(emptyPage)),
       getById: vi.fn((id: number) => of(cash(id, 2))), open: vi.fn((_payload: unknown): Observable<CashSession> => open),
       close: vi.fn((_id: number, _payload: unknown) => close), addMovement: vi.fn((_id: number, _payload: unknown) => movement) };
-    TestBed.configureTestingModule({ providers: [{ provide: CashSessionService, useValue: api }] });
-    const page = TestBed.runInInjectionContext(() => new CashSessionsPage()); page.currentSession.set(cash(1));
-    return { page, api, ctx, movement, open, close };
+    TestBed.configureTestingModule({ providers: [{ provide: CashSessionService, useValue: api },
+      { provide: PaymentSettlementService, useValue: {
+        getReconciliation: () => of({ businessDate: '2026-09-17', methods: [] }),
+        getAll: () => of(emptyPage) } }] });
+    const fixture = rendered ? TestBed.createComponent(CashSessionsPage) : null;
+    const page = fixture?.componentInstance ?? TestBed.runInInjectionContext(() => new CashSessionsPage());
+    page.currentSession.set(cash(1));
+    return { page, fixture, api, ctx, movement, open, close };
   }
+
+  it.each(['open', 'movement', 'close'] as const)('real %s dialog stays recoverable across X/Escape, pending POST and lost response', async kind => {
+    const state = setup(true), fixture = state.fixture!;
+    await render(fixture); state.page.currentSession.set(cash(1));
+    const reopen = () => kind === 'open' ? state.page.openCashDialog()
+      : kind === 'movement' ? state.page.openMovementDialog(1) : state.page.openCloseDialog();
+    const confirm = () => kind === 'open' ? state.page.confirmOpen()
+      : kind === 'movement' ? state.page.confirmMovement() : state.page.confirmClose();
+    const visible = () => kind === 'open' ? state.page.openDialogVisible
+      : kind === 'movement' ? state.page.movementDialogVisible : state.page.closeDialogVisible;
+    const locked = () => kind === 'open' ? state.page.openLocked()
+      : kind === 'movement' ? state.page.movementLocked() : state.page.closeLocked();
+    const api = kind === 'open' ? state.api.open : kind === 'movement' ? state.api.addMovement : state.api.close;
+    const response = kind === 'open' ? state.open : kind === 'movement' ? state.movement : state.close;
+    reopen(); await render(fixture);
+    const { dialog, host } = renderedDialog(fixture, kind === 'open' ? 'Abrir caja'
+      : kind === 'movement' ? 'Ingreso de efectivo' : 'Cerrar caja');
+    closeIcon(host)!.click(); await render(fixture); expect(visible()).toBe(false);
+    reopen(); await render(fixture);
+    state.page.openingAmount = 2; state.page.movementAmount = 2; state.page.movementReason = 'Original';
+    confirm(); const original = [...api.mock.calls[0]]; await render(fixture);
+    expect(closeIcon(host)).toBeNull();
+    expect(dialog.closeOnEscape).toBe(false); expect(dialog.dismissableMask).toBe(false);
+    await escape(fixture, () => response.error(new HttpErrorResponse({ status: 0 })));
+    expect(visible()).toBe(dialog.visible);
+    expect(locked()).toBe(true); expect(state.page.formError()).not.toBe('');
+    reopen(); await render(fixture);
+    expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(host.textContent).toContain(state.page.formError());
+    expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
+    closeIcon(host)!.click(); await render(fixture); expect(visible()).toBe(false);
+    reopen(); await render(fixture);
+    const retry = new Subject<CashSession>();
+    api.mockReturnValueOnce(retry);
+    if (kind === 'close') state.api.getById.mockReturnValueOnce(of(cash(1)));
+    confirm();
+    expect(api.mock.calls[1]).toEqual(original);
+    expect(kind === 'movement' ? state.page.movementTargetId : kind === 'close' ? state.page.closeTargetId : 1).toBe(1);
+  });
+
+  it('first CASH_SESSION_ALREADY_OPEN frees the draft for a new UUID and changed amount', () => {
+    const state = setup(); state.page.currentSession.set(null);
+    state.page.openCashDialog(); state.page.openingAmount = 2; state.page.confirmOpen();
+    const original = state.api.open.mock.calls[0][0] as { requestId: string };
+    state.open.error(new HttpErrorResponse({ status: 409, error: { error: 'CASH_SESSION_ALREADY_OPEN' } }));
+    expect(state.page.openLocked()).toBe(false); expect(sessionStorage.length).toBe(0);
+    state.page.closeOpenDialog(); state.page.openCashDialog(); state.page.openingAmount = 9;
+    state.api.open.mockReturnValueOnce(new Subject<CashSession>()); state.page.confirmOpen();
+    expect(state.api.open.mock.calls[1][0]).toMatchObject({ openingAmount: 9 });
+    expect((state.api.open.mock.calls[1][0] as { requestId: string }).requestId).not.toBe(original.requestId);
+  });
+
+  it('CASH_SESSION_ALREADY_OPEN after an unknown reply retains the original UUID/payload, even after recreation', () => {
+    const state = setup(); state.page.currentSession.set(null);
+    state.page.openCashDialog(); state.page.openingAmount = 2; state.page.openingNotes = 'Original'; state.page.confirmOpen();
+    const original = state.api.open.mock.calls[0][0];
+    state.open.error(new HttpErrorResponse({ status: 0 }));
+    const rejected = new Subject<CashSession>(); state.api.open.mockReturnValueOnce(rejected);
+    state.page.confirmOpen();
+    rejected.error(new HttpErrorResponse({ status: 409, error: { error: 'CASH_SESSION_ALREADY_OPEN' } }));
+    expect(state.page.openLocked()).toBe(true); expect(sessionStorage.length).toBe(1);
+    state.page.ngOnDestroy();
+    const restored = TestBed.runInInjectionContext(() => new CashSessionsPage());
+    restored.openCashDialog(); restored.openingAmount = 99; restored.openingNotes = 'Changed';
+    state.api.open.mockReturnValueOnce(new Subject<CashSession>()); restored.confirmOpen();
+    expect(state.api.open.mock.calls[2][0]).toEqual(original);
+  });
 
   it('current GET generations cannot retarget movement and lost response keeps payload/session identity', () => {
     const state = setup(), a = new Subject<CashSession>(), b = new Subject<CashSession>();
@@ -274,6 +424,36 @@ describe('529 Transfer intent', () => {
 });
 
 describe('529 Settlement intent', () => {
+  it('real PrimeNG X/Escape preserves a pending settlement and reopens usable exact-retry controls', async () => {
+    context();
+    const method: PaymentMethodActivity = { paymentMethod: 1, canSettle: true,
+      grossSalesAmount: 10, voidAmount: 0, refundAmount: 0, netPaymentAmount: 10, settlement: null };
+    const response = new Subject<PaymentSettlement>();
+    const api = { getReconciliation: () => of({ businessDate: '2026-09-17',
+      currentBusinessDate: '2026-09-18', legacyUnattributedVoidCount: 0, methods: [method] }),
+      getAll: () => of(emptyPage), create: vi.fn((_payload: unknown): Observable<PaymentSettlement> => response) };
+    TestBed.configureTestingModule({ providers: [{ provide: PaymentSettlementService, useValue: api }] });
+    const fixture = TestBed.createComponent(PaymentReconciliationPanel), panel = fixture.componentInstance;
+    panel.canWrite = true; await render(fixture); panel.openSettlement(method); await render(fixture);
+    const { dialog, host } = renderedDialog(fixture, 'Conciliar pago');
+    closeIcon(host)!.click(); await render(fixture); expect(panel.settleDialogVisible).toBe(false);
+    panel.openSettlement(method); await render(fixture); panel.confirmSettlement();
+    const original = api.create.mock.calls[0][0]; await render(fixture);
+    expect(closeIcon(host)).toBeNull();
+    expect(dialog.closeOnEscape).toBe(false); expect(dialog.dismissableMask).toBe(false);
+    await escape(fixture, () => response.error(new HttpErrorResponse({ status: 0 })));
+    expect(panel.settleDialogVisible).toBe(dialog.visible);
+    expect(panel.intentLocked()).toBe(true); expect(panel.formError()).not.toBe('');
+    panel.openSettlement(method); await render(fixture);
+    expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(host.textContent).toContain(panel.formError());
+    expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
+    closeIcon(host)!.click(); await render(fixture); expect(panel.settleDialogVisible).toBe(false);
+    panel.openSettlement(method); await render(fixture);
+    api.create.mockReturnValueOnce(new Subject<PaymentSettlement>()); panel.confirmSettlement();
+    expect(api.create.mock.calls[1][0]).toEqual(original);
+  });
+
   it('does not submit a method selected in a different context before the first POST', () => {
     const ctx = context();
     const method = { paymentMethod: 1, canSettle: true, netPaymentAmount: 10 } as PaymentMethodActivity;
