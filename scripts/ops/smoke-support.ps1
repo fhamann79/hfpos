@@ -25,7 +25,7 @@ function Invoke-SmokeResourceCleanup {
     $envFile = Join-Path $runtime 'smoke.env'
     if (Test-Path -LiteralPath $envFile) {
         $identity = Get-SmokeIdentity -Root $Root
-        $result = Invoke-SmokeNativeCommand -FilePath 'docker' -Arguments @('--context', $identity.Context, 'compose', '--project-name', $identity.Project, '--env-file', $envFile, '-f', (Join-Path $Root 'deploy/compose/compose.smoke.yml'), '--profile', '*', 'down', '-v', '--remove-orphans')
+        $result = Invoke-SmokeNativeCommand -FilePath 'docker' -Arguments @('--context', $identity.Context, 'compose', '--project-name', $identity.Project, '--env-file', $envFile, '-f', (Join-Path $Root 'deploy/compose/compose.smoke.yml'), '--profile', 'migration', '--profile', 'proof', 'down', '-v', '--remove-orphans')
         if ($result.ExitCode -ne 0) { throw 'Smoke resource cleanup failed; runtime preserved for retry.' }
         Remove-Item -LiteralPath $runtime -Recurse -Force
         Write-Host 'SMOKE CLEANUP PASS'

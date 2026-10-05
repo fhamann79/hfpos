@@ -54,6 +54,10 @@ HFPOS_RESTORE_APPROVED=YES sh scripts/ops/keyring-restore.sh /secure/keyring-bac
 
 6. Restore rechaza cualquier relacion de usuario existente, usa single-transaction,
    exit-on-error/no-owner/no-privileges y verifica schema critico/EF. No imprime filas.
+   Antes de arrancar, contrastar contenido del recovery point y estado logico de
+   secuencias: schema/name/last_value/is_called. Filas iguales no prueban siguiente
+   insert; no ejecutar nextval/setval sobre origen para verificarlo. `log_cnt` es
+   WAL/preallocation interno, no estado logico que deba ser igual entre bases.
 7. Keyring restore comprueba checksum, archivos flat seguros y destino vacio; no
    sobreescribe. Ajustar propietario/ACL para UID del servicio, mismo ApplicationName.
 8. ANTES de arrancar destino, el operador aplica deny-egress verificable para SRI
@@ -97,7 +101,9 @@ prueba usando ambos -> login platform/tenant, descifrado SMTP/certificado sintet
 costos historicos 3/3/7 frente a costo actual 4, snapshots/XML y negocio.
 Se verifica origen intacto durante recovery, no se promete destino inmutable con
 trabajo pendiente. Negativos: aprobacion, checksum, destino no vacio, keyring
-equivocado/vacio, ApplicationName y purpose incorrectos. Con `-Cleanup` destruye contenedores,
+equivocado/vacio, ApplicationName y purpose incorrectos; last_value-only e
+is_called-only en tercera DB desechable, con filas intactas y source readonly.
+No se mutan secuencias de source ni restore principal. Con `-Cleanup` destruye contenedores,
 red, volumenes, cert y archivos runtime incluso al fallar; nunca sube dumps/keys
 a GitHub artifacts. No contacta DB Development/Production ni SRI/SMTP reales.
 Repetir ensayo periodico externo; frecuencia, alertas y hosting requieren decision humana.

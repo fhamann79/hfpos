@@ -12,11 +12,14 @@ Una rama/PR, un writer; los advisors no sustituyen la revision final independien
 | Recovery app sobre DB/keyring restaurados | BLOCKER PILOT | Rehearsal base reiniciaba origen; correccion y negativos en este ticket |
 | Recorrido unico enlazado | BLOCKER PILOT | Escenarios previos separados; nuevo escenario en host fake existente |
 | Quiescence/deny-egress restore-startup | BLOCKER PILOT | Runbook DR explicita escritores, SRI TEST/Production, SMTP, worker local |
+| Cleanup CI Linux | BLOCKER PILOT | ff227 completo funcionalmente pero job rojo por glob nativo de `--profile '*'`; fix minimo migration/proof, regresion real de argv Linux |
+| Recovery estado de secuencias | BLOCKER PILOT | Filas iguales no prueban siguiente insert; fingerprint incluye schema/name/last_value/is_called, negativos independientes en tercer destino desechable |
 | EF/PostgreSQL assurance | BLOCKER PILOT | Evidencia local completada: 2 tests empty/poblada compatible; sin migracion nueva ni promesa de upgrade arbitrario |
 | Dependencias runtime/config/no secretos assurance | BLOCKER PILOT | Evidencia local completada: API con 65 transitivas y npm runtime sin advisories conocidos; controles log/config existentes |
 | .NET 8 lifecycle | POST-PILOT | EOS 10-Nov-2026; revisar fecha antes del piloto, nunca iniciar sobre runtime sin soporte |
 | Actions con tags mutables | POST-PILOT | Hardening diferido; no compromiso demostrado, sin churn bajo freeze |
 | Matriz legacy adicional | POST-PILOT | Solo snapshots compatibles validados; datos ambiguos requieren decision humana, no autorepair |
+| Overflow UI preexistente | POST-PILOT | QA tecnica readonly: dashboard +26px y report 2148px frente a viewport1440; no full UX PASS ni fix bajo freeze |
 | Mantenimiento OS PCRE2/Perl/SDK/TLS | POST-PILOT | Advisor de reachability no demostro blocker; CVEs presentes y riesgo TLS residual documentados abajo |
 | OS/SDK sin camino alcanzable identificado | POST-1.0 | zlib contrib/minizip Bookworm, herramientas locales/DTLS/decoders no usados, Crypto.Xml del dotnet-format no invocado; no inmunidad universal |
 
@@ -53,8 +56,9 @@ para descifrar mediante servicios SMTP/certificado del dominio y comprobar negoc
 El repositorio DP real y su ApplicationDiscriminator se comprueban, no solo config.
 Sentinelas: SaleItems costo/linecost/profit 3/3/7 conservados tras compra/costo actual
 4; NC/refund y snapshots del documento original, XML signed/autorizacion presentes;
-hash de contenido JSON canonico ordenado de todas las tablas source/restore igual
-antes de arrancar destino, sin
+hash de contenido JSON canonico ordenado de todas las tablas y estado logico de
+todas las secuencias no-system (schema/name/last_value/is_called) source/restore
+igual antes de arrancar destino, sin
 imprimir filas/XML. El certificado sintetico se carga en memoria con private key
 y vigencia validas, sin firma/envio en recovery ni export de bytes.
 Wrong key, empty key, ApplicationName y purpose fallan cerrados; ready no sustituye
@@ -63,6 +67,11 @@ keyring iguales acreditan origen intacto durante recovery. No se comparan dumps
 textuales entre bases: el orden OID/fisico puede variar sin perdida de contenido.
 Jobs terminales
 antes del backup: no se promete destino intacto con trabajo fiscal pendiente.
+El fingerprint no usa `log_cnt` (WAL/preallocation interno), ni ejecuta nextval/setval
+en source/restore principal. Un tercer destino `hfpos_ops_sequence_negative` se
+restaura desde el mismo backup: alterar solo last_value y luego solo is_called
+debe cambiar el fingerprint con filas intactas. Cada caso restablece estado antes
+del siguiente; se comprueba source readonly y se elimina SOLO esa tercera DB.
 
 ## Migraciones y datos
 
@@ -95,9 +104,38 @@ cambios. El SHA final y CI exacto se registran en el PR, nunca se relabela CI de
   antes/despues igual, keys iguales y marcadores sensibles ausentes en logs.
   Se conserva source8444/restore8445 para humano. CI final ejecuta el script
   completo con stdout/exitcode verificables y cleanup de todos los perfiles.
-- `pwsh -NoProfile -File scripts/ops/test-smoke-support.ps1`: 13/13 pass;
-  tambien 13/13 pass con `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ...`
-  en Windows PowerShell 5.1.26100.9444. Ambos jobs siguen requeridos en CI.
+- CI de `ff2270f2e6640ff358a2a7a305982f97ba11ce09`,
+  [Containers run37373847997](https://github.com/fhamann79/hfpos/actions/runs/37373847997/job/111977342225):
+  21:11:12Z TRUE RECOVERY PASS, 21:11:21Z REHEARSAL PASS 230.1sec; JOB FAIL en
+  cleanup y always-clean. NO CI verde: Unix PowerShell expande wildcard splatted
+  hacia archivos del cwd al cruzar native binder. Perfiles Compose reales son
+  migration/proof y ahora se pasan explicitamente, sin cambiar wrapper global.
+- Batch autorizado post-review ff227: Noether M1 secuencias, Cicero B1 cleanup/M1
+  secuencias y GitHub P1 secuencias. Correcciones requieren delta/integrationreview
+  independiente y CI Linux completo del nuevo HEAD; no se hereda aprobacion.
+- `pwsh -NoProfile -File scripts/ops/test-smoke-support.ps1`: 14/14 pass en
+  Windows PS7.6.5 y Linux PS7.5.0 (contenedor oficial standalone sin red/socket/DB).
+  `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ...`: 14/14 pass,
+  PS5.1.26100.9444. Regresion nueva RED con wildcard / GREEN migration+proof usa
+  un proceso nativo real para comprobar argumentos, no solo mock del helper.
+  Cleanup Compose end-to-end y version Linux del runner se validan en CI final.
+- `test-recovery-fingerprints.ps1 -Container <owned hfpos-dev531-sequences-* >`:
+  pass PS7.6.5 y PS5.1.26100.9444, PostgreSQL16 aislado sin puertos/red/volumen
+  persistente. RED anterior detectado: last_value corrupto pasaba con filas iguales.
+  GREEN: igualdad inicial/tras reset, last_value-only e is_called-only rechazados,
+  filas intactas/source readonly, nombres quoted/no-public inventariados; ademas
+  helper integrado con backup/restore guardado y tercer destino PASS. Cada prueba
+  uso contenedor nuevo propio, eliminado exactamente; preview no tocado.
+  CI full rehearsal ejecuta los mismos negativos sobre dump del escenario completo.
+- QA tecnica readonly del coordinador en source8444/restore8445: Playwright con
+  nuevos contextos, TLS synthetic ignoreSSL solo localhost propio; tenant/platform
+  login UI PASS, dashboard/inventory/salesreports/electronicdocuments/cashsessions
+  cargan/rutas correctas/pageErrors0. 12 screenshots fuera del repo; datos coherentes
+  stock22/costo4/netSales10/netProfit7. NO full UX PASS: overflow preexistente arriba.
+  Logins UI reales sinteticos pueden registrar auditoria/metadatos de auth: la
+  igualdad de fingerprints documentada corresponde al recovery previo a esa QA,
+  no al estado actual del preview ni a su backup antiguo. No se fuerzan filas iguales.
+  NO aceptacion humana inferida; smoke humano/print y gates siguen pendientes.
 - API exacta: `dotnet restore ...Pos.Backend.Api.csproj --force-evaluate
   -p:NuGetAudit=true -p:NuGetAuditMode=all -p:NuGetAuditLevel=low` pass sin advisory;
   `dotnet list ... package --vulnerable --include-transitive --format json`

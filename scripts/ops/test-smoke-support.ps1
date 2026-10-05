@@ -1,4 +1,9 @@
-param([switch]$NativeFixture, [int]$FixtureExitCode = 0, [string]$FixtureArgument)
+param([switch]$NativeFixture, [switch]$NativeArgumentsFixture, [int]$FixtureExitCode = 0, [string]$FixtureArgument,
+    [Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]]$FixtureArguments)
+if ($NativeArgumentsFixture) {
+    [Console]::Out.WriteLine((ConvertTo-Json -InputObject @($FixtureArguments) -Compress))
+    exit 0
+}
 if ($NativeFixture) {
     [Console]::Error.WriteLine('SYNTHETIC-SECRET-DO-NOT-LOG')
     [Console]::Out.WriteLine($FixtureArgument)
@@ -59,10 +64,31 @@ Test-Case 'SQL and shell embedded quotes reach the native process intact' {
 $fixtureRoot = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) ('hfpos-smoke-tests-' + [Guid]::NewGuid().ToString('N'))))
 $runtime = Join-Path $fixtureRoot 'deploy/compose/smoke-runtime'
 try {
+    Test-Case 'cleanup profiles survive the real native argument boundary without Unix globbing' {
+        $null = New-Item -ItemType Directory -Path $runtime -Force
+        $null = New-Item -ItemType File -Path (Join-Path $runtime 'smoke.env')
+        $script:cleanupArguments = $null
+        function Invoke-SmokeNativeCommand {
+            param([string]$FilePath, [string[]]$Arguments)
+            $script:cleanupArguments = $Arguments
+            return [pscustomobject]@{ ExitCode = 0; Output = '' }
+        }
+        $null = Invoke-SmokeResourceCleanup -Root $fixtureRoot
+        $profiles = @()
+        for ($index = 0; $index -lt $script:cleanupArguments.Count; $index++) {
+            if ($script:cleanupArguments[$index] -eq '--profile') { $profiles += $script:cleanupArguments[++$index] }
+        }
+        Set-Item Function:Invoke-SmokeNativeCommand -Value $nativeImplementation
+        $fixtureArguments = @('-NoProfile', '-File', $testScript, '-NativeArgumentsFixture') + $profiles
+        $native = Invoke-SmokeNativeCommand -FilePath $processExecutable -Arguments $fixtureArguments
+        Assert-Test ($native.ExitCode -eq 0) 'Cleanup profile argument fixture failed at the native process boundary.'
+        $received = ConvertFrom-Json -InputObject $native.Output
+        Assert-Test ($native.ExitCode -eq 0 -and ($received -join ',') -eq ($profiles -join ',')) 'Cleanup profiles were glob-expanded at the real native process boundary.'
+    }
     # Cleanup tests substitute Docker only; no container or database is touched.
     function Invoke-SmokeNativeCommand {
         param([string]$FilePath, [string[]]$Arguments)
-        Assert-Test ($FilePath -eq 'docker' -and $Arguments -contains (Get-SmokeIdentity -Root $fixtureRoot).Project -and $Arguments -contains '--context' -and $Arguments -contains '--profile' -and $Arguments -contains '*' -and $Arguments -contains '--remove-orphans') 'Unexpected cleanup command or incomplete profile cleanup.'
+        Assert-Test ($FilePath -eq 'docker' -and $Arguments -contains (Get-SmokeIdentity -Root $fixtureRoot).Project -and $Arguments -contains '--context' -and $Arguments -contains 'migration' -and $Arguments -contains 'proof' -and $Arguments -notcontains '*' -and $Arguments -contains '--remove-orphans') 'Unexpected cleanup command or incomplete profile cleanup.'
         return [pscustomobject]@{ ExitCode = $script:fixtureCode; Output = 'SYNTHETIC-SECRET-DO-NOT-LOG' }
     }
     Test-Case 'successful cleanup deletes runtime and keeps adjacent files' {

@@ -36,25 +36,70 @@ function SourceFingerprint {
     Compose -Arguments @('exec', '-T', 'postgres', 'sh', '-c', 'set -eu; file=$(mktemp); trap ''rm -f "$file"'' EXIT; pg_dump --data-only --no-owner --no-privileges "$PGDATABASE" > "$file"; sed "/^\\\\restrict /d; /^\\\\unrestrict /d" "$file" | sha256sum')
 }
 function BusinessFingerprint {
-    param([ValidateSet('hfpos_ops_ci', 'hfpos_ops_restore')][string]$Database)
+    param([ValidateSet('hfpos_ops_ci', 'hfpos_ops_restore', 'hfpos_ops_sequence_negative')][string]$Database, [switch]$TablesOnly)
     # Canonical JSON rows avoid cross-database OID/table/physical row ordering differences.
     $query = @'
 CREATE TEMP TABLE smoke_hashes (name text, hash text);
 DO $proof$
 DECLARE relation record; content_hash text;
 BEGIN
-  FOR relation IN SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-    WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' AND c.relkind='r'
+  FOR relation IN SELECT n.nspname, c.relname, c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'
+      AND (c.relkind='r' OR (c.relkind='S' AND __INCLUDE_SEQUENCES__))
   LOOP
-    EXECUTE format('SELECT md5(coalesce(string_agg(to_jsonb(row)::text, chr(10) ORDER BY to_jsonb(row)::text), '''')) FROM %I.%I row', relation.nspname, relation.relname) INTO content_hash;
-    INSERT INTO smoke_hashes VALUES (relation.nspname || '.' || relation.relname, content_hash);
+    IF relation.relkind='S' THEN
+      -- Logical next-insert state only: log_cnt is internal WAL/preallocation state.
+      EXECUTE format('SELECT md5(jsonb_build_array(last_value, is_called)::text) FROM %I.%I', relation.nspname, relation.relname) INTO content_hash;
+    ELSE
+      EXECUTE format('SELECT md5(coalesce(string_agg(to_jsonb(row)::text, chr(10) ORDER BY to_jsonb(row)::text), '''')) FROM %I.%I row', relation.nspname, relation.relname) INTO content_hash;
+    END IF;
+    INSERT INTO smoke_hashes VALUES (jsonb_build_array(relation.nspname, relation.relname)::text, content_hash);
   END LOOP;
 END $proof$;
-SELECT md5(string_agg(name || ':' || hash, chr(10) ORDER BY name)) FROM smoke_hashes;
+SELECT md5(string_agg(name || ':' || hash, chr(10) ORDER BY name COLLATE "C")) FROM smoke_hashes;
 '@
+    $query = $query.Replace('__INCLUDE_SEQUENCES__', $(if ($TablesOnly) { 'false' } else { 'true' }))
     $hash = Compose -Arguments @('exec', '-T', 'postgres', 'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-d', $Database, '-c', $query)
     Check ($hash.Trim() -match '^[a-f0-9]{32}$') 'Business fingerprint result invalid.'
     return $hash.Trim()
+}
+function Invoke-SmokeSequenceNegatives([string]$Backup) {
+    # A third disposable DB owns every setval; source and preview restore stay read-only.
+    $database = 'hfpos_ops_sequence_negative'
+    $source = BusinessFingerprint 'hfpos_ops_ci'
+    $null = Compose @('exec', '-T', 'postgres', 'createdb', '-U', 'hfpos_smoke', $database)
+    $null = Compose @('exec', '-T', '-e', "PGDATABASE=$database", '-e', 'HFPOS_RESTORE_APPROVED=YES', 'postgres', 'sh', '/ops/postgres-restore.sh', $Backup)
+    Check ($source -eq (BusinessFingerprint $database)) 'Sequence negative clone does not match source.'
+    $rows = BusinessFingerprint $database -TablesOnly
+    $query = @'
+CREATE TEMP TABLE sequence_changes (payload json);
+DO $proof$
+DECLARE relation record; state record;
+BEGIN
+  SELECT n.nspname, c.relname, s.seqmin, s.seqmax INTO STRICT relation
+    FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_sequence s ON s.seqrelid=c.oid
+    WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'
+    ORDER BY n.nspname COLLATE "C", c.relname COLLATE "C" LIMIT 1;
+  EXECUTE format('SELECT last_value, is_called FROM %I.%I', relation.nspname, relation.relname) INTO STRICT state;
+  INSERT INTO sequence_changes VALUES (json_build_object(
+    'valueChange', format('SELECT setval(%L::regclass, %s, %L);', format('%I.%I', relation.nspname, relation.relname),
+      CASE WHEN state.last_value < relation.seqmax THEN state.last_value + 1 ELSE state.last_value - 1 END, state.is_called),
+    'calledChange', format('SELECT setval(%L::regclass, %s, %L);', format('%I.%I', relation.nspname, relation.relname), state.last_value, NOT state.is_called),
+    'reset', format('SELECT setval(%L::regclass, %s, %L);', format('%I.%I', relation.nspname, relation.relname), state.last_value, state.is_called)));
+END $proof$;
+SELECT payload FROM sequence_changes;
+'@
+    $changes = Compose @('exec', '-T', 'postgres', 'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-d', $database, '-c', $query) | ConvertFrom-Json
+    foreach ($change in @($changes.valueChange, $changes.calledChange)) {
+        $null = Compose @('exec', '-T', 'postgres', 'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-d', $database, '-c', $change)
+        Check ($rows -eq (BusinessFingerprint $database -TablesOnly)) 'Sequence negative changed business rows.'
+        Check ($source -ne (BusinessFingerprint $database)) 'Sequence corruption passed recovery fingerprint.'
+        $null = Compose @('exec', '-T', 'postgres', 'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-d', $database, '-c', $changes.reset)
+        Check ($source -eq (BusinessFingerprint $database)) 'Sequence negative reset failed.'
+    }
+    Check ($source -eq (BusinessFingerprint 'hfpos_ops_ci')) 'Sequence negatives changed source.'
+    $null = Compose @('exec', '-T', 'postgres', 'dropdb', '-U', 'hfpos_smoke', $database)
+    Write-Host 'SEQUENCE LAST_VALUE/IS_CALLED NEGATIVES PASS (rows unchanged, source read-only)'
 }
 function Invoke-SmokeHttps([string]$Path, [string[]]$Extra = @(), [int]$Port = 8444) {
     if ($windowsPlatform) { $Extra = @($Extra | ForEach-Object { if ($_ -eq '/dev/null') { 'NUL' } else { $_ } }) }
@@ -195,7 +240,8 @@ try {
     # Restore ownership only inside this project's ephemeral backup volume, never on source keys.
     $null = Compose -Arguments @('exec', '-T', 'postgres', 'sh', '-c', 'chown -R 1654:1654 /backups/restored-keys; chmod 755 /backups; mkdir /backups/missing-keys /backups/wrong-keys; chown 1654:1654 /backups/missing-keys /backups/wrong-keys')
     $sourceStateBefore = SourceFingerprint
-    Check ((BusinessFingerprint -Database 'hfpos_ops_ci') -eq (BusinessFingerprint -Database 'hfpos_ops_restore')) 'Restored data, snapshots or XML differ from source backup.'
+    Check ((BusinessFingerprint -Database 'hfpos_ops_ci') -eq (BusinessFingerprint -Database 'hfpos_ops_restore')) 'Restored data, snapshots, XML or logical sequence state differ from source backup.'
+    Invoke-SmokeSequenceNegatives -Backup $backup
     $null = Compose -Arguments @('up', '-d', '--wait', '--wait-timeout', '120', 'restored-backend', 'restored-web')
     Wait-SmokeWebReady -Probe { param($seconds) (Invoke-SmokeHttps '/' -Port 8445 -Extra @('--max-time', "$seconds")) -match '<app-root' }
     $restoredLogin = Invoke-SmokeHttps '/api/platform/auth/login' -Port 8445 -Extra @('-H', 'Content-Type: application/json', '--data-binary', "@$loginPath") | ConvertFrom-Json
