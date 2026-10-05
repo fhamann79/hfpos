@@ -1,11 +1,12 @@
 <section class="login-page">
-  <p-card class="login-card">
-    <ng-template #title>POS Ecuador</ng-template>
-    <ng-template #subtitle>Iniciar sesión para continuar</ng-template>
+  <section class="access-panel">
+    <img class="brand-logo" src="/hf-one-logo.svg" alt="HF One" width="200" height="56" />
+    <h1>Iniciar sesión</h1>
+    <p class="access-subtitle">Accede a tu empresa</p>
 
     <form class="login-form" [formGroup]="loginForm" (ngSubmit)="submitLogin()">
       <div class="field">
-        <label for="username">Username</label>
+        <label for="username">Usuario</label>
         <input
           id="username"
           pInputText
@@ -15,12 +16,12 @@
           (input)="clearError()"
         />
         @if (loginForm.controls.username.touched && loginForm.controls.username.invalid) {
-          <small class="field-error">El username es obligatorio.</small>
+          <small class="field-error">El usuario es obligatorio.</small>
         }
       </div>
 
       <div class="field">
-        <label for="password">Password</label>
+        <label for="password">Contraseña</label>
         <p-password
           inputId="password"
           formControlName="password"
@@ -39,6 +40,8 @@
         <p-message severity="error" [text]="errorMessage()"></p-message>
       }
 
+      <a class="forgot-link" routerLink="/recover-access">¿Olvidaste tu contraseña?</a>
+
       <p-button
         type="submit"
         label="Iniciar sesión"
@@ -47,5 +50,6 @@
         [disabled]="loading()"
       ></p-button>
     </form>
-  </p-card>
+    <footer class="access-footer">HF One · Acceso seguro</footer>
+  </section>
 </section>

@@ -20,6 +20,11 @@ public static class SmokeMain
 {
     public static async Task Main(string[] args)
     {
+        if (args.Contains("--assisted-recovery"))
+        {
+            await AssistedRecoverySmoke.RunAsync(args);
+            return;
+        }
         if (args.Contains("--critical-operations"))
         {
             await CriticalOperationsSmoke.RunAsync(args);
@@ -105,6 +110,12 @@ public sealed class SmokeStartup : IHostingStartup
         });
         builder.ConfigureKestrel(options =>
         {
+            if (SmokeConfiguration.AssistedRecovery)
+            {
+                var recoveryCertificate = options.ApplicationServices.GetRequiredService<RecoveryTlsCertificate>();
+                options.ListenLocalhost(7096, endpoint => endpoint.UseHttps(recoveryCertificate.Certificate));
+                return;
+            }
             using var rsa = RSA.Create(2048);
             var request = new CertificateRequest("CN=localhost synthetic HFPOS", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
             var san = new SubjectAlternativeNameBuilder(); san.AddDnsName("localhost"); request.CertificateExtensions.Add(san.Build());
@@ -114,6 +125,7 @@ public sealed class SmokeStartup : IHostingStartup
         });
         builder.ConfigureServices(services =>
         {
+            if (SmokeConfiguration.AssistedRecovery) services.AddSingleton<RecoveryTlsCertificate>();
             services.AddSingleton<SmokeTransport>();
             services.AddSingleton<IHttpMessageHandlerBuilderFilter, SyntheticHttpFilter>();
             if (SmokeConfiguration.CriticalOperations)

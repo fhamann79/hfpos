@@ -30,6 +30,7 @@ public static class AppPermissions
     public const string FiscalSettingsWrite = "FISCAL_SETTINGS_WRITE";
     public const string AdminUsersRead = "ADMIN_USERS_READ";
     public const string AdminUsersWrite = "ADMIN_USERS_WRITE";
+    public const string UsersRecoveryManage = "USERS_RECOVERY_MANAGE";
     public const string AdminRolesRead = "ADMIN_ROLES_READ";
     public const string AdminRolesWrite = "ADMIN_ROLES_WRITE";
 }

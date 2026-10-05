@@ -143,7 +143,7 @@ public sealed class ProductionAuthSecurityTests(PostgresDatabaseFixture database
         var create = await Send(client, HttpMethod.Post, "/api/Users", token, new
         { username = "new-synthetic", email = "new@test.invalid", password, user.RoleId, tenant.EstablishmentId, tenant.EmissionPointId, isActive = true });
         if (valid) Assert.Equal(201, (int)create.StatusCode); else await Error(create, 400, "PASSWORD_POLICY_INVALID");
-        var change = await Send(client, HttpMethod.Put, $"/api/Users/{user.Id}/password", token, new { newPassword = password });
+        var change = await Send(client, HttpMethod.Put, "/api/account/recovery/password", token, new { currentPassword = LegacyPassword, newPassword = password });
         if (valid) Assert.Equal(204, (int)change.StatusCode); else await Error(change, 400, "PASSWORD_POLICY_INVALID");
         var after = await context.Users.AsNoTracking().SingleAsync(u => u.Id == user.Id);
         Assert.Equal(valid ? 2 : 1, after.SessionVersion);

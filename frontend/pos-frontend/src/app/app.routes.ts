@@ -16,6 +16,15 @@ import { salesReportsAccessGuard } from './core/guards/sales-reports-access.guar
 import { suppliersAccessGuard } from './core/guards/suppliers-access.guard';
 
 export const routes: Routes = [
+  { path: 'recover-access', loadComponent: () => import('./modules/auth/recovery/recover-access').then(m => m.RecoverAccess) },
+  { path: 'recover-access/complete', loadComponent: () => import('./modules/auth/recovery/password-page').then(m => m.PasswordPage) },
+  { path: 'recover-access/', loadComponent: () => import('./modules/auth/recovery/recover-access').then(m => m.RecoverAccess) },
+  { path: 'recover-access/complete/', loadComponent: () => import('./modules/auth/recovery/password-page').then(m => m.PasswordPage) },
+  { path: 'login/', loadComponent: () => import('./modules/auth/login/login').then(m => m.Login) },
+  { path: 'account/password', canActivate: [AuthGuard], data: { self: true }, loadComponent: () => import('./modules/auth/recovery/password-page').then(m => m.PasswordPage) },
+  { path: 'platform/recover-access/complete', data: { platform: true }, loadComponent: () => import('./modules/auth/recovery/password-page').then(m => m.PasswordPage) },
+  { path: 'platform/account/password', canActivate: [platformGuard], data: { platform: true, self: true }, loadComponent: () => import('./modules/auth/recovery/password-page').then(m => m.PasswordPage) },
+  { path: 'platform/accounts', canActivate: [platformGuard], loadComponent: () => import('./modules/platform/platform-accounts').then(m => m.PlatformAccounts) },
   { path: 'initial-data', canActivate: [AuthGuard, initialDataAccessGuard],
     loadComponent: () => import('./features/initial-data/initial-data-page').then(m => m.InitialDataPage) },
   { path: 'platform/login', loadComponent: () => import('./modules/platform/platform-login').then(m => m.PlatformLogin) },

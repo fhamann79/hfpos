@@ -64,6 +64,9 @@ describe('Login', () => {
 
   it('creates with explicit route and authentication dependencies', () => {
     expect(component).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('img').getAttribute('src')).toBe('/hf-one-logo.svg');
+    expect(fixture.nativeElement.textContent).toContain('HF One');
+    expect(fixture.nativeElement.querySelector('a').textContent).toContain('¿Olvidaste tu contraseña?');
   });
 
   it('shows the session expired message from query parameters', () => {
@@ -71,6 +74,25 @@ describe('Login', () => {
     fixture.detectChanges();
 
     expect(component.errorMessage()).toBe('Tu sesión expiró. Inicia sesión nuevamente.');
+  });
+
+  it('preserves the real PrimeNG password toggle and form submission controls', async () => {
+    const input = fixture.nativeElement.querySelector('#password') as HTMLInputElement;
+    expect(input.type).toBe('password');
+    const toggle = fixture.nativeElement.querySelector('.p-password-toggle-mask-icon') as SVGElement;
+    expect(toggle).not.toBeNull();
+    expect(toggle.closest('.p-password')).toContain(input);
+    toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    fixture.detectChanges();
+    expect(input.type).toBe('text');
+    fixture.nativeElement.querySelector('.p-password-toggle-mask-icon').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    fixture.detectChanges();
+    expect(input.type).toBe('password');
+    expect(fixture.nativeElement.querySelector('button[type="submit"].p-button')).not.toBeNull();
+    component.loginForm.setValue({ username: 'cashier', password: 'legacy' });
+    fixture.nativeElement.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await fixture.whenStable();
+    expect(authService.login).toHaveBeenCalledWith('cashier', 'legacy');
   });
 
   it('does not call login when the form is invalid', () => {

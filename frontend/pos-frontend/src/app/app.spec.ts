@@ -2,10 +2,15 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { vi } from 'vitest';
+import { of } from 'rxjs';
 import { MeResponse } from './core/models/me';
 import { PermissionService } from './core/services/permission.service';
 import { AuthStore } from './core/stores/auth.store';
 import { App } from './app';
+import { PasswordRecoveryApi } from './core/services/password-recovery.service';
+import { PlatformStore } from './modules/platform/platform.store';
+import { RecoverAccess } from './modules/auth/recovery/recover-access';
+import { PasswordPage } from './modules/auth/recovery/password-page';
 
 @Component({
   standalone: true,
@@ -51,9 +56,15 @@ describe('App', () => {
           { path: 'platform/login', component: LoginRouteStub },
           { path: 'platform/tenants', component: DashboardRouteStub },
           { path: 'dashboard', component: DashboardRouteStub },
+          { path: 'recover-access', component: RecoverAccess },
+          { path: 'recover-access/complete', component: PasswordPage },
+          { path: 'platform/recover-access/complete', component: PasswordPage, data: { platform: true } },
+          { path: 'account/password', component: PasswordPage, data: { self: true } },
         ]),
         { provide: AuthStore, useValue: authStore },
         { provide: PermissionService, useValue: permissionService },
+        { provide: PasswordRecoveryApi, useValue: { complete: vi.fn(() => of(undefined)), change: vi.fn(() => of(undefined)) } },
+        { provide: PlatformStore, useValue: { clear: vi.fn() } },
       ],
     }).compileComponents();
 
@@ -107,5 +118,31 @@ describe('App', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('app-shell')).toBeNull();
     expect(fixture.componentInstance.showShell()).toBe(false);
+  });
+
+  it.each(['/recover-access', '/recover-access/complete', '/platform/recover-access/complete'])
+    ('renders actual public access page %s without private navigation', async url => {
+      authStore.me.set(null);
+      const fixture = TestBed.createComponent(App);
+      fixture.detectChanges();
+      await router.navigateByUrl(url);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const page = fixture.nativeElement as HTMLElement;
+      expect(page.querySelector('app-shell')).toBeNull();
+      expect(page.querySelectorAll('img[alt="HF One"]')).toHaveLength(1);
+      expect(page.textContent).not.toContain('Dashboard');
+      expect(page.textContent).not.toContain('Salir');
+      authStore.me.set(authenticatedUser);
+    });
+
+  it('keeps the actual authenticated password form in the tenant shell', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await router.navigateByUrl('/account/password');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-shell')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('#current-password')).not.toBeNull();
   });
 });

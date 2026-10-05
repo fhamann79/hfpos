@@ -1,6 +1,7 @@
 <main class="platform-page">
   <header class="platform-header">
-    <div class="heading"><i class="pi pi-building" aria-hidden="true"></i><div><small>HFPOS Plataforma</small><h1>Tenants</h1></div></div>
+    <div class="heading"><i class="pi pi-building" aria-hidden="true"></i><div><small>HF One Plataforma</small><h1>Tenants</h1></div></div>
+    <a routerLink="/platform/accounts">Cuentas</a>
     <div class="header-actions"><span>{{ store.me()?.username }}</span><p-button label="Cerrar sesión" icon="pi pi-sign-out" severity="secondary" [text]="true" (onClick)="logout()" /></div>
   </header>
   <section class="tenant-directory">

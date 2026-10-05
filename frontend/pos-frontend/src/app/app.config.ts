@@ -15,7 +15,9 @@ export const appConfig: ApplicationConfig = {
 
     provideAppInitializer(() => {
       const store = inject(AuthStore);
-      if (location.pathname.startsWith('/platform/')) {
+      const path = location.pathname.replace(/\/+$/, '');
+      if (path.startsWith('/platform/') || path === '/login'
+        || path === '/recover-access' || path === '/recover-access/complete') {
         store.markLoaded();
         return;
       }

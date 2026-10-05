@@ -15,7 +15,7 @@ import { Role } from '../../models/role.model';
 import { User } from '../../models/user.model';
 import { RoleService } from '../../services/role.service';
 import { UserService } from '../../services/user.service';
-import { ChangePasswordDialog, ChangePasswordDialogSubmit } from './change-password-dialog';
+import { RecoveryDialog } from '../../../../modules/auth/recovery/recovery-dialog';
 import { UserDialog, UserDialogSubmit } from './user-dialog';
 
 @Component({
@@ -32,13 +32,14 @@ import { UserDialog, UserDialogSubmit } from './user-dialog';
     TagModule,
     MessageModule,
     UserDialog,
-    ChangePasswordDialog,
+    RecoveryDialog,
   ],
   templateUrl: './users-table.html',
   styleUrl: './users-table.scss',
 })
 export class UsersTable implements OnInit {
   @Input() canWrite = false;
+  @Input() canRecover = false;
 
   private readonly userService = inject(UserService);
   private readonly roleService = inject(RoleService);
@@ -144,7 +145,7 @@ export class UsersTable implements OnInit {
   }
 
   openChangePasswordDialog(user: User): void {
-    if (!this.canWrite) {
+    if (!this.canRecover || !user.isActive) {
       return;
     }
 
@@ -189,23 +190,6 @@ export class UsersTable implements OnInit {
       next: () => {
         this.messageService.add({ severity: 'success', summary: 'Éxito', detail: 'Usuario actualizado.' });
         this.userDialogVisible = false;
-        this.loadUsers();
-      },
-      error: (error: HttpErrorResponse) => {
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
-      },
-    });
-  }
-
-  submitPasswordDialog(event: ChangePasswordDialogSubmit): void {
-    if (!this.canWrite) {
-      return;
-    }
-
-    this.userService.updatePassword(event.userId, event.payload).subscribe({
-      next: () => {
-        this.messageService.add({ severity: 'success', summary: 'Éxito', detail: 'Contraseña actualizada.' });
-        this.passwordDialogVisible = false;
         this.loadUsers();
       },
       error: (error: HttpErrorResponse) => {
