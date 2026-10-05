@@ -38,7 +38,9 @@ Daily/weekly/monthly son categorias posibles; retencion concreta requiere aproba
 
 ## Procedimiento humano
 
-1. Declarar incidente, registrar hora, detener escrituras/trafico.
+1. Declarar incidente, registrar hora, detener escrituras/trafico y todas las replicas,
+   workers y tareas externas que puedan escribir. Verificar procesos/conexiones del
+   origen detenidos y ausencia de escritores en destino; no basta ocultar la UI.
 2. Identificar release/digests y conjunto backup/keyring/config compatible.
 3. Verificar checksum/listado y recuperar secretos fuera de logs/repositorio.
 4. Provisionar NUEVA DB VACIA. No DROP DATABASE/SCHEMA ni --clean automaticos.
@@ -52,11 +54,29 @@ HFPOS_RESTORE_APPROVED=YES sh scripts/ops/keyring-restore.sh /secure/keyring-bac
 
 6. Restore rechaza cualquier relacion de usuario existente, usa single-transaction,
    exit-on-error/no-owner/no-privileges y verifica schema critico/EF. No imprime filas.
+   Antes de arrancar, contrastar contenido del recovery point y estado logico de
+   secuencias: schema/name/last_value/is_called. Filas iguales no prueban siguiente
+   insert; no ejecutar nextval/setval sobre origen para verificarlo. `log_cnt` es
+   WAL/preallocation interno, no estado logico que deba ser igual entre bases.
 7. Keyring restore comprueba checksum, archivos flat seguros y destino vacio; no
    sobreescribe. Ajustar propietario/ACL para UID del servicio, mismo ApplicationName.
-8. Mantener `Sri__AllowProductionSubmission=false`. Sin replay SRI ni resend email.
-9. Restaurar configuracion/secrets/TLS externos y arrancar una instancia de release exacta.
-10. Comprobar ready, login platform/tenant humano, smoke de datos seguro y logs.
+8. ANTES de arrancar destino, el operador aplica deny-egress verificable para SRI
+   TEST y Production, SMTP y otros efectos externos. Permitir solo DB destino y
+   dependencias internas aprobadas. Verificar reglas y un probe negativo sin datos
+   comerciales; conservar evidencia de denegacion, no credenciales ni payloads.
+   Mantener `Sri__AllowProductionSubmission=false`, pero NO confundir ese flag con
+   bloqueo de SRI TEST. Revocar delegacion tampoco detiene claims/leases/fences o
+   intentos locales del worker. No hay switch nuevo que pause el worker.
+9. Restaurar configuracion/secrets/TLS externos y arrancar UNA instancia de release
+   exacta, conectada explicitamente a NUEVA DB y NUEVO keyring restaurados, nunca
+   al origen. Bootstrap/seed deshabilitados. Preservar ApplicationName y purposes.
+10. Comprobar ready, login platform/tenant humano, descifrado de un valor protegido
+    por un mecanismo seguro aprobado y datos de negocio. Ready por si solo NO
+    acredita las claves. No imprimir plaintext/keyring. Contrastar totales,
+    documentos, caja, stock, compras, refunds y settlements con el recovery point.
+    Inventariar jobs fiscales pendientes/leases e intentos antes/despues del
+    arranque: un worker puede reclamar trabajo local aunque deny-egress bloquee
+    efectos externos. No afirmar destino intacto si existen esos cambios.
 11. Autorizar trafico y habilitar integraciones SOLO con aprobacion humana posterior.
 12. Registrar tiempos, backup recovery point, errores, decisiones y resultado.
 
@@ -74,9 +94,22 @@ pero esa duracion NO equivale a RTO Production ni acredita capacidad/tamano real
 ## Ensayo automatico
 
 `start-deployment-smoke.ps1 -Cleanup`: DB efimera hfpos_ops_ci -> migrations todas ->
-platform user/tenant sinteticos -> dump/checksum/list -> segunda DB vacia -> restore ->
-schema y records sinteticos/source intacta -> keyring fixture snapshot/restore -> restart.
-Pruebas negativas de aprobacion, checksum y destino no vacio. Destruye contenedores,
+platform user/tenant sinteticos -> recorrido unico de negocio con jobs terminales ->
+dump/checksum/list y snapshot keyring -> nueva
+DB y keyring restaurados -> backend/proxy separados y nueva app Production de
+prueba usando ambos -> login platform/tenant, descifrado SMTP/certificado sinteticos,
+costos historicos 3/3/7 frente a costo actual 4, snapshots/XML y negocio.
+Se verifica origen intacto durante recovery, no se promete destino inmutable con
+trabajo pendiente. Negativos: aprobacion, checksum, destino no vacio, keyring
+equivocado/vacio, ApplicationName y purpose incorrectos; last_value-only e
+is_called-only en tercera DB desechable, con filas intactas y source readonly.
+No se mutan secuencias de source ni restore principal. Con `-Cleanup` destruye contenedores,
 red, volumenes, cert y archivos runtime incluso al fallar; nunca sube dumps/keys
 a GitHub artifacts. No contacta DB Development/Production ni SRI/SMTP reales.
 Repetir ensayo periodico externo; frecuencia, alertas y hosting requieren decision humana.
+
+La app de prueba/fakes residen en `Hfpos.FiscalSmokeHost`, imagen `pilot-proof:synthetic`
+separada, sin referencia/publicacion desde la API o las tres imagenes de release.
+Su HTTP permite solo SOAP sintetico in-process; SMTP es un fake in-process. Los
+servicios restaurados no montan el volumen keyring original. Las claves, signing
+fixture y TLS son exclusivamente sinteticos, nunca certificados/secretos reales.

@@ -43,6 +43,8 @@ El workflow rechaza tags sobre commits no integrados antes de habilitar
 6. Confirmar subnet no solapada, IP del proxy confiable y TLS. En cloud/Kubernetes
    adaptar allowlist a topologia real; nunca wildcard/trust-all ni automatic forwarded headers.
 7. Confirmar estado SRI: gated por default; cualquier habilitacion real es decision humana separada.
+   En rehearsal de restore, aplicar quiescence y deny-egress del runbook DR ANTES
+   del arranque, incluyendo SRI TEST/SMTP; el flag de Production no los bloquea.
 8. Confirmar rollback/restore, controlar escrituras/trafico antes de migrar.
 
 ## Comandos de referencia (NO ejecucion autonoma)
@@ -103,8 +105,7 @@ Docker Desktop funcionando. Windows PowerShell 5.1 es suficiente; no requiere
 PowerShell 7, WSL manual, OpenSSL local ni PostgreSQL local. En PowerShell:
 
 ```powershell
-git switch codex/be-fe-520-deployment-observability-dr
-git pull --ff-only
+# Usar el checkout exacto aprobado del candidato; no cambiar main ni inferir un tag.
 Set-ExecutionPolicy -Scope Process Bypass
 & .\scripts\ops\start-deployment-smoke.ps1
 # Alternativa opcional si ya tienes PowerShell 7:
@@ -113,7 +114,8 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 El script crea TLS localhost de un dia, JWT/passwords aleatorios, DB/keyring/backup
 efimeros; build/migracion aprobada SOLO smoke; imprime MIGRATION PASS, BACKEND READY,
-WEB PASS, API PROXY PASS, BACKUP VERIFY PASS, RESTORE PASS y KEYRING PASS.
+WEB PASS, API PROXY PASS, INTEGRATED SYNTHETIC PILOT PASS, BACKUP VERIFY PASS,
+RESTORE PASS, KEYRING PASS y TRUE RECOVERY ... SOURCE INTACT PASS.
 Abrir `https://localhost:8444/platform/login`, aceptar SOLO ese certificado sintetico,
 usuario `smoke-platform`, password generado en archivo ignorado
 `deploy/compose/smoke-runtime/smoke.env` (`SMOKE_PLATFORM_PASSWORD`). Ver lista tenants.
@@ -126,7 +128,14 @@ CI usa `-Cleanup`, no conserva credenciales ni publica dumps/keys como artifacts
 # pwsh -File scripts/ops/stop-deployment-smoke.ps1
 ```
 
-Limpia solamente proyecto `hfpos-520-smoke`, volumenes/red y runtime temporal.
+Limpia solamente proyecto `hfpos-dev531-<hash-del-worktree>`, volumenes/red y runtime temporal.
 No borra otros contenedores ni backups externos. Si cleanup Docker falla, conserva
 runtime para reintento, nunca declara limpieza exitosa. Requiere puertos 8084/8444
-y subnet 172.30.53.0/24 disponibles. No es plantilla ejecutable para Production.
+y 8085/8445 y subnet 172.30.153.0/24 disponibles. Windows fija contexto
+`desktop-linux` y verifica el named pipe local; Linux CI usa `default`.
+No reutiliza `hfpos-520-smoke`, tags locales legacy ni recursos ajenos.
+El restore es visible en `https://localhost:8445`; el origen sigue en 8444.
+No es plantilla ejecutable para Production. La imagen test-only `pilot-proof`
+no se publica por el workflow de release.
+
+Para decisiones/gates del candidato y piloto, ver [DEV-531 readiness](release-pilot-readiness.md).

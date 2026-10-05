@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Pos.Backend.Api.Tests.Infrastructure;
 
 namespace Pos.Backend.Api.Tests.Integration;
@@ -6,6 +8,42 @@ namespace Pos.Backend.Api.Tests.Integration;
 [Collection(PostgresIntegrationCollection.Name)]
 public sealed class MigrationSmokeTests(PostgresDatabaseFixture database)
 {
+    [Fact]
+    public async Task Compatible_populated_initial_schema_preserves_tenants_through_every_migration()
+    {
+        try
+        {
+            await using var context = database.CreateDbContext();
+            await context.Database.EnsureDeletedAsync();
+            await context.GetService<IMigrator>().MigrateAsync("20251216025500_InitialSchema");
+            await context.Database.ExecuteSqlRawAsync("""
+                INSERT INTO "Companies" ("Name","Ruc","CreatedAt") VALUES
+                    ('SYNTHETIC LEGACY A','9000000000531',now()), ('SYNTHETIC LEGACY B','9000000000532',now());
+                INSERT INTO "Users" ("Username","Email","PasswordHash","IsActive","CreatedAt","CompanyId")
+                    SELECT 'legacy-' || "Id", 'legacy-' || "Id" || '@example.invalid', 'synthetic-hash-only', true, now(), "Id" FROM "Companies";
+                """);
+            foreach (var migration in context.Database.GetMigrations().Skip(1))
+            {
+                await context.GetService<IMigrator>().MigrateAsync(migration);
+                if (migration.EndsWith("AddUserEstablishment"))
+                    await context.Database.ExecuteSqlRawAsync("""
+                        INSERT INTO "Establishments" ("CompanyId","Code","Name","Address","IsActive","CreatedAt")
+                            SELECT "Id", '001', 'SYNTHETIC LEGACY', 'Synthetic address', true, now() FROM "Companies";
+                        UPDATE "Users" u SET "EstablishmentId" = e."Id" FROM "Establishments" e WHERE e."CompanyId" = u."CompanyId";
+                        """);
+            }
+            var companies = await context.Companies.OrderBy(c => c.Id).ToListAsync();
+            Assert.Equal(new[] { "SYNTHETIC LEGACY A", "SYNTHETIC LEGACY B" }, companies.Select(c => c.Name));
+            var users = await context.Users.OrderBy(u => u.CompanyId).ToListAsync();
+            Assert.Equal(companies.Select(c => c.Id), users.Select(u => u.CompanyId));
+            Assert.All(users, user => Assert.Equal("synthetic-hash-only", user.PasswordHash));
+            Assert.Equal(context.Database.GetMigrations(), await context.Database.GetAppliedMigrationsAsync());
+            Assert.Empty(await context.Database.GetPendingMigrationsAsync());
+            Assert.False(context.Database.HasPendingModelChanges());
+        }
+        finally { await database.RecreateDatabaseAsync(); }
+    }
+
     [Fact]
     public async Task Clean_database_applies_every_migration_and_matches_the_model()
     {
