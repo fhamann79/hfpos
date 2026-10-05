@@ -92,21 +92,32 @@ Reusable test-only host accepts ONLY `hfpos_test_530_smoke`, loopback and
 discards ambient/CLI unsafe overrides. It is not part of the production API or
 container. TLS uses only an ephemeral self-signed localhost test certificate.
 No fiscal/signing fixture is initialized in assisted recovery mode.
+On Windows, Schannel uses a temporary synthetic user key container (UserKeySet,
+NOT PersistKeySet), disposed with the host-owned certificate. Other platforms
+use EphemeralKeySet. No PFX is written, no certificate is installed, and no
+system/user trust is changed. The in-memory PFX bytes are zeroed after import.
+See the [runtime Schannel limitation](https://github.com/dotnet/runtime/issues/23749).
 
 Coordinator supplies the connection and runs from repo root:
 
 ```powershell
 ./scripts/ops/start-assisted-recovery-smoke.ps1 -Initialize -Verify
 ./scripts/ops/start-assisted-recovery-smoke.ps1 -VerifyConfiguration
+./scripts/ops/start-assisted-recovery-smoke.ps1 -VerifyListener
 ./scripts/ops/start-assisted-recovery-smoke.ps1 -Initialize
 ```
 
-First two commands are automated checks; last starts the isolated API at
+First three commands are automated checks; last starts the isolated API at
 `https://localhost:7096`. Restarts WITHOUT `-Initialize` preserve preview data.
 HTTP verification uses the existing Production-security in-process test factory.
 Only its construction suppresses assembly HostingStartup discovery; the setting
 is restored immediately. Preview/configuration still require Testing, retain all
 unsafe-override checks, and never permit the synthetic startup in Production.
+VerifyListener exclusively opens loopback HTTPS 7096, performs a real handshake
+and GET pinned to the exact generated certificate, then stops/disposes the host.
+It never connects to or initializes the database and cannot combine Initialize.
+Stop the preview first to avoid a port/binary collision. CI exercises this mode
+on both Linux and Windows Schannel, not merely in-process WAF/TestServer.
 Coordinator serves the existing frontend Development configuration at
 `http://localhost:4200` and prepares browser TLS access before human handoff.
 No human Docker/SQL/token generation/concurrency/infrastructure chores.
@@ -130,6 +141,10 @@ review have passed. Do not request human acceptance before those gates.
 
 No email delivery/verification, MFA, impersonation, production deployment,
 inventory/sales/cash mutation or commercial self-service is in this ticket.
+
+Public tenant login/recovery routes (including trailing slash variants) skip
+authenticated startup /me refresh, preserving a valid recovery link even when
+the browser has a stale tenant JWT. Private routes still load /me and reject 401.
 
 ## Rollback
 

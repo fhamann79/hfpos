@@ -112,6 +112,11 @@ jobs:
           HF_POS_TEST_CONNECTION_STRING: Host=localhost;Port=5432;Database=hfpos_test_530_smoke;Username=hfpos_test;Password=hfpos_test_password
         run: dotnet run --project backend/Pos.Backend.Api/Hfpos.FiscalSmokeHost --configuration Release --no-build -- --assisted-recovery --verify-configuration
 
+      - name: Verify assisted recovery real TLS listener
+        env:
+          HF_POS_TEST_CONNECTION_STRING: Host=localhost;Port=5432;Database=hfpos_test_530_smoke;Username=hfpos_test;Password=hfpos_test_password
+        run: dotnet run --project backend/Pos.Backend.Api/Hfpos.FiscalSmokeHost --configuration Release --no-build -- --assisted-recovery --verify-listener
+
       - name: List migrations
         run: >-
           dotnet ef migrations list
@@ -127,6 +132,22 @@ jobs:
           --startup-project backend/Pos.Backend.Api/Pos.Backend.Api
           --configuration Release
           --no-build
+
+  recovery-tls-windows:
+    name: Synthetic recovery TLS (Windows Schannel)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      HF_POS_TEST_CONNECTION_STRING: Host=127.0.0.1;Port=54930;Database=hfpos_test_530_smoke;Username=hfpos_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Build test-only host
+        run: dotnet build backend/Pos.Backend.Api/Hfpos.FiscalSmokeHost --configuration Release
+      - name: Verify HTTPS listener without database or trust changes
+        run: ./scripts/ops/start-assisted-recovery-smoke.ps1 -VerifyListener
 
   frontend:
     name: Frontend (Angular 21)

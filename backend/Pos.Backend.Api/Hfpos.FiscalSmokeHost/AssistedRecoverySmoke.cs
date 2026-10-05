@@ -27,6 +27,13 @@ internal static class AssistedRecoverySmoke
         Environment.SetEnvironmentVariable("ASPNETCORE_FORWARDEDHEADERS_ENABLED", "false");
         SmokeConfiguration.VerifyStartup();
         if (args.Contains("--verify-configuration")) return;
+        if (args.Contains("--verify-listener"))
+        {
+            if (args.Contains("--initialize") || args.Contains("--verify"))
+                throw new InvalidOperationException("TLS-only verification cannot initialize or verify database workflows.");
+            await RecoveryTlsVerification.RunAsync();
+            return;
+        }
         if (args.Contains("--initialize"))
         {
             var database = new PostgresDatabaseFixture();

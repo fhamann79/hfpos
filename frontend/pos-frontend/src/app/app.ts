@@ -13,7 +13,7 @@ export class App {
   private readonly currentUrl = signal(this.router.url);
 
   readonly showShell = computed(() => {
-    const path = this.currentUrl().split(/[?#]/, 1)[0];
+    const path = this.currentUrl().split(/[?#]/, 1)[0].replace(/\/+$/, '');
     return path !== '/login' && path !== '/recover-access' && path !== '/recover-access/complete'
       && !path.startsWith('/platform/');
   });

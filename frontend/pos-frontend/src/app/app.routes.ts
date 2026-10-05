@@ -18,6 +18,9 @@ import { suppliersAccessGuard } from './core/guards/suppliers-access.guard';
 export const routes: Routes = [
   { path: 'recover-access', loadComponent: () => import('./modules/auth/recovery/recover-access').then(m => m.RecoverAccess) },
   { path: 'recover-access/complete', loadComponent: () => import('./modules/auth/recovery/password-page').then(m => m.PasswordPage) },
+  { path: 'recover-access/', loadComponent: () => import('./modules/auth/recovery/recover-access').then(m => m.RecoverAccess) },
+  { path: 'recover-access/complete/', loadComponent: () => import('./modules/auth/recovery/password-page').then(m => m.PasswordPage) },
+  { path: 'login/', loadComponent: () => import('./modules/auth/login/login').then(m => m.Login) },
   { path: 'account/password', canActivate: [AuthGuard], data: { self: true }, loadComponent: () => import('./modules/auth/recovery/password-page').then(m => m.PasswordPage) },
   { path: 'platform/recover-access/complete', data: { platform: true }, loadComponent: () => import('./modules/auth/recovery/password-page').then(m => m.PasswordPage) },
   { path: 'platform/account/password', canActivate: [platformGuard], data: { platform: true, self: true }, loadComponent: () => import('./modules/auth/recovery/password-page').then(m => m.PasswordPage) },
