@@ -4,6 +4,8 @@ namespace Pos.Backend.Api.Core.Entities;
 
 public class CashSession
 {
+    public Guid? RequestId { get; set; }
+    public string? RequestHash { get; set; }
     public int Id { get; set; }
 
     public int CompanyId { get; set; }

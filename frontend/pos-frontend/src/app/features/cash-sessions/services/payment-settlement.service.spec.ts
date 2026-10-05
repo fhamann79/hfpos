@@ -42,6 +42,6 @@ describe('PaymentSettlementService', () => {
     expect(request.request.body).toEqual({ requestId: 'synthetic-uuid', businessDate: '2026-09-17',
       paymentMethod: 1, settledAmount: -10, reference: null, notes: null });
     expect(request.request.body.expectedNetAmount).toBeUndefined();
-    request.flush({ id: 1 });
+    request.flush({ id: 1, requestId: 'synthetic-uuid' });
   });
 });

@@ -182,6 +182,8 @@ public class InventoryController : ControllerBase
 
         return code switch
         {
+            "REQUEST_CONFLICT" => Conflict(new ApiErrorResponse { Error = code }),
+            "REQUEST_ID_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "PRODUCT_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "PRODUCT_INACTIVE" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVALID_QUANTITY" => BadRequest(new ApiErrorResponse { Error = code }),

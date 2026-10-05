@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+
+beforeEach(() => sessionStorage.clear());
 import { SimpleChange } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Observable, Subject, of, throwError } from 'rxjs';

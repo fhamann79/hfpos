@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+
+beforeEach(() => sessionStorage.clear());
 import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { vi } from 'vitest';

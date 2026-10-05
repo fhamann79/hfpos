@@ -1,6 +1,6 @@
 import { CommonModule, CurrencyPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -21,6 +21,8 @@ import {
   formatBusinessTime as formatBusinessTimeValue,
 } from '../../../../core/utils/business-date-format';
 import { readErrorCode, resolveHttpErrorMessage } from '../../../../core/utils/http-error-normalizer';
+import { OperationIntent, definitiveOperationRejection, operationActor, operationScope } from '../../../../core/utils/operation-intent';
+import { of, switchMap } from 'rxjs';
 import {
   CashMovement,
   CashMovementType,
@@ -28,6 +30,9 @@ import {
   CashSessionListItem,
   CashSessionStatus,
   CashSessionSummary,
+  CreateCashMovementRequest,
+  OpenCashSessionRequest,
+  CloseCashSessionRequest,
 } from '../../models/cash-session.model';
 import { CashSessionService } from '../../services/cash-session.service';
 import { PaymentReconciliationPanel } from '../../components/payment-reconciliation-panel/payment-reconciliation-panel';
@@ -65,11 +70,26 @@ const EMPTY_SUMMARY: CashSessionSummary = {
   templateUrl: './cash-sessions-page.html',
   styleUrl: './cash-sessions-page.scss',
 })
-export class CashSessionsPage implements OnInit {
+export class CashSessionsPage implements OnInit, OnDestroy {
   private readonly cashSessionService = inject(CashSessionService);
   private readonly permissionService = inject(PermissionService);
   private readonly authStore = inject(AuthStore);
   private readonly messageService = inject(MessageService);
+  private currentSequence = 0;
+  private destroyed = false;
+  private movementTarget: { id: number; scope: string } | null = null;
+  private closeTarget: { id: number; scope: string } | null = null;
+  private readonly movementIntent = new OperationIntent<{ id: number; payload: CreateCashMovementRequest }>('cash-movement', operationActor(this.authStore));
+  private readonly closeIntent = new OperationIntent<{ id: number; payload: CloseCashSessionRequest }>('cash-close', operationActor(this.authStore));
+  private readonly openIntent = new OperationIntent<OpenCashSessionRequest>('cash-open', operationActor(this.authStore));
+  readonly movementLocked = signal(this.movementIntent.pending);
+  readonly closeLocked = signal(this.closeIntent.pending);
+  readonly openLocked = signal(this.openIntent.pending);
+  readonly closingSession = signal<CashSession | null>(null);
+  get movementTargetId(): number | null { return this.movementTarget?.id ?? null; }
+  get closeTargetId(): number | null { return this.closeTarget?.id ?? null; }
+
+  ngOnDestroy(): void { this.destroyed = true; ++this.currentSequence; }
 
   readonly currentSession = signal<CashSession | null>(null);
   readonly sessions = signal<CashSessionListItem[]>([]);
@@ -130,14 +150,18 @@ export class CashSessionsPage implements OnInit {
   }
 
   loadCurrent(): void {
+    const sequence = ++this.currentSequence;
+    const scope = operationScope(this.authStore);
     this.currentLoading.set(true);
 
     this.cashSessionService.getCurrent().subscribe({
       next: (session) => {
+        if (this.destroyed || sequence !== this.currentSequence || scope !== operationScope(this.authStore)) return;
         this.currentSession.set(session);
         this.currentLoading.set(false);
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || sequence !== this.currentSequence || scope !== operationScope(this.authStore)) return;
         this.currentLoading.set(false);
         this.messageService.add({
           severity: 'error',
@@ -205,27 +229,37 @@ export class CashSessionsPage implements OnInit {
   }
 
   openCashDialog(): void {
+    if (this.saving()) return;
     if (!this.canWrite()) {
       return;
     }
 
     this.openingAmount = 0;
     this.openingNotes = '';
-    this.formError.set('');
+    if (!this.openIntent.pending) this.formError.set('');
     this.openDialogVisible = true;
+    if (this.openIntent.pending) {
+      try {
+        const pending = this.openIntent.retry(operationScope(this.authStore));
+        this.openingAmount = pending.openingAmount;
+        this.openingNotes = pending.openingNotes ?? '';
+      } catch (error) { this.formError.set(error instanceof Error ? error.message : 'Operacion pendiente.'); }
+    }
   }
 
   closeOpenDialog(): void {
+    if (this.saving()) return;
     this.openDialogVisible = false;
     this.formError.set('');
     this.saving.set(false);
   }
 
   confirmOpen(): void {
-    if (!this.canWrite()) {
+    if (!this.canWrite() || this.saving() || this.destroyed) {
       return;
     }
 
+    const wasRetry = this.openIntent.pending;
     const amount = this.parseAmount(this.openingAmount);
     if (amount === null || amount < 0) {
       this.formError.set('El monto inicial debe ser mayor o igual a 0.');
@@ -234,46 +268,83 @@ export class CashSessionsPage implements OnInit {
 
     this.saving.set(true);
     this.formError.set('');
-
-    this.cashSessionService.open({
-      openingAmount: amount,
-      openingNotes: this.normalizeOptionalText(this.openingNotes),
-    }).subscribe({
+    const scope = operationScope(this.authStore);
+    let payload: OpenCashSessionRequest;
+    try {
+      payload = this.openIntent.capture(scope, { requestId: crypto.randomUUID(), openingAmount: amount, openingNotes: this.normalizeOptionalText(this.openingNotes) });
+    } catch (error) {
+      this.saving.set(false);
+      this.formError.set(error instanceof Error ? error.message : 'Operacion pendiente.');
+      return;
+    }
+    this.openLocked.set(true);
+    ++this.currentSequence;
+    const request = this.cashSessionService.open(payload);
+    request.subscribe({
       next: (session) => {
+        if (this.destroyed || scope !== operationScope(this.authStore)) return;
         this.saving.set(false);
+        if (!session) {
+          this.formError.set('Respuesta incompleta. Conserva la apertura pendiente para recuperar su resultado.');
+          return;
+        }
+        ++this.currentSequence;
+        this.currentLoading.set(false);
+        this.openIntent.clear();
+        this.openLocked.set(false);
         this.openDialogVisible = false;
-        this.currentSession.set(session);
-        this.messageService.add({ severity: 'success', summary: 'Caja abierta', detail: 'La caja quedó lista para vender.' });
+        this.currentSession.set(session.status === CashSessionStatus.Open ? session : null);
+        this.selectedSession.set(session);
+        if (session.status === CashSessionStatus.Closed) this.detailDialogVisible = true;
+        this.messageService.add({ severity: 'success', summary: wasRetry ? 'Estado de caja recuperado' : 'Caja abierta', detail: 'Consulta los datos de la caja actual.' });
         this.loadSessions();
+        this.loadCurrent();
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || scope !== operationScope(this.authStore)) return;
         this.saving.set(false);
+        if (!wasRetry && definitiveOperationRejection(error)) {
+          this.openIntent.clear(); this.openLocked.set(false);
+        }
         this.formError.set(this.resolveCashError(error, 'No se pudo abrir la caja.'));
       },
     });
   }
 
   openMovementDialog(type: CashMovementType): void {
-    if (!this.canWrite() || !this.currentSession()) {
+    if (!this.canWrite() || this.saving() || (!this.currentSession() && !this.movementIntent.pending)) {
       return;
     }
 
     this.movementType = type;
     this.movementAmount = null;
     this.movementReason = '';
-    this.formError.set('');
+    if (!this.movementIntent.pending) this.formError.set('');
     this.movementDialogVisible = true;
+    const scope = operationScope(this.authStore);
+    this.movementTarget = this.currentSession() ? { id: this.currentSession()!.id, scope } : null;
+    if (this.movementIntent.pending) {
+      try {
+        const pending = this.movementIntent.retry(scope);
+        this.movementTarget = { id: pending.id, scope };
+        this.movementType = pending.payload.type;
+        this.movementAmount = pending.payload.amount;
+        this.movementReason = pending.payload.reason;
+      } catch (error) { this.formError.set(error instanceof Error ? error.message : 'Operacion pendiente.'); }
+    }
   }
 
   closeMovementDialog(): void {
+    if (this.saving()) return;
     this.movementDialogVisible = false;
     this.formError.set('');
     this.saving.set(false);
   }
 
   confirmMovement(): void {
-    const session = this.currentSession();
-    if (!this.canWrite() || !session) {
+    const target = this.movementTarget;
+    if (!this.canWrite() || !target || this.saving() || this.destroyed
+      || target.scope !== operationScope(this.authStore)) {
       return;
     }
 
@@ -291,21 +362,36 @@ export class CashSessionsPage implements OnInit {
 
     this.saving.set(true);
     this.formError.set('');
-
-    this.cashSessionService.addMovement(session.id, {
-      type: this.movementType,
-      amount,
-      reason,
-    }).subscribe({
+    const wasRetry = this.movementIntent.pending;
+    let frozen: { id: number; payload: CreateCashMovementRequest };
+    try {
+      frozen = this.movementIntent.capture(target.scope, { id: target.id,
+        payload: { requestId: crypto.randomUUID(), type: this.movementType, amount, reason } });
+    } catch (error) {
+      this.saving.set(false); this.formError.set(error instanceof Error ? error.message : 'Operacion pendiente.'); return;
+    }
+    this.movementLocked.set(true);
+    ++this.currentSequence;
+    this.cashSessionService.addMovement(frozen.id, frozen.payload).subscribe({
       next: (updated) => {
+        if (this.destroyed || target.scope !== operationScope(this.authStore)) return;
+        ++this.currentSequence;
+        this.currentLoading.set(false);
+        this.movementIntent.clear(); this.movementLocked.set(false);
         this.saving.set(false);
         this.movementDialogVisible = false;
-        this.currentSession.set(updated);
+        this.currentSession.set(updated.status === CashSessionStatus.Open ? updated : null);
+        this.selectedSession.set(updated);
         this.messageService.add({ severity: 'success', summary: 'Movimiento registrado', detail: 'La caja fue actualizada.' });
         this.loadSessions();
+        this.loadCurrent();
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || target.scope !== operationScope(this.authStore)) return;
         this.saving.set(false);
+        if (!wasRetry && definitiveOperationRejection(error)) {
+          this.movementIntent.clear(); this.movementLocked.set(false);
+        }
         this.formError.set(this.resolveCashError(error, 'No se pudo registrar el movimiento.'));
       },
     });
@@ -313,25 +399,38 @@ export class CashSessionsPage implements OnInit {
 
   openCloseDialog(): void {
     const session = this.currentSession();
-    if (!this.canWrite() || !session) {
+    if (!this.canWrite() || this.saving() || (!session && !this.closeIntent.pending)) {
       return;
     }
 
-    this.countedCashAmount = session.expectedCashAmount;
+    const scope = operationScope(this.authStore);
+    this.closeTarget = session ? { id: session.id, scope } : null;
+    this.closingSession.set(session);
+    this.countedCashAmount = session?.expectedCashAmount ?? 0;
     this.closingNotes = '';
-    this.formError.set('');
+    if (!this.closeIntent.pending) this.formError.set('');
     this.closeDialogVisible = true;
+    if (this.closeIntent.pending) {
+      try {
+        const pending = this.closeIntent.retry(scope);
+        this.closeTarget = { id: pending.id, scope };
+        this.countedCashAmount = pending.payload.countedCashAmount;
+        this.closingNotes = pending.payload.closingNotes ?? '';
+      } catch (error) { this.formError.set(error instanceof Error ? error.message : 'Operacion pendiente.'); }
+    }
   }
 
   closeCloseDialog(): void {
+    if (this.saving()) return;
     this.closeDialogVisible = false;
     this.formError.set('');
     this.saving.set(false);
   }
 
   confirmClose(): void {
-    const session = this.currentSession();
-    if (!this.canWrite() || !session) {
+    const target = this.closeTarget;
+    if (!this.canWrite() || !target || this.saving() || this.destroyed
+      || target.scope !== operationScope(this.authStore)) {
       return;
     }
 
@@ -343,22 +442,40 @@ export class CashSessionsPage implements OnInit {
 
     this.saving.set(true);
     this.formError.set('');
-
-    this.cashSessionService.close(session.id, {
-      countedCashAmount: countedAmount,
-      closingNotes: this.normalizeOptionalText(this.closingNotes),
-    }).subscribe({
+    const wasRetry = this.closeIntent.pending;
+    let frozen: { id: number; payload: CloseCashSessionRequest };
+    try {
+      frozen = this.closeIntent.capture(target.scope, { id: target.id,
+        payload: { countedCashAmount: countedAmount, closingNotes: this.normalizeOptionalText(this.closingNotes) } });
+    } catch (error) {
+      this.saving.set(false); this.formError.set(error instanceof Error ? error.message : 'Operacion pendiente.'); return;
+    }
+    this.closeLocked.set(true);
+    ++this.currentSequence;
+    const request = wasRetry ? this.cashSessionService.getById(frozen.id).pipe(switchMap(value =>
+      value.status === CashSessionStatus.Closed ? of(value) : this.cashSessionService.close(frozen.id, frozen.payload)))
+      : this.cashSessionService.close(frozen.id, frozen.payload);
+    request.subscribe({
       next: (closed) => {
+        if (this.destroyed || target.scope !== operationScope(this.authStore)) return;
+        ++this.currentSequence;
+        this.currentLoading.set(false);
+        this.closeIntent.clear(); this.closeLocked.set(false);
         this.saving.set(false);
         this.closeDialogVisible = false;
         this.currentSession.set(null);
         this.selectedSession.set(closed);
         this.detailDialogVisible = true;
-        this.messageService.add({ severity: 'success', summary: 'Caja cerrada', detail: 'El cierre fue guardado correctamente.' });
+        this.messageService.add({ severity: 'success', summary: wasRetry ? 'Estado de cierre recuperado' : 'Caja cerrada', detail: 'Consulta los valores de cierre registrados.' });
         this.loadSessions();
+        this.loadCurrent();
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || target.scope !== operationScope(this.authStore)) return;
         this.saving.set(false);
+        if (!wasRetry && definitiveOperationRejection(error)) {
+          this.closeIntent.clear(); this.closeLocked.set(false);
+        }
         this.formError.set(this.resolveCashError(error, 'No se pudo cerrar la caja.'));
       },
     });

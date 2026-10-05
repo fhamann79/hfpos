@@ -52,6 +52,8 @@ internal sealed class TestServiceScope : IAsyncDisposable
         Settlements = new PaymentSettlementService(DbContext, contextAccessor, businessClock, administrationGuard);
 
         PurchaseReceipts = new PurchaseReceiptQueryService(DbContext, contextAccessor);
+        PurchaseReceiptCreates = new PurchaseReceiptService(DbContext, Inventory, contextAccessor,
+            businessClock, administrationGuard, new ProductCostService(DbContext));
         ElectronicDocuments = new ElectronicDocumentQueryService(DbContext, contextAccessor);
 
         var documentNumbers = new FiscalDocumentNumberService(
@@ -93,6 +95,7 @@ internal sealed class TestServiceScope : IAsyncDisposable
     public PaymentSettlementService Settlements { get; }
 
     public PurchaseReceiptQueryService PurchaseReceipts { get; }
+    public PurchaseReceiptService PurchaseReceiptCreates { get; }
 
     public ElectronicDocumentQueryService ElectronicDocuments { get; }
 

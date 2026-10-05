@@ -187,13 +187,17 @@
 <p-dialog
   [visible]="createDialogVisible"
   [modal]="true"
-  [closable]="true"
+  [closable]="!saving()"
+  [closeOnEscape]="!saving()"
+  [dismissableMask]="false"
+  (visibleChange)="createDialogVisible = $event; !$event && closeCreateDialog()"
   [draggable]="false"
   [style]="{ width: '74rem', maxWidth: '96vw' }"
   header="Nueva recepcion"
-  (onHide)="closeCreateDialog()"
 >
   <form class="receipt-form" (ngSubmit)="saveReceipt()">
+    <fieldset [disabled]="receiptLocked() || saving()" [attr.inert]="receiptLocked() || saving() ? '' : null"
+      style="border: 0; padding: 0; margin: 0; min-width: 0;">
     <div class="form-grid">
       <label class="field field-wide">
         <span>Proveedor</span>
@@ -315,6 +319,7 @@
       </div>
     </section>
 
+    </fieldset>
     @if (formError()) {
       <p-message severity="error" [text]="formError()"></p-message>
     }
@@ -326,7 +331,7 @@
 
     <div class="dialog-actions">
       <p-button label="Cancelar" severity="secondary" [outlined]="true" type="button" (onClick)="closeCreateDialog()"></p-button>
-      <p-button label="Registrar recepcion" icon="pi pi-check" type="submit" [loading]="saving()"></p-button>
+      <p-button [label]="receiptLocked() ? 'Recuperar recepcion' : 'Registrar recepcion'" icon="pi pi-check" type="submit" [loading]="saving()"></p-button>
     </div>
   </form>
 </p-dialog>
@@ -457,13 +462,16 @@
 <p-dialog
   [visible]="cancelDialogVisible"
   [modal]="true"
-  [closable]="true"
+  [closable]="!canceling()"
+  [closeOnEscape]="!canceling()"
+  [dismissableMask]="false"
+  (visibleChange)="cancelDialogVisible = $event; !$event && closeCancelDialog()"
   [draggable]="false"
   [style]="{ width: '34rem', maxWidth: '94vw' }"
   header="Cancelar recepcion"
-  (onHide)="closeCancelDialog()"
 >
   <div class="cancel-dialog">
+    <strong>Recepcion #{{ cancelTargetId }}</strong>
     <div class="warning-callout">
       <i class="pi pi-exclamation-triangle"></i>
       <span>
@@ -475,7 +483,7 @@
 
     <label class="field">
       <span>Razon de cancelacion</span>
-      <textarea pTextarea rows="4" [(ngModel)]="cancelReason" maxlength="500"></textarea>
+      <textarea pTextarea rows="4" [(ngModel)]="cancelReason" maxlength="500" [disabled]="canceling()"></textarea>
     </label>
 
     @if (cancelError()) {

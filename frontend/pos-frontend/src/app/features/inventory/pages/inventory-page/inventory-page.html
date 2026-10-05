@@ -568,7 +568,7 @@
                     <button
                       type="button"
                       class="operation-option"
-                      [disabled]="operationLoading()"
+                      [disabled]="operationLoading() || operationLocked()"
                       [class.operation-option--active]="activeOperation === option.value"
                       (click)="activeOperation = option.value; operationError.set(''); operationResult.set(null)"
                     >
@@ -587,7 +587,7 @@
                     </div>
                     @if (activeOperation === 'adjust') {
                       <p-button icon="pi pi-refresh" label="Actualizar saldo del conteo" [loading]="countLoading()"
-                        [disabled]="operationLoading() || adjustForm.productId === null" (onClick)="loadCountSnapshot()"></p-button>
+                        [disabled]="operationLoading() || operationLocked() || adjustForm.productId === null" (onClick)="loadCountSnapshot()"></p-button>
                       @if (countSnapshot(); as snapshot) {
                         <span>Saldo del conteo: {{ snapshot.quantity }} | Movimiento: {{ snapshot.movementWatermark }}</span>
                       }
@@ -610,7 +610,7 @@
                         [options]="productOptions()"
                         [loading]="lookupLoading()"
                         [ngModel]="currentOperationForm().productId"
-                        [disabled]="operationLoading()"
+                        [disabled]="operationLoading() || operationLocked()"
                         (ngModelChange)="setOperationProduct($event)"
                         optionLabel="label"
                         optionValue="value"
@@ -623,7 +623,7 @@
                       <span>{{ activeOperation === 'adjust' ? 'Stock final' : 'Cantidad' }}</span>
                       <p-inputnumber
                         [ngModel]="currentOperationForm().quantity"
-                        [disabled]="operationLoading()"
+                        [disabled]="operationLoading() || operationLocked()"
                         (ngModelChange)="setOperationQuantity($event)"
                         [min]="activeOperation === 'adjust' ? 0 : 0.01"
                         [minFractionDigits]="0"
@@ -638,6 +638,7 @@
                         pInputText
                         type="text"
                         [ngModel]="currentOperationForm().reference"
+                        [disabled]="operationLoading() || operationLocked()"
                         (ngModelChange)="setOperationReference($event)"
                         placeholder="Documento, guía o motivo"
                       />
@@ -649,6 +650,7 @@
                         pTextarea
                         rows="4"
                         [ngModel]="currentOperationForm().notes"
+                        [disabled]="operationLoading() || operationLocked()"
                         (ngModelChange)="setOperationNotes($event)"
                         placeholder="Comentario operativo opcional"
                       ></textarea>
@@ -687,7 +689,7 @@
 
                   <footer class="operation-actions">
                     <p-button
-                      [label]="'Registrar ' + operationLabel(activeOperation).toLowerCase()"
+                      [label]="operationLocked() ? 'Recuperar operacion' : 'Registrar ' + operationLabel(activeOperation).toLowerCase()"
                       icon="pi pi-check"
                       [loading]="operationLoading()"
                       [disabled]="!canSubmitOperation()"

@@ -168,8 +168,8 @@ public sealed class InitialDataIntegrationTests(PostgresDatabaseFixture database
         var input = Payload("opening-inventory", "internalCode,quantity\nopening-stale-P1,20\n");
         var service = Service(scope, tenant);
         var preview = await service.PreviewAsync(input);
-        await scope.Inventory.RegisterEntryAsync(new() { ProductId = tenant.Products[0].Id, Quantity = 2m });
-        await scope.Inventory.RegisterExitAsync(new() { ProductId = tenant.Products[0].Id, Quantity = 2m });
+        await scope.Inventory.RegisterEntryAsync(new() { RequestId = Guid.NewGuid(), ProductId = tenant.Products[0].Id, Quantity = 2m });
+        await scope.Inventory.RegisterExitAsync(new() { RequestId = Guid.NewGuid(), ProductId = tenant.Products[0].Id, Quantity = 2m });
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ConfirmAsync(new() { Payload = input, PreviewToken = preview.PreviewToken! }));
         Assert.Equal("INITIAL_DATA_REVALIDATION_FAILED", ex.Message);
         Assert.Empty(await scope.DbContext.InitialDataBatches.ToListAsync());
@@ -181,8 +181,8 @@ public sealed class InitialDataIntegrationTests(PostgresDatabaseFixture database
         var tenant = await TenantAsync("count", 709, 10m);
         await using var scope = new TestServiceScope(database, tenant.OperationalContext);
         var snapshot = (await scope.Inventory.GetProductStockAsync(tenant.Products[0].Id))!;
-        await scope.Inventory.RegisterExitAsync(new() { ProductId = snapshot.ProductId, Quantity = 2m });
-        await scope.Inventory.RegisterEntryAsync(new() { ProductId = snapshot.ProductId, Quantity = 2m });
+        await scope.Inventory.RegisterExitAsync(new() { RequestId = Guid.NewGuid(), ProductId = snapshot.ProductId, Quantity = 2m });
+        await scope.Inventory.RegisterEntryAsync(new() { RequestId = Guid.NewGuid(), ProductId = snapshot.ProductId, Quantity = 2m });
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => scope.Inventory.RegisterAdjustmentAsync(Count(snapshot, 12m)));
         Assert.Equal("INVENTORY_SNAPSHOT_STALE", ex.Message);
         snapshot = (await scope.Inventory.GetProductStockAsync(snapshot.ProductId))!;
@@ -441,7 +441,7 @@ public sealed class InitialDataIntegrationTests(PostgresDatabaseFixture database
         scope.Inventory, new ProductCostService(scope.DbContext), protection);
     private static InitialDataPreviewRequest Payload(string kind, string csv) => new() { RequestId = Guid.NewGuid(), Kind = kind, Csv = csv };
     private static InventoryAdjustDto Count(InventoryStockDto snapshot, decimal target) => new()
-    { ProductId = snapshot.ProductId, Quantity = target, ExpectedQuantity = snapshot.Quantity,
+    { RequestId = Guid.NewGuid(), ProductId = snapshot.ProductId, Quantity = target, ExpectedQuantity = snapshot.Quantity,
         ExpectedMovementWatermark = snapshot.MovementWatermark, ExpectedCompanyId = snapshot.CompanyId,
         ExpectedEstablishmentId = snapshot.EstablishmentId };
     private sealed class FailSecondMovement(int productId) : SaveChangesInterceptor

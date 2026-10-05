@@ -9,6 +9,8 @@ import { InventoryStock, InventoryStockPage, StockStatus } from '../../models/in
 import { InventoryMovement, InventoryMovementSourceType, InventoryMovementType } from '../../models/inventory-movement.model';
 import { InventoryPage } from './inventory-page';
 
+beforeEach(() => sessionStorage.clear());
+
 describe('Inactive product reconciliation', () => {
   const service = {
     registerEntry: vi.fn(() => EMPTY),

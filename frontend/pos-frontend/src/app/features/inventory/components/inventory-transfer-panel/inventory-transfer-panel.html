@@ -9,6 +9,8 @@
   @if (canWrite) {
     <div class="transfer-form">
       <h4>Transferir stock</h4>
+      <fieldset [disabled]="intentLocked() || submitLoading()" [attr.inert]="intentLocked() || submitLoading() ? '' : null"
+        style="border: 0; margin: 0; padding: 0; min-width: 0;">
       <div class="transfer-fields">
         <label>
           <span>Origen</span>
@@ -74,6 +76,7 @@
           (ngModelChange)="onDraftChanged()" placeholder="Opcional"></textarea>
       </label>
 
+      </fieldset>
       @if (submitError()) {
         <p-message severity="error" [text]="submitError()"></p-message>
       }
@@ -82,8 +85,8 @@
       }
       <footer class="transfer-actions">
         <p-button label="Nueva transferencia" icon="pi pi-undo" severity="secondary"
-          [outlined]="true" [disabled]="submitLoading()" (onClick)="resetDraft()"></p-button>
-        <p-button label="Confirmar transferencia" icon="pi pi-check" [loading]="submitLoading()"
+          [outlined]="true" [disabled]="submitLoading() || intentLocked()" (onClick)="resetDraft()"></p-button>
+        <p-button [label]="intentLocked() ? 'Recuperar transferencia' : 'Confirmar transferencia'" icon="pi pi-check" [loading]="submitLoading()"
           [disabled]="submitLoading()" (onClick)="submit()"></p-button>
       </footer>
     </div>

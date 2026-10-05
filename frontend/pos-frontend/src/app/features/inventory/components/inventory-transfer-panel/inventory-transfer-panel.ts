@@ -12,6 +12,7 @@ import { SelectModule } from 'primeng/select';
 import { TableLazyLoadEvent, TableModule } from 'primeng/table';
 import { TextareaModule } from 'primeng/textarea';
 import { AuthStore } from '../../../../core/stores/auth.store';
+import { OperationIntent, definitiveOperationRejection, operationActor, operationScope } from '../../../../core/utils/operation-intent';
 import { formatBusinessDateTime } from '../../../../core/utils/business-date-format';
 import { InventoryTransferProduct } from '../../models/inventory-stock.model';
 import {
@@ -51,6 +52,9 @@ export class InventoryTransferPanel implements OnInit, OnChanges, OnDestroy {
 
   private readonly inventory = inject(InventoryService);
   readonly auth = inject(AuthStore);
+  private readonly intent = new OperationIntent<InventoryTransferCreateRequest>('transfer', operationActor(this.auth));
+  readonly intentLocked = signal(this.intent.pending);
+  private destroyed = false;
   readonly destinations = signal<InventoryTransferDestination[]>([]);
   readonly destinationsError = signal('');
   readonly transfers = signal<InventoryTransferListItem[]>([]);
@@ -69,7 +73,7 @@ export class InventoryTransferPanel implements OnInit, OnChanges, OnDestroy {
   notes = '';
   lines: TransferLine[] = [{ id: 1, productId: null, quantity: null }];
   private nextLineId = 2;
-  requestId = crypto.randomUUID();
+  requestId: string = crypto.randomUUID();
   pageSize = 25;
   first = 0;
   from = '';
@@ -78,6 +82,16 @@ export class InventoryTransferPanel implements OnInit, OnChanges, OnDestroy {
   detailVisible = false;
 
   ngOnInit(): void {
+    if (this.intent.pending) {
+      try {
+        const pending = this.intent.retry(operationScope(this.auth));
+        this.destinationId = pending.destinationEstablishmentId;
+        this.reference = pending.reference ?? '';
+        this.notes = pending.notes ?? '';
+        this.requestId = pending.requestId;
+        this.lines = pending.items.map((item, id) => ({ ...item, id }));
+      } catch (error) { this.submitError.set(error instanceof Error ? error.message : 'Operacion pendiente.'); }
+    }
     if (this.canWrite) {
       this.loadDestinations();
       this.loadProducts();
@@ -168,27 +182,32 @@ export class InventoryTransferPanel implements OnInit, OnChanges, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
     clearTimeout(this.productTimer);
     ++this.productSequence;
   }
 
   onDraftChanged(): void {
+    if (this.intent.pending || this.submitLoading()) return;
     this.requestId = crypto.randomUUID();
     this.submitError.set('');
     this.submitSuccess.set('');
   }
 
   addLine(): void {
+    if (this.intent.pending || this.submitLoading()) return;
     this.lines = [...this.lines, { id: this.nextLineId++, productId: null, quantity: null }];
     this.onDraftChanged();
   }
 
   removeLine(id: number): void {
+    if (this.intent.pending || this.submitLoading()) return;
     this.lines = this.lines.filter(line => line.id !== id);
     this.onDraftChanged();
   }
 
   resetDraft(): void {
+    if (this.intent.pending || this.submitLoading()) return;
     this.destinationId = null;
     this.reference = '';
     this.notes = '';
@@ -197,21 +216,31 @@ export class InventoryTransferPanel implements OnInit, OnChanges, OnDestroy {
   }
 
   submit(): void {
-    if (this.submitLoading() || this.validationMessage) {
+    const wasRetry = this.intent.pending;
+    if (this.destroyed || !this.canWrite || this.submitLoading() || (!wasRetry && this.validationMessage)) {
       this.submitError.set(this.validationMessage ?? '');
       return;
     }
-    const payload: InventoryTransferCreateRequest = {
+    const scope = operationScope(this.auth);
+    let payload: InventoryTransferCreateRequest;
+    try {
+      payload = wasRetry ? this.intent.retry(scope) : this.intent.capture(scope, {
       destinationEstablishmentId: this.destinationId!,
       requestId: this.requestId,
       reference: this.reference.trim() || null,
       notes: this.notes.trim() || null,
       items: this.lines.map(line => ({ productId: line.productId!, quantity: line.quantity! })),
-    };
+      });
+    } catch (error) {
+      this.submitError.set(error instanceof Error ? error.message : 'Operacion pendiente.'); return;
+    }
+    this.intentLocked.set(true);
     this.submitLoading.set(true);
     this.submitError.set('');
     this.inventory.createTransfer(payload).subscribe({
       next: transfer => {
+        if (this.destroyed || scope !== operationScope(this.auth)) return;
+        this.intent.clear(); this.intentLocked.set(false);
         this.submitLoading.set(false);
         this.detail.set(transfer);
         this.detailVisible = true;
@@ -224,7 +253,11 @@ export class InventoryTransferPanel implements OnInit, OnChanges, OnDestroy {
         this.loadTransfers(1, this.pageSize);
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyed || scope !== operationScope(this.auth)) return;
         this.submitLoading.set(false);
+        if (!wasRetry && definitiveOperationRejection(error)) {
+          this.intent.clear(); this.intentLocked.set(false);
+        }
         this.submitError.set(this.inventory.resolveError(error, 'No se pudo registrar la transferencia.'));
       },
     });

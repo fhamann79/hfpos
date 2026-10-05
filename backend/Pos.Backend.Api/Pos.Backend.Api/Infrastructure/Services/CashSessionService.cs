@@ -236,6 +236,7 @@ public class CashSessionService : ICashSessionService
 
     public async Task<CashSessionDto> OpenAsync(OpenCashSessionDto dto)
     {
+        if (dto.RequestId.HasValue) CriticalOperationRequest.RequireId(dto.RequestId.Value);
         if (dto.OpeningAmount < 0m)
         {
             throw new InvalidOperationException("CASH_SESSION_OPENING_AMOUNT_INVALID");
@@ -244,70 +245,105 @@ public class CashSessionService : ICashSessionService
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
-        await _administrationGuard.LockOperationalWriteAsync(operationalContext);
-        var alreadyOpen = await _context.CashSessions.AnyAsync(s =>
-            s.CompanyId == operationalContext.CompanyId
-            && s.EstablishmentId == operationalContext.EstablishmentId
-            && s.EmissionPointId == operationalContext.EmissionPointId
-            && s.OpenedByUserId == operationalContext.UserId
-            && s.Status == CashSessionStatus.Open);
-
-        if (alreadyOpen)
-        {
-            throw new InvalidOperationException("CASH_SESSION_ALREADY_OPEN");
-        }
-
-        var now = _businessClock.UtcNow;
-        var businessDate = _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId);
-        var openingAmount = RoundMoney(dto.OpeningAmount);
-
-        var session = new CashSession
-        {
-            CompanyId = operationalContext.CompanyId,
-            EstablishmentId = operationalContext.EstablishmentId,
-            EmissionPointId = operationalContext.EmissionPointId,
-            OpenedByUserId = operationalContext.UserId,
-            Status = CashSessionStatus.Open,
-            OpeningAmount = openingAmount,
-            ExpectedCashAmount = openingAmount,
-            OpenedAt = now,
-            OpenBusinessDate = businessDate,
-            OpenTimeZoneIdSnapshot = operationalContext.CompanyTimeZoneId,
-            OpeningNotes = NormalizeOptionalText(dto.OpeningNotes)
-        };
-
-        _context.CashSessions.Add(session);
-
         try
         {
+            if (dto.RequestId.HasValue)
+                await _administrationGuard.LockExclusiveOperationalWriteAsync(operationalContext);
+            else
+                await _administrationGuard.LockOperationalWriteAsync(operationalContext);
+            var hash = dto.RequestId.HasValue ? CriticalOperationRequest.Hash(new
+            {
+                Version = 1, OpeningAmount = RoundMoney(dto.OpeningAmount), Notes = NormalizeOptionalText(dto.OpeningNotes)
+            }) : null;
+            if (dto.RequestId.HasValue)
+            {
+                var existing = await _context.CashSessions.AsNoTracking().SingleOrDefaultAsync(s =>
+                    s.CompanyId == operationalContext.CompanyId && s.RequestId == dto.RequestId);
+                if (existing is not null)
+                {
+                    if (existing.RequestHash != hash || existing.OpenedByUserId != operationalContext.UserId
+                        || existing.EstablishmentId != operationalContext.EstablishmentId
+                        || existing.EmissionPointId != operationalContext.EmissionPointId)
+                        throw new InvalidOperationException("REQUEST_CONFLICT");
+                    var replay = await GetByIdAsync(existing.Id)
+                        ?? throw new KeyNotFoundException("CASH_SESSION_NOT_FOUND");
+                    await transaction.CommitAsync();
+                    return replay;
+                }
+            }
+            var alreadyOpen = await _context.CashSessions.AnyAsync(s =>
+                s.CompanyId == operationalContext.CompanyId
+                && s.EstablishmentId == operationalContext.EstablishmentId
+                && s.EmissionPointId == operationalContext.EmissionPointId
+                && s.OpenedByUserId == operationalContext.UserId
+                && s.Status == CashSessionStatus.Open);
+
+            if (alreadyOpen)
+            {
+                throw new InvalidOperationException("CASH_SESSION_ALREADY_OPEN");
+            }
+
+            var now = _businessClock.UtcNow;
+            var businessDate = _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId);
+            var openingAmount = RoundMoney(dto.OpeningAmount);
+
+            var session = new CashSession
+            {
+                RequestId = dto.RequestId,
+                RequestHash = hash,
+                CompanyId = operationalContext.CompanyId,
+                EstablishmentId = operationalContext.EstablishmentId,
+                EmissionPointId = operationalContext.EmissionPointId,
+                OpenedByUserId = operationalContext.UserId,
+                Status = CashSessionStatus.Open,
+                OpeningAmount = openingAmount,
+                ExpectedCashAmount = openingAmount,
+                OpenedAt = now,
+                OpenBusinessDate = businessDate,
+                OpenTimeZoneIdSnapshot = operationalContext.CompanyTimeZoneId,
+                OpeningNotes = NormalizeOptionalText(dto.OpeningNotes)
+            };
+
+            _context.CashSessions.Add(session);
+
             await _context.SaveChangesAsync();
+            var created = await GetByIdAsync(session.Id)
+                ?? throw new KeyNotFoundException("CASH_SESSION_NOT_FOUND");
+            await transaction.CommitAsync();
+
+            _logger.LogInformation(
+                "Cash session opened. CashSessionId {CashSessionId} UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
+                session.Id,
+                operationalContext.UserId,
+                operationalContext.CompanyId,
+                operationalContext.EstablishmentId,
+                operationalContext.EmissionPointId);
+
+            return created;
         }
-        catch (DbUpdateException ex) when (IsUniqueConstraintFailure(ex))
+        catch (DbUpdateException ex) when (IsOpenSessionConstraintFailure(ex))
         {
+            await transaction.RollbackAsync();
+            _context.ChangeTracker.Clear();
             throw new InvalidOperationException("CASH_SESSION_ALREADY_OPEN", ex);
         }
-        await transaction.CommitAsync();
-
-        _logger.LogInformation(
-            "Cash session opened. CashSessionId {CashSessionId} UserId {UserId} CompanyId {CompanyId} EstablishmentId {EstablishmentId} EmissionPointId {EmissionPointId}",
-            session.Id,
-            operationalContext.UserId,
-            operationalContext.CompanyId,
-            operationalContext.EstablishmentId,
-            operationalContext.EmissionPointId);
-
-        var created = await GetByIdAsync(session.Id);
-        return created ?? throw new KeyNotFoundException("CASH_SESSION_NOT_FOUND");
+        catch
+        {
+            await transaction.RollbackAsync();
+            _context.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     public async Task<CashSessionDto> AddMovementAsync(int id, CreateCashMovementDto dto)
     {
+        CriticalOperationRequest.RequireId(dto.RequestId);
         if (!Enum.IsDefined(typeof(CashMovementType), dto.Type))
         {
             throw new InvalidOperationException("CASH_MOVEMENT_AMOUNT_INVALID");
         }
 
-        if (dto.Amount <= 0m)
+        if (RoundMoney(dto.Amount) <= 0m)
         {
             throw new InvalidOperationException("CASH_MOVEMENT_AMOUNT_INVALID");
         }
@@ -322,55 +358,83 @@ public class CashSessionService : ICashSessionService
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
-        // Sales hold Company exclusively; take it first before cash and movement FK locks.
-        await _administrationGuard.LockOperationalWriteAsync(operationalContext);
-        var session = await GetLockedSessionAsync(id);
-        EnsureSessionExistsAndMatchesContext(session, operationalContext, requireCurrentUser: true);
-
-        if (session!.Status == CashSessionStatus.Closed)
+        try
         {
-            throw new InvalidOperationException("CASH_SESSION_ALREADY_CLOSED");
+            // Sales hold Company exclusively; take it first before cash and movement FK locks.
+            await _administrationGuard.LockExclusiveOperationalWriteAsync(operationalContext);
+            var hash = CriticalOperationRequest.Hash(new
+            {
+                Version = 1, CashSessionId = id, dto.Type, Amount = RoundMoney(dto.Amount), Reason = reason
+            });
+            var existing = await _context.CashMovements.AsNoTracking().SingleOrDefaultAsync(m =>
+                m.CompanyId == operationalContext.CompanyId && m.RequestId == dto.RequestId);
+            if (existing is not null)
+            {
+                if (existing.RequestHash != hash || existing.UserId != operationalContext.UserId
+                    || existing.EstablishmentId != operationalContext.EstablishmentId
+                    || existing.EmissionPointId != operationalContext.EmissionPointId)
+                    throw new InvalidOperationException("REQUEST_CONFLICT");
+                var replay = await GetByIdAsync(existing.CashSessionId)
+                    ?? throw new KeyNotFoundException("CASH_SESSION_NOT_FOUND");
+                await transaction.CommitAsync();
+                return replay;
+            }
+            var session = await GetLockedSessionAsync(id);
+            EnsureSessionExistsAndMatchesContext(session, operationalContext, requireCurrentUser: true);
+
+            if (session!.Status == CashSessionStatus.Closed)
+            {
+                throw new InvalidOperationException("CASH_SESSION_ALREADY_CLOSED");
+            }
+
+            if (session.Status != CashSessionStatus.Open)
+            {
+                throw new InvalidOperationException("CASH_SESSION_NOT_OPEN");
+            }
+
+            var now = _businessClock.UtcNow;
+            var amount = RoundMoney(dto.Amount);
+            var movement = new CashMovement
+            {
+                RequestId = dto.RequestId,
+                RequestHash = hash,
+                CashSessionId = session.Id,
+                CompanyId = operationalContext.CompanyId,
+                EstablishmentId = operationalContext.EstablishmentId,
+                EmissionPointId = operationalContext.EmissionPointId,
+                UserId = operationalContext.UserId,
+                Type = dto.Type,
+                Amount = amount,
+                Reason = reason,
+                CreatedAt = now,
+                BusinessDate = _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId),
+                TimeZoneIdSnapshot = operationalContext.CompanyTimeZoneId
+            };
+
+            if (dto.Type == CashMovementType.CashIn)
+            {
+                session.CashInAmount = RoundMoney(session.CashInAmount + amount);
+                session.ExpectedCashAmount = RoundMoney(session.ExpectedCashAmount + amount);
+            }
+            else
+            {
+                session.CashOutAmount = RoundMoney(session.CashOutAmount + amount);
+                session.ExpectedCashAmount = RoundMoney(session.ExpectedCashAmount - amount);
+            }
+
+            _context.CashMovements.Add(movement);
+            await _context.SaveChangesAsync();
+            var updated = await GetByIdAsync(session.Id)
+                ?? throw new KeyNotFoundException("CASH_SESSION_NOT_FOUND");
+            await transaction.CommitAsync();
+            return updated;
         }
-
-        if (session.Status != CashSessionStatus.Open)
+        catch
         {
-            throw new InvalidOperationException("CASH_SESSION_NOT_OPEN");
+            await transaction.RollbackAsync();
+            _context.ChangeTracker.Clear();
+            throw;
         }
-
-        var now = _businessClock.UtcNow;
-        var amount = RoundMoney(dto.Amount);
-        var movement = new CashMovement
-        {
-            CashSessionId = session.Id,
-            CompanyId = operationalContext.CompanyId,
-            EstablishmentId = operationalContext.EstablishmentId,
-            EmissionPointId = operationalContext.EmissionPointId,
-            UserId = operationalContext.UserId,
-            Type = dto.Type,
-            Amount = amount,
-            Reason = reason,
-            CreatedAt = now,
-            BusinessDate = _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId),
-            TimeZoneIdSnapshot = operationalContext.CompanyTimeZoneId
-        };
-
-        if (dto.Type == CashMovementType.CashIn)
-        {
-            session.CashInAmount = RoundMoney(session.CashInAmount + amount);
-            session.ExpectedCashAmount = RoundMoney(session.ExpectedCashAmount + amount);
-        }
-        else
-        {
-            session.CashOutAmount = RoundMoney(session.CashOutAmount + amount);
-            session.ExpectedCashAmount = RoundMoney(session.ExpectedCashAmount - amount);
-        }
-
-        _context.CashMovements.Add(movement);
-        await _context.SaveChangesAsync();
-        await transaction.CommitAsync();
-
-        var updated = await GetByIdAsync(session.Id);
-        return updated ?? throw new KeyNotFoundException("CASH_SESSION_NOT_FOUND");
     }
 
     public async Task<CashSessionDto> CloseAsync(int id, CloseCashSessionDto dto)
@@ -661,6 +725,7 @@ public class CashSessionService : ICashSessionService
         return new CashSessionDto
         {
             Id = session.Id,
+            RequestId = session.RequestId,
             CompanyId = session.CompanyId,
             EstablishmentId = session.EstablishmentId,
             EmissionPointId = session.EmissionPointId,
@@ -770,6 +835,7 @@ public class CashSessionService : ICashSessionService
     {
         return new CashMovementDto
         {
+            RequestId = movement.RequestId,
             Id = movement.Id,
             CashSessionId = movement.CashSessionId,
             Type = movement.Type,
@@ -789,10 +855,11 @@ public class CashSessionService : ICashSessionService
     private static decimal RoundMoney(decimal value)
         => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 
-    private static bool IsUniqueConstraintFailure(DbUpdateException exception)
+    private static bool IsOpenSessionConstraintFailure(DbUpdateException exception)
     {
         return exception.InnerException is PostgresException postgresException
-            && postgresException.SqlState == PostgresErrorCodes.UniqueViolation;
+            && postgresException.SqlState == PostgresErrorCodes.UniqueViolation
+            && postgresException.ConstraintName == "IX_CashSessions_CompanyId_EstablishmentId_EmissionPointId_Ope~1";
     }
 
     private sealed record CashSessionTotals(

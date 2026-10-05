@@ -70,6 +70,7 @@ builder.Services.AddScoped<IPosProductLookupService, PosProductLookupService>();
 builder.Services.AddScoped<ICashSessionService, CashSessionService>();
 builder.Services.AddScoped<IPaymentSettlementService, PaymentSettlementService>();
 builder.Services.AddScoped<IPurchaseReceiptQueryService, PurchaseReceiptQueryService>();
+builder.Services.AddScoped<IPurchaseReceiptService, PurchaseReceiptService>();
 builder.Services.AddScoped<ICreditNoteService, CreditNoteService>();
 builder.Services.AddScoped<ICreditNoteInventoryReturnService, CreditNoteInventoryReturnService>();
 builder.Services.AddScoped<ICreditNoteRefundService, CreditNoteRefundService>();

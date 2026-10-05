@@ -42,6 +42,7 @@ export interface PurchaseReceiptItem {
 }
 
 export interface PurchaseReceipt extends PurchaseReceiptListItem {
+  requestId?: string | null;
   items: PurchaseReceiptItem[];
 }
 
@@ -53,6 +54,7 @@ export interface CreatePurchaseReceiptItemRequest {
 }
 
 export interface CreatePurchaseReceiptRequest {
+  requestId: string;
   supplierId: number;
   receiptNumber?: string | null;
   supplierDocumentNumber?: string | null;

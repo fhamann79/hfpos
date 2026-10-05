@@ -1,6 +1,7 @@
 import { HttpClient, HttpParams, HttpResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
+import { operationResult } from '../../../core/utils/operation-intent';
 import { environment } from '../../../../environments/environment';
 import { PagedResultWithSummary } from '../../../core/models/paged-result.model';
 import {
@@ -67,7 +68,7 @@ export class PurchaseReceiptService {
   }
 
   create(payload: CreatePurchaseReceiptRequest) {
-    return this.http.post<PurchaseReceipt>(this.baseUrl, payload);
+    return this.http.post<PurchaseReceipt>(this.baseUrl, payload).pipe(map(value => operationResult(value, payload.requestId)));
   }
 
   cancel(id: number, payload: CancelPurchaseReceiptRequest) {

@@ -99,9 +99,9 @@ public sealed class PaymentSettlementIntegrationTests(PostgresDatabaseFixture da
         await using (var services = new TestServiceScope(database, tenant.OperationalContext))
         {
             await services.CashSessions.AddMovementAsync(sessionId,
-                new CreateCashMovementDto { Type = CashMovementType.CashIn, Amount = 3m, Reason = "Manual in" });
+                new CreateCashMovementDto { RequestId = Guid.NewGuid(), Type = CashMovementType.CashIn, Amount = 3m, Reason = "Manual in" });
             await services.CashSessions.AddMovementAsync(sessionId,
-                new CreateCashMovementDto { Type = CashMovementType.CashOut, Amount = 2m, Reason = "Manual out" });
+                new CreateCashMovementDto { RequestId = Guid.NewGuid(), Type = CashMovementType.CashOut, Amount = 2m, Reason = "Manual out" });
         }
         var postCloseSale = await AddSaleAsync(tenant, SalePaymentMethod.Cash, 8m, Monday);
         await AddLinkedCashOutAsync(tenant, sessionId, postCloseSale, 8m, true);

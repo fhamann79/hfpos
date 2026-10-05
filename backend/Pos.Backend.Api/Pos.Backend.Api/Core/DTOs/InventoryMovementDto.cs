@@ -4,6 +4,7 @@ namespace Pos.Backend.Api.Core.DTOs;
 
 public class InventoryMovementDto
 {
+    public Guid? RequestId { get; set; }
     public int Id { get; set; }
     public int ProductId { get; set; }
     public string ProductName { get; set; }

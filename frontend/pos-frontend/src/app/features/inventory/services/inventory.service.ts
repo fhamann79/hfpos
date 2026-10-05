@@ -1,6 +1,7 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
+import { operationResult } from '../../../core/utils/operation-intent';
 import { environment } from '../../../../environments/environment';
 import { resolveHttpErrorMessage } from '../../../core/utils/http-error-normalizer';
 import { InventoryMovement } from '../models/inventory-movement.model';
@@ -45,15 +46,15 @@ export class InventoryService {
   }
 
   registerEntry(payload: InventoryOperationRequest): Observable<InventoryMovement> {
-    return this.http.post<InventoryMovement>(`${this.baseUrl}/entry`, payload);
+    return this.http.post<InventoryMovement>(`${this.baseUrl}/entry`, payload).pipe(map(value => operationResult(value, payload.requestId)));
   }
 
   registerExit(payload: InventoryOperationRequest): Observable<InventoryMovement> {
-    return this.http.post<InventoryMovement>(`${this.baseUrl}/exit`, payload);
+    return this.http.post<InventoryMovement>(`${this.baseUrl}/exit`, payload).pipe(map(value => operationResult(value, payload.requestId)));
   }
 
   registerAdjustment(payload: InventoryOperationRequest): Observable<InventoryMovement> {
-    return this.http.post<InventoryMovement>(`${this.baseUrl}/adjust`, payload);
+    return this.http.post<InventoryMovement>(`${this.baseUrl}/adjust`, payload).pipe(map(value => operationResult(value, payload.requestId)));
   }
 
   getCountSnapshot(productId: number): Observable<InventoryCountSnapshot> {
@@ -65,7 +66,7 @@ export class InventoryService {
   }
 
   createTransfer(payload: InventoryTransferCreateRequest): Observable<InventoryTransferDetail> {
-    return this.http.post<InventoryTransferDetail>(`${this.baseUrl}/transfers`, payload);
+    return this.http.post<InventoryTransferDetail>(`${this.baseUrl}/transfers`, payload).pipe(map(value => operationResult(value, payload.requestId)));
   }
 
   getTransfers(filters: InventoryTransferFilters): Observable<PagedResult<InventoryTransferListItem>> {

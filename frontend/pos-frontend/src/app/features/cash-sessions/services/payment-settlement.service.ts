@@ -1,6 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
+import { operationResult } from '../../../core/utils/operation-intent';
 import { environment } from '../../../../environments/environment';
 import {
   CreatePaymentSettlementRequest,
@@ -36,6 +37,6 @@ export class PaymentSettlementService {
   }
 
   create(request: CreatePaymentSettlementRequest): Observable<PaymentSettlement> {
-    return this.http.post<PaymentSettlement>(this.baseUrl, request);
+    return this.http.post<PaymentSettlement>(this.baseUrl, request).pipe(map(value => operationResult(value, request.requestId)));
   }
 }

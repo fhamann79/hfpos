@@ -4,6 +4,7 @@ namespace Pos.Backend.Api.Core.DTOs;
 
 public class PurchaseReceiptDto
 {
+    public Guid? RequestId { get; set; }
     public int Id { get; set; }
     public int SupplierId { get; set; }
     public string SupplierName { get; set; } = string.Empty;
