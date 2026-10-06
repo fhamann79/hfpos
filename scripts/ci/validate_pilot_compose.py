@@ -23,12 +23,11 @@ def storage_path(value):
     if (not path.is_absolute() or value.startswith("//") or value != str(path) or
             any(part in (".", "..") for part in value.split("/")) or "\\" in value):
         raise ValueError("noncanonical storage path")
-    broad = ("/", "/home", "/root", "/opt", "/srv", "/tmp", "/var", "/var/lib",
-             "/var/log", "/mnt", "/media")
-    system = ("/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/run",
-              "/sbin", "/sys", "/usr", "/var/lib/docker", "/var/lib/containerd")
-    if str(path) in broad or any(path.is_relative_to(parent) for parent in system):
-        raise ValueError("system storage path")
+    namespace = next((parent for parent in (PurePosixPath("/srv/hf-one"), PurePosixPath("/var/lib/hf-one"))
+                      if path != parent and path.is_relative_to(parent)), None)
+    if namespace is None or not all(re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", part)
+                                    for part in path.relative_to(namespace).parts):
+        raise ValueError("require dedicated HF One storage namespace")
     repo = PurePosixPath(ROOT.as_posix())
     if repo.is_absolute() and (path.is_relative_to(repo) or repo.is_relative_to(path)):
         raise ValueError("repository storage overlap")
@@ -68,7 +67,7 @@ def validate_config(config, cohost=True):
                 volumes[0].get("bind", {}).get("create_host_path", False)):
             raise ValueError("storage contract")
     except (ValueError, TypeError):
-        errors.append("Require a dedicated canonical PGDATA leaf below the explicit approved storage root, without automatic creation.")
+        errors.append("Require canonical storage root strictly below /srv/hf-one or /var/lib/hf-one, with dedicated PGDATA below root and no automatic creation.")
     environment = pg.get("environment", {})
     if (not environment.get("POSTGRES_USER") or not environment.get("POSTGRES_DB") or
             environment.get("POSTGRES_PASSWORD_FILE") != "/run/secrets/hfpos_pg_admin_password" or

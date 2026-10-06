@@ -65,8 +65,14 @@ Overlay `compose.production.postgres.example.yml` agrega PG16 sin puerto host,
 red database internal SOLO postgres/backend/migrations; web no entra a esa red.
 Persistencia bind Linux absoluta exigida, create_host_path:false. Declarar
 `HFPOS_PG_STORAGE_ROOT` dedicado y aprobado explicitamente; `HFPOS_PG_DATA_PATH`
-debe ser una leaf dedicada estrictamente debajo, nunca el root mismo. El helper
-rechaza roots/directorios sistemicos, solapamiento con repo (incluidos ancestros),
+debe ser una leaf dedicada estrictamente debajo, nunca el root mismo. Root debe
+ser descendiente estricto de `/srv/hf-one` o `/var/lib/hf-one`; esos prefijos genericos
+no son roots validos. Parametrizar instancia/storage dentro de ese namespace, sin
+defaults; componentes solo letras minusculas/digitos con guiones internos simples
+(ejemplo estructural `/srv/hf-one/<instancia>/storage/postgres`, no ruta creada).
+La allowlist excluye namespaces arbitrarios y directorios sistema, incluidos
+`/var/cache/apt` y `/var/spool/mail`, sin depender de una denylist incompleta.
+El helper rechaza solapamiento con repo (incluidos ancestros),
 escapes y componentes `.`/`..` o separadores no canonicos. La extension Compose
 conserva ambos valores originales para no ocultar escapes por normalizacion.
 Antes de cualquier arranque R4, verificar realpath de root/leaf y todos sus padres,

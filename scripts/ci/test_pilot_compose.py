@@ -11,7 +11,7 @@ import sys
 import tempfile
 import unittest
 
-from validate_pilot_compose import validate_config
+from validate_pilot_compose import storage_path, validate_config
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -31,8 +31,8 @@ VALUES = {
     "HFPOS_ALLOWED_HOSTS": "pilot.example.invalid", "HFPOS_HEALTH_HOST": "pilot.example.invalid",
     "HFPOS_KEYRING_PATH": "/synthetic-only/keyring", "HFPOS_TLS_PATH": "/synthetic-only/tls",
     "HFPOS_PG_IMAGE": "postgres:16-alpine@sha256:" + "4" * 64,
-    "HFPOS_PG_DATA_PATH": "/synthetic-only/postgres",
-    "HFPOS_PG_STORAGE_ROOT": "/synthetic-only",
+    "HFPOS_PG_DATA_PATH": "/srv/hf-one/synthetic-dev531/storage/postgres",
+    "HFPOS_PG_STORAGE_ROOT": "/srv/hf-one/synthetic-dev531/storage",
     "HFPOS_PG_ADMIN_PASSWORD_FILE": "/synthetic-only/external-admin-password",
     "HFPOS_PG_ADMIN_USER": "synthetic_admin", "HFPOS_PG_DATABASE": "synthetic",
 }
@@ -162,29 +162,35 @@ class PilotComposeTests(unittest.TestCase):
     def test_storage_requires_a_dedicated_leaf_without_normalization_escape(self):
         code, config = materialize(VALUES)
         self.assertEqual(0, code)
+        safe = VALUES["HFPOS_PG_STORAGE_ROOT"]
         for root, data in (("/", "/"), ("/etc", "/etc/postgres"),
-                           ("/home", "/home"), ("/srv/pilot", "/srv/pilot"),
-                           ("/srv/pilot", "/srv/other/postgres"),
-                           ("/srv/pilot", "/srv/pilot/../other/postgres"),
-                           ("/srv/pilot", "/srv/pilot/./postgres"),
-                           ("/srv/./pilot", "/srv/pilot/postgres"),
-                           ("/srv/pilot", "/srv/pilot//postgres"),
-                           ("//srv/pilot", "//srv/pilot/postgres"),
+                           ("/home", "/home"), (safe, safe),
+                           (safe, "/srv/hf-one/other/postgres"),
+                           (safe, safe + "/../other/postgres"),
+                           (safe, safe + "/./postgres"),
+                           (safe + "/.", safe + "/postgres"),
+                           (safe, safe + "//postgres"),
+                           ("/" + safe, "/" + safe + "/postgres"),
                            ("/usr", "/usr/postgres"), ("/var/lib/docker", "/var/lib/docker/postgres")):
             with self.subTest(root=root, data=data):
                 bad = copy.deepcopy(config)
                 bad["x-hfpos-pg-storage"] = {"root": root, "data": data}
                 bad["services"]["postgres"]["volumes"][0]["source"] = data
                 self.assertTrue(validate_config(bad), "Unsafe storage accepted (paths suppressed).")
-        for data in ("/srv/code", "/srv/code/hfpos", "/srv/code/hfpos/postgres"):
+        repo = "/srv/hf-one/synthetic-dev531/repo"
+        for data in ("/srv/hf-one/synthetic-dev531", repo, repo + "/postgres"):
             bad = copy.deepcopy(config)
-            bad["x-hfpos-pg-storage"] = {"root": "/srv/code", "data": data}
+            bad["x-hfpos-pg-storage"] = {"root": "/srv/hf-one/synthetic-dev531", "data": data}
             bad["services"]["postgres"]["volumes"][0]["source"] = data
-            with patch("validate_pilot_compose.ROOT", Path("/srv/code/hfpos")):
+            with patch("validate_pilot_compose.ROOT", Path(repo)):
+                self.assertEqual(Path("/srv/hf-one/unrelated/storage").as_posix(),
+                                 str(storage_path("/srv/hf-one/unrelated/storage")))
+                with self.assertRaises(ValueError):
+                    storage_path(data)
                 self.assertTrue(validate_config(bad))
         code, _ = materialize(dict(VALUES, HFPOS_PG_STORAGE_ROOT=""))
         self.assertNotEqual(0, code)
-        for data in ("/", "/etc", "/home", "/synthetic-only/../escaped", "/synthetic-only/./postgres"):
+        for data in ("/", "/etc", "/home", safe + "/../escaped", safe + "/./postgres"):
             code, bad = materialize(dict(VALUES, HFPOS_PG_DATA_PATH=data))
             self.assertEqual(0, code, "Synthetic config failed (output suppressed).")
             self.assertTrue(validate_config(bad), "Compose normalization hid unsafe raw PGDATA.")
@@ -219,6 +225,41 @@ class PilotComposeTests(unittest.TestCase):
                     self.assertNotEqual(0, result.returncode, "Missing envfile field filled by shell.")
                     self.assertIn("output suppressed", result.stderr)
                     self.assertNotIn("Synthetic-only", result.stdout + result.stderr)
+
+    def test_real_cli_rejects_storage_outside_dedicated_hf_one_namespaces(self):
+        helper = ROOT / "scripts/ci/validate_pilot_compose.py"
+        env = {key: value for key, value in os.environ.items()
+               if not key.upper().startswith(("HFPOS_", "COMPOSE_"))}
+        with tempfile.TemporaryDirectory(prefix="hfpos-dev531-namespace-") as directory:
+            path = Path(directory) / "synthetic.env"
+            for root, data in (("/var/cache", "/var/cache/apt"),
+                               ("/var/spool", "/var/spool/mail"),
+                               ("/var/backups", "/var/backups/postgres"),
+                               ("/var/www", "/var/www/postgres"),
+                               ("/home/arbitrary", "/home/arbitrary/postgres"),
+                               ("/mnt/arbitrary", "/mnt/arbitrary/postgres"),
+                               ("/opt/arbitrary", "/opt/arbitrary/postgres"),
+                               ("/synthetic-only", "/synthetic-only/postgres"),
+                               ("/srv/hf-one", "/srv/hf-one/postgres"),
+                               ("/var/lib/hf-one", "/var/lib/hf-one/postgres"),
+                               ("/srv/hf-one-other/pilot", "/srv/hf-one-other/pilot/postgres"),
+                               ("/var/lib/hf-one2/pilot", "/var/lib/hf-one2/pilot/postgres"),
+                               ("/srv/hf-one/pilot.name", "/srv/hf-one/pilot.name/postgres")):
+                with self.subTest(root=root, data=data):
+                    values = dict(VALUES, HFPOS_PG_STORAGE_ROOT=root, HFPOS_PG_DATA_PATH=data)
+                    path.write_text("\n".join(f"{key}={value}" for key, value in values.items()), encoding="utf-8")
+                    result = subprocess.run([sys.executable, "-B", str(helper), str(path)],
+                                            env=env, capture_output=True, text=True)
+                    self.assertNotEqual(0, result.returncode, "Unapproved storage namespace accepted (output suppressed).")
+                    self.assertNotIn("Synthetic-only", result.stdout + result.stderr)
+            for namespace in ("/srv/hf-one", "/var/lib/hf-one"):
+                root = namespace + "/synthetic-dev531/storage"
+                values = dict(VALUES, HFPOS_PG_STORAGE_ROOT=root, HFPOS_PG_DATA_PATH=root + "/postgres")
+                path.write_text("\n".join(f"{key}={value}" for key, value in values.items()), encoding="utf-8")
+                result = subprocess.run([sys.executable, "-B", str(helper), str(path)],
+                                        env=env, capture_output=True, text=True)
+                self.assertEqual(0, result.returncode, "Dedicated namespace CLI failed (output suppressed).")
+                self.assertIn("PILOT COMPOSE CONFIG PASS", result.stdout)
 
 
 if __name__ == "__main__":

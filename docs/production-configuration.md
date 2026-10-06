@@ -102,6 +102,8 @@ one-shot migraciones del target usa obligatoriamente
 `HFPOS_MIGRATION_DATABASE_CONNECTION`, separado de runtime/admin. PG bootstrap
 `POSTGRES_USER` es superuser: nunca usarlo como app. Overlay PG16 exige digest,
 storage Linux canonico dedicado bajo `HFPOS_PG_STORAGE_ROOT` explicitamente aprobado,
+root descendiente estricto de `/srv/hf-one` o `/var/lib/hf-one` (no los prefijos
+genericos); componentes de instancia/storage en minusculas/digitos y guiones simples,
 leaf `HFPOS_PG_DATA_PATH` estrictamente inferior, admin password file externo y DB/user
 explicitos. No roots/systemdirs/ancestros del repo ni dot/dotdot. Realpath/symlinks,
 ownership exclusivo y contenido de leaf requieren preflight humano R4; config no
