@@ -1,5 +1,8 @@
 # Optional cohost overlay. Config validation only is NO-R4; starting it is R4.
 # No product schema/roles/users are initialized here. POSTGRES_USER is admin ONLY.
+x-hfpos-pg-storage:
+  root: ${HFPOS_PG_STORAGE_ROOT:?explicit approved dedicated storage root required}
+  data: ${HFPOS_PG_DATA_PATH:?dedicated PostgreSQL leaf below storage root required}
 services:
   postgres:
     image: ${HFPOS_PG_IMAGE:?PostgreSQL 16 image pinned by sha256 required}

@@ -5,6 +5,7 @@ import json
 import copy
 import os
 from pathlib import Path
+from unittest.mock import patch
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,7 @@ VALUES = {
     "HFPOS_KEYRING_PATH": "/synthetic-only/keyring", "HFPOS_TLS_PATH": "/synthetic-only/tls",
     "HFPOS_PG_IMAGE": "postgres:16-alpine@sha256:" + "4" * 64,
     "HFPOS_PG_DATA_PATH": "/synthetic-only/postgres",
+    "HFPOS_PG_STORAGE_ROOT": "/synthetic-only",
     "HFPOS_PG_ADMIN_PASSWORD_FILE": "/synthetic-only/external-admin-password",
     "HFPOS_PG_ADMIN_USER": "synthetic_admin", "HFPOS_PG_DATABASE": "synthetic",
 }
@@ -156,6 +158,67 @@ class PilotComposeTests(unittest.TestCase):
             self.assertNotEqual(0, result.returncode)
             self.assertIn("output suppressed", result.stderr)
             self.assertNotIn("Synthetic-only", result.stdout + result.stderr)
+
+    def test_storage_requires_a_dedicated_leaf_without_normalization_escape(self):
+        code, config = materialize(VALUES)
+        self.assertEqual(0, code)
+        for root, data in (("/", "/"), ("/etc", "/etc/postgres"),
+                           ("/home", "/home"), ("/srv/pilot", "/srv/pilot"),
+                           ("/srv/pilot", "/srv/other/postgres"),
+                           ("/srv/pilot", "/srv/pilot/../other/postgres"),
+                           ("/srv/pilot", "/srv/pilot/./postgres"),
+                           ("/srv/./pilot", "/srv/pilot/postgres"),
+                           ("/srv/pilot", "/srv/pilot//postgres"),
+                           ("//srv/pilot", "//srv/pilot/postgres"),
+                           ("/usr", "/usr/postgres"), ("/var/lib/docker", "/var/lib/docker/postgres")):
+            with self.subTest(root=root, data=data):
+                bad = copy.deepcopy(config)
+                bad["x-hfpos-pg-storage"] = {"root": root, "data": data}
+                bad["services"]["postgres"]["volumes"][0]["source"] = data
+                self.assertTrue(validate_config(bad), "Unsafe storage accepted (paths suppressed).")
+        for data in ("/srv/code", "/srv/code/hfpos", "/srv/code/hfpos/postgres"):
+            bad = copy.deepcopy(config)
+            bad["x-hfpos-pg-storage"] = {"root": "/srv/code", "data": data}
+            bad["services"]["postgres"]["volumes"][0]["source"] = data
+            with patch("validate_pilot_compose.ROOT", Path("/srv/code/hfpos")):
+                self.assertTrue(validate_config(bad))
+        code, _ = materialize(dict(VALUES, HFPOS_PG_STORAGE_ROOT=""))
+        self.assertNotEqual(0, code)
+        for data in ("/", "/etc", "/home", "/synthetic-only/../escaped", "/synthetic-only/./postgres"):
+            code, bad = materialize(dict(VALUES, HFPOS_PG_DATA_PATH=data))
+            self.assertEqual(0, code, "Synthetic config failed (output suppressed).")
+            self.assertTrue(validate_config(bad), "Compose normalization hid unsafe raw PGDATA.")
+
+    def test_real_cli_ignores_ambient_overrides_and_cannot_fill_missing_fields(self):
+        helper = ROOT / "scripts/ci/validate_pilot_compose.py"
+        clean = {key: value for key, value in os.environ.items()
+                 if not key.upper().startswith(("HFPOS_", "COMPOSE_"))}
+        with tempfile.TemporaryDirectory(prefix="hfpos-dev531-ambient-") as directory:
+            path = Path(directory) / "synthetic.env"
+            hostile = dict(clean, HFPOS_PG_IMAGE="postgres:17", HFPOS_PG_DATA_PATH="/",
+                           HFPOS_PG_STORAGE_ROOT="/", HFPOS_DATABASE_CONNECTION="Synthetic-only-ambient-shared",
+                           HFPOS_MIGRATION_DATABASE_CONNECTION="Synthetic-only-ambient-shared",
+                           COMPOSE_FILE="nonexistent-synthetic.yml", COMPOSE_ENV_FILES="missing-synthetic.env",
+                           COMPOSE_PROFILES="stale", COMPOSE_PROJECT_NAME="INVALID PROJECT")
+            for options in ([], ["--external"]):
+                path.write_text("\n".join(f"{key}={value}" for key, value in VALUES.items()), encoding="utf-8")
+                result = subprocess.run([sys.executable, "-B", str(helper), *options, str(path)],
+                                        env=hostile, capture_output=True, text=True)
+                self.assertEqual(0, result.returncode, "Ambient overrides affected CLI (output suppressed).")
+                self.assertIn("PILOT COMPOSE CONFIG PASS", result.stdout)
+                self.assertNotIn("Synthetic-only", result.stdout + result.stderr)
+                required = ["HFPOS_MIGRATION_DATABASE_CONNECTION", "HFPOS_DATABASE_CONNECTION"]
+                if not options:
+                    required.append("HFPOS_PG_STORAGE_ROOT")
+                for absent in required:
+                    missing = {key: value for key, value in VALUES.items() if key != absent}
+                    path.write_text("\n".join(f"{key}={value}" for key, value in missing.items()), encoding="utf-8")
+                    ambient = dict(clean, **{absent: VALUES[absent]})
+                    result = subprocess.run([sys.executable, "-B", str(helper), *options, str(path)],
+                                            env=ambient, capture_output=True, text=True)
+                    self.assertNotEqual(0, result.returncode, "Missing envfile field filled by shell.")
+                    self.assertIn("output suppressed", result.stderr)
+                    self.assertNotIn("Synthetic-only", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

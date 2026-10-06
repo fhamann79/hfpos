@@ -43,7 +43,7 @@ rechazado en target externo, no elimina ni oculta el limite legacy.
 Evidencia enfocada de continuacion (Windows, Python3.13.7, Compose2.32.4-desktop.1,
 contexto desktop-linux, ninguna ejecucion up):
 `python -B scripts/ci/test_verify_release_source.py` 8/8 PASS;
-`python -B scripts/ci/test_pilot_compose.py` 7/7 PASS;
+`python -B scripts/ci/test_pilot_compose.py` 9/9 PASS tras lote M1/M2;
 `python -B scripts/ci/test_validate_pr_governance.py` 7/7 PASS.
 Verifier y comandos inline se ejecutan en repos Git temporales con tags locales
 de prueba; stable/RC ancestor-main PASS, feature con helper malicioso exit0 FAIL,
@@ -51,6 +51,13 @@ malformed/mismatch/fetchfallido FAIL. No tag en repo compartido/GitHub.
 Config tests materializan baseline unchanged, externalpilot y cohost; negativos
 de required values/pins/network/storage/approval y CLI sin output sensible.
 Helpers no prueban privilegios DB efectivos, CA/hostname ni artefactos publicados.
+Review de PR146/7385af8 detecto dos MAJOR/BLOCKER PILOT de assurance: PGDATA amplio
+y overrides ambientales de la CLI. Regresiones RED reprodujeron ambos; correccion
+en el mismo PR exige leaf canonica bajo storage root explicito y sanea HFPOS/COMPOSE
+en el subprocess real. GREEN incluye CLI cohost/externo con shell conflictivo y
+campos ausentes no suplidos por shell, mas paths inseguros sin montarlos/modificarlos.
+CI anterior 7385 verde no se hereda al HEAD corregido. Delta+integration review
+independiente y required CI exacto siguen PENDIENTES; implementer no declara B0/M0.
 CI required completo del nuevo HEAD se registra en PR; pruebas negocio/recovery
 de main d993 se reutilizan por codigo/contratos app/EF/FE unchanged, no full local
 ceremonial. Ningun override de baseline/fixture PS se aplico tras rechazo de

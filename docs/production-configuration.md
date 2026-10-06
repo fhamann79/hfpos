@@ -101,7 +101,12 @@ DEV-531 overlays opcionales: [runbook](pilot-hosting-runbook.md). Target piloto
 one-shot migraciones del target usa obligatoriamente
 `HFPOS_MIGRATION_DATABASE_CONNECTION`, separado de runtime/admin. PG bootstrap
 `POSTGRES_USER` es superuser: nunca usarlo como app. Overlay PG16 exige digest,
-storage absoluto existente, admin password file externo y DB/user explicitos.
+storage Linux canonico dedicado bajo `HFPOS_PG_STORAGE_ROOT` explicitamente aprobado,
+leaf `HFPOS_PG_DATA_PATH` estrictamente inferior, admin password file externo y DB/user
+explicitos. No roots/systemdirs/ancestros del repo ni dot/dotdot. Realpath/symlinks,
+ownership exclusivo y contenido de leaf requieren preflight humano R4; config no
+los certifica. La CLI descarta variables heredadas HFPOS/COMPOSE para validar solo
+el envfile indicado, sin volcar output nativo/config/secrets.
 Futura DB externa exige hostname/CA y VerifyFull mediante config/montaje, no codigo.
 Validar privilegios efectivos fuera del test config, despues de R4 autorizado.
 Baseline legacy/base y env existentes siguen intactos con conexion compartida;

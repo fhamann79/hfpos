@@ -17,6 +17,24 @@ def absolute(path):
     return PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute()
 
 
+def storage_path(value):
+    # Lexical Linux paths only: Compose can normalize away unsafe dot components.
+    path = PurePosixPath(value)
+    if (not path.is_absolute() or value.startswith("//") or value != str(path) or
+            any(part in (".", "..") for part in value.split("/")) or "\\" in value):
+        raise ValueError("noncanonical storage path")
+    broad = ("/", "/home", "/root", "/opt", "/srv", "/tmp", "/var", "/var/lib",
+             "/var/log", "/mnt", "/media")
+    system = ("/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/run",
+              "/sbin", "/sys", "/usr", "/var/lib/docker", "/var/lib/containerd")
+    if str(path) in broad or any(path.is_relative_to(parent) for parent in system):
+        raise ValueError("system storage path")
+    repo = PurePosixPath(ROOT.as_posix())
+    if repo.is_absolute() and (path.is_relative_to(repo) or repo.is_relative_to(path)):
+        raise ValueError("repository storage overlap")
+    return path
+
+
 def validate_config(config, cohost=True):
     errors = []
     services = config.get("services", {})
@@ -41,11 +59,16 @@ def validate_config(config, cohost=True):
     if "database" in services.get("web", {}).get("networks", {}):
         errors.append("Web must not join the database network.")
     volumes = [volume for volume in pg.get("volumes", []) if volume.get("target") == "/var/lib/postgresql/data"]
-    if (len(volumes) != 1 or volumes[0].get("type") != "bind" or
-            not absolute(volumes[0].get("source", "")) or
-            Path(volumes[0].get("source", "")).resolve().is_relative_to(ROOT) or
-            volumes[0].get("bind", {}).get("create_host_path", False)):
-        errors.append("Require an explicit absolute persistent directory without automatic creation.")
+    try:
+        storage = config.get("x-hfpos-pg-storage", {})
+        root = storage_path(storage.get("root", ""))
+        data = storage_path(storage.get("data", ""))
+        if (data == root or not data.is_relative_to(root) or len(volumes) != 1 or
+                volumes[0].get("source") != str(data) or volumes[0].get("type") != "bind" or
+                volumes[0].get("bind", {}).get("create_host_path", False)):
+            raise ValueError("storage contract")
+    except (ValueError, TypeError):
+        errors.append("Require a dedicated canonical PGDATA leaf below the explicit approved storage root, without automatic creation.")
     environment = pg.get("environment", {})
     if (not environment.get("POSTGRES_USER") or not environment.get("POSTGRES_DB") or
             environment.get("POSTGRES_PASSWORD_FILE") != "/run/secrets/hfpos_pg_admin_password" or
@@ -71,10 +94,13 @@ def main(arguments):
         return 1
     overlay = "migrator" if external else "postgres"
     context = "desktop-linux" if os.name == "nt" else "default"
+    env = {key: value for key, value in os.environ.items()
+           if not key.upper().startswith(("HFPOS_", "COMPOSE_"))}
     result = subprocess.run(["docker", "--context", context, "compose", "--env-file", arguments[-1],
                              "-f", str(ROOT / "deploy/compose/compose.production.example.yml"),
                              "-f", str(ROOT / f"deploy/compose/compose.production.{overlay}.example.yml"),
-                             "--profile", "migration", "config", "--format", "json"], capture_output=True, text=True)
+                             "--profile", "migration", "config", "--format", "json"],
+                            env=env, capture_output=True, text=True)
     if result.returncode:
         print("Pilot Compose refused: missing/invalid external configuration; output suppressed.", file=sys.stderr)
         return 1

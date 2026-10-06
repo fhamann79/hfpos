@@ -63,8 +63,18 @@ Target externo = BASE + `compose.production.migrator.example.yml`, sin PG y con
 conexion migrator propia obligatoria. Target cohost = BASE + overlay PG siguiente.
 Overlay `compose.production.postgres.example.yml` agrega PG16 sin puerto host,
 red database internal SOLO postgres/backend/migrations; web no entra a esa red.
-Persistencia bind absoluta exigida, create_host_path:false; crear/verificar ruta
-exacta y ownership en R4 antes del primer arranque. No volumen anonimo ni path typo.
+Persistencia bind Linux absoluta exigida, create_host_path:false. Declarar
+`HFPOS_PG_STORAGE_ROOT` dedicado y aprobado explicitamente; `HFPOS_PG_DATA_PATH`
+debe ser una leaf dedicada estrictamente debajo, nunca el root mismo. El helper
+rechaza roots/directorios sistemicos, solapamiento con repo (incluidos ancestros),
+escapes y componentes `.`/`..` o separadores no canonicos. La extension Compose
+conserva ambos valores originales para no ocultar escapes por normalizacion.
+Antes de cualquier arranque R4, verificar realpath de root/leaf y todos sus padres,
+rechazar symlinks/aliases que escapen o solapen datos ajenos, confirmar aprobacion,
+ownership exclusivo y leaf vacia o exclusivamente del cluster autorizado. PG puede
+hacer chown recursivo del bind: no reutilizar directorios generales ni compartidos.
+Estos checks del host son humanos R4, NO acreditados por config estatica. No volumen
+anonimo ni path typo; ningun test monta/crea las rutas de almacenamiento propuestas.
 Digest PG16 obligatorio y revisado, no latest. Validacion de tag/digest sintactica
 NO acredita contenido/arquitectura/patch de una imagen: inspeccion/audit de digest
 exacto sigue siendo gate antes de uso.
@@ -83,6 +93,10 @@ python scripts/ci/validate_pilot_compose.py /secure/pilot.env
 python scripts/ci/validate_pilot_compose.py --external /secure/pilot-external.env
 ```
 
+El helper descarta del subprocess todas las variables heredadas `HFPOS_*` y
+`COMPOSE_*`; el envfile indicado es el unico origen de ese contrato. Completarlo
+fuera Git: shell/variables stale no pueden suplir campos ausentes. La salida nativa
+permanece capturada/suprimida, nunca imprimir el JSON ni credenciales.
 El helper comprueba topologia, pin, storage, secreto externo y conexiones distintas,
 NO certifica privilegios efectivos, hostname/CA, existencia de rutas ni readiness.
 Conexiones distintas no prueban por si solas usuarios ni privilegios distintos.
