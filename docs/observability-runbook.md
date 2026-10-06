@@ -66,3 +66,16 @@ CI verifica options, resource, logging seguro, Activity, HTTP probes, transport,
 lifecycle y OTLP local inaccesible. Smoke verifica TLS/proxy/login sintetico y logs
 sin secretos. No requiere Grafana ni SaaS. Integrar collector/alertas reales sigue
 PENDIENTE de decision y validacion humana del hosting.
+
+## Cohost DEV-531
+
+Overlay PG opcional propone restart unless-stopped para PG/backend/web y logs
+json-file 10m x3 por servicio; migraciones no reinician. Engine tras reboot y
+health unhealthy requieren vigilancia/remediacion: health no provoca restart solo.
+Alertas fuera VPS por RAM/OOM, CPU/IO, disco/inodos, restart loops, ready/5xx/latencia,
+certificado TLS proximo a expirar/renewal/reload fallido, backup remoto faltante/edad
+segun RPO, pull-back/decrypt/restore y disponibilidad del propio monitor externo.
+Umbrales/contactos/owner/ack/escalacion y retencion siguen por aprobar; no se declara
+SaaS ni alerta conectada. No usar dumps/keys/XML/config secreta como evidencia.
+[RC/cohost](pilot-hosting-runbook.md) y [offsite DR](disaster-recovery.md#offsite-cifrado-del-cohost)
+definen gates; su ejecucion real requiere autorizacion R4 separada.

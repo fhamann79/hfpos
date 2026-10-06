@@ -1,11 +1,77 @@
 # DEV-531: HF One Release Candidate / Pilot Readiness
 
-Issue #133, alcance activo: comentario 6001881768. Base de implementacion:
+Issue #133, alcance PR145: comentario 6001881768. Base de primera implementacion:
 `616af30442f19f923e6c1828611dd2efef314c0b`. FEATURE FREEZE. R3 preparacion;
 R4 NO AUTORIZADO. Este documento no declara piloto activo ni RC publicado.
 Una rama/PR, un writer; los advisors no sustituyen la revision final independiente.
 
-## Inventario y clasificacion
+## Estado Vigente / Continuacion NO-R4
+
+PR145 integrado en main `d9939e1c4f2d62dfc071f68b344d4cc33ec099ef`;
+aceptacion humana anterior corresponde exclusivamente a PR145/HEAD
+`9e2111d53f59ccab4d2703f2442788261ff927c0`, no a nueva superficie release/PGops.
+CI main d993 verde: [CI37388529187](https://github.com/fhamann79/hfpos/actions/runs/37388529187)
+y [Containers37388529186](https://github.com/fhamann79/hfpos/actions/runs/37388529186).
+Historial/audits/resultados abajo conservados con su SHA/scope originales.
+No se relabela evidencia de base como CI del HEAD de continuacion.
+
+Cadena funcional explicita aprobada en issue133/comment6005809322:
+PR145 -> preparacion RC/cohost en nuevo PR, base d993. FEATURE FREEZE: solo workflow
+release, helpers/tests CI, config/overlay y docs; sin producto/FE/EF/dependency churn.
+RC `v0.1.0-rc.1` y Contabo Linux US East/Compose cohost preferidos aprobados para
+PREPARACION. Sin tag, GHCRpublication, hosting/DB/DNS/TLS/secrets reales ni piloto activo.
+Dominio desconocido parametrizado, presupuesto techoUSD10-15/mes excluye dominio,
+cotizacion/cargos/plazo/impuestos finales NO verificados/aprobados para compra.
+[Runbook vigente de RC/hosting](pilot-hosting-runbook.md) registra evidencia publica
+de costes, roles separados, PG16 privado, offsite cifrado, cutover y riesgos.
+
+Nueva superficie: verificacion inline read-only de main antes del helper de tag,
+semver stable/rc.N estricto, publish separado packageswrite solo tags aprobados;
+overlay PG opcional sin hostport y red database internal, storage/digest/admin secret
+externos requeridos, conexiones runtime/migrator separadas en overlay, sin init
+producto/automigrate. Tests de config sintetica NO acreditan privilegios reales
+ni deployment. Required CI nuevo HEAD/review independiente y timing/gate humano
+de esta continuacion PENDIENTES: coordinator/reviewer deciden, no se hereda
+VALIDADO OK anterior. RPO24h/RTO4h y retention7daily/4weekly/3monthly son propuestas,
+NO aprobadas.
+Compatibilidad preservada: BASE/env existente/fixture PS identicos a d993. Baseline
+legacy comparte conexion app/migrator, no representa target piloto. Para futura
+DB externa se usa BASE+optional MIGRATOR, sin PG y con conexion propia requerida;
+cohost usa BASE+PG. Guard de tests verifica baseline unchanged y missing-migrator
+rechazado en target externo, no elimina ni oculta el limite legacy.
+
+Evidencia enfocada de continuacion (Windows, Python3.13.7, Compose2.32.4-desktop.1,
+contexto desktop-linux, ninguna ejecucion up):
+`python -B scripts/ci/test_verify_release_source.py` 8/8 PASS;
+`python -B scripts/ci/test_pilot_compose.py` 10/10 PASS tras correccion namespace;
+`python -B scripts/ci/test_validate_pr_governance.py` 7/7 PASS.
+Verifier y comandos inline se ejecutan en repos Git temporales con tags locales
+de prueba; stable/RC ancestor-main PASS, feature con helper malicioso exit0 FAIL,
+malformed/mismatch/fetchfallido FAIL. No tag en repo compartido/GitHub.
+Config tests materializan baseline unchanged, externalpilot y cohost; negativos
+de required values/pins/network/storage/approval y CLI sin output sensible.
+Helpers no prueban privilegios DB efectivos, CA/hostname ni artefactos publicados.
+Review de PR146/7385af8 detecto dos MAJOR/BLOCKER PILOT de assurance: PGDATA amplio
+y overrides ambientales de la CLI. Regresiones RED reprodujeron ambos; correccion
+en el mismo PR exige leaf canonica bajo storage root explicito y sanea HFPOS/COMPOSE
+en el subprocess real. GREEN incluye CLI cohost/externo con shell conflictivo y
+campos ausentes no suplidos por shell, mas paths inseguros sin montarlos/modificarlos.
+CI anterior 7385 verde no se hereda al HEAD corregido. Delta+integration review
+independiente y required CI exacto siguen PENDIENTES; implementer no declara B0/M0.
+Review externo de 39c4218 reabre MAJOR de storage: `/var/cache/apt` y
+`/var/spool/mail` pasaban la denylist anterior. No se conserva cierre M0 para ese
+guard. Regresion CLI real RED: 1 test, 8 fallos en namespaces inseguros/arbitrarios.
+Correccion focalizada sustituye denylist por allowlist estricta `/srv/hf-one` o
+`/var/lib/hf-one` + componentes dedicados; conserva canonical/descendencia/overlap,
+no auto-create y preflight humano R4. Saneamiento ambiental sin cambios. Nueva
+evidencia GREEN de config/CLI no acredita filesystem real ni reemplaza review/CI
+exactos del HEAD corregido; historial previo permanece delimitado.
+CI required completo del nuevo HEAD se registra en PR; pruebas negocio/recovery
+de main d993 se reutilizan por codigo/contratos app/EF/FE unchanged, no full local
+ceremonial. Ningun override de baseline/fixture PS se aplico tras rechazo de
+auto-review; la alternativa OPTIONAL fue aclarada/aprobada por coordinador.
+
+## Inventario y clasificacion Historicos PR145
 
 | Area | Clasificacion | Evidencia / limite |
 | --- | --- | --- |
@@ -233,28 +299,32 @@ debe distinguir estos resultados de scans posteriores de candidatos exactos.
 
 ## Candidato vs Release
 
-No hay release/tag RC publicado al iniciar DEV-531. No se elige version humana.
-El workflow existente permite solo `vX.Y.Z` (sin sufijo `-rc`); valida pertenencia
-a main y publica backend/web/migrations con OCI revision/version, SBOM y provenance.
+No habia release/tag RC publicado al iniciar DEV-531; esta continuacion tampoco
+crea tag ni publica. Historico PR145: workflow solo stable `vX.Y.Z`. La preparacion
+actual admite stable y `vX.Y.Z-rc.N` sin leading zeros/N>=1; version elegida por
+Fernando `v0.1.0-rc.1`, ejecucion del tag todavia pendiente. Valida pertenencia a main
+INLINE antes de helper del checkout y mantiene backend/web/migrations con OCI
+revision/version, SBOM y provenance declarados.
 Eso es CAPACIDAD DECLARADA, no una attestation comprobada para main/candidato.
 
 El PR registra HEAD exacto, required CI, build local sintetico e IDs/digests
 disponibles sin push. No reclamar firma criptografica: provenance/SBOM no equivalen
 a firma ni scan de vulnerabilidades OS. Registrar explicitamente lo no ejecutado.
-Tras merge/aceptacion, el humano elige version compatible con la politica; despues
+Tras nuevos gates/aceptacion, el humano ejecuta el tag/version elegido; despues
 de publicacion se verifican tres digests inmutables, labels SHA/version, SBOM y
 provenance efectivos. Nunca desplegar solo con tags mutables ni artefactos locales.
 
 ## Gates Humanos
 
-1. VALIDACION HUMANA PRE-MERGE REQUERIDA: CI exacto + revision fresca B0/M0, luego
-   smoke sintetico corto del candidato congelado. No merge del implementer.
-2. Decision hosting: proveedor/topologia, dominio/DNS/TLS, PostgreSQL administrado
-   o propio, storage/keyring compartido, secret store, backups externos cifrados,
-   retencion, observabilidad, alert routing y responsables. Sin defaults reales.
+1. PR145 aceptado/integrado; nueva superficie release/PGops NO aceptada por ese
+   VALIDADO OK. CI exacto nuevo + review independiente B0/M0 pendientes; coordinator
+   y reviewer determinan timing/validacion humana pertinente. NO MERGE implementer.
+2. Preparacion hosting Contabo Linux US East/Compose cohost aprobada; dominio/DNS/TLS,
+   storage/keyring, secret store, offsite cifrado, retencion, observabilidad,
+   alert routing/responsables y cotizacion/plazo/cargos finales pendientes.
 3. Aprobar RPO/RTO con medicion de volumen/recovery point y ventana. El tiempo del
    rehearsal CI/local no es RTO ni SLA real.
-4. Tag/version requieren decision humana. Scan OS del candidato y comprobaciones
+4. Version RC elegida v0.1.0-rc.1; tag/publicacion NO ejecutados. Scan OS del candidato y comprobaciones
    readonly de tres digests/SBOM/provenance despues del tag son trabajo tecnico
    NO-R4 del coordinador/CI, sin credenciales reales: pendientes hasta evidencia.
    NuGet/npm no certifican capas OS; no convertir este control tecnico en ceremonia humana.
@@ -262,12 +332,16 @@ provenance efectivos. Nunca desplegar solo con tags mutables ni artefactos local
    ejecucion independiente para hosting/deployment/DB/migrations/certs/SRI/secrets/
    DNS/TLS/backup-restore reales. Nada de esto se autoriza al aprobar codigo.
 
-Opciones portables pendientes: single-host con proxy y PostgreSQL externo, o
-plataforma administrada con LB/storage/keyring compartido. Elegir por ownership,
-restore verificable, deny-egress, cifrado/ACL, capacidad, coste y RPO/RTO aprobados;
-no se infiere proveedor, dominio, credenciales ni topologia cloud.
+Opcion cohost preferida seleccionada para preparar; DB externa sigue compatible
+quitando overlay y cambiando configuracion/redes/CA/roles, no app. Capacidad, contrato,
+restore verificable, deny-egress, cifrado/ACL y RPO/RTO requieren gates restantes.
+No se infiere dominio, credenciales ni infraestructura ya contratada/desplegada.
 
 ## Smoke Humano Pre-Merge
+
+Historico PR145: aceptado en HEAD9e211/main d993; instrucciones y evidencia original
+se conservan. No repetir negocio unchanged ceremonialmente ni atribuir esa aceptacion
+a continuacion RC/PGops. Nuevo timing/gate sera decidido por coordinator/reviewer.
 
 Solo datos generados del rehearsal en worktree congelado, origen 8444 y restore
 8445. Credencial platform aleatoria en runtime ignorado; tenant `pilot-tenant`,
@@ -293,4 +367,6 @@ cubre live/ready, 5xx/latencia, reinicios, DB, edad/resultado backups y jobs fis
 Antes del piloto el humano prueba alertas y confirma responsable, umbrales y ruta.
 No se simula que un proveedor o sus alertas ya estan conectados.
 
-Estado: PENDIENTE. NO MERGE. R4/hosting/RPO-RTO/tag/publicacion/piloto reales pendientes.
+Estado maestro: OPEN, PREP NO-R4. PR145 integrado/aceptado; continuacion nueva con
+CI/review/gate humano pendientes. NO MERGE/tag/publicacion/deploy por implementer.
+Contrato/dominio/hosting real/RPO-RTO/retencion/alertas/R4/piloto real pendientes.

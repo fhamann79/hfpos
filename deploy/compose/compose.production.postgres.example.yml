@@ -1,0 +1,54 @@
+# Optional cohost overlay. Config validation only is NO-R4; starting it is R4.
+# No product schema/roles/users are initialized here. POSTGRES_USER is admin ONLY.
+x-hfpos-pg-storage:
+  root: ${HFPOS_PG_STORAGE_ROOT:?explicit approved dedicated storage root required}
+  data: ${HFPOS_PG_DATA_PATH:?dedicated PostgreSQL leaf below storage root required}
+services:
+  postgres:
+    image: ${HFPOS_PG_IMAGE:?PostgreSQL 16 image pinned by sha256 required}
+    environment:
+      POSTGRES_USER: ${HFPOS_PG_ADMIN_USER:?bootstrap admin distinct from application required}
+      POSTGRES_DB: ${HFPOS_PG_DATABASE:?explicit database name required}
+      POSTGRES_PASSWORD_FILE: /run/secrets/hfpos_pg_admin_password
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --data-checksums
+    secrets: [hfpos_pg_admin_password]
+    volumes:
+      - type: bind
+        source: ${HFPOS_PG_DATA_PATH:?explicit persistent PostgreSQL directory required}
+        target: /var/lib/postgresql/data
+        bind: {create_host_path: false}
+    restart: unless-stopped
+    logging: &bounded_logs
+      driver: json-file
+      options: {max-size: '10m', max-file: '3'}
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    networks: [database]
+  backend:
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [private, database]
+    restart: unless-stopped
+    logging: *bounded_logs
+  web:
+    restart: unless-stopped
+    logging: *bounded_logs
+  migrations:
+    environment:
+      ConnectionStrings__DefaultConnection: ${HFPOS_MIGRATION_DATABASE_CONNECTION:?separate migrator role connection required}
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [private, database]
+    restart: 'no'
+    logging: *bounded_logs
+secrets:
+  hfpos_pg_admin_password:
+    file: ${HFPOS_PG_ADMIN_PASSWORD_FILE:?external bootstrap password file required}
+networks:
+  database:
+    internal: true

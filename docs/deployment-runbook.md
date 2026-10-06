@@ -2,6 +2,8 @@
 
 Artefactos y ensayos sinteticos: R3. Desplegar, migrar o restaurar un entorno real:
 R4, exclusivamente un operador humano autorizado. Este runbook no autoriza ejecucion.
+Continuacion DEV-531 NO-R4: [RC/piloto cohost](pilot-hosting-runbook.md), base main d993.
+Contabo US East/Compose cohost preferidos, dominio y contrato/coste final pendientes.
 Requiere aprobacion explicita, entorno confirmado, ventana de cambio, backups
 verificados y plan de rollback/restore. No hay migracion nueva en BE-FE-520.
 
@@ -11,7 +13,10 @@ TLS externo -> web non-root (8443) -> Angular estatico + `/api/*`, `/health/*`
 al backend non-root HTTP 8080 -> PostgreSQL externo autorizado.
 El backend no publica puerto al host. La red privada usa subnet/IP del proxy
 explicitas; no significa que Docker provea aislamiento de un operador del host.
-Compose Production NO crea PostgreSQL, migra, inicializa usuarios ni despliega solo.
+Compose BASE NO crea PostgreSQL, migra, inicializa usuarios ni despliega solo.
+Overlay opcional PG16 privado para cohost: no puerto host, bind persistente requerido,
+password admin externo y red internal de backend/migrations/PG, nunca web.
+No inicia schema/roles app; preflight R4 separa admin, migrator y runtime no-superuser.
 `migrations` tiene profile separado; `compose up` normal no lo ejecuta.
 
 Imágenes: backend, web, migrations. Bases fijadas por digest verificado; actualizar
@@ -22,11 +27,12 @@ Imagen de migracion incluye fuentes necesarias pero no User Secrets, certificado
 dumps ni claves. `.dockerignore` excluye artefactos locales y el directorio no
 versionado `frontend/pos-frontend/backend/`.
 
-Produccion usa imagenes `vX.Y.Z` + digest confirmado, o `sha-<commit>` + digest.
+Produccion usa imagenes `vX.Y.Z` o `vX.Y.Z-rc.N` + digest confirmado, o `sha-<commit>` + digest.
 Registrar tres digests, SHA, lista EF, configuracion no secreta y ventana por release.
 El workflow publica GHCR con SBOM/provenance al crear un tag humano; NO despliega,
 no tiene credenciales cloud/SSH/Production y no publica desde PRs.
-Un release tag `vX.Y.Z` DEBE apuntar a un commit ya contenido en `main`.
+Un release tag stable/RC (sin leading zeros, N>=1) DEBE apuntar a un commit ya
+contenido en `main`; ancestry inline precede al helper del checkout. PR/main no publish.
 El workflow rechaza tags sobre commits no integrados antes de habilitar
 `packages: write` en el job de publicacion.
 
@@ -48,6 +54,11 @@ El workflow rechaza tags sobre commits no integrados antes de habilitar
 8. Confirmar rollback/restore, controlar escrituras/trafico antes de migrar.
 
 ## Comandos de referencia (NO ejecucion autonoma)
+
+Estos comandos BASE son el contrato legacy preservado, NO el target piloto
+DEV-531. Para el target usar BASE+PG cohost o BASE+MIGRATOR externo y sus contratos
+nuevos/validador de [RC/cohost](pilot-hosting-runbook.md). Sin overlay, migrator
+hereda la conexion runtime; no afirmar separacion de roles ni elevar app para DDL.
 
 Usar copia externa de `.env.production.example`, completar valores en infraestructura
 autorizada. `compose config` completo muestra secretos: no imprimir ni adjuntar;

@@ -11,6 +11,20 @@ concurrency:
   group: containers-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  release-preparation-tests:
+    name: Release source and optional PG configuration tests
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test real release verifier in disposable Git repositories
+        run: python scripts/ci/test_verify_release_source.py
+      - name: Materialize synthetic Compose configuration without starting services
+        run: python scripts/ci/test_pilot_compose.py
   operations:
     name: Production-like smoke and restore rehearsal
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
@@ -57,15 +71,13 @@ jobs:
           RELEASE: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          if [[ ! "$RELEASE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo 'Release refused: tag must have format vX.Y.Z.' >&2
-            exit 1
-          fi
+          # Do not let a helper from an unmerged tag waive ancestry.
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
             echo 'Release refused: tagged commit is not part of main.' >&2
             exit 1
           fi
+          python scripts/ci/verify_release_source.py "$RELEASE" "$GITHUB_SHA"
   publish:
     name: Publish versioned images (NO deployment)
     needs: verify-release-source

@@ -1,0 +1,5 @@
+# Optional external-DB pilot overlay; legacy base contract remains unchanged.
+services:
+  migrations:
+    environment:
+      ConnectionStrings__DefaultConnection: ${HFPOS_MIGRATION_DATABASE_CONNECTION:?separate migrator role connection required}

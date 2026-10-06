@@ -96,6 +96,24 @@ Deployment, observabilidad, backups/restore y disaster recovery quedan para BE-F
 La baseline y los procedimientos estan en `deployment-runbook.md`,
 `observability-runbook.md` y `disaster-recovery.md`. No autorizan despliegue real.
 
+DEV-531 overlays opcionales: [runbook](pilot-hosting-runbook.md). Target piloto
+(BASE+PG cohost o BASE+MIGRATOR externo) usa runtime `HFPOS_DATABASE_CONNECTION`;
+one-shot migraciones del target usa obligatoriamente
+`HFPOS_MIGRATION_DATABASE_CONNECTION`, separado de runtime/admin. PG bootstrap
+`POSTGRES_USER` es superuser: nunca usarlo como app. Overlay PG16 exige digest,
+storage Linux canonico dedicado bajo `HFPOS_PG_STORAGE_ROOT` explicitamente aprobado,
+root descendiente estricto de `/srv/hf-one` o `/var/lib/hf-one` (no los prefijos
+genericos); componentes de instancia/storage en minusculas/digitos y guiones simples,
+leaf `HFPOS_PG_DATA_PATH` estrictamente inferior, admin password file externo y DB/user
+explicitos. No roots/systemdirs/ancestros del repo ni dot/dotdot. Realpath/symlinks,
+ownership exclusivo y contenido de leaf requieren preflight humano R4; config no
+los certifica. La CLI descarta variables heredadas HFPOS/COMPOSE para validar solo
+el envfile indicado, sin volcar output nativo/config/secrets.
+Futura DB externa exige hostname/CA y VerifyFull mediante config/montaje, no codigo.
+Validar privilegios efectivos fuera del test config, despues de R4 autorizado.
+Baseline legacy/base y env existentes siguen intactos con conexion compartida;
+no son evidencia de role separation ni la composicion target piloto.
+
 | Variable | Contrato operacional |
 | --- | --- |
 | `Operations__ShutdownTimeoutSeconds` | 5..120; default 30; gracia del orchestrator mayor que este limite |
