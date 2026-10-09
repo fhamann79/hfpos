@@ -93,6 +93,61 @@ def private_fixture(folder):
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_fixed_container_stream_ustar_allowlist_and_hashes(self):
+        files = {"ops/postgres-restore.sh": b"reviewed-synthetic-script",
+                 "hfpos-20261009T170757Z-1.dump": b"synthetic-only-dump"}
+        def streamed(*args, **kwargs):
+            if "tar" in args:
+                self.assertEqual(("exec", "-i", "--user", "0", "synthetic-only", "tar", "-xf", "-", "-C", "/tmp", "--no-same-owner"), args)
+                with tarfile.open(fileobj=io.BytesIO(kwargs["data"]), mode="r:") as archive:
+                    self.assertEqual(set(files), set(archive.getnames()))
+                    for member in archive:
+                        self.assertTrue(member.isfile() and not member.pax_headers)
+                        self.assertEqual(files[member.name], archive.extractfile(member).read())
+                return b""
+            self.assertEqual("sha256sum", args[2])
+            return hashlib.sha256(files[args[3].removeprefix("/tmp/")]).hexdigest().encode() + b"  synthetic"
+        with patch.object(ops, "docker", side_effect=streamed) as docker:
+            ops.stream_container_files("synthetic-only", files)
+            self.assertEqual(3, docker.call_count)
+        for filename in ("../evil", "/tmp/evil", "ops/uploaded-script.sh", "hfpos.dump"):
+            with patch.object(ops, "docker") as docker, self.assertRaises(ops.Denied):
+                ops.stream_container_files("synthetic-only", {filename: b"never-upload"})
+            docker.assert_not_called()
+
+    def test_required_ci_native_age_is_available(self):
+        if os.environ.get("HFPOS_SUPERVISED_NATIVE_AGE") == "YES":
+            self.assertTrue(shutil.which("age") and shutil.which("age-keygen"), "CI native age test must not silently skip")
+
+    def test_bounded_payload_reader_short_extra_and_exact(self):
+        self.assertEqual(b"abc", ops.read_payload(io.BytesIO(b"abc"), 3))
+        for data in (b"ab", b"abcd"):
+            with self.assertRaises(ops.TransferAborted):
+                ops.read_payload(io.BytesIO(data), 3)
+
+    def test_ipv6_modes_and_loopback_only_routes(self):
+        for values, expected in (([b"no", b""], "kernel-disabled"),
+                                 ([b"yes", b"0", b"1", b""], "namespace-disabled"),
+                                 ([b"yes", b"0", b"0", b""], "unconfigured-loopback"),
+                                 ([b"yes", b"0", b"0", ("0" * 31 + "1 01 80 10 80 lo\n").encode()], "operational-loopback")):
+            with patch.object(ops, "docker", side_effect=values):
+                self.assertEqual(expected, ops.ipv6_mode("synthetic-only"))
+        ops.loopback_routes(b"::1 dev lo proto kernel\n")
+        ops.loopback_routes(b"127.0.0.0/8 dev lo\n")
+        for route in (b"default via 192.0.2.1 dev eth0", b"2001:db8::/64 dev lo", b"::1 dev eth0"):
+            with self.assertRaises((ops.Denied, ValueError)):
+                ops.loopback_routes(route)
+
+    def test_disabled_ipv6_does_not_skip_real_client_negative_probes(self):
+        with patch.object(ops, "ipv6_mode", return_value="namespace-disabled"), \
+                patch.object(ops, "docker", return_value=b"1") as positive, \
+                patch.object(ops.subprocess, "run", return_value=subprocess.CompletedProcess([], 2)) as negative:
+            self.assertEqual("namespace-disabled", ops.probe_egress("synthetic-only"))
+            self.assertEqual(1, positive.call_count)
+            self.assertIn("127.0.0.1", positive.call_args.args)
+            self.assertEqual(2, negative.call_count)
+            self.assertTrue(all(call.args[0][0] == "/usr/bin/docker" and "psql" in call.args[0] for call in negative.call_args_list))
+
     def test_strict_bounds_and_duplicates(self):
         self.assertEqual(REQUEST, ops.validate_request(copy.deepcopy(REQUEST)))
         cases = {"action": ["start-app", "restore;id", "../preflight"], "source_sha": ["main", "A" * 40],
@@ -182,8 +237,7 @@ class ProtocolTests(unittest.TestCase):
             executions = []
             def native(args, **kwargs):
                 if args[0] == "ssh-keygen":
-                    Path(args[-1] + ".sig").write_text("-----BEGIN SSH SIGNATURE-----\nSYNTHETIC\n-----END SSH SIGNATURE-----\n")
-                    return subprocess.CompletedProcess(args, 0)
+                    return subprocess.CompletedProcess(args, 0, stdout=b"-----BEGIN SSH SIGNATURE-----\nSYNTHETIC\n-----END SSH SIGNATURE-----\n")
                 executions.append(args)
                 raise subprocess.TimeoutExpired(args, 1)
             def approve(prompt):
@@ -263,7 +317,8 @@ class ArchiveTests(unittest.TestCase):
             folder = Path(folder)
             folder = private_fixture(folder)
             ciphertext = folder / "ciphertext.age"
-            ciphertext.write_bytes(b"synthetic-ciphertext")
+            archives.private_write(ciphertext, b"synthetic-ciphertext")
+            archives.private_write(folder / "synthetic-key", b"synthetic-only")
             digest = hashlib.sha256(ciphertext.read_bytes()).hexdigest()
             # Real subprocess emits plaintext then fails; no crypto or real key used.
             command = [sys.executable, "-c", "import sys;sys.stdout.buffer.write(b'partial-plaintext');sys.exit(1)"]
@@ -287,7 +342,8 @@ class ArchiveTests(unittest.TestCase):
             folder = private_fixture(folder)
             ciphertext = folder / "ciphertext.age"
             content = tar_bytes(fixture(), root=True)
-            ciphertext.write_bytes(content)
+            archives.private_write(ciphertext, content)
+            archives.private_write(folder / "synthetic-key", b"synthetic-only")
             digest = hashlib.sha256(content).hexdigest()
             real = subprocess.Popen
             def swap(args, **kwargs):
@@ -304,6 +360,19 @@ class ArchiveTests(unittest.TestCase):
 
 @unittest.skipUnless(os.name == "nt", "Windows-only native ACL helper")
 class WindowsAclTests(unittest.TestCase):
+    def test_private_creation_owner_current_and_never_adopts_existing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = private_fixture(Path(folder))
+            child = folder / "owned nested"
+            archives.private_create(child, directory=True)
+            file = child / "owned file"
+            archives.private_write(file, b"synthetic-only")
+            archives.private_windows(child)
+            archives.private_windows(file)
+            with self.assertRaises(archives.ops.Denied):
+                archives.private_create(file)
+            self.assertEqual(b"synthetic-only", file.read_bytes())
+
     def test_shared_agent_sid_denied_before_key_access(self):
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
@@ -326,7 +395,7 @@ class WindowsAclTests(unittest.TestCase):
             private = private_fixture(private)
             archives.private_windows(private)
             key = private / "synthetic key only"
-            key.write_text("synthetic-only")
+            archives.private_write(key, b"synthetic-only")
             archives.private_windows(key)
             with self.assertRaises(archives.ops.Denied):
                 archives.private_windows(folder)
@@ -366,10 +435,9 @@ class RootProtocolTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def signed(self, value):
-        document = self.folder / (value["nonce"] + ".json")
-        document.write_bytes(ops.canonical(value))
-        subprocess.run(["ssh-keygen", "-Y", "sign", "-f", str(self.key), "-n", ops.NAMESPACE, str(document)], check=True, capture_output=True)
-        return {"plan": value, "signature": Path(str(document) + ".sig").read_text()}
+        result = subprocess.run(["ssh-keygen", "-Y", "sign", "-f", str(self.key), "-n", ops.NAMESPACE],
+                                input=ops.canonical(value), check=True, capture_output=True)
+        return {"plan": value, "signature": result.stdout.decode("ascii")}
 
     def execute(self, envelope, payload=b""):
         return ops.execute_envelope(envelope, self.config, self.state, self.folder / "recovery", OPS, payload)
@@ -429,12 +497,80 @@ class RootProtocolTests(unittest.TestCase):
         try:
             self.assertEqual(b"locked\n", process.stdout.readline())
             with self.assertRaises(BlockingIOError):
-                self.execute(self.signed(plan()))
+                ops.execute_envelope(self.signed(plan()), self.config, self.state, self.folder / "recovery", OPS,
+                                     payload_stream=io.BytesIO(b"must-not-read"))
             self.assertFalse(list((self.state / "consumed").iterdir()))
         finally:
             process.terminate()
             process.wait()
             process.stdout.close()
+
+    def test_bad_signature_and_replay_never_touch_blob(self):
+        class Unreadable:
+            def read(self, count):
+                raise AssertionError("Unauthorized blob was read")
+            def fileno(self):
+                raise AssertionError("Unauthorized blob was accessed")
+        envelope = self.signed(plan())
+        for changed in (dict(envelope, signature="invalid"),
+                        dict(envelope, plan=dict(envelope["plan"], transfer_size=128 * 1024 * 1024, action="isolated-restore"))):
+            with self.assertRaises(ops.Denied):
+                ops.execute_envelope(changed, self.config, self.state, self.folder / "recovery", OPS, payload_stream=Unreadable())
+        self.assertFalse(list((self.state / "consumed").iterdir()))
+        self.execute(envelope)
+        with self.assertRaises(FileExistsError):
+            ops.execute_envelope(envelope, self.config, self.state, self.folder / "recovery", OPS, payload_stream=Unreadable())
+
+    def test_consumed_before_blob_and_short_transfer_uncertain(self):
+        value = dict(plan(), action="isolated-restore", transfer_size=10)
+        parent = self
+        class ShortStream(io.BytesIO):
+            def read(self, count):
+                parent.assertTrue((parent.state / "consumed" / ("run-" + value["run_id"])).exists())
+                parent.assertTrue((parent.state / "consumed" / ("nonce-" + value["nonce"])).exists())
+                return super().read(count)
+        envelope = self.signed(value)
+        result = ops.execute_envelope(envelope, self.config, self.state, self.folder / "recovery", OPS,
+                                      payload_stream=ShortStream(b"short"))
+        self.assertEqual("UNCERTAIN", result["status"])
+        self.assertFalse(list((self.workspace / "incoming").iterdir()))
+        with self.assertRaises(FileExistsError):
+            self.execute(envelope)
+
+    def test_native_pipe_transfer_timeout(self):
+        read, write = os.pipe()
+        try:
+            with os.fdopen(read, "rb", buffering=0) as source:
+                with self.assertRaises(ops.TransferAborted):
+                    ops.read_payload(source, 1, timeout=0.05)
+        finally:
+            os.close(write)
+
+
+@unittest.skipUnless(shutil.which("age") and shutil.which("age-keygen"), "Native age tool unavailable locally")
+class NativeAgeTests(unittest.TestCase):
+    def test_real_synthetic_roundtrip_and_truncated_ciphertext(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = private_fixture(Path(folder))
+            identity = folder / "synthetic-age-key"
+            # Capture test-only key material privately, never include it in diagnostics.
+            generated = subprocess.run(["age-keygen"], check=True, capture_output=True)
+            archives.private_write(identity, generated.stdout)
+            public = subprocess.run(["age-keygen", "-y", str(identity)], check=True, capture_output=True).stdout.decode().strip()
+            encrypted = subprocess.run(["age", "--encrypt", "--recipient", public], input=tar_bytes(fixture(), root=True),
+                                       check=True, capture_output=True).stdout
+            ciphertext = folder / "synthetic.age"
+            archives.private_write(ciphertext, encrypted)
+            digest = hashlib.sha256(encrypted).hexdigest()
+            manifest = archives.decrypt_export(ciphertext, identity, folder, folder / "export", REQUEST["recovery_id"], digest)
+            self.assertEqual(digest, manifest["ciphertext_sha256"])
+            self.assertFalse((folder / "export/snapshot").exists())
+            truncated = folder / "truncated.age"
+            archives.private_write(truncated, encrypted[:-16])
+            with self.assertRaises(archives.ops.Denied):
+                archives.decrypt_export(truncated, identity, folder, folder / "bad-export", REQUEST["recovery_id"],
+                                        hashlib.sha256(encrypted[:-16]).hexdigest())
+            self.assertFalse((folder / "bad-export").exists())
 
 
 @unittest.skipUnless(os.name == "posix" and os.geteuid() == 0 and os.environ.get("HFPOS_SUPERVISED_DOCKER_TESTS") == "YES",
@@ -448,9 +584,13 @@ class DockerCoreTests(unittest.TestCase):
                        Path("/usr/local/libexec/hfpos-supervised-ssh"), Path("/usr/local/sbin/hfpos-supervised-root")]
         self.assertTrue(all(not path.exists() for path in fixed_paths), "Refuse preexisting host resources")
         source_name = "hfpos-supervised-source-" + self.folder.name
-        destination_name = "hfpos-recovery-" + REQUEST["recovery_id"]
+        recovery_id = hashlib.sha256(self.folder.name.encode()).hexdigest()[:32]
+        destination_name = "hfpos-recovery-" + recovery_id
         created = []
         try:
+            for name in (source_name, destination_name):
+                self.assertFalse(ops.docker("ps", "-a", "--filter", "name=^/" + name + "$", "--format", "{{.ID}}").strip(),
+                                 "Refuse preexisting test container")
             ops.docker("run", "-d", "--name", source_name, "--network", "none", "--read-only", "--user", "70:70",
                        "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "768m", "--cpus", "0.5",
                        "--pids-limit", "128", "--tmpfs", "/var/lib/postgresql/data:rw,uid=70,gid=70,mode=0700",
@@ -467,24 +607,27 @@ class DockerCoreTests(unittest.TestCase):
             tables = ("__EFMigrationsHistory", "Companies", "Users", "PlatformUsers", "Sales", "SaleItems", "ProductStocks",
                       "Products", "CashSessions", "PurchaseReceipts", "CreditNotes")
             sql = "".join('CREATE TABLE public."' + name + '"(id integer);INSERT INTO public."' + name + '" VALUES(531);' for name in tables)
+            sql += "CREATE SEQUENCE public.synthetic_sequence START WITH 531;SELECT setval('public.synthetic_sequence',536,true);"
             ops.docker("exec", source_name, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "synthetic", "-d", "synthetic", "-c", sql)
-            fingerprint_sql = 'SELECT md5(string_agg(id::text,\',\' ORDER BY id)) FROM public."Companies";'
+            fingerprint_sql = ('SELECT md5(string_agg(id::text,\',\' ORDER BY id)) FROM public."Companies";'
+                               'SELECT last_value,is_called FROM public.synthetic_sequence;')
             before = ops.docker("exec", source_name, "psql", "-X", "-At", "-U", "synthetic", "-d", "synthetic", "-c", fingerprint_sql)
-            ops.docker("exec", source_name, "pg_dump", "-U", "synthetic", "-d", "synthetic", "--format=custom", "--no-owner",
-                       "--no-privileges", "--file=/tmp/source.dump")
+            dumped = ops.docker("exec", source_name, "pg_dump", "-U", "synthetic", "-d", "synthetic", "--format=custom", "--no-owner",
+                                "--no-privileges")
+            self.assertTrue(dumped.startswith(b"PGDMP"), "Synthetic custom dump header invalid")
             dump_path = self.folder / "source.dump"
-            ops.docker("cp", source_name + ":/tmp/source.dump", str(dump_path))
+            dump_path.write_bytes(dumped)
             outer = self.folder / "outer.tar"
             outer.write_bytes(tar_bytes(fixture(dump_path.read_bytes()), root=True))
-            archives.filtered_export(outer, self.folder / "export", REQUEST["recovery_id"], REQUEST["ciphertext_sha256"])
+            archives.filtered_export(outer, self.folder / "export", recovery_id, REQUEST["ciphertext_sha256"])
             blob, manifest_hash = bridge.transfer_blob(self.folder / "export")
-            value = dict(plan(), action="isolated-restore", transfer_size=len(blob), transfer_sha256=hashlib.sha256(blob).hexdigest(),
+            value = dict(plan(), action="isolated-restore", recovery_id=recovery_id, transfer_size=len(blob), transfer_sha256=hashlib.sha256(blob).hexdigest(),
                          transfer_manifest_sha256=manifest_hash)
             for path in (ops.BUNDLE.parent, ops.BUNDLE, ops.STATE, ops.STATE / "consumed", ops.STATE / "audit",
-                         ops.RECOVERY, ops.RECOVERY / REQUEST["recovery_id"]):
+                         ops.RECOVERY, ops.RECOVERY / recovery_id):
                 path.mkdir(parents=True, mode=0o700, exist_ok=True)
                 path.chmod(0o700)
-            workspace = ops.RECOVERY / REQUEST["recovery_id"]
+            workspace = ops.RECOVERY / recovery_id
             for name in ("incoming", "postgres-data", "keyring-restored"):
                 (workspace / name).mkdir(mode=0o700)
             for name in ops.BUNDLE_FILES:
@@ -500,18 +643,51 @@ class DockerCoreTests(unittest.TestCase):
                 (ops.STATE / name).chmod(0o600)
             (ops.STATE / "config.json").write_bytes(ops.canonical(self.config))
             (ops.STATE / "config.json").chmod(0o600)
+            # Genuine Docker creation followed by an injected pre-SQL failure:
+            # the next signed serve must reuse this exact isolated container.
+            ops.receive_transfer(value, blob, workspace)
+            created.append(destination_name)
+            with patch.object(ops, "probe_egress", side_effect=ops.Denied):
+                with self.assertRaises(ops.Denied):
+                    ops.restore_core(value, workspace, ops.BUNDLE)
+            partial = ops.decode((workspace / "core-checkpoint.json").read_bytes())
+            self.assertEqual("container-created", partial["stage"])
             command = [sys.executable, "-I", str(ops.BUNDLE / "supervised-operations.py"), "serve"]
             envelope = self.signed(value)
             completed = subprocess.run(command, input=ops.canonical(envelope) + blob, capture_output=True, timeout=800)
-            created.append(destination_name)
             self.assertEqual(0, completed.returncode, "Fixed serve failed: " + completed.stdout.decode(errors="replace"))
             self.assertEqual("CORE_RESTORE_PASS_APP_BLOCKED", ops.decode(completed.stdout)["status"])
+            self.assertEqual(partial["container_id"], ops.decode((workspace / "core-checkpoint.json").read_bytes())["container_id"])
+            def sql_destination(statement, role="hfpos_recovery_owner"):
+                return ops.docker("exec", destination_name, "psql", "-X", "-At", "-v", "ON_ERROR_STOP=1",
+                                  "-U", role, "-d", "hfpos_recovery", "-c", statement)
+            self.assertEqual(b"536|t", sql_destination("SELECT last_value,is_called FROM public.synthetic_sequence;").strip())
+            sql_destination("CREATE TABLE public.synthetic_future(id integer);CREATE SEQUENCE public.synthetic_future_sequence;")
+            self.assertEqual(b"t", sql_destination(
+                "SELECT has_table_privilege(current_user,'public.synthetic_future','SELECT') "
+                "AND has_table_privilege(current_user,'public.synthetic_future','INSERT') "
+                "AND has_table_privilege(current_user,'public.synthetic_future','UPDATE') "
+                "AND has_table_privilege(current_user,'public.synthetic_future','DELETE') "
+                "AND has_sequence_privilege(current_user,'public.synthetic_future_sequence','USAGE') "
+                "AND has_sequence_privilege(current_user,'public.synthetic_future_sequence','SELECT') "
+                "AND NOT has_sequence_privilege(current_user,'public.synthetic_future_sequence','UPDATE');",
+                "hfpos_recovery_runtime").strip())
             self.assertEqual(before, ops.docker("exec", source_name, "psql", "-X", "-At", "-U", "synthetic", "-d", "synthetic", "-c", fingerprint_sql))
             replay = subprocess.run(command, input=ops.canonical(envelope) + blob, capture_output=True, timeout=30)
             self.assertNotEqual(0, replay.returncode)
             value = dict(value, run_id="123458", nonce="f" * 32, expires=int(time.time()) + 300)
             resumed = subprocess.run(command, input=ops.canonical(self.signed(value)) + blob, capture_output=True, timeout=60)
             self.assertEqual(0, resumed.returncode, "Safe resume failed")
+            for index, revoke, repair in (
+                (0, "REVOKE USAGE ON SEQUENCE public.synthetic_sequence FROM hfpos_recovery_runtime;",
+                 "GRANT USAGE ON SEQUENCE public.synthetic_sequence TO hfpos_recovery_runtime;"),
+                (1, "ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE SELECT ON SEQUENCES FROM hfpos_recovery_runtime;",
+                 "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO hfpos_recovery_runtime;")):
+                sql_destination(revoke)
+                changed = dict(value, run_id=str(123460 + index), nonce=str(index + 2) * 32)
+                denied = subprocess.run(command, input=ops.canonical(self.signed(changed)) + blob, capture_output=True, timeout=60)
+                self.assertNotEqual(0, denied.returncode, "Resume accepted corrupted sequence/default privileges")
+                sql_destination(repair)
             (workspace / "keyring-restored/key-synthetic.xml").write_bytes(b"corrupted")
             value = dict(value, run_id="123459", nonce="1" * 32)
             corrupted = subprocess.run(command, input=ops.canonical(self.signed(value)) + blob, capture_output=True, timeout=60)

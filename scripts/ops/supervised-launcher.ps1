@@ -1,5 +1,10 @@
 param([switch]$Setup, [string]$AgentSid)
 $ErrorActionPreference = 'Stop'
+function New-OwnedCopy([string]$Source, [string]$Target, [string]$Helper) {
+    & $Helper -LiteralPath $Target -CreateFile
+    if ($LASTEXITCODE -ne 0) { throw 'Private resource creation failed.' }
+    [IO.File]::WriteAllBytes($Target, [IO.File]::ReadAllBytes($Source))
+}
 try {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $destination = Join-Path $env:LOCALAPPDATA 'HfposSupervised'
@@ -26,7 +31,8 @@ try {
         $names = @('supervised-operations.py','supervised-archive.py','supervised-bridge.py','supervised-local-acl.ps1',
                    'supervised-launcher.ps1','supervised-ssh.sh','supervised-root.sh','postgres-restore.sh',
                    'verify-postgres-backup.sh','verify-restored-db.sh','keyring-restore.sh')
-        foreach ($name in $names) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $destination $name) }
+        $helper = Join-Path $PSScriptRoot 'supervised-local-acl.ps1'
+        foreach ($name in $names) { New-OwnedCopy (Join-Path $PSScriptRoot $name) (Join-Path $destination $name) $helper }
         $config = [ordered]@{version=1;source_sha=$sha;bundle_sha256=$hash;agent_sid=$AgentSid;human_sid=$identity.User.Value}
         $config.host = Read-Host 'Host SSH aprobado (sin abrir rangos GHA)'
         $config.port = [int](Read-Host 'Puerto SSH aprobado')
@@ -35,15 +41,20 @@ try {
         $config.known_hosts = Read-Host 'Ruta known_hosts fijado y verificado fuera de banda'
         $config.age_identity = Read-Host 'Ruta privada age EXTERNA (no se copia al host)'
         $config.ciphertext_directory = Read-Host 'Carpeta privada de ciphertext opaco ID.age'
+        & $helper -LiteralPath (Join-Path $destination 'bridge.json') -CreateFile
+        if ($LASTEXITCODE -ne 0) { throw 'Private config creation failed.' }
         $config | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (Join-Path $destination 'bridge.json') -Encoding UTF8
         & python (Join-Path $destination 'supervised-bridge.py') --check-installation
         if ($LASTEXITCODE -ne 0) { throw 'Human custody/installation check failed.' }
         $hostPackage = Join-Path $destination 'host-bootstrap'
-        $null = New-Item -ItemType Directory -Path $hostPackage
-        foreach ($name in $names) { Copy-Item -LiteralPath (Join-Path $destination $name) -Destination (Join-Path $hostPackage $name) }
-        Copy-Item -LiteralPath ($config.signing_key + '.pub') -Destination (Join-Path $hostPackage 'human-signing.pub')
-        Copy-Item -LiteralPath ($config.transport_key + '.pub') -Destination (Join-Path $hostPackage 'transport.pub')
+        & $helper -LiteralPath $hostPackage -CreateDirectory
+        if ($LASTEXITCODE -ne 0) { throw 'Private package creation failed.' }
+        foreach ($name in $names) { New-OwnedCopy (Join-Path $destination $name) (Join-Path $hostPackage $name) $helper }
+        New-OwnedCopy ($config.signing_key + '.pub') (Join-Path $hostPackage 'human-signing.pub') $helper
+        New-OwnedCopy ($config.transport_key + '.pub') (Join-Path $hostPackage 'transport.pub') $helper
         $entry = "#!/bin/sh`nset -eu`ncd -- `"`$(dirname -- `"`$0`")`"`nexec /usr/bin/python3 supervised-operations.py bootstrap --source-sha $sha --bundle-sha256 $hash --signer-public human-signing.pub --transport-public transport.pub`n"
+        & $helper -LiteralPath (Join-Path $hostPackage 'bootstrap.sh') -CreateFile
+        if ($LASTEXITCODE -ne 0) { throw 'Private entry creation failed.' }
         [IO.File]::WriteAllText((Join-Path $hostPackage 'bootstrap.sh'), $entry, (New-Object Text.UTF8Encoding($false)))
         Write-Host 'Preparacion lista. El paquete host-bootstrap contiene SOLO codigo revisado y claves publicas.'
         Write-Host 'Instalacion Ubuntu humana: copiar ese paquete verificado por canal admin existente y ejecutar sudo sh bootstrap.sh UNA vez.'

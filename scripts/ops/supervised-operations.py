@@ -3,10 +3,12 @@
 import argparse
 import hashlib
 import io
+import ipaddress
 import json
 import os
 from pathlib import Path
 import re
+import select
 import stat
 import subprocess
 import sys
@@ -33,6 +35,38 @@ STATUSES = {"PREFLIGHT_PASS", "CORE_RESTORE_PASS_APP_BLOCKED", "DENIED", "FAILED
 
 class Denied(Exception):
     pass
+
+
+class TransferAborted(Exception):
+    pass
+
+
+def read_payload(stream, size, timeout=60):
+    deadline = time.monotonic() + timeout
+    output = io.BytesIO()
+    try:
+        descriptor = stream.fileno()
+    except (AttributeError, io.UnsupportedOperation):
+        descriptor = None
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TransferAborted()
+        count = min(65536, size - output.tell() + 1)
+        if descriptor is None:
+            chunk = stream.read(count)
+        else:
+            if not select.select([descriptor], [], [], remaining)[0]:
+                raise TransferAborted()
+            chunk = os.read(descriptor, count)
+        if not chunk:
+            break
+        output.write(chunk)
+        if output.tell() > size:
+            raise TransferAborted()
+    if output.tell() != size:
+        raise TransferAborted()
+    return output.getvalue()
 
 
 def require(ok):
@@ -225,8 +259,32 @@ def receive_transfer(plan, payload, workspace):
     validate_import(workspace, plan)
 
 
-def docker(*args, timeout=120):
-    return native(["/usr/bin/docker", *args], timeout=timeout)
+def docker(*args, timeout=120, data=None):
+    return native(["/usr/bin/docker", *args], data=data, timeout=timeout)
+
+
+def stream_container_files(name, files):
+    output = io.BytesIO()
+    scripts = {"ops/postgres-restore.sh", "ops/verify-postgres-backup.sh", "ops/verify-restored-db.sh"}
+    with tarfile.open(fileobj=output, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+        for filename, content in files.items():
+            require(filename in scripts or re.fullmatch(r"hfpos-[0-9]{8}T[0-9]{6}Z-[0-9]+\.dump(?:\.sha256|\.manifest)?", filename))
+            require(len(content) <= 64 * 1024 * 1024)
+            member = tarfile.TarInfo(filename)
+            member.mode = 0o444
+            member.size = len(content)
+            archive.addfile(member, io.BytesIO(content))
+    docker("exec", "-i", "--user", "0", name, "tar", "-xf", "-", "-C", "/tmp", "--no-same-owner", data=output.getvalue())
+    for filename, content in files.items():
+        actual = docker("exec", name, "sha256sum", "/tmp/" + filename).split()[0]
+        require(actual.decode("ascii") == hashlib.sha256(content).hexdigest())
+
+
+def loopback_routes(data):
+    for line in data.decode("ascii").splitlines():
+        fields = line.split()
+        require(fields and ipaddress.ip_network(fields[0], strict=False).is_loopback)
+        require("dev" in fields and fields[fields.index("dev") + 1] == "lo")
 
 
 def inspect_isolation(name, labels):
@@ -245,13 +303,37 @@ def inspect_isolation(name, labels):
     require(all(item["Config"]["Labels"].get(key) == value for key, value in labels.items()))
     require(not host.get("PidMode") and not host.get("Devices"))
     require(docker("exec", name, "ls", "/sys/class/net").strip() == b"lo")
-    require(not docker("exec", name, "ip", "-4", "route").strip())
-    require(not docker("exec", name, "ip", "-6", "route").strip())
+    loopback_routes(docker("exec", name, "ip", "-4", "route"))
+    if ipv6_mode(name) != "kernel-disabled":
+        loopback_routes(docker("exec", name, "ip", "-6", "route"))
+    return item["Id"]
+
+
+def ipv6_mode(name):
+    # Docker none may disable IPv6 on lo, or leave the stack enabled without ::1.
+    # Neither is an operational IPv6 loopback that can satisfy a positive PG probe.
+    present = docker("exec", name, "sh", "-c", "if test -d /proc/sys/net/ipv6; then echo yes; else echo no; fi").strip()
+    require(present in (b"yes", b"no"))
+    if present == b"no":
+        docker("exec", name, "test", "!", "-e", "/proc/net/if_inet6")
+        return "kernel-disabled"
+    flags = [docker("exec", name, "cat", "/proc/sys/net/ipv6/conf/" + interface + "/disable_ipv6").strip()
+             for interface in ("all", "lo")]
+    require(all(flag in (b"0", b"1") for flag in flags))
+    addresses = docker("exec", name, "cat", "/proc/net/if_inet6").decode("ascii").splitlines()
+    for line in addresses:
+        fields = line.split()
+        require(len(fields) == 6 and fields[-1] == "lo" and fields[0] == "0" * 31 + "1")
+    if b"1" in flags:
+        require(not addresses)
+        return "namespace-disabled"
+    return "operational-loopback" if addresses else "unconfigured-loopback"
 
 
 def probe_egress(name):
     # Same real, working client for positive loopback and negative reserved IPv4/IPv6.
-    for address in ("127.0.0.1", "::1"):
+    mode = ipv6_mode(name)
+    for address in (("127.0.0.1", "::1") if mode == "operational-loopback" else ("127.0.0.1",)):
         output = docker("exec", "-e", "PGCONNECT_TIMEOUT=2", name, "psql", "-X", "-At",
                         "-h", address, "-p", "5432", "-U", "hfpos_recovery_admin", "-d", "hfpos_recovery",
                         "-c", "SELECT 1;")
@@ -262,6 +344,28 @@ def probe_egress(name):
                                  "hfpos_recovery_admin", "-d", "hfpos_recovery", "-c", "SELECT 1;"],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
         require(result.returncode == 2)
+    return mode
+
+
+def write_checkpoint(path, labels, stage, container_id=None):
+    if path.exists():
+        safe_path(path, directory=False, mode=0o600)
+    with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".core-checkpoint-", delete=False) as output:
+        temporary = Path(output.name)
+        try:
+            output.write(canonical({"labels": labels, "stage": stage, "container_id": container_id}))
+            output.flush()
+            os.fsync(output.fileno())
+            temporary.chmod(0o600)
+            os.replace(temporary, path)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+    descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def verify_core(name, workspace, manifest):
@@ -275,7 +379,22 @@ def verify_core(name, workspace, manifest):
            "AND has_table_privilege('hfpos_recovery_runtime',c.oid,'UPDATE') "
            "AND has_table_privilege('hfpos_recovery_runtime',c.oid,'DELETE') "
            "AND pg_get_userbyid(c.relowner)='hfpos_recovery_owner') FROM pg_class c "
-           "JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p'));" )
+           "JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p')) "
+           "AND (SELECT COALESCE(bool_and(has_sequence_privilege('hfpos_recovery_runtime',c.oid,'USAGE') "
+           "AND has_sequence_privilege('hfpos_recovery_runtime',c.oid,'SELECT') "
+           "AND NOT has_sequence_privilege('hfpos_recovery_runtime',c.oid,'UPDATE') "
+           "AND pg_get_userbyid(c.relowner)='hfpos_recovery_owner'),true) FROM pg_class c "
+           "JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='S') "
+           "AND (SELECT count(*)=4 AND bool_and(x.privilege_type IN ('SELECT','INSERT','UPDATE','DELETE')) "
+           "AND NOT bool_or(x.is_grantable) FROM pg_default_acl a "
+           "CROSS JOIN LATERAL aclexplode(a.defaclacl) x WHERE a.defaclrole='hfpos_recovery_owner'::regrole "
+           "AND a.defaclnamespace='public'::regnamespace AND a.defaclobjtype='r' "
+           "AND x.grantee='hfpos_recovery_runtime'::regrole) "
+           "AND (SELECT count(*)=2 AND bool_and(x.privilege_type IN ('USAGE','SELECT')) "
+           "AND NOT bool_or(x.is_grantable) FROM pg_default_acl a "
+           "CROSS JOIN LATERAL aclexplode(a.defaclacl) x WHERE a.defaclrole='hfpos_recovery_owner'::regrole "
+           "AND a.defaclnamespace='public'::regnamespace AND a.defaclobjtype='S' "
+           "AND x.grantee='hfpos_recovery_runtime'::regrole);" )
     require(docker("exec", name, "psql", "-X", "-At", "-U", "hfpos_recovery_admin", "-d", "hfpos_recovery",
                    "-c", sql).strip() == b"t")
     expected = {}
@@ -301,19 +420,20 @@ def restore_core(plan, workspace, bundle):
     if state_file.exists():
         safe_path(state_file, directory=False, mode=0o600)
         saved = decode(state_file.read_bytes())
-        require(saved == {"labels": labels, "stage": "db-restored"} or
-                saved == {"labels": labels, "stage": "core-restored-app-blocked"})
-        inspect_isolation(name, labels)
-        probe_egress(name)
-        if saved["stage"] == "core-restored-app-blocked":
-            verify_core(name, workspace, manifest)
-            return
+        require(set(saved) == {"labels", "stage", "container_id"} and saved["labels"] == labels)
+        stage = saved["stage"]
+        require(stage in ("container-prepared", "container-created", "db-restored", "core-restored-app-blocked"))
+        require((stage == "container-prepared" and saved["container_id"] is None) or hex_value(saved["container_id"], 64))
     else:
         require(not any((workspace / "postgres-data").iterdir()))
         require(not any((workspace / "keyring-restored").iterdir()))
         # Existing uncheckpointed containers are never removed or overwritten.
         existing = docker("ps", "-a", "--filter", "name=^/" + name + "$", "--format", "{{.ID}}")
         require(not existing.strip())
+        write_checkpoint(state_file, labels, "container-prepared")
+        stage = "container-prepared"
+    if stage == "container-prepared":
+        existing = docker("ps", "-a", "--filter", "name=^/" + name + "$", "--format", "{{.ID}}")
         args = ["run", "-d", "--name", name, "--network", "none", "--read-only",
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--user", "70:70",
                 "--memory", "768m", "--memory-swap", "768m", "--cpus", "0.5", "--pids-limit", "128",
@@ -324,8 +444,15 @@ def restore_core(plan, workspace, bundle):
                 "-e", "POSTGRES_HOST_AUTH_METHOD=trust"]
         for key, value in labels.items():
             args += ["--label", key + "=" + value]
-        docker(*args, PG_IMAGE, "postgres", "-c", "listen_addresses=127.0.0.1,::1")
-        inspect_isolation(name, labels)
+        if not existing.strip():
+            docker(*args, PG_IMAGE, "postgres", "-c", "listen_addresses=127.0.0.1,::1")
+        container_id = inspect_isolation(name, labels)
+        write_checkpoint(state_file, labels, "container-created", container_id)
+        stage = "container-created"
+    else:
+        container_id = inspect_isolation(name, labels)
+        require(container_id == saved["container_id"])
+    if stage == "container-created":
         ready = False
         for _ in range(30):
             try:
@@ -336,15 +463,16 @@ def restore_core(plan, workspace, bundle):
                 time.sleep(1)
         require(ready)
         probe_egress(name)
-        docker("exec", name, "mkdir", "-p", "/tmp/ops")
-        for script in ("postgres-restore.sh", "verify-postgres-backup.sh", "verify-restored-db.sh"):
-            docker("cp", str(bundle / script), name + ":/tmp/ops/" + script)
-            docker("exec", "--user", "0", name, "chmod", "0444", "/tmp/ops/" + script)
+        docker("exec", "--user", "0", name, "mkdir", "-p", "/tmp/ops")
+        files = {"ops/" + script: (bundle / script).read_bytes() for script in
+                 ("postgres-restore.sh", "verify-postgres-backup.sh", "verify-restored-db.sh")}
         dump = manifest["dump"]
         for suffix in ("", ".sha256", ".manifest"):
             original = workspace / "incoming" / (dump + suffix)
-            docker("cp", str(original), name + ":/tmp/" + original.name)
-            docker("exec", "--user", "0", name, "chmod", "0444", "/tmp/" + original.name)
+            files[original.name] = original.read_bytes()
+        stream_container_files(name, files)
+        # After this checkpoint, automatic resume must NOT repeat SQL/pg_restore.
+        write_checkpoint(state_file, labels, "restore-started", container_id)
         # pg_restore runs as a non-superuser owning only the isolated recovery DB.
         sql = ("CREATE ROLE hfpos_recovery_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION; "
                "CREATE ROLE hfpos_recovery_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION; "
@@ -371,8 +499,12 @@ def restore_core(plan, workspace, bundle):
                             "AND NOT has_schema_privilege(current_user,'public','CREATE') "
                             "FROM pg_roles WHERE rolname=current_user;")
         require(privileges.strip() == b"t")
-        state_file.write_bytes(canonical({"labels": labels, "stage": "db-restored"}))
-        state_file.chmod(0o600)
+        write_checkpoint(state_file, labels, "db-restored", container_id)
+    else:
+        probe_egress(name)
+        if stage == "core-restored-app-blocked":
+            verify_core(name, workspace, manifest)
+            return
     require(not any((workspace / "keyring-restored").iterdir()))
     env = {"PATH": "/usr/bin:/bin", "HFPOS_RESTORE_APPROVED": "YES"}
     result = subprocess.run(["/bin/sh", str(bundle / "keyring-restore.sh"),
@@ -383,32 +515,47 @@ def restore_core(plan, workspace, bundle):
     for file in (workspace / "keyring-restored").iterdir():
         require(file.is_file() and not file.is_symlink())
         file.chmod(0o600)
-    state_file.write_bytes(canonical({"labels": labels, "stage": "core-restored-app-blocked"}))
     verify_core(name, workspace, manifest)
+    write_checkpoint(state_file, labels, "core-restored-app-blocked", container_id)
     # Deliberately no backend/web start, source mount, published port or cleanup action.
 
 
-def execute_envelope(envelope, config, state=STATE, recovery=RECOVERY, bundle=BUNDLE, payload=b""):
+def execute_envelope(envelope, config, state=STATE, recovery=RECOVERY, bundle=BUNDLE, payload=b"", payload_stream=None):
     require(isinstance(envelope, dict) and set(envelope) == {"plan", "signature"})
     plan = validate_plan(envelope["plan"])
     require(set(config) == {"source_sha", "bundle_sha256"})
     require(plan["source_sha"] == config["source_sha"] and plan["bundle_sha256"] == config["bundle_sha256"])
     require(digest_bundle(bundle) == config["bundle_sha256"])
-    verify_signature(plan, envelope["signature"], state / "allowed_signers", state)
     import fcntl
     safe_path(state, mode=0o700)
     for name in ("consumed", "audit"):
         safe_path(state / name, mode=0o700)
     with (state / "lock").open("a+b") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        # Mark before effects. An interrupted/failed run cannot be re-executed.
-        for identity in ("run-" + plan["run_id"], "nonce-" + plan["nonce"]):
-            marker = state / "consumed" / identity
+        verify_signature(plan, envelope["signature"], state / "allowed_signers", state)
+        markers = [state / "consumed" / identity for identity in
+                   ("run-" + plan["run_id"], "nonce-" + plan["nonce"])]
+        if any(marker.exists() for marker in markers):
+            raise FileExistsError()
+        # Authentication, replay and exclusive lock precede all blob reads. Persist
+        # consumption before receiving, including interrupted/slow transfers.
+        for marker in markers:
             with marker.open("xb") as output:
                 output.write(b"consumed\n")
+                output.flush()
+                os.fsync(output.fileno())
             marker.chmod(0o600)
+        descriptor = os.open(state / "consumed", os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
         status = "FAILED"
         try:
+            if payload_stream is not None:
+                payload = read_payload(payload_stream, plan["transfer_size"])
+            elif len(payload) != plan["transfer_size"]:
+                raise TransferAborted()
             workspace = checkpoint(plan, recovery)
             if plan["action"] == "preflight":
                 status = "PREFLIGHT_PASS"
@@ -416,6 +563,8 @@ def execute_envelope(envelope, config, state=STATE, recovery=RECOVERY, bundle=BU
                 receive_transfer(plan, payload, workspace)
                 restore_core(plan, workspace, bundle)
                 status = "CORE_RESTORE_PASS_APP_BLOCKED"
+        except TransferAborted:
+            status = "UNCERTAIN"
         except (Denied, OSError, ValueError, subprocess.SubprocessError):
             pass
         result = report(plan, status)
@@ -519,11 +668,10 @@ def main():
                 require(safe_path(Path(installed), directory=False, mode=0o755).read_bytes() == (BUNDLE / source_name).read_bytes())
             safe_path(STATE / "allowed_signers", directory=False, mode=0o600)
             config = decode(safe_path(STATE / "config.json", directory=False, mode=0o600).read_bytes())
-            envelope = decode(sys.stdin.buffer.readline(16385))
-            plan = validate_plan(envelope["plan"])
-            payload = sys.stdin.buffer.read(plan["transfer_size"] + 1)
-            require(len(payload) == plan["transfer_size"])
-            result = execute_envelope(envelope, config, payload=payload)
+            # Unbuffered header avoids read-ahead into the unauthenticated blob.
+            stream = sys.stdin.buffer.raw
+            envelope = decode(stream.readline(16385))
+            result = execute_envelope(envelope, config, payload_stream=stream)
             sys.stdout.buffer.write(canonical(result))
             return 0 if result["status"] in ("PREFLIGHT_PASS", "CORE_RESTORE_PASS_APP_BLOCKED") else 1
     except Exception:

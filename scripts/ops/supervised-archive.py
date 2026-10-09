@@ -26,10 +26,9 @@ MAX_MEMBERS = 128
 
 @contextmanager
 def private_temporary(parent):
-    # Python 3.13 mkdir(0700) on Windows installs an explicit Administrators ACE;
-    # inherit the already verified human-only parent's ACL instead.
+    # Explicit owner and ACL avoid Administrators ownership under elevated Python.
     folder = Path(parent) / ("supervised-" + secrets.token_hex(16))
-    folder.mkdir(mode=0o755 if os.name == "nt" else 0o700)
+    private_create(folder, directory=True)
     try:
         if os.name == "nt":
             private_windows(folder)
@@ -44,6 +43,28 @@ def private_windows(path):
     ops.native(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
                 str(Path(__file__).with_name("supervised-local-acl.ps1")),
                 "-LiteralPath", str(path)], timeout=15)
+
+
+def private_create(path, directory=False):
+    if os.name == "nt":
+        ops.native(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+                    str(Path(__file__).with_name("supervised-local-acl.ps1")), "-LiteralPath", str(path),
+                    "-CreateDirectory" if directory else "-CreateFile"], timeout=15)
+    elif directory:
+        path.mkdir(mode=0o700)
+    else:
+        with path.open("xb"):
+            pass
+        path.chmod(0o600)
+
+
+def private_write(path, content, replace=False):
+    if replace and path.exists():
+        if os.name == "nt":
+            private_windows(path)
+    else:
+        private_create(path)
+    path.write_bytes(content)
 
 
 def member_name(member, keyring=False):
@@ -142,32 +163,31 @@ def filtered_export(authenticated_tar, output, recovery_id, ciphertext_sha256):
         ops.require(selected[name + ".sha256"].decode("ascii").strip() ==
                     all_hashes[name] + "  " + Path(name).name)
     validate_keyring(selected[keyring])
-    output.mkdir(mode=0o755 if os.name == "nt" else 0o700)
-    if os.name == "nt":
-        private_windows(output)
+    private_create(output, directory=True)
     for name, content in selected.items():
         destination = output / name
-        destination.parent.mkdir(mode=0o755 if os.name == "nt" else 0o700, exist_ok=True)
-        with destination.open("xb") as file:
-            file.write(content)
-        destination.chmod(0o600)
+        if not destination.parent.exists():
+            private_create(destination.parent, directory=True)
+        private_write(destination, content)
     manifest = {"version": 1, "recovery_id": recovery_id, "ciphertext_sha256": ciphertext_sha256,
                 "files": {name: all_hashes[name] for name in selected}, "dump": dump, "keyring": keyring}
-    (output / "transfer.json").write_bytes(ops.canonical(manifest))
-    (output / "transfer.json").chmod(0o600)
+    private_write(output / "transfer.json", ops.canonical(manifest))
     return manifest
 
 
 def decrypt_export(ciphertext, identity, private_staging, output, recovery_id, expected_hash, age="age"):
     ops.require(ops.hex_value(expected_hash, 64))
+    if os.name == "nt":
+        private_windows(ciphertext)
+        private_windows(identity)
     # Complete authentication before any tar parsing/export/transfer. Partial plaintext
     # from a late age failure is kept private and never treated as verified.
     with private_temporary(private_staging) as staging:
         snapshot = Path(staging) / "ciphertext.age"
         digest = hashlib.sha256()
         total = 0
-        with ciphertext.open("rb") as original, snapshot.open("xb") as copied:
-            snapshot.chmod(0o600)
+        private_create(snapshot)
+        with ciphertext.open("rb") as original, snapshot.open("wb") as copied:
             for chunk in iter(lambda: original.read(65536), b""):
                 total += len(chunk)
                 ops.require(total <= MAX_TOTAL)
@@ -175,11 +195,11 @@ def decrypt_export(ciphertext, identity, private_staging, output, recovery_id, e
                 copied.write(chunk)
         ops.require(digest.hexdigest() == expected_hash)
         authenticated = Path(staging) / "authenticated.tar"
+        private_create(authenticated)
         process = subprocess.Popen([age, "--decrypt", "--identity", str(identity), str(snapshot)],
                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         try:
-            with authenticated.open("xb") as file:
-                authenticated.chmod(0o600)
+            with authenticated.open("wb") as file:
                 total = 0
                 while True:
                     chunk = process.stdout.read(65536)

@@ -152,15 +152,13 @@ def operate(request, config, private_directory):
                     transfer_manifest_sha256=manifest_hash)
         print(ops.canonical(plan).decode("ascii"), end="")
         ops.require(input("Aprobacion humana exacta: escriba FIRMAR " + plan["nonce"] + ": ") == "FIRMAR " + plan["nonce"])
-        plan_file = folder / "plan.json"
-        plan_file.write_bytes(ops.canonical(plan))
         # Signing may require passphrase/FIDO touch on the human's terminal. No key
         # value or tool stderr is captured into public reports.
         signed = subprocess.run(["ssh-keygen", "-Y", "sign", "-f", config["signing_key"],
-                                 "-n", ops.NAMESPACE, str(plan_file)], stdout=subprocess.DEVNULL,
+                                 "-n", ops.NAMESPACE], input=ops.canonical(plan), stdout=subprocess.PIPE,
                                 stderr=subprocess.DEVNULL, timeout=120)
         ops.require(signed.returncode == 0)
-        signature = Path(str(plan_file) + ".sig").read_text(encoding="ascii")
+        signature = signed.stdout.decode("ascii").replace("\r\n", "\n")
         ops.validate_plan(plan)
         envelope = {"plan": plan, "signature": signature}
         try:
@@ -200,7 +198,7 @@ def main():
                     try:
                         publish_report(result["report"])
                         result["reported"] = True
-                        ledger.write_bytes(ops.canonical(handled))
+                        archives.private_write(ledger, ops.canonical(handled), replace=True)
                     except Exception:
                         pass
             runs = api("actions/workflows/supervised-operations.yml/runs?event=workflow_dispatch&per_page=20")["workflow_runs"]
@@ -213,13 +211,13 @@ def main():
                     # Mark before prompting/executing. Even network/timeout failures
                     # require a NEW GitHub request and a NEW human approval.
                     handled[run_id] = "consumed"
-                    ledger.write_bytes(ops.canonical(handled))
+                    archives.private_write(ledger, ops.canonical(handled), replace=True)
                     result = operate(request, config, directory)
                     handled[run_id] = {"report": result, "reported": False}
-                    ledger.write_bytes(ops.canonical(handled))
+                    archives.private_write(ledger, ops.canonical(handled), replace=True)
                     publish_report(result)
                     handled[run_id]["reported"] = True
-                    ledger.write_bytes(ops.canonical(handled))
+                    archives.private_write(ledger, ops.canonical(handled), replace=True)
                     print(ops.canonical(result).decode("ascii"), end="")
                 except Exception:
                     print("Solicitud rechazada o reporte pendiente; no se reejecuta la operacion.")

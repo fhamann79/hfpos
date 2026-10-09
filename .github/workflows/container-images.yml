@@ -41,7 +41,11 @@ jobs:
       - name: Supervised signed receiver and isolated PostgreSQL/keyring E2E (synthetic only)
         env:
           HFPOS_SUPERVISED_DOCKER_TESTS: 'YES'
-        run: sudo --preserve-env=HFPOS_SUPERVISED_DOCKER_TESTS python3 scripts/ci/test_supervised_operations.py
+          HFPOS_SUPERVISED_NATIVE_AGE: 'YES'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends age
+          sudo --preserve-env=HFPOS_SUPERVISED_DOCKER_TESTS,HFPOS_SUPERVISED_NATIVE_AGE python3 scripts/ci/test_supervised_operations.py
       - name: Build three images, smoke TLS/proxy and rehearse recovery
         shell: pwsh
         run: ./scripts/ops/start-deployment-smoke.ps1 -Cleanup
