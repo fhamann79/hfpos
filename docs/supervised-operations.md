@@ -21,7 +21,9 @@ firme, lea claves/datos reales, acceda al VPS o apruebe una operacion como Ferna
 4. Muestra el plan final, incluido hash/tamano del paquete y hash del manifest;
    pide `FIRMAR <nonce>`. Firma SSH namespace `hf-one-r4` con clave humana separada
    de transporte y age (FIDO con presencia humana opcional). Caduca en 300 segundos,
-   maximo aceptado 600. Firma vincula accion/SHA/bundle/ciphertext/ID/run/intento/nonce.
+   maximo aceptado 600. `expires` limita la ADMISION, no la duracion de una operacion
+   ya admitida y consumida, que sigue limitada por sus timeouts. No autoriza acciones
+   nuevas ni reintentos. Firma vincula accion/SHA/bundle/ciphertext/ID/run/intento/nonce.
 5. El puente envia una linea JSON firmada y un blob binario de longitud fijada por
    stdin a `hfpos-supervised-v1`. SSH no acepta hosts nuevos: known_hosts fijado y
    verificado fuera de banda, sin configuracion global, agente, forwarding ni PTY.

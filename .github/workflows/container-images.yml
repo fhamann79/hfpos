@@ -38,6 +38,8 @@ jobs:
         shell: pwsh
         run: ./scripts/ops/test-smoke-support.ps1
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
       - name: Supervised signed receiver and isolated PostgreSQL/keyring E2E (synthetic only)
         env:
           HFPOS_SUPERVISED_DOCKER_TESTS: 'YES'
