@@ -381,6 +381,7 @@ def write_checkpoint(path, labels, stage, container_id=None):
 
 
 def verify_core(name, workspace, manifest):
+    target = safe_path(workspace / "keyring-restored", mode=0o700)
     docker("exec", "-e", "PGUSER=hfpos_recovery_owner", "-e", "PGDATABASE=hfpos_recovery",
            name, "sh", "/tmp/ops/verify-restored-db.sh")
     sql = ("SELECT (SELECT count(*)=2 AND bool_and(NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole "
@@ -415,7 +416,6 @@ def verify_core(name, workspace, manifest):
             if member.isfile():
                 filename = member.name.removeprefix("./")
                 expected[filename] = hashlib.sha256(archive.extractfile(member).read()).hexdigest()
-    target = workspace / "keyring-restored"
     require({file.name for file in target.iterdir()} == set(expected))
     for filename, value in expected.items():
         file = safe_path(target / filename, directory=False, mode=0o600)

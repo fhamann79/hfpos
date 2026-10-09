@@ -51,6 +51,7 @@ def tar_bytes(files, root=False):
         if root:
             item = tarfile.TarInfo("./")
             item.type = tarfile.DIRTYPE
+            item.mode = 0o700
             archive.addfile(item)
         for name, data in files.items():
             item = tarfile.TarInfo(name)
@@ -123,7 +124,7 @@ TRACE_CLASSES = ("Denied", "PermissionError", "FileNotFoundError", "BlockingIOEr
                  "ValueError", "TypeError", "KeyError", "JSONDecodeError", "TimeoutExpired", "Other")
 TRACE_FUNCTIONS = ("main", "require", "safe_path", "digest_bundle", "bundle_content", "decode",
                    "validate_plan", "validate_request", "execute_envelope", "verify_signature", "native",
-                   "read_payload", "checkpoint", "receive_transfer", "restore_core")
+                   "read_payload", "checkpoint", "receive_transfer", "restore_core", "verify_core")
 RECEIVER_TRACE = """import collections, runpy, sys
 target = sys.argv[1]
 classes = set(sys.argv[2].split(','))
@@ -204,6 +205,38 @@ def receiver_path_observation(value):
     return ",".join(label + "=" + str(int(passed)) for label, passed in observed.items())
 
 
+def assert_core_receiver_success(result, value, phase):
+    ops.require(phase in ("initial-core", "completed-resume"))
+    if result.returncode == 0:
+        try:
+            report = bridge.validate_report(ops.decode(result.stdout), value)
+            if report["status"] == "CORE_RESTORE_PASS_APP_BLOCKED":
+                return
+        except Exception:
+            pass
+    raise AssertionError("Fixed serve " + phase + " failed; " + receiver_path_observation(value) +
+                         "; trace=" + sanitized_receiver_trace(result.stderr))
+
+
+class KeyringModeTests(unittest.TestCase):
+    def test_fixture_tar_root_directory_is_explicitly_private(self):
+        keyring = fixture()["keyring/keyring-20261009T170757Z-1.tar"]
+        for data in (tar_bytes(fixture(), root=True), keyring):
+            with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
+                root = archive.getmembers()[0]
+                self.assertTrue(root.isdir() and root.mode == 0o700, "TAR root must be private")
+
+    def test_verify_core_rejects_unsafe_directory_before_other_verification(self):
+        workspace = Path("synthetic-workspace")
+        with patch.object(ops, "safe_path", side_effect=ops.Denied) as path, \
+                patch.object(ops, "docker") as docker, patch.object(ops.tarfile, "open") as archive:
+            with self.assertRaises(ops.Denied):
+                ops.verify_core("synthetic-only", workspace, {})
+        path.assert_called_once_with(workspace / "keyring-restored", mode=0o700)
+        docker.assert_not_called()
+        archive.assert_not_called()
+
+
 @contextmanager
 def hosted_opt_fixture():
     # Only this disposable hosted-CI fixture may temporarily secure exact /opt.
@@ -273,6 +306,26 @@ class HostedFixtureTests(unittest.TestCase):
 
 
 class ReceiverDiagnosisTests(unittest.TestCase):
+    def test_both_positive_call_phases_use_redacted_diagnostics(self):
+        value = dict(plan(), action="isolated-restore")
+        failed = subprocess.CompletedProcess([], 1, stdout=b"SYNTHETIC_SECRET_SENTINEL",
+                                             stderr=b"SYNTHETIC_RECEIVER_TRACE Denied:verify_core:383\n")
+        for phase in ("initial-core", "completed-resume"):
+            with patch(__name__ + ".receiver_path_observation", return_value="run_consumed=1,nonce_consumed=1"), \
+                    self.assertRaises(AssertionError) as failure:
+                assert_core_receiver_success(failed, value, phase)
+            self.assertEqual("Fixed serve " + phase + " failed; run_consumed=1,nonce_consumed=1; trace=Denied:verify_core:383",
+                             str(failure.exception))
+
+    def test_positive_result_requires_bound_core_report(self):
+        value = dict(plan(), action="isolated-restore")
+        passed = subprocess.CompletedProcess([], 0, stdout=ops.canonical(ops.report(value, "CORE_RESTORE_PASS_APP_BLOCKED")), stderr=b"")
+        assert_core_receiver_success(passed, value, "completed-resume")
+        wrong = ops.report(dict(value, run_id="123459"), "CORE_RESTORE_PASS_APP_BLOCKED")
+        with patch(__name__ + ".receiver_path_observation", return_value="run_consumed=1"), self.assertRaises(AssertionError):
+            assert_core_receiver_success(subprocess.CompletedProcess([], 0, stdout=ops.canonical(wrong), stderr=b""),
+                                         value, "completed-resume")
+
     def test_native_first_execution_trace_is_bounded_and_redacted(self):
         with tempfile.TemporaryDirectory() as folder:
             target = Path(folder) / "synthetic-receiver.py"
@@ -720,6 +773,31 @@ class RootProtocolTests(unittest.TestCase):
     def execute(self, envelope, payload=b""):
         return ops.execute_envelope(envelope, self.config, self.state, self.folder / "recovery", OPS, payload)
 
+    def test_official_extractor_unsafe_tar_root_cannot_pass_core_guard(self):
+        content = io.BytesIO()
+        with tarfile.open(fileobj=content, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+            root = tarfile.TarInfo("./")
+            root.type, root.mode = tarfile.DIRTYPE, 0o644
+            archive.addfile(root)
+            file = tarfile.TarInfo("./key-synthetic.xml")
+            data = b"<key>synthetic-only</key>"
+            file.size, file.mode = len(data), 0o600
+            archive.addfile(file, io.BytesIO(data))
+        archive = self.folder / "synthetic-unsafe-root.tar"
+        archive.write_bytes(content.getvalue())
+        Path(str(archive) + ".sha256").write_text(hashlib.sha256(content.getvalue()).hexdigest() + "  " + archive.name + "\n")
+        target = self.workspace / "keyring-restored"
+        extracted = subprocess.run(["/bin/sh", str(OPS / "keyring-restore.sh"), str(archive), str(target)],
+                                   env={"PATH": "/usr/bin:/bin", "HFPOS_RESTORE_APPROVED": "YES"}, capture_output=True, timeout=15)
+        self.assertEqual(0, extracted.returncode, "Synthetic official extraction failed")
+        self.assertTrue(stat.S_IMODE(target.stat().st_mode) == 0o644, "Official extractor must demonstrate archived root mode")
+        with patch.object(ops, "docker") as docker:
+            with self.assertRaises(ops.Denied):
+                ops.verify_core("synthetic-only", self.workspace, {})
+        docker.assert_not_called()
+        self.assertTrue(stat.S_IMODE(target.stat().st_mode) == 0o644, "Guard must not normalize unsafe state")
+        self.assertFalse((self.workspace / "core-checkpoint.json").exists())
+
     def test_hosted_fixture_native_mode_restored_on_failure_in_owned_scratch(self):
         target = self.folder / "synthetic-opt"
         target.mkdir()
@@ -948,10 +1026,9 @@ class DockerCoreTests(unittest.TestCase):
             command = traced_receiver_command(ops.BUNDLE / "supervised-operations.py")
             envelope = self.signed(value)
             completed = subprocess.run(command, input=ops.canonical(envelope) + blob, capture_output=True, timeout=800)
-            if completed.returncode:
-                self.fail("Fixed serve failed; " + receiver_path_observation(value) +
-                          "; trace=" + sanitized_receiver_trace(completed.stderr))
-            self.assertEqual("CORE_RESTORE_PASS_APP_BLOCKED", ops.decode(completed.stdout)["status"])
+            assert_core_receiver_success(completed, value, "initial-core")
+            self.assertTrue(stat.S_IMODE((workspace / "keyring-restored").stat().st_mode) == 0o700,
+                            "Restored keyring directory must remain private")
             self.assertEqual(partial["container_id"], ops.decode((workspace / "core-checkpoint.json").read_bytes())["container_id"])
             def sql_destination(statement, role="hfpos_recovery_owner"):
                 return ops.docker("exec", destination_name, "psql", "-X", "-At", "-v", "ON_ERROR_STOP=1",
@@ -972,7 +1049,7 @@ class DockerCoreTests(unittest.TestCase):
             self.assertNotEqual(0, replay.returncode)
             value = dict(value, run_id="123458", nonce="f" * 32, expires=int(time.time()) + 300)
             resumed = subprocess.run(command, input=ops.canonical(self.signed(value)) + blob, capture_output=True, timeout=60)
-            self.assertEqual(0, resumed.returncode, "Safe resume failed")
+            assert_core_receiver_success(resumed, value, "completed-resume")
             for index, revoke, repair in (
                 (0, "REVOKE USAGE ON SEQUENCE public.synthetic_sequence FROM hfpos_recovery_runtime;",
                  "GRANT USAGE ON SEQUENCE public.synthetic_sequence TO hfpos_recovery_runtime;"),
