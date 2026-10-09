@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Synthetic-only native protocol/archive/Windows ACL tests; Linux root tests use owned scratch."""
 import copy
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 import hashlib
 import importlib.util
 import io
@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -201,6 +202,74 @@ def receiver_path_observation(value):
             observed[label + "_root_owner"] = False
             observed[label + "_not_writable"] = False
     return ",".join(label + "=" + str(int(passed)) for label, passed in observed.items())
+
+
+@contextmanager
+def hosted_opt_fixture():
+    # Only this disposable hosted-CI fixture may temporarily secure exact /opt.
+    ops.require(os.name == "posix" and os.geteuid() == 0 and
+                os.environ.get("GITHUB_ACTIONS") == "true" and
+                os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted" and
+                os.environ.get("HFPOS_SUPERVISED_DOCKER_TESTS") == "YES")
+    descriptor = os.open("/opt", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        original = os.fstat(descriptor)
+        ops.require(original.st_uid == 0 and stat.S_ISDIR(original.st_mode))
+        mode = stat.S_IMODE(original.st_mode)
+        try:
+            os.fchmod(descriptor, mode & ~0o022)
+            yield
+        finally:
+            # Restore this same inode, even if setup, receiver or cleanup fails.
+            os.fchmod(descriptor, mode)
+    finally:
+        os.close(descriptor)
+
+
+class HostedFixtureTests(unittest.TestCase):
+    environment = {"GITHUB_ACTIONS": "true", "RUNNER_ENVIRONMENT": "github-hosted",
+                   "HFPOS_SUPERVISED_DOCKER_TESTS": "YES"}
+
+    def test_refuses_outside_hosted_root_ci_before_open(self):
+        for changed in ({"GITHUB_ACTIONS": "false"}, {"RUNNER_ENVIRONMENT": "self-hosted"},
+                        {"HFPOS_SUPERVISED_DOCKER_TESTS": "NO"}, {}):
+            with patch.dict(os.environ, dict(self.environment, **changed)), patch.object(os, "name", "posix"), \
+                    patch.object(os, "geteuid", return_value=1001 if not changed else 0, create=True), \
+                    patch.object(os, "open") as opened:
+                with self.assertRaises(ops.Denied):
+                    with hosted_opt_fixture():
+                        self.fail("Unsafe fixture admitted")
+            opened.assert_not_called()
+
+    def test_refuses_foreign_owner_or_link_without_chmod(self):
+        for owner, mode in ((531, stat.S_IFDIR | 0o777), (0, stat.S_IFLNK | 0o777)):
+            info = type("SyntheticStat", (), {"st_uid": owner, "st_mode": mode})()
+            with patch.dict(os.environ, self.environment), patch.object(os, "name", "posix"), \
+                    patch.object(os, "geteuid", return_value=0, create=True), \
+                    patch.object(os, "O_DIRECTORY", 0x10000, create=True), \
+                    patch.object(os, "O_NOFOLLOW", 0x20000, create=True), patch.object(os, "open", return_value=531), \
+                    patch.object(os, "fstat", return_value=info), patch.object(os, "fchmod", create=True) as chmod, \
+                    patch.object(os, "close") as close:
+                with self.assertRaises(ops.Denied):
+                    with hosted_opt_fixture():
+                        self.fail("Unsafe inode admitted")
+            chmod.assert_not_called()
+            close.assert_called_once_with(531)
+
+    def test_restores_exact_mode_on_operation_failure(self):
+        info = type("SyntheticStat", (), {"st_uid": 0, "st_mode": stat.S_IFDIR | 0o2777})()
+        with patch.dict(os.environ, self.environment), patch.object(os, "name", "posix"), \
+                patch.object(os, "geteuid", return_value=0, create=True), \
+                patch.object(os, "O_DIRECTORY", 0x10000, create=True), \
+                patch.object(os, "O_NOFOLLOW", 0x20000, create=True), patch.object(os, "open", return_value=531) as opened, \
+                patch.object(os, "fstat", return_value=info), patch.object(os, "fchmod", create=True) as chmod, \
+                patch.object(os, "close") as close:
+            with self.assertRaisesRegex(RuntimeError, "synthetic failure"):
+                with hosted_opt_fixture():
+                    raise RuntimeError("synthetic failure")
+            opened.assert_called_once_with("/opt", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        self.assertEqual([(531, 0o2755), (531, 0o2777)], [call.args for call in chmod.call_args_list])
+        close.assert_called_once_with(531)
 
 
 class ReceiverDiagnosisTests(unittest.TestCase):
@@ -651,6 +720,22 @@ class RootProtocolTests(unittest.TestCase):
     def execute(self, envelope, payload=b""):
         return ops.execute_envelope(envelope, self.config, self.state, self.folder / "recovery", OPS, payload)
 
+    def test_hosted_fixture_native_mode_restored_on_failure_in_owned_scratch(self):
+        target = self.folder / "synthetic-opt"
+        target.mkdir()
+        target.chmod(0o2777)
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        descriptor = os.open(target, flags)
+        # Bind only the fixture's exact /opt open to this owned test inode. Native
+        # fstat/fchmod/close remain real; preexisting /opt is never touched here.
+        with patch.dict(os.environ, HostedFixtureTests.environment), patch.object(os, "open", return_value=descriptor) as opened:
+            with self.assertRaisesRegex(RuntimeError, "synthetic failure"):
+                with hosted_opt_fixture():
+                    opened.assert_called_once_with("/opt", flags)
+                    self.assertEqual(0o2755, stat.S_IMODE(target.stat().st_mode))
+                    raise RuntimeError("synthetic failure")
+        self.assertEqual(0o2777, stat.S_IMODE(target.stat().st_mode))
+
     def test_real_signed_preflight_replay_and_nonce_nonrepeat(self):
         envelope = self.signed(plan())
         self.assertEqual("PREFLIGHT_PASS", self.execute(envelope)["status"])
@@ -788,6 +873,7 @@ class DockerCoreTests(unittest.TestCase):
     setUp = RootProtocolTests.setUp
     tearDown = RootProtocolTests.tearDown
     signed = RootProtocolTests.signed
+    @hosted_opt_fixture()
     def test_signed_fixed_serve_full_core_restore_and_resume(self):
         fixed_paths = [ops.BUNDLE.parent, ops.STATE, Path("/srv/hf-one"),
                        Path("/usr/local/libexec/hfpos-supervised-ssh"), Path("/usr/local/sbin/hfpos-supervised-root")]
