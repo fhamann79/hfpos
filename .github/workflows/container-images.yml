@@ -25,6 +25,8 @@ jobs:
         run: python scripts/ci/test_verify_release_source.py
       - name: Materialize synthetic Compose configuration without starting services
         run: python scripts/ci/test_pilot_compose.py
+      - name: Test supervised signed protocol, archive and root-owned synthetic checkpoints
+        run: sudo python3 scripts/ci/test_supervised_operations.py
   operations:
     name: Production-like smoke and restore rehearsal
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
@@ -36,6 +38,16 @@ jobs:
         shell: pwsh
         run: ./scripts/ops/test-smoke-support.ps1
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
+      - name: Supervised signed receiver and isolated PostgreSQL/keyring E2E (synthetic only)
+        env:
+          HFPOS_SUPERVISED_DOCKER_TESTS: 'YES'
+          HFPOS_SUPERVISED_NATIVE_AGE: 'YES'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends age
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,HFPOS_SUPERVISED_DOCKER_TESTS,HFPOS_SUPERVISED_NATIVE_AGE python3 scripts/ci/test_supervised_operations.py
       - name: Build three images, smoke TLS/proxy and rehearse recovery
         shell: pwsh
         run: ./scripts/ops/start-deployment-smoke.ps1 -Cleanup
@@ -53,6 +65,8 @@ jobs:
       - name: Test using Windows PowerShell, without PowerShell 7 or Docker
         shell: powershell
         run: ./scripts/ops/test-smoke-support.ps1
+      - name: Test supervised native Windows ACL helper and synthetic signed plans
+        run: python scripts/ci/test_supervised_operations.py
   verify-release-source:
     name: Verify release tag belongs to main
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
