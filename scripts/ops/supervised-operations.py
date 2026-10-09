@@ -263,6 +263,18 @@ def docker(*args, timeout=120, data=None):
     return native(["/usr/bin/docker", *args], data=data, timeout=timeout)
 
 
+def wait_postgres_tcp(name, user, database):
+    # The image's temporary init server accepts sockets, but never TCP.
+    for _ in range(30):
+        try:
+            docker("exec", name, "pg_isready", "-h", "127.0.0.1", "-p", "5432", "-t", "1",
+                   "-U", user, "-d", database, timeout=5)
+            return
+        except Denied:
+            time.sleep(1)
+    raise Denied()
+
+
 def stream_container_files(name, files):
     output = io.BytesIO()
     scripts = {"ops/postgres-restore.sh", "ops/verify-postgres-backup.sh", "ops/verify-restored-db.sh"}
@@ -453,15 +465,7 @@ def restore_core(plan, workspace, bundle):
         container_id = inspect_isolation(name, labels)
         require(container_id == saved["container_id"])
     if stage == "container-created":
-        ready = False
-        for _ in range(30):
-            try:
-                docker("exec", name, "pg_isready", "-U", "hfpos_recovery_admin", "-d", "hfpos_recovery")
-                ready = True
-                break
-            except Denied:
-                time.sleep(1)
-        require(ready)
+        wait_postgres_tcp(name, "hfpos_recovery_admin", "hfpos_recovery")
         probe_egress(name)
         docker("exec", "--user", "0", name, "mkdir", "-p", "/tmp/ops")
         files = {"ops/" + script: (bundle / script).read_bytes() for script in

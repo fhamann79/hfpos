@@ -8,6 +8,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -90,6 +91,89 @@ def private_fixture(folder):
     if result.returncode:
         raise AssertionError("Synthetic ACL setup failed: " + result.stderr)
     return folder
+
+
+def synthetic_source_sql(name, sql):
+    ops.require(name.startswith("hfpos-supervised-source-hfpos-supervised-test-"))
+    result = subprocess.run(["/usr/bin/docker", "exec", name, "psql", "-X", "-h", "127.0.0.1",
+                             "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=sqlstate", "-U", "synthetic",
+                             "-d", "synthetic", "-c", sql], capture_output=True, timeout=30)
+    if result.returncode:
+        # CI-only disposable fixture diagnostics; never print native text or SQL.
+        error = result.stderr[:8192]
+        category = "other"
+        for label, token in (("connection_refused", b"connection refused"),
+                             ("server_shutdown", b"shutting down"),
+                             ("server_starting", b"starting up"),
+                             ("database_missing", b'database "synthetic" does not exist'),
+                             ("role_missing", b'role "synthetic" does not exist')):
+            if token in error.lower():
+                category = label
+                break
+        match = re.search(rb"(?:ERROR|FATAL|PANIC):\s+([0-9A-Z]{5})(?:\s|$)", error)
+        states = {b"42601", b"42P01", b"42501", b"3D000", b"28000", b"57P01", b"57P02", b"57P03",
+                  b"08000", b"08001", b"08006", b"XX000"}
+        state = match[1].decode("ascii") if match and match[1] in states else "other"
+        raise AssertionError("Synthetic source SQL failed: exit=" + str(result.returncode) +
+                             "; category=" + category + "; sqlstate=" + state)
+
+
+class ReadinessTests(unittest.TestCase):
+    def test_tcp_wait_rejects_temporary_socket_server_then_accepts_final(self):
+        attempts = []
+        def server(*args, **kwargs):
+            attempts.append((args, kwargs))
+            if "-h" not in args:
+                return b"socket accepting connections"
+            self.assertEqual("127.0.0.1", args[args.index("-h") + 1])
+            if len(attempts) < 3:
+                raise ops.Denied()
+            return b"127.0.0.1 accepting connections"
+        with patch.object(ops, "docker", side_effect=server), patch.object(ops.time, "sleep") as sleep:
+            ops.wait_postgres_tcp("synthetic-only", "synthetic", "synthetic")
+        self.assertEqual(3, len(attempts))
+        self.assertEqual(2, sleep.call_count)
+        for args, kwargs in attempts:
+            self.assertEqual(("exec", "synthetic-only", "pg_isready", "-h", "127.0.0.1", "-p", "5432", "-t", "1",
+                              "-U", "synthetic", "-d", "synthetic"), args)
+            self.assertEqual({"timeout": 5}, kwargs)
+
+    def test_tcp_wait_exhaustion_denies_instead_of_falling_through(self):
+        with patch.object(ops, "docker", side_effect=ops.Denied) as docker, patch.object(ops.time, "sleep") as sleep:
+            with self.assertRaises(ops.Denied):
+                ops.wait_postgres_tcp("synthetic-only", "synthetic", "synthetic")
+        self.assertEqual(30, docker.call_count)
+        self.assertEqual(30, sleep.call_count)
+
+    def test_runtime_readiness_failure_precedes_probes_and_restore(self):
+        with tempfile.TemporaryDirectory() as folder:
+            workspace = Path(folder)
+            for name in ("postgres-data", "keyring-restored"):
+                (workspace / name).mkdir()
+            with patch.object(ops, "validate_import", return_value={}), \
+                    patch.object(ops, "docker", return_value=b""), \
+                    patch.object(ops, "write_checkpoint"), \
+                    patch.object(ops, "inspect_isolation", return_value="f" * 64), \
+                    patch.object(ops, "wait_postgres_tcp", side_effect=ops.Denied) as ready, \
+                    patch.object(ops, "probe_egress") as probe, \
+                    patch.object(ops, "stream_container_files") as transfer:
+                with self.assertRaises(ops.Denied):
+                    ops.restore_core(plan(), workspace, OPS)
+                ready.assert_called_once_with("hfpos-recovery-" + REQUEST["recovery_id"],
+                                              "hfpos_recovery_admin", "hfpos_recovery")
+                probe.assert_not_called()
+                transfer.assert_not_called()
+
+    def test_synthetic_source_diagnostics_never_publish_native_text(self):
+        for error, category, state in ((b"connection refused SYNTHETIC_SECRET_SENTINEL", "connection_refused", "other"),
+                                       (b"ERROR: 42601\nSYNTHETIC_SECRET_SENTINEL", "other", "42601"),
+                                       (b"ERROR: ABCDE\nSYNTHETIC_SECRET_SENTINEL", "other", "other")):
+            result = subprocess.CompletedProcess([], 2, stdout=b"SYNTHETIC_SECRET_SENTINEL", stderr=error)
+            with patch.object(subprocess, "run", return_value=result) as command, self.assertRaises(AssertionError) as failure:
+                synthetic_source_sql("hfpos-supervised-source-hfpos-supervised-test-fixture", "synthetic SQL")
+            self.assertEqual("Synthetic source SQL failed: exit=2; category=" + category + "; sqlstate=" + state,
+                             str(failure.exception))
+            self.assertIn("127.0.0.1", command.call_args.args[0])
 
 
 class ProtocolTests(unittest.TestCase):
@@ -598,17 +682,15 @@ class DockerCoreTests(unittest.TestCase):
                        "-e", "POSTGRES_USER=synthetic", "-e", "POSTGRES_DB=synthetic", "-e", "POSTGRES_HOST_AUTH_METHOD=trust",
                        "--label", "hfpos.supervised.test=synthetic-only", ops.PG_IMAGE)
             created.append(source_name)
-            for _ in range(30):
-                try:
-                    ops.docker("exec", source_name, "pg_isready", "-U", "synthetic", "-d", "synthetic")
-                    break
-                except ops.Denied:
-                    time.sleep(1)
+            try:
+                ops.wait_postgres_tcp(source_name, "synthetic", "synthetic")
+            except ops.Denied:
+                self.fail("Synthetic source final PostgreSQL TCP readiness exhausted")
             tables = ("__EFMigrationsHistory", "Companies", "Users", "PlatformUsers", "Sales", "SaleItems", "ProductStocks",
                       "Products", "CashSessions", "PurchaseReceipts", "CreditNotes")
             sql = "".join('CREATE TABLE public."' + name + '"(id integer);INSERT INTO public."' + name + '" VALUES(531);' for name in tables)
             sql += "CREATE SEQUENCE public.synthetic_sequence START WITH 531;SELECT setval('public.synthetic_sequence',536,true);"
-            ops.docker("exec", source_name, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "synthetic", "-d", "synthetic", "-c", sql)
+            synthetic_source_sql(source_name, sql)
             fingerprint_sql = ('SELECT md5(string_agg(id::text,\',\' ORDER BY id)) FROM public."Companies";'
                                'SELECT last_value,is_called FROM public.synthetic_sequence;')
             before = ops.docker("exec", source_name, "psql", "-X", "-At", "-U", "synthetic", "-d", "synthetic", "-c", fingerprint_sql)
