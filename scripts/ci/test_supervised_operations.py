@@ -118,6 +118,131 @@ def synthetic_source_sql(name, sql):
                              "; category=" + category + "; sqlstate=" + state)
 
 
+TRACE_CLASSES = ("Denied", "PermissionError", "FileNotFoundError", "BlockingIOError", "AttributeError",
+                 "ValueError", "TypeError", "KeyError", "JSONDecodeError", "TimeoutExpired", "Other")
+TRACE_FUNCTIONS = ("main", "require", "safe_path", "digest_bundle", "bundle_content", "decode",
+                   "validate_plan", "validate_request", "execute_envelope", "verify_signature", "native",
+                   "read_payload", "checkpoint", "receive_transfer", "restore_core")
+RECEIVER_TRACE = """import collections, runpy, sys
+target = sys.argv[1]
+classes = set(sys.argv[2].split(','))
+functions = set(sys.argv[3].split(','))
+events = collections.deque(maxlen=16)
+def trace(frame, event, arg):
+    if frame.f_code.co_filename != target:
+        return None
+    if event == 'exception' and frame.f_code.co_name in functions:
+        kind = arg[0].__name__
+        events.append((kind if kind in classes else 'Other', frame.f_code.co_name, frame.f_lineno))
+    return trace
+sys.argv = [target, 'serve']
+code = 1
+try:
+    sys.settrace(trace)
+    runpy.run_path(target, run_name='__main__')
+    code = 0
+except SystemExit as stopped:
+    code = stopped.code if type(stopped.code) is int else 1
+except BaseException:
+    pass
+finally:
+    sys.settrace(None)
+    if code:
+        sys.stderr.write('SYNTHETIC_RECEIVER_TRACE ' + ','.join('%s:%s:%d' % event for event in events) + '\\n')
+sys.exit(code)
+"""
+
+
+def traced_receiver_command(target):
+    # Test-only first-execution observer: installed main and every guard stay intact.
+    return [sys.executable, "-I", "-c", RECEIVER_TRACE, str(target),
+            ",".join(TRACE_CLASSES), ",".join(TRACE_FUNCTIONS)]
+
+
+def sanitized_receiver_trace(error):
+    if len(error) > 2048:
+        return "trace-unavailable"
+    error = error.replace(b"\r\n", b"\n")
+    prefix = b"SYNTHETIC_RECEIVER_TRACE "
+    if not error.startswith(prefix) or not error.endswith(b"\n"):
+        return "trace-unavailable"
+    try:
+        items = error[len(prefix):-1].decode("ascii").split(",")
+        if not items[0]:
+            return "trace-empty"
+        if len(items) > 16:
+            return "trace-unavailable"
+        for item in items:
+            kind, function, line = item.split(":")
+            if kind not in TRACE_CLASSES or function not in TRACE_FUNCTIONS or not re.fullmatch(r"[1-9][0-9]{0,4}", line):
+                return "trace-unavailable"
+        return ",".join(items)
+    except (UnicodeError, ValueError):
+        return "trace-unavailable"
+
+
+def receiver_path_observation(value):
+    # Read-only after failure. Only static labels and booleans, never metadata values.
+    observed = {"run_consumed": (ops.STATE / "consumed" / ("run-" + value["run_id"])).is_file(),
+                "nonce_consumed": (ops.STATE / "consumed" / ("nonce-" + value["nonce"])).is_file()}
+    for label, path in (("usr_local", "/usr/local"), ("libexec", "/usr/local/libexec"),
+                        ("sbin", "/usr/local/sbin"), ("opt", "/opt"), ("srv", "/srv"),
+                        ("var_lib", "/var/lib"), ("bundle", ops.BUNDLE), ("state", ops.STATE)):
+        try:
+            ops.safe_path(Path(path))
+            observed[label + "_policy"] = True
+        except (ops.Denied, OSError):
+            observed[label + "_policy"] = False
+        try:
+            info = Path(path).lstat()
+            observed[label + "_root_owner"] = info.st_uid == 0
+            observed[label + "_not_writable"] = not info.st_mode & 0o022
+        except OSError:
+            observed[label + "_root_owner"] = False
+            observed[label + "_not_writable"] = False
+    return ",".join(label + "=" + str(int(passed)) for label, passed in observed.items())
+
+
+class ReceiverDiagnosisTests(unittest.TestCase):
+    def test_native_first_execution_trace_is_bounded_and_redacted(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / "synthetic-receiver.py"
+            marker = Path(folder) / "once"
+            target.write_text("from pathlib import Path\nimport sys\n"
+                              "def main():\n"
+                              "    Path(" + repr(str(marker)) + ").open('a').write('once\\n')\n"
+                              "    try:\n        raise ValueError('SYNTHETIC_SECRET_SENTINEL')\n"
+                              "    except Exception:\n        print('{\"status\":\"DENIED\",\"version\":1}')\n        return 1\n"
+                              "if __name__ == '__main__':\n    sys.exit(main())\n")
+            result = subprocess.run(traced_receiver_command(target), capture_output=True, timeout=15)
+            self.assertEqual(1, result.returncode)
+            self.assertEqual("once\n", marker.read_text(), "Observer must not repeat the operation")
+            summary = sanitized_receiver_trace(result.stderr)
+            self.assertRegex(summary, r"^ValueError:main:[1-9][0-9]*$")
+            self.assertNotIn(b"SYNTHETIC_SECRET_SENTINEL", result.stdout + result.stderr)
+            self.assertNotIn(str(target), summary)
+
+    def test_untrusted_diagnostic_output_is_not_published(self):
+        for error in (b"SYNTHETIC_SECRET_SENTINEL", b"SYNTHETIC_RECEIVER_TRACE Other:SYNTHETIC_SECRET_SENTINEL:12\n",
+                      b"SYNTHETIC_RECEIVER_TRACE ValueError:main:SYNTHETIC_SECRET_SENTINEL\n",
+                      b"SYNTHETIC_RECEIVER_TRACE " + b"x" * 2048):
+            self.assertEqual("trace-unavailable", sanitized_receiver_trace(error))
+
+    def test_path_observation_only_reads_and_outputs_boolean_labels(self):
+        info = type("SyntheticStat", (), {"st_uid": 531, "st_mode": 0o777})()
+        with patch.object(ops, "safe_path", side_effect=ops.Denied), \
+                patch.object(Path, "is_file", return_value=False), patch.object(Path, "lstat", return_value=info), \
+                patch.object(ops, "native") as native, patch.object(ops, "docker") as docker:
+            observation = receiver_path_observation(plan())
+        native.assert_not_called()
+        docker.assert_not_called()
+        self.assertRegex(observation, r"^[a-z_]+=[01](?:,[a-z_]+=[01])*$")
+        self.assertIn("usr_local_root_owner=0", observation)
+        self.assertIn("usr_local_not_writable=0", observation)
+        self.assertNotIn(REQUEST["run_id"], observation)
+        self.assertNotIn(REQUEST["recovery_id"], observation)
+
+
 class ReadinessTests(unittest.TestCase):
     def test_tcp_wait_rejects_temporary_socket_server_then_accepts_final(self):
         attempts = []
@@ -734,10 +859,12 @@ class DockerCoreTests(unittest.TestCase):
                     ops.restore_core(value, workspace, ops.BUNDLE)
             partial = ops.decode((workspace / "core-checkpoint.json").read_bytes())
             self.assertEqual("container-created", partial["stage"])
-            command = [sys.executable, "-I", str(ops.BUNDLE / "supervised-operations.py"), "serve"]
+            command = traced_receiver_command(ops.BUNDLE / "supervised-operations.py")
             envelope = self.signed(value)
             completed = subprocess.run(command, input=ops.canonical(envelope) + blob, capture_output=True, timeout=800)
-            self.assertEqual(0, completed.returncode, "Fixed serve failed: " + completed.stdout.decode(errors="replace"))
+            if completed.returncode:
+                self.fail("Fixed serve failed; " + receiver_path_observation(value) +
+                          "; trace=" + sanitized_receiver_trace(completed.stderr))
             self.assertEqual("CORE_RESTORE_PASS_APP_BLOCKED", ops.decode(completed.stdout)["status"])
             self.assertEqual(partial["container_id"], ops.decode((workspace / "core-checkpoint.json").read_bytes())["container_id"])
             def sql_destination(statement, role="hfpos_recovery_owner"):
