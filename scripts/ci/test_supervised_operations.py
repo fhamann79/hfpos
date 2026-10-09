@@ -1,0 +1,530 @@
+#!/usr/bin/env python3
+"""Synthetic-only native protocol/archive/Windows ACL tests; Linux root tests use owned scratch."""
+import copy
+from contextlib import nullcontext
+import hashlib
+import importlib.util
+import io
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+import unittest
+from unittest.mock import patch
+import zipfile
+
+ROOT = Path(__file__).resolve().parents[2]
+OPS = ROOT / "scripts/ops"
+
+
+def load(name, filename):
+    spec = importlib.util.spec_from_file_location(name, OPS / filename)
+    result = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(result)
+    return result
+
+
+ops = load("supervised_ops_test", "supervised-operations.py")
+archives = load("supervised_archive_test", "supervised-archive.py")
+bridge = load("supervised_bridge_test", "supervised-bridge.py")
+REQUEST = {"version": 1, "repository": ops.REPOSITORY, "action": "preflight",
+           "source_sha": "a" * 40, "bundle_sha256": ops.digest_bundle(OPS),
+           "recovery_id": "b" * 32, "ciphertext_sha256": "c" * 64,
+           "run_id": "123456", "run_attempt": 1}
+
+
+def plan():
+    return dict(REQUEST, expires=int(time.time()) + 300, nonce="d" * 32, transfer_size=0,
+                transfer_sha256=hashlib.sha256(b"").hexdigest(), transfer_manifest_sha256="0" * 64)
+
+
+def tar_bytes(files, root=False):
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+        if root:
+            item = tarfile.TarInfo("./")
+            item.type = tarfile.DIRTYPE
+            archive.addfile(item)
+        for name, data in files.items():
+            item = tarfile.TarInfo(name)
+            item.size = len(data)
+            item.mode = 0o600
+            archive.addfile(item, io.BytesIO(data))
+    return buffer.getvalue()
+
+
+def fixture(dump=b"synthetic-only-dump"):
+    dump_name = "db/hfpos-20261009T170757Z-1.dump"
+    key_name = "keyring/keyring-20261009T170757Z-1.tar"
+    key = tar_bytes({"./key-synthetic.xml": b"<key>synthetic-only</key>"}, root=True)
+    digest = hashlib.sha256(dump).hexdigest()
+    values = {dump_name: dump, key_name: key,
+              dump_name + ".sha256": (digest + "  " + Path(dump_name).name + "\n").encode(),
+              dump_name + ".manifest": ("format_version=1\ncreated_utc=20261009T170757Z\npostgres_client_version=16\n"
+                                         "app_release=synthetic\ndatabase_name=synthetic\nsha256=" + digest + "\n").encode(),
+              key_name + ".sha256": (hashlib.sha256(key).hexdigest() + "  " + Path(key_name).name + "\n").encode(),
+              "metadata/release.txt": b"synthetic-release-only\n", "snapshot/config.tar": b"SYNTHETIC_SECRET_SENTINEL"}
+    values["metadata/internal-sha256.txt"] = "".join(hashlib.sha256(data).hexdigest() + "  " + name + "\n"
+                                                   for name, data in values.items()).encode()
+    return values
+
+
+def private_fixture(folder):
+    if os.name != "nt":
+        return folder
+    folder = folder / "private synthetic workspace"
+    folder.mkdir(mode=0o755)
+    setup = folder / "setup-acl.ps1"
+    setup.write_text("param([string]$Path)\n$ErrorActionPreference='Stop'\n"
+                     "$a=New-Object Security.AccessControl.DirectorySecurity;$a.SetAccessRuleProtection($true,$false);"
+                     "$u=[Security.Principal.WindowsIdentity]::GetCurrent().User;$a.SetOwner($u);"
+                     "$r=New-Object Security.AccessControl.FileSystemAccessRule($u,'FullControl','ContainerInherit,ObjectInherit','None','Allow');"
+                     "$a.SetAccessRule($r);Set-Acl -LiteralPath $Path -AclObject $a")
+    env = {key: value for key, value in os.environ.items() if key.lower() != "psmodulepath"}
+    result = subprocess.run(["powershell.exe", "-NoProfile", "-File", str(setup), "-Path", str(folder)], capture_output=True, text=True, env=env)
+    if result.returncode:
+        raise AssertionError("Synthetic ACL setup failed: " + result.stderr)
+    return folder
+
+
+class ProtocolTests(unittest.TestCase):
+    def test_strict_bounds_and_duplicates(self):
+        self.assertEqual(REQUEST, ops.validate_request(copy.deepcopy(REQUEST)))
+        cases = {"action": ["start-app", "restore;id", "../preflight"], "source_sha": ["main", "A" * 40],
+                 "recovery_id": ["../prod", "a" * 33], "run_id": ["0", "1;id", "9" * 21],
+                 "run_attempt": [2, True], "version": [True, 2], "ciphertext_sha256": ["f" * 63]}
+        for key, values in cases.items():
+            for value in values:
+                with self.subTest(key=key, value=value), self.assertRaises(ops.Denied):
+                    ops.validate_request(dict(REQUEST, **{key: value}))
+        with self.assertRaises(ops.Denied):
+            ops.decode(b'{"a":1,"a":2}')
+        with self.assertRaises(ops.Denied):
+            ops.validate_request(dict(REQUEST, command="id"))
+        for expires in (int(time.time()) - 1, int(time.time()) + 601, True):
+            with self.assertRaises(ops.Denied):
+                ops.validate_plan(dict(plan(), expires=expires))
+
+    def test_native_signature_wrong_namespace_and_tamper(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            key = folder / "signing"
+            subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True, capture_output=True)
+            signed = folder / "plan"
+            signed.write_bytes(ops.canonical(plan()))
+            signers = folder / "allowed_signers"
+            signers.write_text('fernando namespaces="hf-one-r4" ' + Path(str(key) + ".pub").read_text())
+            subprocess.run(["ssh-keygen", "-Y", "sign", "-f", str(key), "-n", ops.NAMESPACE, str(signed)], check=True, capture_output=True)
+            signature = Path(str(signed) + ".sig").read_text()
+            ops.verify_signature(ops.decode(signed.read_bytes()), signature, signers, folder)
+            with self.assertRaises(ops.Denied):
+                ops.verify_signature(dict(ops.decode(signed.read_bytes()), action="isolated-restore"), signature, signers, folder)
+            signers.write_text('fernando namespaces="wrong-namespace" ' + Path(str(key) + ".pub").read_text())
+            with self.assertRaises(ops.Denied):
+                ops.verify_signature(ops.decode(signed.read_bytes()), signature, signers, folder)
+
+    def test_transport_pinning_and_public_schema(self):
+        config = {"port": 22, "host": "synthetic.example.invalid", "transport_key": "/private/synthetic-key",
+                  "known_hosts": "/private/synthetic-hosts"}
+        command = bridge.ssh_command(config)
+        self.assertIn("StrictHostKeyChecking=yes", command)
+        self.assertIn("IdentityAgent=none", command)
+        self.assertIn("ClearAllForwardings=yes", command)
+        self.assertEqual("hfpos-supervised-v1", command[-1])
+        expected = ops.report(REQUEST, "PREFLIGHT_PASS")
+        self.assertEqual(expected, bridge.validate_report(expected, REQUEST))
+        with self.assertRaises(bridge.ops.Denied):
+            bridge.validate_report(dict(expected, stderr="SYNTHETIC_SECRET_SENTINEL"), REQUEST)
+
+    def test_native_ssh_config_with_spaced_known_hosts_without_connection(self):
+        with tempfile.TemporaryDirectory(prefix="supervised spaces ") as folder:
+            hosts = Path(folder) / "known hosts synthetic"
+            hosts.write_text("synthetic.example.invalid ssh-ed25519 SYNTHETIC-ONLY\n")
+            config = {"port": 22, "host": "synthetic.example.invalid", "transport_key": str(Path(folder) / "synthetic key"),
+                      "known_hosts": str(hosts)}
+            command = bridge.ssh_command(config)
+            result = subprocess.run([command[0], "-G", *command[1:]], capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, "ssh -G rejected spaced pinned path")
+            self.assertIn("stricthostkeychecking true", result.stdout.lower())
+            self.assertIn("known hosts synthetic", result.stdout)
+            self.assertIn("clearallforwardings yes", result.stdout.lower())
+
+    def test_ref_fork_attempt_and_sha_rejection(self):
+        run = {"event": "workflow_dispatch", "head_branch": "main", "path": bridge.WORKFLOW,
+               "head_sha": REQUEST["source_sha"], "run_attempt": 1, "status": "completed", "conclusion": "success",
+               "repository": {"full_name": ops.REPOSITORY}, "head_repository": {"full_name": ops.REPOSITORY}}
+        bridge.validate_run(run, REQUEST["source_sha"])
+        for key, value in (("head_branch", "feature"), ("run_attempt", 2), ("head_sha", "e" * 40),
+                           ("event", "pull_request"), ("path", ".github/workflows/untrusted.yml"),
+                           ("head_repository", {"full_name": "fork/hfpos"})):
+            with self.assertRaises(bridge.ops.Denied):
+                bridge.validate_run(dict(run, **{key: value}), REQUEST["source_sha"])
+
+    def test_no_decrypt_or_transport_before_human_approval(self):
+        request = dict(REQUEST, action="isolated-restore")
+        with patch("builtins.input", return_value="NO"), patch.object(bridge.archives, "decrypt_export") as decrypt, \
+                patch.object(bridge.subprocess, "run") as transport, patch("builtins.print"):
+            with self.assertRaises(bridge.ops.Denied):
+                bridge.operate(request, {}, Path("unused"))
+            decrypt.assert_not_called()
+            transport.assert_not_called()
+
+    def test_transport_timeout_is_uncertain_never_retried(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            config = {"signing_key": "synthetic-only", "port": 22, "host": "synthetic.example.invalid",
+                      "transport_key": "synthetic-only", "known_hosts": "synthetic-only"}
+            executions = []
+            def native(args, **kwargs):
+                if args[0] == "ssh-keygen":
+                    Path(args[-1] + ".sig").write_text("-----BEGIN SSH SIGNATURE-----\nSYNTHETIC\n-----END SSH SIGNATURE-----\n")
+                    return subprocess.CompletedProcess(args, 0)
+                executions.append(args)
+                raise subprocess.TimeoutExpired(args, 1)
+            def approve(prompt):
+                if "AUTORIZAR" in prompt:
+                    return "AUTORIZAR " + REQUEST["run_id"]
+                return "FIRMAR " + prompt.split("FIRMAR ", 1)[1].split(":", 1)[0]
+            with patch.object(bridge.archives, "private_temporary", return_value=nullcontext(folder)), \
+                    patch("builtins.input", side_effect=approve), patch("builtins.print"), \
+                    patch.object(bridge.subprocess, "run", side_effect=native):
+                result = bridge.operate(REQUEST, config, folder)
+            self.assertEqual("UNCERTAIN", result["status"])
+            self.assertEqual(1, len(executions))
+
+    def test_artifact_no_path_or_zip_bomb(self):
+        def zipped(name, data):
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr(name, data)
+            return buffer.getvalue()
+        self.assertEqual(REQUEST, bridge.read_request(zipped("request.json", ops.canonical(REQUEST))))
+        for name, data in (("../request.json", b"{}"), ("request.json", b"x" * 4097)):
+            with self.assertRaises(bridge.ops.Denied):
+                bridge.read_request(zipped(name, data))
+
+
+class ArchiveTests(unittest.TestCase):
+    def test_filtered_gnu_root_hashes_and_no_snapshot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            folder = private_fixture(folder)
+            tar = folder / "fixture.tar"
+            tar.write_bytes(tar_bytes(fixture(), root=True))
+            result = archives.filtered_export(tar, folder / "export", REQUEST["recovery_id"], REQUEST["ciphertext_sha256"])
+            self.assertEqual(REQUEST["ciphertext_sha256"], result["ciphertext_sha256"])
+            self.assertFalse((folder / "export/snapshot").exists())
+            self.assertTrue(all(not name.startswith("snapshot/") for name in result["files"]))
+            blob, digest = bridge.transfer_blob(folder / "export")
+            self.assertEqual(digest, hashlib.sha256(ops.canonical(result)).hexdigest())
+            self.assertNotIn(b"SYNTHETIC_SECRET_SENTINEL", blob)
+
+    def test_bad_hash_and_ambiguous_dump_denied(self):
+        for mutation in ("hash", "multiple"):
+            values = fixture()
+            if mutation == "hash":
+                values["db/hfpos-20261009T170757Z-1.dump"] += b"tampered"
+            else:
+                values["db/hfpos-20261009T170757Z-2.dump"] = b"extra"
+            with tempfile.TemporaryDirectory() as folder:
+                folder = Path(folder)
+                tar = folder / "bad.tar"
+                tar.write_bytes(tar_bytes(values))
+                with self.assertRaises(archives.ops.Denied):
+                    archives.filtered_export(tar, folder / "export", REQUEST["recovery_id"], REQUEST["ciphertext_sha256"])
+                self.assertFalse((folder / "export").exists())
+
+    def test_links_pax_duplicates_traversal_and_bombs(self):
+        for name, kind, size, pax in (("../db/x", tarfile.REGTYPE, 0, {}),
+                                      ("db/../../x", tarfile.REGTYPE, 0, {}),
+                                      ("db/x", tarfile.SYMTYPE, 0, {}), ("db/x", tarfile.LNKTYPE, 0, {}),
+                                      ("db/x", tarfile.REGTYPE, archives.MAX_FILE + 1, {}),
+                                      ("db/x", tarfile.REGTYPE, 0, {"path": "../x"}),
+                                      (".", tarfile.REGTYPE, 0, {}), ("db\\x", tarfile.REGTYPE, 0, {})):
+            member = tarfile.TarInfo(name)
+            member.type, member.size, member.pax_headers = kind, size, pax
+            with self.subTest(name=name, kind=kind), self.assertRaises(archives.ops.Denied):
+                archives.member_name(member)
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode="w") as tar:
+            for _ in range(2):
+                member = tarfile.TarInfo("./key-synthetic.xml")
+                tar.addfile(member, io.BytesIO(b""))
+        with self.assertRaises(archives.ops.Denied):
+            archives.validate_keyring(data.getvalue())
+
+    def test_age_late_authentication_failure_never_publishes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            folder = private_fixture(folder)
+            ciphertext = folder / "ciphertext.age"
+            ciphertext.write_bytes(b"synthetic-ciphertext")
+            digest = hashlib.sha256(ciphertext.read_bytes()).hexdigest()
+            # Real subprocess emits plaintext then fails; no crypto or real key used.
+            command = [sys.executable, "-c", "import sys;sys.stdout.buffer.write(b'partial-plaintext');sys.exit(1)"]
+            real = subprocess.Popen
+            calls = []
+            def emit(args, **kwargs):
+                if args[0] != "age":
+                    return real(args, **kwargs)
+                calls.append(args)
+                return real(command, **kwargs)
+            with patch.object(archives.subprocess, "Popen", side_effect=emit):
+                with self.assertRaises(archives.ops.Denied):
+                    archives.decrypt_export(ciphertext, folder / "synthetic-key", folder, folder / "export",
+                                            REQUEST["recovery_id"], digest)
+            self.assertEqual(1, len(calls), "Late-auth fixture must actually emit plaintext")
+            self.assertFalse((folder / "export").exists())
+
+    def test_ciphertext_swap_cannot_change_authenticated_snapshot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            folder = private_fixture(folder)
+            ciphertext = folder / "ciphertext.age"
+            content = tar_bytes(fixture(), root=True)
+            ciphertext.write_bytes(content)
+            digest = hashlib.sha256(content).hexdigest()
+            real = subprocess.Popen
+            def swap(args, **kwargs):
+                if args[0] != "age":
+                    return real(args, **kwargs)
+                ciphertext.write_bytes(b"attacker-replacement")
+                command = [sys.executable, "-c", "import pathlib,sys;sys.stdout.buffer.write(pathlib.Path(sys.argv[1]).read_bytes())", args[-1]]
+                return real(command, **kwargs)
+            with patch.object(archives.subprocess, "Popen", side_effect=swap):
+                result = archives.decrypt_export(ciphertext, folder / "synthetic-key", folder, folder / "export",
+                                                 REQUEST["recovery_id"], digest)
+            self.assertEqual(digest, result["ciphertext_sha256"])
+
+
+@unittest.skipUnless(os.name == "nt", "Windows-only native ACL helper")
+class WindowsAclTests(unittest.TestCase):
+    def test_shared_agent_sid_denied_before_key_access(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            config = {"version": 1, "source_sha": REQUEST["source_sha"], "bundle_sha256": REQUEST["bundle_sha256"],
+                      "agent_sid": "S-1-5-21-531", "human_sid": "S-1-5-21-531", "host": "synthetic.example.invalid", "port": 22,
+                      "transport_key": "unused", "signing_key": "unused", "known_hosts": "unused", "age_identity": "unused",
+                      "ciphertext_directory": "unused"}
+            (folder / "bridge.json").write_bytes(ops.canonical(config))
+            with patch.object(bridge.archives, "private_windows") as acl, \
+                    patch.object(bridge.ops, "native", return_value=b"S-1-5-21-531"):
+                with self.assertRaises(bridge.ops.Denied):
+                    bridge.validate_local_installation(folder)
+                self.assertEqual(2, acl.call_count, "No key/ciphertext ACL/access before identity gate")
+
+    def test_real_file_helper_space_path_and_junction(self):
+        with tempfile.TemporaryDirectory(prefix="supervised synthetic spaces ") as folder:
+            folder = Path(folder)
+            private = folder / "private with spaces"
+            private.mkdir()
+            private = private_fixture(private)
+            archives.private_windows(private)
+            key = private / "synthetic key only"
+            key.write_text("synthetic-only")
+            archives.private_windows(key)
+            with self.assertRaises(archives.ops.Denied):
+                archives.private_windows(folder)
+            junction = private / "junction"
+            subprocess.run(["powershell.exe", "-NoProfile", "-Command",
+                            "New-Item -ItemType Junction -Path '" + str(junction).replace("'", "''") +
+                            "' -Target '" + str(folder).replace("'", "''") + "' | Out-Null"], check=True, capture_output=True,
+                           env={key: value for key, value in os.environ.items() if key.lower() != "psmodulepath"})
+            try:
+                with self.assertRaises(archives.ops.Denied):
+                    archives.private_windows(junction / "private with spaces/private synthetic workspace/setup-acl.ps1")
+            finally:
+                junction.rmdir()
+
+
+@unittest.skipUnless(os.name == "posix" and os.geteuid() == 0, "Linux root-owned synthetic scratch")
+class RootProtocolTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="hfpos-supervised-test-", dir="/var/lib")
+        self.folder = Path(self.temporary.name)
+        self.folder.chmod(0o700)
+        self.state = self.folder / "state"
+        for path in (self.state, self.state / "consumed", self.state / "audit", self.folder / "recovery"):
+            path.mkdir(mode=0o700)
+        self.workspace = self.folder / "recovery" / REQUEST["recovery_id"]
+        self.workspace.mkdir(mode=0o700)
+        for name in ("incoming", "postgres-data", "keyring-restored"):
+            (self.workspace / name).mkdir(mode=0o700)
+        self.key = self.folder / "synthetic-key"
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(self.key)], check=True, capture_output=True)
+        signers = self.state / "allowed_signers"
+        signers.write_text('fernando namespaces="hf-one-r4" ' + Path(str(self.key) + ".pub").read_text())
+        signers.chmod(0o600)
+        self.config = {"source_sha": REQUEST["source_sha"], "bundle_sha256": REQUEST["bundle_sha256"]}
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def signed(self, value):
+        document = self.folder / (value["nonce"] + ".json")
+        document.write_bytes(ops.canonical(value))
+        subprocess.run(["ssh-keygen", "-Y", "sign", "-f", str(self.key), "-n", ops.NAMESPACE, str(document)], check=True, capture_output=True)
+        return {"plan": value, "signature": Path(str(document) + ".sig").read_text()}
+
+    def execute(self, envelope, payload=b""):
+        return ops.execute_envelope(envelope, self.config, self.state, self.folder / "recovery", OPS, payload)
+
+    def test_real_signed_preflight_replay_and_nonce_nonrepeat(self):
+        envelope = self.signed(plan())
+        self.assertEqual("PREFLIGHT_PASS", self.execute(envelope)["status"])
+        with self.assertRaises(FileExistsError):
+            self.execute(envelope)
+        next_plan = dict(plan(), run_id="123457")
+        with self.assertRaises(FileExistsError):
+            self.execute(self.signed(next_plan))
+        self.assertEqual(1, len(list((self.state / "audit").iterdir())))
+
+    def test_unsigned_expired_modified_bundle_and_unsafe_path(self):
+        envelope = self.signed(plan())
+        with self.assertRaises(ops.Denied):
+            self.execute(dict(envelope, signature="not-signed"))
+        with self.assertRaises(ops.Denied):
+            self.execute(self.signed(dict(plan(), expires=int(time.time()) - 1, nonce="e" * 32)))
+        wrong = dict(self.config, bundle_sha256="e" * 64)
+        with self.assertRaises(ops.Denied):
+            ops.execute_envelope(envelope, wrong, self.state, self.folder / "recovery", OPS)
+        (self.workspace / "incoming").rmdir()
+        (self.workspace / "incoming").symlink_to(self.folder / "recovery", target_is_directory=True)
+        self.assertEqual("FAILED", self.execute(envelope)["status"])
+
+    def test_signed_receive_checkpoint_and_corruption(self):
+        archive = self.folder / "fixture.tar"
+        archive.write_bytes(tar_bytes(fixture(), root=True))
+        archives.filtered_export(archive, self.folder / "export", REQUEST["recovery_id"], REQUEST["ciphertext_sha256"])
+        blob, manifest_hash = bridge.transfer_blob(self.folder / "export")
+        value = dict(plan(), action="isolated-restore", transfer_size=len(blob),
+                     transfer_sha256=hashlib.sha256(blob).hexdigest(), transfer_manifest_sha256=manifest_hash)
+        ops.receive_transfer(value, blob, self.workspace)
+        ops.receive_transfer(value, blob, self.workspace)
+        self.assertFalse((self.workspace / "incoming/snapshot").exists())
+        with self.assertRaises(ops.Denied):
+            ops.receive_transfer(value, blob + b"tamper", self.workspace)
+        dump = self.workspace / "incoming/db/hfpos-20261009T170757Z-1.dump"
+        dump.write_bytes(b"changed")
+        with self.assertRaises(ops.Denied):
+            ops.receive_transfer(value, blob, self.workspace)
+
+    def test_forced_command_rejects_shell_sftp_and_arguments(self):
+        for command in ("", "bash", "sftp", "hfpos-supervised-v1;id", "hfpos-supervised-v1 anything"):
+            result = subprocess.run(["/bin/sh", str(OPS / "supervised-ssh.sh")],
+                                    env={"SSH_ORIGINAL_COMMAND": command}, capture_output=True)
+            self.assertEqual(64, result.returncode)
+        result = subprocess.run(["/bin/sh", str(OPS / "supervised-root.sh"), "anything"], capture_output=True)
+        self.assertEqual(64, result.returncode)
+
+    def test_actual_process_lock_prevents_concurrent_execution(self):
+        command = [sys.executable, "-c", "import fcntl,sys,time;f=open(sys.argv[1],'a+b');"
+                   "fcntl.flock(f,fcntl.LOCK_EX);print('locked',flush=True);time.sleep(20)", str(self.state / "lock")]
+        process = subprocess.Popen(command, stdout=subprocess.PIPE)
+        try:
+            self.assertEqual(b"locked\n", process.stdout.readline())
+            with self.assertRaises(BlockingIOError):
+                self.execute(self.signed(plan()))
+            self.assertFalse(list((self.state / "consumed").iterdir()))
+        finally:
+            process.terminate()
+            process.wait()
+            process.stdout.close()
+
+
+@unittest.skipUnless(os.name == "posix" and os.geteuid() == 0 and os.environ.get("HFPOS_SUPERVISED_DOCKER_TESTS") == "YES",
+                     "CI-only disposable Docker E2E; local engine unavailable")
+class DockerCoreTests(unittest.TestCase):
+    setUp = RootProtocolTests.setUp
+    tearDown = RootProtocolTests.tearDown
+    signed = RootProtocolTests.signed
+    def test_signed_fixed_serve_full_core_restore_and_resume(self):
+        fixed_paths = [ops.BUNDLE.parent, ops.STATE, Path("/srv/hf-one"),
+                       Path("/usr/local/libexec/hfpos-supervised-ssh"), Path("/usr/local/sbin/hfpos-supervised-root")]
+        self.assertTrue(all(not path.exists() for path in fixed_paths), "Refuse preexisting host resources")
+        source_name = "hfpos-supervised-source-" + self.folder.name
+        destination_name = "hfpos-recovery-" + REQUEST["recovery_id"]
+        created = []
+        try:
+            ops.docker("run", "-d", "--name", source_name, "--network", "none", "--read-only", "--user", "70:70",
+                       "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "768m", "--cpus", "0.5",
+                       "--pids-limit", "128", "--tmpfs", "/var/lib/postgresql/data:rw,uid=70,gid=70,mode=0700",
+                       "--tmpfs", "/var/run/postgresql:rw,uid=70,gid=70", "--tmpfs", "/tmp:rw,mode=1777",
+                       "-e", "POSTGRES_USER=synthetic", "-e", "POSTGRES_DB=synthetic", "-e", "POSTGRES_HOST_AUTH_METHOD=trust",
+                       "--label", "hfpos.supervised.test=synthetic-only", ops.PG_IMAGE)
+            created.append(source_name)
+            for _ in range(30):
+                try:
+                    ops.docker("exec", source_name, "pg_isready", "-U", "synthetic", "-d", "synthetic")
+                    break
+                except ops.Denied:
+                    time.sleep(1)
+            tables = ("__EFMigrationsHistory", "Companies", "Users", "PlatformUsers", "Sales", "SaleItems", "ProductStocks",
+                      "Products", "CashSessions", "PurchaseReceipts", "CreditNotes")
+            sql = "".join('CREATE TABLE public."' + name + '"(id integer);INSERT INTO public."' + name + '" VALUES(531);' for name in tables)
+            ops.docker("exec", source_name, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "synthetic", "-d", "synthetic", "-c", sql)
+            fingerprint_sql = 'SELECT md5(string_agg(id::text,\',\' ORDER BY id)) FROM public."Companies";'
+            before = ops.docker("exec", source_name, "psql", "-X", "-At", "-U", "synthetic", "-d", "synthetic", "-c", fingerprint_sql)
+            ops.docker("exec", source_name, "pg_dump", "-U", "synthetic", "-d", "synthetic", "--format=custom", "--no-owner",
+                       "--no-privileges", "--file=/tmp/source.dump")
+            dump_path = self.folder / "source.dump"
+            ops.docker("cp", source_name + ":/tmp/source.dump", str(dump_path))
+            outer = self.folder / "outer.tar"
+            outer.write_bytes(tar_bytes(fixture(dump_path.read_bytes()), root=True))
+            archives.filtered_export(outer, self.folder / "export", REQUEST["recovery_id"], REQUEST["ciphertext_sha256"])
+            blob, manifest_hash = bridge.transfer_blob(self.folder / "export")
+            value = dict(plan(), action="isolated-restore", transfer_size=len(blob), transfer_sha256=hashlib.sha256(blob).hexdigest(),
+                         transfer_manifest_sha256=manifest_hash)
+            for path in (ops.BUNDLE.parent, ops.BUNDLE, ops.STATE, ops.STATE / "consumed", ops.STATE / "audit",
+                         ops.RECOVERY, ops.RECOVERY / REQUEST["recovery_id"]):
+                path.mkdir(parents=True, mode=0o700, exist_ok=True)
+                path.chmod(0o700)
+            workspace = ops.RECOVERY / REQUEST["recovery_id"]
+            for name in ("incoming", "postgres-data", "keyring-restored"):
+                (workspace / name).mkdir(mode=0o700)
+            for name in ops.BUNDLE_FILES:
+                target = ops.BUNDLE / name
+                target.write_bytes((OPS / name).read_bytes().replace(b"\r\n", b"\n"))
+                target.chmod(0o600)
+            for source, target in (("supervised-ssh.sh", fixed_paths[3]), ("supervised-root.sh", fixed_paths[4])):
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((ops.BUNDLE / source).read_bytes())
+                target.chmod(0o755)
+            for name in ("allowed_signers",):
+                shutil.copyfile(self.state / name, ops.STATE / name)
+                (ops.STATE / name).chmod(0o600)
+            (ops.STATE / "config.json").write_bytes(ops.canonical(self.config))
+            (ops.STATE / "config.json").chmod(0o600)
+            command = [sys.executable, "-I", str(ops.BUNDLE / "supervised-operations.py"), "serve"]
+            envelope = self.signed(value)
+            completed = subprocess.run(command, input=ops.canonical(envelope) + blob, capture_output=True, timeout=800)
+            created.append(destination_name)
+            self.assertEqual(0, completed.returncode, "Fixed serve failed: " + completed.stdout.decode(errors="replace"))
+            self.assertEqual("CORE_RESTORE_PASS_APP_BLOCKED", ops.decode(completed.stdout)["status"])
+            self.assertEqual(before, ops.docker("exec", source_name, "psql", "-X", "-At", "-U", "synthetic", "-d", "synthetic", "-c", fingerprint_sql))
+            replay = subprocess.run(command, input=ops.canonical(envelope) + blob, capture_output=True, timeout=30)
+            self.assertNotEqual(0, replay.returncode)
+            value = dict(value, run_id="123458", nonce="f" * 32, expires=int(time.time()) + 300)
+            resumed = subprocess.run(command, input=ops.canonical(self.signed(value)) + blob, capture_output=True, timeout=60)
+            self.assertEqual(0, resumed.returncode, "Safe resume failed")
+            (workspace / "keyring-restored/key-synthetic.xml").write_bytes(b"corrupted")
+            value = dict(value, run_id="123459", nonce="1" * 32)
+            corrupted = subprocess.run(command, input=ops.canonical(self.signed(value)) + blob, capture_output=True, timeout=60)
+            self.assertNotEqual(0, corrupted.returncode, "Corrupt restored keyring must fail")
+        finally:
+            for name in created:
+                subprocess.run(["/usr/bin/docker", "rm", "-f", name], capture_output=True, timeout=30)
+            for path in reversed(fixed_paths):
+                if path.is_dir():
+                    shutil.rmtree(path)
+                elif path.exists():
+                    path.unlink()
+
+
+if __name__ == "__main__":
+    unittest.main()
