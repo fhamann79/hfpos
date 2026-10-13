@@ -1,0 +1,59 @@
+name: Supervised operations request (NO remote execution)
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact integrated main SHA (40 lowercase hex)
+        required: true
+      action:
+        type: choice
+        options: [preflight, isolated-restore]
+        required: true
+      recovery_id:
+        description: Opaque backup ID (32 lowercase hex)
+        required: true
+      ciphertext_sha256:
+        description: Human-verified encrypted backup SHA256 (no plaintext)
+        required: true
+permissions:
+  contents: read
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Publish bounded request only (no key, host or operation)
+        env:
+          REQUEST_SHA: ${{ inputs.source_sha }}
+          REQUEST_ACTION: ${{ inputs.action }}
+          RECOVERY_ID: ${{ inputs.recovery_id }}
+          CIPHERTEXT_SHA: ${{ inputs.ciphertext_sha256 }}
+        run: |
+          python - <<'PY'
+          import importlib.util, os
+          from pathlib import Path
+          spec = importlib.util.spec_from_file_location('ops', 'scripts/ops/supervised-operations.py')
+          ops = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(ops)
+          ops.require(os.environ['GITHUB_REF'] == 'refs/heads/main')
+          ops.require(os.environ['REQUEST_SHA'] == os.environ['GITHUB_SHA'])
+          ops.require(os.environ['GITHUB_RUN_ATTEMPT'] == '1')
+          request = ops.validate_request({
+            'version': 1, 'repository': ops.REPOSITORY, 'source_sha': os.environ['REQUEST_SHA'],
+            'action': os.environ['REQUEST_ACTION'], 'recovery_id': os.environ['RECOVERY_ID'],
+            'ciphertext_sha256': os.environ['CIPHERTEXT_SHA'],
+            'bundle_sha256': ops.digest_bundle(Path('scripts/ops')),
+            'run_id': os.environ['GITHUB_RUN_ID'], 'run_attempt': 1})
+          Path('request.json').write_bytes(ops.canonical(request))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: supervised-request
+          path: request.json
+          retention-days: 1
+          if-no-files-found: error
