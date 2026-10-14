@@ -46,7 +46,7 @@ normaliza LF y produce bundle no secreto. La ruta de salida debe ser NUEVA.
 ```powershell
 $Sha = Read-Host 'SHA integrado y aceptado (40 hex)'
 $Bundle = Read-Host 'Ruta NUEVA para bundle de codigo no secreto'
-python -I scripts/ops/human-recovery.py seal --source-sha $Sha --output $Bundle
+python -I -B scripts/ops/human-recovery.py seal --source-sha $Sha --output $Bundle
 if ($LASTEXITCODE -ne 0) { throw 'STOP seal' }
 $CodeHash = Read-Host 'Copiar CODE_SHA256 mostrado (64 hex)'
 ```
@@ -90,7 +90,8 @@ sobrescritura/retry automatico. No instalar el launcher/broker legado.
 En la consola SSH habitual, introducir SHA/hash mostrados en Windows. El usuario no
 root debe tener HOME sin escritura de grupo/otros. El bundle root es NUEVO y temporal,
 no una instalacion/servicio. Copia solo archivos regulares concretos y rechaza links;
-no ejecuta Python root desde el home mutable. `python3 -I` evita imports de cwd/PYTHONPATH.
+no ejecuta Python root desde el home mutable. `python3 -I` evita imports de cwd/PYTHONPATH;
+`-B` evita generar bytecode dentro del bundle de codigo.
 
 ```sh
 read -r -p 'SHA integrado aceptado: ' SHA
@@ -102,7 +103,7 @@ test "${#CODE_HASH}" = 64 || exit 1
 USER_CODE="$HOME/hfpos-human-code-$SHA"
 ROOT_CODE="/root/hfpos-human-code-$SHA"
 # HUMAN_ROOT_SNAPSHOT_BEGIN: bloque stdlib probado extrayendolo de esta guia.
-sudo python3 -I - "$USER_CODE" "$ROOT_CODE" "$SHA" "$CODE_HASH" <<'PY'
+sudo python3 -I -B - "$USER_CODE" "$ROOT_CODE" "$SHA" "$CODE_HASH" <<'PY'
 import hashlib, json, os, re, stat, sys
 from pathlib import Path
 def require(value):
@@ -192,7 +193,7 @@ revalida ancestros/owner/modos/vacio/collision y falla si ya hay estado parcial.
 ```sh
 ID=68eedc0f1cef4dfcbed48189ece3b9ce
 CIPHER_SHA=6188f0a2f60dd648fe6ccfb030cfcb4493dd5fc4388a87fef52b73579e616d89
-sudo python3 -I "$ROOT_CODE/human-recovery.py" preflight --source-sha "$SHA" \
+sudo python3 -I -B "$ROOT_CODE/human-recovery.py" preflight --source-sha "$SHA" \
   --code-sha256 "$CODE_HASH" --recovery-id "$ID" --ciphertext-sha256 "$CIPHER_SHA"
 ```
 
@@ -221,7 +222,7 @@ $ArgsHuman = @('--token',$Token,'--private-parent',$PrivateParent,
   '--encrypted-identity',$EncryptedIdentity,'--ciphertext',$Ciphertext,
   '--host',$HostSsh,'--known-hosts',$KnownHosts,'--port',"$Port",'--remote-code',$RemoteCode)
 if ($TransportKey) { $ArgsHuman += @('--ssh-key',$TransportKey) }
-python -I scripts/ops/human-recovery-windows.py @ArgsHuman
+python -I -B scripts/ops/human-recovery-windows.py @ArgsHuman
 if ($LASTEXITCODE -ne 0) { throw 'STOP: no repetir; comprobar retirada local y parcial remoto' }
 ```
 
@@ -251,7 +252,7 @@ read -r -p 'Nonce opaco del spool verificado (32 hex): ' NONCE
 case "$NONCE" in *[!a-f0-9]*|'') echo STOP; exit 1;; esac
 test "${#NONCE}" = 32 || exit 1
 read -r -p 'PAYLOAD_SHA256 mostrado en Windows: ' PAYLOAD_HASH
-sudo python3 -I "$ROOT_CODE/human-recovery.py" restore --spool "$HOME/human-recovery-$NONCE" --payload-sha256 "$PAYLOAD_HASH"
+sudo python3 -I -B "$ROOT_CODE/human-recovery.py" restore --spool "$HOME/human-recovery-$NONCE" --payload-sha256 "$PAYLOAD_HASH"
 ```
 
 Pide `RESTAURAR <ID>` tras snapshot de bytes/hash/receipt validado; root revalida
@@ -278,7 +279,7 @@ autenticado, baseline comparable solo en fixture sintetica. No consultar origen 
 Esperado: `CORE_RESTORE_PASS_APP_BLOCKED`. Verificacion posterior, solo lectura:
 
 ```sh
-sudo python3 -I "$ROOT_CODE/human-recovery.py" verify --recovery-id "$ID"
+sudo python3 -I -B "$ROOT_CODE/human-recovery.py" verify --recovery-id "$ID"
 ```
 
 Esperado `CORE_VERIFY_PASS_APP_BLOCKED`. No declara true app recovery, login/DP,
@@ -300,7 +301,7 @@ no secretos. Aprobar explicitamente retirada SOLO ese staging NUEVO:
 
 ```powershell
 $FailedRoot = Read-Host 'Ruta EXACTA de la carpeta NUEVA fallida dentro del padre elegido'
-python -I scripts/ops/human-recovery-windows.py --cleanup-root $FailedRoot
+python -I -B scripts/ops/human-recovery-windows.py --cleanup-root $FailedRoot
 if ($LASTEXITCODE -ne 0) { throw 'STOP: conservar ventana humana; no force-clean' }
 ```
 

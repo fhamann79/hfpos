@@ -19,6 +19,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+# Keep the sealed source fixture exact even when this test is invoked without -B.
+sys.dont_write_bytecode = True
+
 OPS = Path(__file__).resolve().parents[2] / "scripts/ops"
 NAMES = ("human-recovery.py", "human-recovery-windows.py", "human-recovery-transfer.py", "human-recovery-local.ps1",
          "supervised-operations.py", "supervised-archive.py", "supervised-local-acl.ps1", "postgres-restore.sh",
@@ -61,7 +64,7 @@ class HumanTests(unittest.TestCase):
     def setUp(self):
         parent = "/root" if os.name == "posix" and os.geteuid() == 0 else None
         self.temp = tempfile.TemporaryDirectory(prefix="hfpos-human-test-", dir=parent)
-        self.folder = Path(self.temp.name)
+        self.folder = Path(self.temp.name).resolve()
         self.bundle = self.folder / "code"
         self.bundle.mkdir(mode=0o700)
         for name in NAMES:
@@ -115,6 +118,35 @@ class HumanTests(unittest.TestCase):
             self.assertNotEqual(digest, self.h.digest_code())
             file.write_bytes(before)
 
+    def test_helper_imports_preserve_exact_bootstrap_fixture_members(self):
+        self.h.load_helpers()
+        load(self.bundle / "human-recovery-windows.py")
+        self.assertTrue(sys.dont_write_bytecode)
+        self.assertEqual(set(NAMES) | {"source.json", "docker-empty"}, {p.name for p in self.bundle.iterdir()})
+
+    def test_existing_readiness_retries_transient_failure_and_stops_at_bound(self):
+        self.h.bind_helpers(self.ops)
+        with patch.object(self.h, "docker", side_effect=[ValueError("synthetic native diagnostic"), ValueError("synthetic native diagnostic"),
+                                                       b"", b"synthetic-sql"]) as docker, \
+             patch.object(self.ops.time, "sleep") as sleep:
+            self.ops.wait_postgres_tcp("synthetic-recovery", "synthetic", "synthetic")
+            self.assertEqual(3, docker.call_count)
+            self.assertEqual(2, sleep.call_count)
+            self.assertTrue(all(call.args[2] == "pg_isready" for call in docker.call_args_list))
+            self.assertEqual(("exec", "synthetic-recovery", "pg_isready", "-h", "127.0.0.1", "-p", "5432", "-t", "1",
+                              "-U", "synthetic", "-d", "synthetic"), docker.call_args.args)
+            self.assertEqual({"data": None, "timeout": 5}, docker.call_args.kwargs)
+            self.assertEqual(b"synthetic-sql", self.ops.docker("exec", "synthetic-recovery", "psql", "-c", "SELECT 1;"))
+            self.assertEqual(4, docker.call_count, "SQL follows exactly three readiness attempts")
+            self.assertEqual("psql", docker.call_args.args[2])
+        with patch.object(self.h, "docker", side_effect=ValueError("synthetic native diagnostic")) as docker, \
+             patch.object(self.ops.time, "sleep") as sleep:
+            with self.assertRaises(self.ops.Denied) as error:
+                self.ops.wait_postgres_tcp("synthetic-recovery", "synthetic", "synthetic")
+            self.assertEqual(30, docker.call_count)
+            self.assertEqual(30, sleep.call_count)
+            self.assertEqual("", str(error.exception))
+
     def test_envelope_exact_schema_hash_duplicates_and_app_blocked(self):
         self.h.validate_envelope(self.value)
         for changed in (dict(self.value, version=True), dict(self.value, app_start=True), dict(self.value, code_sha256="f" * 64),
@@ -138,7 +170,7 @@ class HumanTests(unittest.TestCase):
         with patch.object(self.h.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"PASS", b"")) as run:
             with patch.dict(os.environ, {"DOCKER_HOST": "tcp://synthetic.invalid:2375", "DOCKER_CONTEXT": "production", "DOCKER_CONFIG": "unsafe"}):
                 self.h.docker("ps")
-        self.assertEqual(["/usr/bin/docker", "--host", "unix:///var/run/docker.sock", "--config", str(self.bundle / "docker-empty"), "ps"], run.call_args.args[0])
+        self.assertEqual(["/usr/bin/docker", "--host", "unix:///var/run/docker.sock", "--config", str((self.bundle / "docker-empty").resolve()), "ps"], run.call_args.args[0])
         self.assertEqual({"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "LANG": "C"}, run.call_args.kwargs["env"] if os.name == "posix" else
                          {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "LANG": "C"})
 
@@ -377,7 +409,7 @@ class DockerHumanTests(unittest.TestCase):
                           "-e", "POSTGRES_USER=synthetic", "-e", "POSTGRES_DB=synthetic", "-e", "POSTGRES_HOST_AUTH_METHOD=trust",
                           "--label", "hfpos.human.test=synthetic-only", self.h.IMAGE)
             created_containers.append(source)
-            self.ops.docker = self.h.docker
+            self.h.bind_helpers(self.ops)
             self.ops.wait_postgres_tcp(source, "synthetic", "synthetic")
             tables = ("__EFMigrationsHistory", "Companies", "Users", "PlatformUsers", "Sales", "SaleItems", "ProductStocks",
                       "Products", "CashSessions", "PurchaseReceipts", "CreditNotes")
@@ -388,7 +420,7 @@ class DockerHumanTests(unittest.TestCase):
             baseline = self.h.docker("exec", source, "psql", "-X", "-At", "-U", "synthetic", "-d", "synthetic", "-c", fingerprint)
             dump = self.h.docker("exec", source, "pg_dump", "-U", "synthetic", "-d", "synthetic", "--format=custom", "--no-owner", "--no-privileges")
             payload = self.payload(dump)
-            argv = [sys.executable, "-I", str(self.bundle / "human-recovery.py")]
+            argv = [sys.executable, "-I", "-B", str(self.bundle / "human-recovery.py")]
             args = ["preflight", "--source-sha", self.value["source_sha"], "--code-sha256", self.h.digest_code(),
                     "--recovery-id", self.value["recovery_id"], "--ciphertext-sha256", self.value["ciphertext_sha256"]]
             pre = subprocess.run(argv + args, capture_output=True, timeout=60)

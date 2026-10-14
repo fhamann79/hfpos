@@ -218,7 +218,13 @@ def inspect_manual(name, labels):
 
 
 def bind_helpers(ops):
-    ops.docker = docker
+    def compatible_docker(*args, data=None, timeout=120):
+        try:
+            return docker(*args, data=data, timeout=timeout)
+        except ValueError:
+            # Existing bounded readiness retries catch only the helper's Denied.
+            raise ops.Denied() from None
+    ops.docker = compatible_docker
     # probe_egress's negative subprocess must also use the fixed socket/config/env.
     def probes(name):
         mode = ops.ipv6_mode(name)
@@ -306,8 +312,8 @@ def restore_locked(value, payload, ops):
     container_id = inspect_manual(name, labels)
     require(decode(docker("inspect", name))[0]["Image"] == value["image_id"])
     ops.write_checkpoint(state, labels, "container-created", container_id)
-    ops.wait_postgres_tcp(name, "hfpos_recovery_admin", "hfpos_recovery")
     probes = bind_helpers(ops)
+    ops.wait_postgres_tcp(name, "hfpos_recovery_admin", "hfpos_recovery")
     probes(name)
     docker("exec", "--user", "0", name, "mkdir", "-p", "/tmp/ops")
     files = {"ops/" + s: (HERE / s).read_bytes().replace(b"\r\n", b"\n") for s in
@@ -383,7 +389,7 @@ def main(argv=None):
             print("CODE_SHA256=" + digest_code())
             return 0
         ops, _ = load_helpers()
-        ops.docker = docker
+        bind_helpers(ops)
         if args.action == "preflight":
             value = preflight(args)
             print("PREFLIGHT_PASS " + base64.b64encode(canonical(value)).decode("ascii"))
