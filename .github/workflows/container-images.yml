@@ -48,6 +48,10 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends age
           sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,HFPOS_SUPERVISED_DOCKER_TESTS,HFPOS_SUPERVISED_NATIVE_AGE python3 scripts/ci/test_supervised_operations.py
+      - name: Human one-shot PostgreSQL bookworm and keyring E2E (synthetic only)
+        env:
+          HFPOS_HUMAN_DOCKER_TESTS: 'YES'
+        run: sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,HFPOS_HUMAN_DOCKER_TESTS python3 scripts/ci/test_human_recovery.py -v
       - name: Build three images, smoke TLS/proxy and rehearse recovery
         shell: pwsh
         run: ./scripts/ops/start-deployment-smoke.ps1 -Cleanup
@@ -67,6 +71,8 @@ jobs:
         run: ./scripts/ops/test-smoke-support.ps1
       - name: Test supervised native Windows ACL helper and synthetic signed plans
         run: python scripts/ci/test_supervised_operations.py
+      - name: Test human Windows export and literal owned cleanup (native synthetic age fake)
+        run: python scripts/ci/test_human_recovery.py -v
   verify-release-source:
     name: Verify release tag belongs to main
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
