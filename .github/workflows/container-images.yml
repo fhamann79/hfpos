@@ -27,6 +27,8 @@ jobs:
         run: python scripts/ci/test_pilot_compose.py
       - name: Test supervised signed protocol, archive and root-owned synthetic checkpoints
         run: sudo python3 scripts/ci/test_supervised_operations.py
+      - name: Test restored application guards without Docker or real data
+        run: sudo python3 -B scripts/ci/test_human_application_verification.py -v
   operations:
     name: Production-like smoke and restore rehearsal
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
@@ -54,7 +56,26 @@ jobs:
         run: sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,HFPOS_HUMAN_DOCKER_TESTS python3 scripts/ci/test_human_recovery.py -v
       - name: Build three images, smoke TLS/proxy and rehearse recovery
         shell: pwsh
-        run: ./scripts/ops/start-deployment-smoke.ps1 -Cleanup
+        run: ./scripts/ops/start-deployment-smoke.ps1
+      - name: Build framework-only public restored application probe
+        run: |
+          dotnet publish backend/Pos.Backend.Api/Hfpos.FiscalSmokeHost/RestoredApplicationProbe/RestoredApplicationProbe.csproj -c Release -o "$RUNNER_TEMP/dev531-probe" /p:UseAppHost=false
+          git rev-parse HEAD > "$RUNNER_TEMP/dev531-probe/source-sha.txt"
+          sha256sum "$RUNNER_TEMP/dev531-probe/RestoredApplicationProbe.dll" > "$RUNNER_TEMP/dev531-probe/probe-sha256.txt"
+          python3 -I -B scripts/ops/human-application-verification.py seal --source-sha "$(git rev-parse HEAD)" --probe-dll "$RUNNER_TEMP/dev531-probe/RestoredApplicationProbe.dll" --output "$RUNNER_TEMP/dev531-app-code"
+      - name: Actual deployed RC HTTP, restored DB/keyring, read-only queued worker and absent payload E2E
+        env:
+          HFPOS_APPLICATION_DOCKER_TESTS: 'YES'
+          HFPOS_APPLICATION_PROBE_DLL: ${{ runner.temp }}/dev531-probe/RestoredApplicationProbe.dll
+        run: sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,HFPOS_APPLICATION_DOCKER_TESTS,HFPOS_APPLICATION_PROBE_DLL python3 -B scripts/ci/test_human_application_verification.py -v
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dev531-public-application-probe
+          path: |
+            ${{ runner.temp }}/dev531-app-code/
+            ${{ runner.temp }}/dev531-probe/source-sha.txt
+            ${{ runner.temp }}/dev531-probe/probe-sha256.txt
+          if-no-files-found: error
       - name: Always clean synthetic runtime, volumes, certificates and backups
         if: always()
         shell: pwsh
