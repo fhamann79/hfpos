@@ -32,6 +32,21 @@ def load(path):
     return module
 
 
+def synthetic_private_keyring_archive(data, archive_tools, tar_bytes):
+    # The Compose fixture's '.' can be 0755. Do not let TAR directory metadata
+    # replace the human core fixture's already-private 0700 destination.
+    archive_tools.validate_keyring(data)
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
+        files = {member.name: archive.extractfile(member).read() for member in archive if member.isfile()}
+    result = tar_bytes(files)  # Existing synthetic factory emits only regular 0600 files.
+    archive_tools.validate_keyring(result)
+    with tarfile.open(fileobj=io.BytesIO(result), mode="r:") as archive:
+        restored = {member.name: archive.extractfile(member).read() for member in archive if member.isfile()}
+    if files != restored:
+        raise AssertionError("Synthetic keyring bytes changed")
+    return result
+
+
 class ApplicationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -247,6 +262,32 @@ class ApplicationTests(unittest.TestCase):
             self.assertIn("'" + name + "'", code)
         self.assertIn("O_NOFOLLOW", code)
 
+    def test_synthetic_keyring_archive_preserves_xml_without_overriding_private_destination_mode(self):
+        old = load(ROOT / "scripts/ci/test_human_recovery.py")
+        tools = load(OPS / "supervised-archive.py")
+        stream = io.BytesIO()
+        xml = b"<key>synthetic-only-identical-bytes</key>"
+        with tarfile.open(fileobj=stream, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+            directory = tarfile.TarInfo(".")
+            directory.type, directory.mode = tarfile.DIRTYPE, 0o755
+            archive.addfile(directory)
+            member = tarfile.TarInfo("./key-synthetic.xml")
+            member.mode, member.size = 0o644, len(xml)
+            archive.addfile(member, io.BytesIO(xml))
+        with patch.object(tools, "validate_keyring", wraps=tools.validate_keyring) as validate:
+            result = synthetic_private_keyring_archive(stream.getvalue(), tools, old.tar_bytes)
+            self.assertEqual(2, validate.call_count)
+        with tarfile.open(fileobj=io.BytesIO(result)) as archive:
+            self.assertEqual(["./key-synthetic.xml"], archive.getnames())
+            self.assertEqual(0o600, archive.getmembers()[0].mode)
+            self.assertEqual(xml, archive.extractfile(archive.getmembers()[0]).read())
+            destination = self.folder / "private-keyring"
+            destination.mkdir(mode=0o700)
+            archive.extractall(destination, filter="data")
+        if os.name == "posix":
+            import stat
+            self.assertEqual(0o700, stat.S_IMODE(destination.stat().st_mode))
+
     @unittest.skipUnless(os.name == "posix" and os.geteuid() == 0, "Linux root bootstrap synthetic scratch")
     def test_root_bootstrap_hash_collision_and_symlink_rejection_before_privileged_writes(self):
         app = self.app
@@ -295,6 +336,7 @@ class DockerApplicationTests(unittest.TestCase):
         old = load(ROOT / "scripts/ci/test_human_recovery.py")
         fixture = old.HumanTests()
         fixture.setUp()
+        self.assertEqual(fixture.h.RECOVERY, fixture.ops.RECOVERY)
         app = load(OPS / "human-application-verification.py")
         created = []
         parents = []
@@ -318,6 +360,7 @@ class DockerApplicationTests(unittest.TestCase):
             self.assertRegex(pg, r"^[a-f0-9]{12,64}$")
             dump = app.docker("exec", pg, "sh", "-c", "cat /backups/hfpos-*.dump")
             keys = app.docker("exec", pg, "sh", "-c", "tar -cf - -C /backups/restored-keys .")
+            keys = synthetic_private_keyring_archive(keys, fixture.archive, old.tar_bytes)
             values = old.fixture(dump)
             for name in list(values):
                 if name.startswith("keyring/") and name.endswith(".tar"):
