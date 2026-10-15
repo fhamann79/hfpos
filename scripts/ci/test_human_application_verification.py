@@ -17,6 +17,7 @@ import tarfile
 import tempfile
 import types
 import unittest
+import warnings
 from unittest.mock import patch
 
 sys.dont_write_bytecode = True
@@ -45,7 +46,7 @@ class ApplicationTests(unittest.TestCase):
             digest_code=lambda: "c" * 64, IMAGE="synthetic-postgres", decode=self.app.decode)
         self.proof = {"network": "PASS_IPV4_IPV6", "keyring": "PASS_BYTES", "backend": "PASS_HTTP",
             "platform": "PASS_HTTP_LOGIN_ME", "tenant": "PASS_HTTP_LOGIN_ME", "protectedValue": "PASS_EXISTING_SMTP",
-            "worker": "REGISTERED_DB_CLAIMS_DENIED", "authWrites": "NONE_ALLOWED"}
+            "worker": "REGISTERED_DB_CLAIMS_DENIED", "authWrites": "NONE_ALLOWED", "businessRead": "PASS_EXISTING_SALE"}
         self.calls = []
 
     def tearDown(self):
@@ -76,6 +77,7 @@ class ApplicationTests(unittest.TestCase):
                 patch.object(app, "key_snapshot", return_value=({"key-synthetic.xml": "encoded"}, {"identity": 1})), \
                 patch.object(app, "create_reader"), patch.object(app, "verify_reader", side_effect=ValueError("STOP") if deny_role else None), \
                 patch.object(app, "fingerprint", side_effect=fingerprints), patch.object(app, "install_probe"), \
+                patch.object(app, "business_sample", return_value={"id": 1} if counts[1] else None), \
                 patch.object(app.os, "fchmod", create=True), \
                 patch.object(app, "inspect_app", side_effect=[{"State": {"Status": "created"}}, {"State": {"Status": "exited", "ExitCode": 0}}]), \
                 patch("builtins.input", side_effect=["HFPOS", "VERIFICAR APP " + self.id]), \
@@ -99,7 +101,7 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(self.saved, self.app.decode((self.folder / "human-checkpoint.json").read_bytes()))
 
     def test_empty_tenant_and_payload_are_partial_never_canary_success(self):
-        self.proof.update(tenant="EMPTY", protectedValue="NOT_PRESENT")
+        self.proof.update(tenant="EMPTY", protectedValue="NOT_PRESENT", businessRead="EMPTY")
         output = self.run_fixture(counts=(1, 0, 0, 0), payloads=())
         self.assertIn("APP_VERIFICATION_PARTIAL_HUMAN_GATE", output)
         self.assertNotIn("APP_VERIFICATION_PASS", output)
@@ -110,7 +112,7 @@ class ApplicationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.run_fixture(fingerprints=("before", "sequence-changed"))
         self.assertFalse(any(c[0] == "rm" for c in self.calls))
-        self.assertEqual("started-no-retry", self.app.decode((self.folder / "application-checkpoint.json").read_bytes())["stage"])
+        self.assertEqual("created-no-retry", self.app.decode((self.folder / "application-checkpoint.json").read_bytes())["stage"])
 
     def test_effective_role_denial_is_before_container_create(self):
         with self.assertRaises(ValueError):
@@ -170,6 +172,47 @@ class ApplicationTests(unittest.TestCase):
         with patch.object(self.app, "verify", side_effect=KeyboardInterrupt), redirect_stdout(io.StringIO()) as output:
             self.assertEqual(1, self.app.main(["verify", "--core-code", "synthetic", "--recovery-id", self.id]))
         self.assertEqual("STOP_APP_VERIFICATION_NO_RETRY_PRESERVE_CORE\n", output.getvalue())
+
+    def test_echo_fallback_warning_stops_before_reading_any_credentials(self):
+        from unittest.mock import Mock
+        consumed = Mock()
+        def fallback(prompt):
+            warnings.warn("SYNTHETIC_ECHO_FALLBACK", self.app.getpass.GetPassWarning)
+            consumed()
+            return "must-never-be-read"
+        with patch.object(self.app.getpass, "getpass", side_effect=fallback), self.assertRaises(self.app.getpass.GetPassWarning):
+            self.app.hidden_prompt("synthetic-hidden-prompt")
+        consumed.assert_not_called()
+
+    def test_business_permission_missing_is_partial_despite_counts_and_stable_fingerprint(self):
+        self.proof["businessRead"] = "PENDING_PERMISSION"
+        output = self.run_fixture()
+        self.assertIn("APP_VERIFICATION_PARTIAL_HUMAN_GATE", output)
+        self.assertNotIn("APP_VERIFICATION_PASS", output)
+
+    def test_timeout_interrupt_or_error_kills_only_verified_new_id_not_database(self):
+        app = self.app
+        for error in (subprocess.TimeoutExpired("synthetic-client", 180), KeyboardInterrupt(), ValueError("STOP")):
+            with self.subTest(error=type(error).__name__), \
+                    patch.object(app, "inspect_app", side_effect=[{"State": {"Status": "created", "Running": False}},
+                        {"State": {"Running": True}}, {"State": {"Running": False}}]), \
+                    patch.object(app, "install_probe"), patch.object(app, "docker", side_effect=[error, b""]) as docker:
+                with self.assertRaises(type(error)):
+                    app.execute_app("new-name", "new-id", "new-image", "db-id", {"owned": "nonce"}, {}, b"synthetic", lambda: None)
+                self.assertEqual(("kill", "--signal", "KILL", "new-id"), docker.call_args.args)
+                self.assertFalse(any("db-id" in call.args for call in docker.call_args_list))
+
+    def test_timeout_identity_mismatch_refuses_kill_and_preserves_core(self):
+        app = self.app
+        old = (self.folder / "human-checkpoint.json").read_bytes()
+        with patch.object(app, "inspect_app", side_effect=[{"State": {"Status": "created"}}, ValueError("STOP")]), \
+                patch.object(app, "install_probe"), patch.object(app, "docker", side_effect=subprocess.TimeoutExpired("synthetic", 180)) as docker:
+            with self.assertRaises(ValueError):
+                app.execute_app("new-name", "new-id", "new-image", "db-id", {}, {}, b"", lambda: None)
+            self.assertFalse(any(call.args[0] in ("kill", "rm", "stop", "restart") for call in docker.call_args_list))
+        self.assertEqual(old, (self.folder / "human-checkpoint.json").read_bytes())
+        with self.assertRaises(ValueError):
+            app.stop_owned_app("db-id", "image", "db-id", {}, {})
 
     def test_created_container_exact_guards_reject_identity_network_and_privilege_drift(self):
         app = self.app
@@ -324,6 +367,25 @@ class DockerApplicationTests(unittest.TestCase):
                     {"source_sha": fixture.value["source_sha"]}, source)
             self.assertIn("APP_VERIFICATION_PARTIAL_HUMAN_GATE", output.getvalue())
             self.assertNotIn("APP_VERIFICATION_PASS", output.getvalue())
+            # A client timeout must terminate ONLY the new app namespace, not its DB/network owner.
+            (target / "application-checkpoint.json").unlink()  # Fresh test-only attempt.
+            real_docker = app.docker
+            def timeout_client(*args, **kwargs):
+                if args[0] == "start":
+                    real_docker("start", args[-1])
+                    raise subprocess.TimeoutExpired("synthetic-docker-client", 180)
+                return real_docker(*args, **kwargs)
+            baseline = app.fingerprint(db)
+            with patch("builtins.input", side_effect=["HFPOS-SMOKE-ONLY", "VERIFICAR APP " + fixture.value["recovery_id"]]), \
+                    patch.object(app.getpass, "getpass", side_effect=responses), patch.object(app, "docker", side_effect=timeout_client):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    app.run_locked(argparse.Namespace(recovery_id=fixture.value["recovery_id"]), fixture.h, target,
+                        {"source_sha": fixture.value["source_sha"]}, source)
+            failed = app.decode((target / "application-checkpoint.json").read_bytes())
+            self.assertFalse(app.decode(app.docker("inspect", failed["new_app_id"]))[0]["State"]["Running"])
+            self.assertTrue(app.decode(app.docker("inspect", db))[0]["State"]["Running"])
+            self.assertEqual(baseline, app.fingerprint(db))
+            self.assertEqual(checkpoint, (target / "human-checkpoint.json").read_bytes())
         finally:
             # Only names belonging to this isolated synthetic fixture; never a real-host cleanup path.
             for name in app.docker("ps", "-aq", "--filter", "label=hfpos.application.source=" + "e" * 40).decode().split():

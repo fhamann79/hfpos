@@ -15,6 +15,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import warnings
 
 HERE = Path(__file__).resolve().parent
 IMAGE = "ghcr.io/fhamann79/hfpos-backend@sha256:5654a239a032076e72306e1d7057377eaddf30674872195a89068cae6f40cbe1"
@@ -225,6 +226,54 @@ def probe_command():
             "/probe/RestoredApplicationProbe.dll"]
 
 
+def hidden_prompt(prompt):
+    # getpass warns BEFORE falling back to raw_input with echo. Turn that path into STOP.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", getpass.GetPassWarning)
+        return getpass.getpass(prompt)
+
+
+def business_sample(db, tenant):
+    if tenant is None:
+        return None
+    username = base64.b64encode(tenant["Username"].strip().encode()).decode("ascii")
+    rows = decode(sql(db, 'SELECT coalesce(json_agg(sample),\'[]\') FROM (SELECT s."Id" id,s."CompanyId" "companyId",'
+        's."EstablishmentId" "establishmentId",s."EmissionPointId" "emissionPointId",s."Total"::text total,'
+        's."Subtotal"::text subtotal,s."TaxAmount"::text "taxAmount",s."Status" status,s."DocumentStatus" "documentStatus" '
+        'FROM public."Sales" s JOIN public."Users" u ON u."CompanyId"=s."CompanyId" '
+        'AND u."EstablishmentId"=s."EstablishmentId" AND u."EmissionPointId"=s."EmissionPointId" '
+        "WHERE u.\"Username\"=convert_from(decode('" + username + "','base64'),'UTF8') ORDER BY s.\"Id\" LIMIT 1) sample;"))
+    require(isinstance(rows, list) and len(rows) <= 1)
+    return rows[0] if rows else None
+
+
+def stop_owned_app(container_id, image_id, db_id, labels, env):
+    # Never stop by mutable name, and never stop the DB. A mismatch requires human containment.
+    require(container_id != db_id)
+    item = inspect_app(container_id, container_id, image_id, db_id, labels, env)
+    if item["State"].get("Running"):
+        docker("kill", "--signal", "KILL", container_id, timeout=15)
+        item = inspect_app(container_id, container_id, image_id, db_id, labels, env)
+        require(not item["State"].get("Running"))
+
+
+def execute_app(name, container_id, image_id, db_id, labels, env, body, before_start):
+    try:
+        item = inspect_app(name, container_id, image_id, db_id, labels, env)
+        require(item["State"]["Status"] == "created")
+        install_probe(name)
+        before_start()
+        result = docker("start", "-a", "-i", container_id, data=body, timeout=180, check=False)
+        require(result.returncode == 0)
+        proof = decode(result.stdout)
+        item = inspect_app(container_id, container_id, image_id, db_id, labels, env)
+        require(item["State"]["Status"] == "exited" and item["State"]["ExitCode"] == 0)
+        return proof
+    except (Exception, KeyboardInterrupt):
+        stop_owned_app(container_id, image_id, db_id, labels, env)
+        raise
+
+
 def install_probe(name):
     stream = io.BytesIO()
     with tarfile.open(fileobj=stream, mode="w", format=tarfile.USTAR_FORMAT) as archive:
@@ -294,8 +343,9 @@ def run_locked(args, core, target, old_source, source):
     for scope, count in (("Platform", counts[0]), ("Tenant", counts[1])):
         credentials[scope] = None
         if count:
-            credentials[scope] = {"Username": getpass.getpass(scope + " usuario existente (oculto): "),
-                                  "Password": getpass.getpass(scope + " password existente (oculto): ")}
+            credentials[scope] = {"Username": hidden_prompt(scope + " usuario existente (oculto): "),
+                                  "Password": hidden_prompt(scope + " password existente (oculto): ")}
+    business = business_sample(db, credentials["Tenant"])
     require(input("NUEVA autorizacion humana finita, agentes cerrados. Escriba VERIFICAR APP " + args.recovery_id + ": ") == "VERIFICAR APP " + args.recovery_id)
     nonce = secrets.token_hex(16)
     role, name = "hfpos_app_verify_" + nonce, "hfpos-app-verify-" + nonce
@@ -324,23 +374,22 @@ def run_locked(args, core, target, old_source, source):
         command += ["--label", k + "=" + v]
     container_id = docker(*command, IMAGE, *probe_command()).decode().strip()
     require(re.fullmatch(r"[a-f0-9]{64}", container_id))
-    # Stopped container: verify identity and install only the sealed public probe before start.
-    item = inspect_app(name, container_id, image_id, saved["container_id"], labels, env)
-    require(item["State"]["Status"] == "created")
-    install_probe(name)
-    db_identity()
-    verify_reader(db, role)
+    with state.open("wb") as file:
+        file.write(canonical({"stage": "created-no-retry", "source": source, "core_container_id": saved["container_id"],
+                              "new_app": name, "new_role": role, "new_app_id": container_id}))
+        file.flush()
+        os.fsync(file.fileno())
+    def before_start():
+        db_identity()
+        verify_reader(db, role)
     # The console proves both network families before it launches the actual backend child.
-    body = canonical({"Keys": keys, "ApplicationName": application, "Payloads": payloads, **credentials})
-    result = docker("start", "-a", "-i", name, data=body, timeout=180, check=False)
-    # No automatic destructive cleanup on a partial operation. Preserve opaque identities for human investigation.
-    require(result.returncode == 0)
-    proof = decode(result.stdout)
+    body = canonical({"Keys": keys, "ApplicationName": application, "Payloads": payloads, "Business": business, **credentials})
+    proof = execute_app(name, container_id, image_id, saved["container_id"], labels, env, body, before_start)
+    require(proof.get("businessRead") in (("PASS_EXISTING_SALE", "PENDING_PERMISSION") if business else ("EMPTY",)))
     require(proof == {"network": "PASS_IPV4_IPV6", "keyring": "PASS_BYTES", "backend": "PASS_HTTP",
         "platform": "PASS_HTTP_LOGIN_ME" if counts[0] else "EMPTY", "tenant": "PASS_HTTP_LOGIN_ME" if counts[1] else "EMPTY",
-        "protectedValue": "PASS_EXISTING_SMTP" if payloads else "NOT_PRESENT", "worker": "REGISTERED_DB_CLAIMS_DENIED", "authWrites": "NONE_ALLOWED"})
-    item = inspect_app(name, container_id, image_id, saved["container_id"], labels, env)
-    require(item["State"]["Status"] == "exited" and item["State"]["ExitCode"] == 0)
+        "protectedValue": "PASS_EXISTING_SMTP" if payloads else "NOT_PRESENT", "worker": "REGISTERED_DB_CLAIMS_DENIED",
+        "authWrites": "NONE_ALLOWED", "businessRead": proof["businessRead"]})
     db_identity()
     verify_reader(db, role)
     require(before == fingerprint(db) and original_keys == key_snapshot(core, target)[1])
@@ -348,7 +397,7 @@ def run_locked(args, core, target, old_source, source):
     # Success-only cleanup: the exact new stopped app and its new role, never DB/keyring/core artifacts.
     docker("rm", container_id)
     sql(db, "DROP OWNED BY " + role + ";DROP ROLE " + role + ";")
-    complete = bool(all(counts) and payloads)
+    complete = bool(all(counts) and payloads and proof["businessRead"] == "PASS_EXISTING_SALE")
     evidence = {"stage": "verified" if complete else "partial-human-gate", "source": source, "image": IMAGE,
         "revision": REVISION, "proof": proof, "fingerprint": "ALL_TABLES_SEQUENCES_UNCHANGED", "core": "PRESERVED",
         "tenants": "PRESENT" if counts[2] else "EMPTY", "history": "PRESENT" if counts[3] else "EMPTY",

@@ -14,7 +14,7 @@ internal static class Program
 {
     private sealed record Login(string Username, string Password);
     private sealed record Input(Dictionary<string, string> Keys, string ApplicationName,
-        string[] Payloads, Login? Platform, Login? Tenant);
+        string[] Payloads, Login? Platform, Login? Tenant, JsonElement? Business);
 
     private static void Require(bool condition)
     {
@@ -27,6 +27,8 @@ internal static class Program
         try
         {
             if (!OperatingSystem.IsLinux()) throw new InvalidOperationException("STOP");
+            // Independent of cooperative async cancellation. PID1 exit also ends this container's child process.
+            using var watchdog = new Timer(_ => Environment.Exit(124), null, TimeSpan.FromSeconds(140), Timeout.InfiniteTimeSpan);
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(150));
             var line = await Console.In.ReadLineAsync(deadline.Token);
             Require(line is { Length: > 0 and <= 16777216 });
@@ -93,10 +95,12 @@ internal static class Program
             Require(ready);
             var platform = await Authenticate(client, "/api/platform/auth", input.Platform, deadline.Token);
             var tenant = await Authenticate(client, "/api/Auth", input.Tenant, deadline.Token);
+            var businessRead = await ReadBusiness(client, tenant.Token, input.Business, deadline.Token);
             await Task.Delay(2500, deadline.Token); // Cover more than one unconditional worker polling interval.
             Require(!backend.HasExited && keyHashes.SequenceEqual(KeyHashes()) && Directory.GetDirectories("/keys").Length == 0);
             Console.WriteLine(JsonSerializer.Serialize(new { network = "PASS_IPV4_IPV6", keyring = "PASS_BYTES",
-                backend = "PASS_HTTP", platform, tenant, protectedValue = input.Payloads.Length == 0 ? "NOT_PRESENT" : "PASS_EXISTING_SMTP",
+                backend = "PASS_HTTP", platform = platform.Status, tenant = tenant.Status, businessRead,
+                protectedValue = input.Payloads.Length == 0 ? "NOT_PRESENT" : "PASS_EXISTING_SMTP",
                 worker = "REGISTERED_DB_CLAIMS_DENIED", authWrites = "NONE_ALLOWED" }));
             return 0;
         }
@@ -116,9 +120,9 @@ internal static class Program
         }
     }
 
-    private static async Task<string> Authenticate(HttpClient client, string path, Login? login, CancellationToken ct)
+    private static async Task<(string Status, string? Token)> Authenticate(HttpClient client, string path, Login? login, CancellationToken ct)
     {
-        if (login is null) return "EMPTY";
+        if (login is null) return ("EMPTY", null);
         using var body = new StringContent(JsonSerializer.Serialize(new { username = login.Username, password = login.Password }),
             System.Text.Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(path + "/login", body, ct);
@@ -133,7 +137,37 @@ internal static class Program
         using var me = await client.SendAsync(request, ct);
         Require(me.StatusCode == HttpStatusCode.OK);
         CryptographicOperations.ZeroMemory(bytes);
-        return "PASS_HTTP_LOGIN_ME";
+        return ("PASS_HTTP_LOGIN_ME", token);
+    }
+
+    private static async Task<string> ReadBusiness(HttpClient client, string? token, JsonElement? sample, CancellationToken ct)
+    {
+        if (sample is null) return "EMPTY";
+        Require(token is not null);
+        var expected = sample.Value;
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/Sales/" + expected.GetProperty("id").GetInt32());
+        request.Headers.Authorization = new("Bearer", token);
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (response.StatusCode == HttpStatusCode.Forbidden) return "PENDING_PERMISSION";
+        Require(response.StatusCode == HttpStatusCode.OK);
+        using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[4096];
+        int count;
+        while ((count = await stream.ReadAsync(chunk, ct)) > 0)
+        {
+            Require(buffer.Length + count <= 1048576);
+            buffer.Write(chunk, 0, count);
+        }
+        using var json = JsonDocument.Parse(buffer.ToArray());
+        foreach (var field in expected.EnumerateObject())
+        {
+            var actual = json.RootElement.GetProperty(field.Name);
+            if (field.Name is "total" or "subtotal" or "taxAmount")
+                Require(actual.GetDecimal() == decimal.Parse(field.Value.GetString()!, System.Globalization.CultureInfo.InvariantCulture));
+            else Require(actual.GetInt32() == field.Value.GetInt32());
+        }
+        return "PASS_EXISTING_SALE";
     }
 
     private static string[] KeyHashes() => Directory.GetFiles("/keys").Order()

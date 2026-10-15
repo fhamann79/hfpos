@@ -21,6 +21,11 @@ del build revisado. Esto no es firma ni prueba de reproducibilidad binaria.
 Si checkout de CI usa un merge SHA, el coordinador acredita su equivalencia de
 sources con el HEAD/integracion aceptados, sin relabelar el SHA del artifact.
 
+El ZIP del artifact contiene `dev531-app-code/` (los tres archivos de codigo/DLL/manifest)
+y `dev531-probe/` (metadata SHA del build). Transferir SOLO el contenido de
+`dev531-app-code/` al directorio nuevo indicado abajo; NO copiar el directorio de
+metadata dentro del bundle, porque el bootstrap exige una lista exacta.
+
 Usar SOLO ese bundle publico aprobado. Prepararlo/transferirlo por el canal habitual
 como codigo, sin datos/config/keys. No instalar herramientas ni otro executor.
 No habilitar SSH/usuarios/servicios nuevos. Verificar host/pin mediante el canal
@@ -141,9 +146,12 @@ productivo completo. Sin confirmacion, STOP. No cambiar purposes ni probar nombr
 al azar. Si existen cuentas en el dump, pide usuario y password ocultos mediante
 `getpass`, solo memoria/stdin. No se pasan por argv/env, archivos o logs. Si faltan
 cuentas, no las crea; informa EMPTY. No convertir un login correcto en prueba DP.
+El fallback de `getpass` a eco visible produce GetPassWarning, convertido en error
+ANTES de consumir credenciales; no se permite continuar con un prompt visible.
 
 El prompt final exige `VERIFICAR APP <ID>`. Ese texto acredita la decision del
-operador de ESTA ventana, no sustituye la autorizacion R4 previa del coordinador.
+operador de ESTA ventana, no sustituye la autorizacion HUMANA especifica de Fernando;
+coordinacion, CI y merge no la sustituyen.
 La preparacion del repositorio no es tal autorizacion. No ejecutar desde agentes.
 
 ## 3. Evidencia y Parada
@@ -193,8 +201,15 @@ borrado de strings/memoria/pagefile ni confidencialidad frente al mismo admin.
 El backend child ejecuta `/app/Pos.Backend.Api.dll` REAL sin hooks/endpoints nuevos,
 Production con guards intactos, JWT sintetico aislado, bootstrap/demo/OTLP apagados,
 URLs SRI invalid y loopback HTTP sin puerto publicado/proxy. Se verifican readiness,
-tenant/platform login y `/me`. SOLO cuentas existentes. Luego se comparan TODAS
-las tablas de usuario y estado logico last_value/is_called de TODAS sus secuencias,
+tenant/platform login y `/me`. SOLO cuentas existentes.
+Ademas, con el token tenant real aislado se lee UNA venta historica mediante
+`GET /api/Sales/<id>` en su CompanyId/establecimiento/punto. Se comparan ID, contexto,
+estado fiscal/negocio y Total/Subtotal/TaxAmount contra SQL restaurado (solo memoria,
+respuesta limitada a 1MiB). Sin venta/contexto: EMPTY; sin permiso: PENDING_PERMISSION;
+ambos fuerzan resultado parcial aunque login y fingerprints pasen. No concede permisos
+ni crea historia. Una discrepancia del registro devuelto es STOP, no PASS parcial.
+Luego se comparan TODAS las tablas de usuario y estado logico last_value/is_called
+de TODAS sus secuencias,
 incluidos jobs, leases, auditorias y datos historicos, sin imprimir filas/hashes reales.
 
 Resultados:
@@ -204,13 +219,20 @@ Resultados:
 - `APP_VERIFICATION_PARTIAL_HUMAN_GATE`: evidencia ausente EMPTY/NOT_PRESENT. Mantener
   gate material; no sembrar datos/usuarios/canaries para fabricar PASS.
 - `STOP_APP_VERIFICATION_NO_RETRY_PRESERVE_CORE`: fallo/parcial/anomalia. No retry,
-  no reset/checkpoint delete ni teardown automatico de recursos parciales.
+  no reset/checkpoint delete ni eliminacion automatica de recursos parciales.
 
 Solo al exito tecnico (incluye resultado parcial por ausencia), se retira el NUEVO
 contenedor ya terminado y su NUEVO rol/grants; nunca PG, core keyring/incoming,
 checkpoint anterior ni bundle anterior. Fallos conservan `application-checkpoint.json`
 con nombres opacos nuevos para decision humana; no leer logs/env/keys para reportar.
-El probe mata SOLO su backend child en finally. El DB tmpfs no se detiene/reinicia.
+El probe mata SOLO su backend child en finally y tiene watchdog independiente de
+cancelacion cooperativa: termina su PID1 a 140s. El controlador limita el cliente
+Docker a 180s. En timeout/KeyboardInterrupt/error, revalida ID exacto nuevo, imagen,
+labels, namespace y restricciones antes de KILL por ID SOLO de la app nueva; nunca
+por nombre ni DB. Reinspeccion exige Running=false. No borra contenedor/rol parcial.
+Si esa identidad cambio o no puede verificarse, NO envia kill a un recurso dudoso:
+STOP y contencion humana requerida. Preserva checkpoint con app ID/rol y todos los
+recursos core. El DB tmpfs no se detiene/reinicia (solo se comparte su red, no PID).
 No operacion sobre produccion/origen. No cleanup general de VPS.
 
 Registrar unicamente estados enumerados, IDs/SHA de codigo/imagen y preservacion,
