@@ -178,8 +178,20 @@ No metodos de certificado/firma/SRI/SMTP son invocados por el probe; el worker n
 puede llegar al procesamiento. Logs del hijo se drenan/descartan y Docker usa
 log-driver none, diagnostics/minidumps desactivados, limites fijos y sin restart.
 
-Se crea el contenedor NUEVO sin arrancar, se inspeccionan identidad/config/limites,
-y se copia SOLO la DLL publica sellada a su capa efimera. `--network container:<PG-ID>`
+Se crea el contenedor NUEVO sin arrancar y se inspeccionan identidad/config/limites
+y env completo (defaults de la imagen mas overrides exactos). No se usa `docker cp`
+contra rootfs read-only. Un unico entrypoint `/bin/sh -c` LITERAL decodifica SOLO la
+DLL publica sellada desde env base64 (max64KiB binarios; no passwords/keys/payloads)
+al tmpfs privado `/tmp`, archivo0400 y noclobber, sin interpretar ese contenido como
+shell. Luego exec dotnet usa SOLO `/app/Pos.Backend.Api.runtimeconfig.json` y
+`/tmp/RestoredApplicationProbe.dll`; no usa el depsfile de API con appbase `/tmp`.
+La consola es framework-only; lee la constante purpose por Assembly.LoadFrom del
+API original, sin Npgsql ni resolver adicional. El backend child mantiene su appbase
+y dependencias originales `/app`. El hash de la DLL se verifica antes de crear el
+contenedor, con sha256sum ANTES de exec dotnet y dentro de la consola.
+CI comprueba shell/base64/chmod/sha256sum/dotnet y rutas
+en la imagen oficial exacta sin iniciar el API. No hay bind ni nueva imagen.
+`--network container:<PG-ID>`
 solo se usa para compartir loopback none: antes de arrancar el backend, la consola
 exige SOLO lo, ninguna interfaz/ruta externa IPv4/IPv6, PG TCP positivo 127.0.0.1
 y ::1, negativos RESERVED IPv4/IPv6 con NetworkUnreachable/HostUnreachable, y 8080

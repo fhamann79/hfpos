@@ -5,7 +5,6 @@ import base64
 import getpass
 import hashlib
 import importlib.util
-import io
 import json
 import os
 from pathlib import Path
@@ -14,7 +13,6 @@ import secrets
 import stat
 import subprocess
 import sys
-import tarfile
 import warnings
 
 HERE = Path(__file__).resolve().parent
@@ -87,7 +85,7 @@ def seal(args):
                 (repo / name).read_bytes().replace(b"\r\n", b"\n"))
     # The binary hash must also be checked against the reviewed exact-source CI artifact.
     files = {FILES[0]: Path(__file__).read_bytes().replace(b"\r\n", b"\n"), FILES[1]: Path(args.probe_dll).read_bytes()}
-    require(0 < len(files[FILES[1]]) <= 1024 * 1024)
+    require(0 < len(files[FILES[1]]) <= 65536)
     output = Path(args.output)
     output.mkdir(mode=0o700)
     for name, content in files.items():
@@ -210,20 +208,38 @@ def inspect_app(name, container_id, image_id, db_id, labels, env):
     require(host["CapDrop"] == ["ALL"] and "no-new-privileges" in host["SecurityOpt"] and not host.get("PidMode"))
     require(host["LogConfig"]["Type"] == "none" and host["RestartPolicy"]["Name"] == "no")
     require(host["Memory"] == host["MemorySwap"] == 805306368 and host["PidsLimit"] == 128 and host["NanoCpus"] == 500000000)
-    inherited = decode(docker("image", "inspect", IMAGE))[0]["Config"].get("Labels") or {}
+    image_config = decode(docker("image", "inspect", IMAGE))[0]["Config"]
+    inherited = image_config.get("Labels") or {}
     require(config["User"] == "1654:1654" and config["Labels"] == {**inherited, **labels})
     require(config.get("Healthcheck") in (None, {"Test": ["NONE"]}))
-    require(all(config["Env"].count(k + "=" + v) == 1 for k, v in env.items()))
+    actual_env = dict(entry.split("=", 1) for entry in config["Env"])
+    inherited_env = dict(entry.split("=", 1) for entry in image_config.get("Env") or [])
+    require(len(actual_env) == len(config["Env"]) and actual_env == {**inherited_env, **env})
     require(host["Tmpfs"] == {"/keys": "rw,noexec,nosuid,size=16m,uid=1654,gid=1654,mode=0700",
         "/tmp": "rw,noexec,nosuid,size=32m,uid=1654,gid=1654,mode=0700"})
     require(all(m["Type"] == "tmpfs" and m["Destination"] in host["Tmpfs"] for m in item["Mounts"]))
-    require(config["Entrypoint"] == ["dotnet"] and config["Cmd"] == probe_command())
+    require(config["Entrypoint"] == ["/bin/sh"] and config["Cmd"] == probe_command())
     return item
 
 
 def probe_command():
-    return ["exec", "--runtimeconfig", "/app/Pos.Backend.Api.runtimeconfig.json", "--depsfile", "/app/Pos.Backend.Api.deps.json",
-            "/probe/RestoredApplicationProbe.dll"]
+    # Literal code only: the quoted variable is public base64 data, never shell syntax.
+    # No API depsfile: this framework-only console runs from /tmp, not the API appbase.
+    return ["-c", "set -eu; umask 077; set -C; "
+        "test -x /usr/bin/base64; test -x /usr/bin/chmod; test -x /usr/bin/sha256sum; "
+        "test -r /app/Pos.Backend.Api.runtimeconfig.json; test -r /app/Pos.Backend.Api.dll; "
+        "printf '%s' \"$HFPOS_VERIFY_PROBE_BASE64\" | /usr/bin/base64 --decode > /tmp/RestoredApplicationProbe.dll; "
+        "/usr/bin/chmod 0400 /tmp/RestoredApplicationProbe.dll; "
+        "printf '%s  /tmp/RestoredApplicationProbe.dll\\n' \"$HFPOS_VERIFY_PROBE_SHA256\" | /usr/bin/sha256sum --check --status; "
+        "exec dotnet exec --runtimeconfig /app/Pos.Backend.Api.runtimeconfig.json /tmp/RestoredApplicationProbe.dll"]
+
+
+def probe_environment(expected_sha256):
+    content = (HERE / "RestoredApplicationProbe.dll").read_bytes()
+    # Bound one Linux env entry below MAX_ARG_STRLEN. No keyring/payload/password/JWT is encoded here.
+    require(0 < len(content) <= 65536 and hashlib.sha256(content).hexdigest() == expected_sha256)
+    return {"HFPOS_VERIFY_PROBE_BASE64": base64.b64encode(content).decode("ascii"),
+            "HFPOS_VERIFY_PROBE_SHA256": expected_sha256}
 
 
 def hidden_prompt(prompt):
@@ -261,7 +277,6 @@ def execute_app(name, container_id, image_id, db_id, labels, env, body, before_s
     try:
         item = inspect_app(name, container_id, image_id, db_id, labels, env)
         require(item["State"]["Status"] == "created")
-        install_probe(name)
         before_start()
         result = docker("start", "-a", "-i", container_id, data=body, timeout=180, check=False)
         require(result.returncode == 0)
@@ -272,19 +287,6 @@ def execute_app(name, container_id, image_id, db_id, labels, env, body, before_s
     except (Exception, KeyboardInterrupt):
         stop_owned_app(container_id, image_id, db_id, labels, env)
         raise
-
-
-def install_probe(name):
-    stream = io.BytesIO()
-    with tarfile.open(fileobj=stream, mode="w", format=tarfile.USTAR_FORMAT) as archive:
-        directory = tarfile.TarInfo("probe")
-        directory.type, directory.mode = tarfile.DIRTYPE, 0o555
-        archive.addfile(directory)
-        content = (HERE / "RestoredApplicationProbe.dll").read_bytes()
-        file = tarfile.TarInfo("probe/RestoredApplicationProbe.dll")
-        file.size, file.mode = len(content), 0o444
-        archive.addfile(file, io.BytesIO(content))
-    docker("cp", "-", name + ":/", data=stream.getvalue())
 
 
 def key_snapshot(core, target):
@@ -360,14 +362,14 @@ def run_locked(args, core, target, old_source, source):
     create_reader(db, role)
     verify_reader(db, role)
     env = configuration(role, application)
-    env["HFPOS_VERIFY_PROBE_SHA256"] = source["probe_sha256"]
+    env.update(probe_environment(source["probe_sha256"]))
     labels = {"hfpos.application.verification": nonce, "hfpos.application.source": source["source_sha"]}
     require(not docker("ps", "-a", "--filter", "name=^/" + name + "$", "--format", "{{.ID}}").strip())
     command = ["create", "-i", "--pull=never", "--name", name, "--network", "container:" + saved["container_id"], "--read-only",
         "--user", "1654:1654", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--log-driver", "none",
         "--restart", "no", "--no-healthcheck", "--memory", "768m", "--memory-swap", "768m", "--cpus", "0.5", "--pids-limit", "128",
         "--tmpfs", "/keys:rw,noexec,nosuid,size=16m,uid=1654,gid=1654,mode=0700",
-        "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m,uid=1654,gid=1654,mode=0700", "--entrypoint", "dotnet"]
+        "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m,uid=1654,gid=1654,mode=0700", "--entrypoint", "/bin/sh"]
     for k, v in env.items():
         command += ["-e", k + "=" + v]
     for k, v in labels.items():

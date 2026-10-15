@@ -1,5 +1,6 @@
 """Synthetic-only contracts and optional github-hosted actual-image rehearsal."""
 import argparse
+import base64
 import copy
 from contextlib import redirect_stdout
 import hashlib
@@ -91,7 +92,8 @@ class ApplicationTests(unittest.TestCase):
                 patch.object(app, "image_identity", return_value="app-image"), \
                 patch.object(app, "key_snapshot", return_value=({"key-synthetic.xml": "encoded"}, {"identity": 1})), \
                 patch.object(app, "create_reader"), patch.object(app, "verify_reader", side_effect=ValueError("STOP") if deny_role else None), \
-                patch.object(app, "fingerprint", side_effect=fingerprints), patch.object(app, "install_probe"), \
+                patch.object(app, "fingerprint", side_effect=fingerprints), \
+                patch.object(app, "probe_environment", return_value={"HFPOS_VERIFY_PROBE_BASE64": "cHVibGlj", "HFPOS_VERIFY_PROBE_SHA256": "f" * 64}), \
                 patch.object(app, "business_sample", return_value={"id": 1} if counts[1] else None), \
                 patch.object(app.os, "fchmod", create=True), \
                 patch.object(app, "inspect_app", side_effect=[{"State": {"Status": "created"}}, {"State": {"Status": "exited", "ExitCode": 0}}]), \
@@ -112,7 +114,9 @@ class ApplicationTests(unittest.TestCase):
         self.assertIn("--log-driver", create)
         self.assertLess(self.calls.index(create), next(i for i, c in enumerate(self.calls) if c[0] == "start"))
         self.assertEqual([("rm", "d" * 64)], [c for c in self.calls if c[0] == "rm"])
-        self.assertFalse(any(c[0] in ("run", "pull", "stop", "restart") for c in self.calls))
+        self.assertFalse(any(c[0] in ("run", "pull", "stop", "restart", "cp") for c in self.calls))
+        self.assertEqual("/bin/sh", create[create.index("--entrypoint") + 1])
+        self.assertEqual(self.app.probe_command(), list(create[-2:]))
         self.assertEqual(self.saved, self.app.decode((self.folder / "human-checkpoint.json").read_bytes()))
 
     def test_empty_tenant_and_payload_are_partial_never_canary_success(self):
@@ -175,13 +179,30 @@ class ApplicationTests(unittest.TestCase):
         self.assertNotEqual(self.app.configuration("synthetic_role", "HFPOS")["Jwt__Key"], env["Jwt__Key"])
         self.assertFalse(any("Enabled" in key and "Issuing" in key for key in env))
 
-    def test_probe_archive_public_readable_never_key_material(self):
-        (self.folder / "RestoredApplicationProbe.dll").write_bytes(b"synthetic-public-dll")
+    def test_probe_bootstrap_uses_only_hash_bound_public_env_and_private_tmpfs_without_copy(self):
+        content = b"synthetic-public-dll; $(never-execute)"
+        file = self.folder / "RestoredApplicationProbe.dll"
+        file.write_bytes(content)
+        digest = hashlib.sha256(content).hexdigest()
         with patch.object(self.app, "HERE", self.folder), patch.object(self.app, "docker") as docker:
-            self.app.install_probe("synthetic")
-        with tarfile.open(fileobj=io.BytesIO(docker.call_args.kwargs["data"])) as archive:
-            self.assertEqual(["probe", "probe/RestoredApplicationProbe.dll"], archive.getnames())
-            self.assertEqual(0o444, archive.getmembers()[1].mode)
+            env = self.app.probe_environment(digest)
+            self.assertEqual(content, base64.b64decode(env["HFPOS_VERIFY_PROBE_BASE64"], validate=True))
+            self.assertEqual(digest, env["HFPOS_VERIFY_PROBE_SHA256"])
+            docker.assert_not_called()
+            with self.assertRaises(ValueError):
+                self.app.probe_environment("f" * 64)
+            file.write_bytes(b"x" * 65537)
+            with self.assertRaises(ValueError):
+                self.app.probe_environment(hashlib.sha256(file.read_bytes()).hexdigest())
+        command = self.app.probe_command()
+        self.assertEqual("-c", command[0])
+        self.assertIn('"$HFPOS_VERIFY_PROBE_BASE64"', command[1])
+        self.assertIn("/tmp/RestoredApplicationProbe.dll", command[1])
+        self.assertIn('"$HFPOS_VERIFY_PROBE_SHA256" | /usr/bin/sha256sum --check --status', command[1])
+        self.assertLess(command[1].index("sha256sum --check"), command[1].index("exec dotnet exec"))
+        self.assertNotIn("--depsfile", command[1])
+        self.assertNotIn("/probe/", command[1])
+        self.assertNotIn("never-execute", command[1])
 
     def test_keyboard_interrupt_is_redacted_stop(self):
         with patch.object(self.app, "verify", side_effect=KeyboardInterrupt), redirect_stdout(io.StringIO()) as output:
@@ -211,7 +232,7 @@ class ApplicationTests(unittest.TestCase):
             with self.subTest(error=type(error).__name__), \
                     patch.object(app, "inspect_app", side_effect=[{"State": {"Status": "created", "Running": False}},
                         {"State": {"Running": True}}, {"State": {"Running": False}}]), \
-                    patch.object(app, "install_probe"), patch.object(app, "docker", side_effect=[error, b""]) as docker:
+                    patch.object(app, "docker", side_effect=[error, b""]) as docker:
                 with self.assertRaises(type(error)):
                     app.execute_app("new-name", "new-id", "new-image", "db-id", {"owned": "nonce"}, {}, b"synthetic", lambda: None)
                 self.assertEqual(("kill", "--signal", "KILL", "new-id"), docker.call_args.args)
@@ -221,7 +242,7 @@ class ApplicationTests(unittest.TestCase):
         app = self.app
         old = (self.folder / "human-checkpoint.json").read_bytes()
         with patch.object(app, "inspect_app", side_effect=[{"State": {"Status": "created"}}, ValueError("STOP")]), \
-                patch.object(app, "install_probe"), patch.object(app, "docker", side_effect=subprocess.TimeoutExpired("synthetic", 180)) as docker:
+                patch.object(app, "docker", side_effect=subprocess.TimeoutExpired("synthetic", 180)) as docker:
             with self.assertRaises(ValueError):
                 app.execute_app("new-name", "new-id", "new-image", "db-id", {}, {}, b"", lambda: None)
             self.assertFalse(any(call.args[0] in ("kill", "rm", "stop", "restart") for call in docker.call_args_list))
@@ -233,7 +254,7 @@ class ApplicationTests(unittest.TestCase):
         app = self.app
         labels, env = {"hfpos.application.source": "a" * 40}, app.configuration("synthetic", "HFPOS")
         value = {"Id": "container", "Image": "image", "Mounts": [], "Config": {"Image": app.IMAGE, "User": "1654:1654",
-            "Labels": labels, "Env": [k + "=" + v for k, v in env.items()], "Entrypoint": ["dotnet"], "Cmd": app.probe_command()},
+            "Labels": labels, "Env": [k + "=" + v for k, v in env.items()], "Entrypoint": ["/bin/sh"], "Cmd": app.probe_command()},
             "HostConfig": {"NetworkMode": "container:database", "ReadonlyRootfs": True, "Privileged": False,
                 "PortBindings": {}, "CapDrop": ["ALL"], "SecurityOpt": ["no-new-privileges"], "LogConfig": {"Type": "none"},
                 "RestartPolicy": {"Name": "no"}, "Memory": 805306368, "MemorySwap": 805306368, "PidsLimit": 128,
@@ -247,7 +268,8 @@ class ApplicationTests(unittest.TestCase):
                 ("HostConfig", "NetworkMode", "bridge"), ("HostConfig", "Privileged", True),
                 ("HostConfig", "Binds", ["/unsafe:/keys"]), ("HostConfig", "PortBindings", {"8080/tcp": [{}]}),
                 ("HostConfig", "LogConfig", {"Type": "json-file"}), ("HostConfig", "ReadonlyRootfs", False),
-                ("HostConfig", "Tmpfs", {}), ("Config", "User", "0"), ("Config", "Cmd", ["Pos.Backend.Api.dll"])):
+                ("HostConfig", "Tmpfs", {}), ("Config", "User", "0"), ("Config", "Cmd", ["Pos.Backend.Api.dll"]),
+                ("Config", "Entrypoint", ["dotnet"]), ("Config", "Env", value["Config"]["Env"] + ["UNEXPECTED=denied"])):
             with self.subTest(key=key):
                 changed = copy.deepcopy(value)
                 (changed[section] if section else changed)[key] = bad
@@ -353,6 +375,12 @@ class DockerApplicationTests(unittest.TestCase):
             source = {"source_sha": "e" * 40, "probe_sha256": hashlib.sha256((app_bundle / app.FILES[1]).read_bytes()).hexdigest()}
             # Public image acquisition is CI-only; the operational helper has no pull path.
             app.docker("pull", app.IMAGE, timeout=180)
+            app.image_identity()
+            tools = app.docker("run", "--rm", "--pull=never", "--network", "none", "--read-only", "--user", "1654:1654",
+                "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--log-driver", "none", "--entrypoint", "/bin/sh", app.IMAGE,
+                "-c", "test -x /usr/bin/base64 && test -x /usr/bin/chmod && test -x /usr/bin/sha256sum && command -v dotnet >/dev/null "
+                "&& test -r /app/Pos.Backend.Api.runtimeconfig.json && test -r /app/Pos.Backend.Api.dll && printf BOOTSTRAP_TOOLS_PASS")
+            self.assertEqual(b"BOOTSTRAP_TOOLS_PASS", tools)
             suffix = hashlib.sha256(str(ROOT).lower().encode()).hexdigest()[:12]
             project = "hfpos-dev531-" + suffix
             pg = app.docker("ps", "--filter", "label=com.docker.compose.project=" + project,
