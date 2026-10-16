@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Security.Cryptography.X509Certificates;
-using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Pos.Backend.Api.Configuration;
@@ -945,32 +944,33 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
             return;
         }
 
-        var hints = ExtractRucHints(certificate).ToList();
+        var identity = SriCertificateIdentityReader.Read(certificate);
+        var (mismatch, match) = identity.Compare(normalizedCompanyRuc!);
 
-        if (hints.Any(h => h.Value == normalizedCompanyRuc))
-        {
-            AddSuccess(
-                checks,
-                "Certificate",
-                "CERTIFICATE_RUC_MATCH",
-                "RUC encontrado en certificado",
-                "Se encontro el RUC de la empresa dentro de los metadatos inspeccionados del certificado.",
-                BuildRucHintDetails(hints.Where(h => h.Value == normalizedCompanyRuc)));
-
-            return;
-        }
-
-        if (hints.Count > 0)
+        if (mismatch)
         {
             diagnostics.HasRucMismatch = true;
             AddError(
                 checks,
                 "Certificate",
                 "CERTIFICATE_RUC_MISMATCH",
-                "RUC de certificado no coincide",
-                "Se detecto un RUC de 13 digitos en el certificado que no coincide con el RUC de la empresa.",
-                BuildRucHintDetails(hints),
+                "Identidad fiscal de certificado no coincide",
+                "Un identificador fiscal reconocido contradice el RUC de la empresa.",
+                identity.Describe(),
                 isBlocking: true);
+
+            return;
+        }
+
+        if (match)
+        {
+            AddSuccess(
+                checks,
+                "Certificate",
+                "CERTIFICATE_RUC_MATCH",
+                "Identificador fiscal de certificado coincide",
+                "La evidencia fiscal tipada soportada coincide con el RUC de la empresa. Este diagnostico no garantiza aceptacion por SRI.",
+                identity.Describe());
 
             return;
         }
@@ -980,7 +980,8 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
             "Certificate",
             "CERTIFICATE_RUC_NOT_CONFIRMED",
             "RUC no confirmado en certificado",
-            "No se pudo confirmar que el certificado contenga el RUC de la empresa. Esto puede depender del formato del proveedor.");
+            "No se pudo confirmar la identidad fiscal con los formatos soportados. Este aviso no acredita identidad ni aceptacion por SRI.",
+            identity.Describe());
     }
 
     private async Task<bool> AddDocumentSequenceChecksAsync(
@@ -1184,61 +1185,6 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
         return $"RevocationMode=NoCheck; Estados: {string.Join(" | ", statuses)}";
     }
 
-    private static string BuildRucHintDetails(IEnumerable<CertificateRucHint> hints)
-    {
-        var values = hints
-            .Select(h => $"{h.Value} ({h.Source})")
-            .Distinct()
-            .ToList();
-
-        return values.Count == 0
-            ? "Sin valores RUC detectados."
-            : $"Valores detectados: {string.Join(", ", values)}.";
-    }
-
-    private static IEnumerable<CertificateRucHint> ExtractRucHints(X509Certificate2 certificate)
-    {
-        foreach (var hint in ExtractRucHints(certificate.Subject, "Subject"))
-        {
-            yield return hint;
-        }
-
-        foreach (var hint in ExtractRucHints(certificate.SubjectName.Name, "SubjectName"))
-        {
-            yield return hint;
-        }
-
-        foreach (var hint in ExtractRucHints(certificate.SerialNumber, "SerialNumber"))
-        {
-            yield return hint;
-        }
-
-        foreach (var extension in certificate.Extensions)
-        {
-            var source = string.IsNullOrWhiteSpace(extension.Oid?.FriendlyName)
-                ? extension.Oid?.Value ?? "Extension"
-                : extension.Oid.FriendlyName;
-
-            foreach (var hint in ExtractRucHints(extension.Format(false), source))
-            {
-                yield return hint;
-            }
-        }
-    }
-
-    private static IEnumerable<CertificateRucHint> ExtractRucHints(string? value, string source)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            yield break;
-        }
-
-        foreach (Match match in Regex.Matches(value, @"(?<!\d)\d{13}(?!\d)"))
-        {
-            yield return new CertificateRucHint(match.Value, source);
-        }
-    }
-
     private static bool IsSelfSigned(X509Certificate2 certificate)
         => string.Equals(
             NormalizeOptional(certificate.Subject),
@@ -1307,5 +1253,4 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
                 && !HasRucMismatch;
     }
 
-    private sealed record CertificateRucHint(string Value, string Source);
 }
