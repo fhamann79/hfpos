@@ -106,6 +106,11 @@ internal sealed class SriCertificateIdentityReader
             else
             {
                 var names = reader.ReadSequence();
+                if (!names.HasData)
+                {
+                    throw new AsnContentException();
+                }
+
                 var count = 0;
                 while (names.HasData)
                 {
@@ -122,8 +127,7 @@ internal sealed class SriCertificateIdentityReader
                     }
                     else
                     {
-                        // Email, DNS, otherName and all other GeneralNames carry no supported RUC evidence.
-                        names.ReadEncodedValue();
+                        ReadIgnoredGeneralName(names);
                     }
                 }
             }
@@ -152,6 +156,43 @@ internal sealed class SriCertificateIdentityReader
         catch (AsnContentException)
         {
             _incomplete = true;
+        }
+    }
+
+    private static void ReadIgnoredGeneralName(AsnReader reader)
+    {
+        var tag = reader.PeekTag();
+        if (tag.TagClass != TagClass.ContextSpecific || tag.IsConstructed)
+        {
+            throw new AsnContentException();
+        }
+
+        switch (tag.TagValue)
+        {
+            case 1: // rfc822Name
+            case 2: // dNSName
+            case 6: // uniformResourceIdentifier
+                var value = reader.ReadCharacterString(UniversalTagNumber.IA5String, tag);
+                if (value.Length == 0 || value.Any(character => character is < '!' or > '~'))
+                {
+                    throw new AsnContentException();
+                }
+
+                break;
+            case 7: // iPAddress
+                if (reader.ReadOctetString(tag).Length is not (4 or 16))
+                {
+                    throw new AsnContentException();
+                }
+
+                break;
+            case 8: // registeredID
+                reader.ReadObjectIdentifier(tag);
+                break;
+            default:
+                // Complex otherName/x400Address/ediPartyName and unknown tags are unsupported.
+                // Reject their entire SAN rather than trust evidence beside unvalidated content.
+                throw new AsnContentException();
         }
     }
 

@@ -205,6 +205,73 @@ public sealed class SriFiscalReadinessCertificateIdentityTests(ITestOutputHelper
     }
 
     [Theory]
+    [InlineData("0500", CompanyRuc)]
+    [InlineData("0500", OtherRuc)]
+    [InlineData("A100", CompanyRuc)]
+    [InlineData("A100", OtherRuc)]
+    [InlineData("8900", CompanyRuc)]
+    [InlineData("8900", OtherRuc)]
+    public void Invalid_GeneralName_discards_all_SAN_evidence_but_not_valid_subject_mismatch(string encodedName, string ruc)
+    {
+        foreach (var invalidFirst in new[] { false, true })
+        {
+            var san = SanWithGeneralName(ruc, Convert.FromHexString(encodedName), invalidFirst);
+            AssertDecision(Subject(), [san], CompanyRuc, "NOT_CONFIRMED");
+            AssertDecision(Subject((OrganizationOid, "TINEC-" + OtherRuc)), [san], CompanyRuc, "MISMATCH");
+        }
+    }
+
+    [Theory]
+    [InlineData("8100")]
+    [InlineData("8200")]
+    [InlineData("8600")]
+    [InlineData("8700")]
+    [InlineData("8703010203")]
+    [InlineData("8800")]
+    [InlineData("880180")]
+    [InlineData("88028000")]
+    [InlineData("810180")]
+    [InlineData("810100")]
+    [InlineData("A200")]
+    [InlineData("A600")]
+    [InlineData("A700")]
+    [InlineData("A800")]
+    [InlineData("8000")]
+    [InlineData("A000")]
+    [InlineData("A300")]
+    [InlineData("A500")]
+    [InlineData("8400")]
+    public void Unsupported_or_malformed_GeneralName_cannot_leave_partial_RUC_evidence(string encodedName)
+    {
+        foreach (var ruc in new[] { CompanyRuc, OtherRuc })
+        {
+            AssertDecision(Subject(), [SanWithGeneralName(ruc, Convert.FromHexString(encodedName))], CompanyRuc, "NOT_CONFIRMED");
+        }
+    }
+
+    [Theory]
+    [InlineData(1, "synthetic@invalid.test")]
+    [InlineData(2, "synthetic.invalid")]
+    [InlineData(6, "https://synthetic.invalid/")]
+    public void Valid_primitive_IA5_GeneralNames_are_ignored_without_discarding_RUC(int tag, string value)
+    {
+        var writer = new AsnWriter(AsnEncodingRules.DER);
+        writer.WriteCharacterString(UniversalTagNumber.IA5String, value, new Asn1Tag(TagClass.ContextSpecific, tag));
+        AssertDecision(Subject(), [SanWithGeneralName(CompanyRuc, writer.Encode())], CompanyRuc, "MATCH");
+        AssertDecision(Subject(), [SanWithGeneralName(OtherRuc, writer.Encode())], CompanyRuc, "MISMATCH");
+    }
+
+    [Theory]
+    [InlineData("8704C0000201")]
+    [InlineData("871020010DB8000000000000000000000001")]
+    [InlineData("88022A03")]
+    public void Valid_IP_and_registered_OID_GeneralNames_are_ignored_without_discarding_RUC(string encodedName)
+    {
+        AssertDecision(Subject(), [SanWithGeneralName(CompanyRuc, Convert.FromHexString(encodedName))], CompanyRuc, "MATCH");
+        AssertDecision(Subject(), [SanWithGeneralName(OtherRuc, Convert.FromHexString(encodedName))], CompanyRuc, "MISMATCH");
+    }
+
+    [Theory]
     [InlineData("040D31373930303132333435303031")]
     [InlineData("0C02C328")]
     [InlineData("0C0131")]
@@ -333,6 +400,27 @@ public sealed class SriFiscalReadinessCertificateIdentityTests(ITestOutputHelper
 
     private static X509Extension DirectorySan(params (string Oid, string Value)[] attributes)
         => SanNames(Name(attributes));
+
+    private static X509Extension SanWithGeneralName(string ruc, byte[] encodedName, bool invalidFirst = false)
+    {
+        var writer = new AsnWriter(AsnEncodingRules.DER);
+        writer.PushSequence();
+        if (invalidFirst)
+        {
+            writer.WriteEncodedValue(encodedName);
+        }
+
+        writer.PushSequence(new Asn1Tag(TagClass.ContextSpecific, 4, true));
+        writer.WriteEncodedValue(Name([(IcertRucOid, ruc)]));
+        writer.PopSequence(new Asn1Tag(TagClass.ContextSpecific, 4, true));
+        if (!invalidFirst)
+        {
+            writer.WriteEncodedValue(encodedName);
+        }
+
+        writer.PopSequence();
+        return new X509Extension("2.5.29.17", writer.Encode(), false);
+    }
 
     private static X509Extension SanNames(params byte[][] names)
     {

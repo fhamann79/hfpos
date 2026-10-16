@@ -74,6 +74,15 @@ no documentadas; la cobertura no es universal para todas las CA/versiones.
 - ASN.1 DER estructurado, sin regex, `extension.Format` ni FriendlyName.
   Limites: 16 KiB por subject/SAN, 64 extensiones, 64 GeneralNames por SAN,
   64 atributos acumulados y 128 caracteres por valor reconocido; sin recursion.
+- GeneralNames no fiscales: solo se omiten formas primitivas context-specific
+  validadas mediante su lector DER: email `[1]`, DNS `[2]`, URI `[6]` como
+  IA5String no vacio de ASCII imprimible sin espacios/controles; IP `[7]` de
+  exactamente 4/16 octetos; registeredID `[8]` como OBJECT IDENTIFIER valido.
+  No se valida semantica completa de direccion/dominio/URI ni se usa como RUC.
+  Tags universales/desconocidos, formas constructed incorrectas, SAN vacio y
+  formas complejas no implementadas (otherName `[0]`, x400Address `[3]`,
+  ediPartyName `[5]`) descartan todo ese SAN conservadoramente. No se pretende
+  implementar un validador RFC 5280 universal ni agregar perfiles de identidad.
 - Subject y cada SAN se decodifican atomicamente. Un contenedor malformado o
   fuera de limites no aporta evidencia parcial, ni siquiera MISMATCH.
   Una discrepancia de otro contenedor valido se conserva. Duplicados de OID
@@ -89,7 +98,7 @@ Se reutilizan las unitarias XAdES sin modificar el signer. Build backend Release
 y pruebas focalizadas; CI debe ejecutar la suite completa sobre HEAD publicado.
 PostgreSQL/concurrencia/modelo no aplican al diff de diagnostico sin persistencia.
 
-Ejecucion local final (Release):
+Ejecucion local (Release):
 
 ```powershell
 dotnet build backend/Pos.Backend.Api/Pos.Backend.Api.sln --configuration Release --no-restore --verbosity quiet
@@ -97,9 +106,20 @@ dotnet test backend/Pos.Backend.Api/Pos.Backend.Api.Tests/Pos.Backend.Api.Tests.
 git diff --check
 ```
 
-Resultado: build PASS, 0 errores, 116 warnings en archivos preexistentes;
-tests **81/81 PASS** (79 identidad, 2 XAdES); diff-check PASS. No se ejecuto la
-suite completa local ni se presenta esta evidencia como CI de un HEAD nuevo.
+Resultado anterior sobre `344ad2e`: build PASS, 0 errores, 116 warnings en archivos
+preexistentes; tests **81/81 PASS** (79 identidad, 2 XAdES); diff-check PASS.
+Revision independiente Galileo encontro B0/M1: un GeneralName invalido junto a
+directoryName no invalidaba el SAN. Antes de corregir el parser se reprodujeron
+los 6 casos `0500`/`A100`/`8900` por RUC coincidente/ajeno: **6/6 FAIL esperados**,
+obteniendo MATCH o MISMATCH en lugar de NOT_CONFIRMED. Se agregan regresiones en
+ambos ordenes, preservacion de mismatch desde subject valido y casos de formas
+DER validas/malformadas/no soportadas. CI/review de `344ad2e` no cubren este delta.
+Tras la correccion MAJOR: build Release PASS (0 errores; primera compilacion con
+116 warnings preexistentes, verificacion incremental exit 0 sin warnings nuevos),
+**112/112 PASS** (110 identidad, 2 XAdES), diff-check PASS. Los seis casos tambien
+comprueban el elemento invalido antes/despues de directoryName y que un mismatch
+de subject valido independiente siga bloqueando. No se ejecuto la suite completa
+local ni se presenta esta evidencia como CI de un HEAD nuevo.
 
 **VALIDACION HUMANA PRE-MERGE REQUERIDA**, pendiente y coordinada fuera de este
 implementer: comprobar los tres estados con material sintetico, que un mismatch
