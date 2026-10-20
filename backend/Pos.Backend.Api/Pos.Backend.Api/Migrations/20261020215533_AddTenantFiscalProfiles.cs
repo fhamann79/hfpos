@@ -217,6 +217,26 @@ namespace Pos.Backend.Api.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // Downgrade may remove an unused schema, never fiscal evidence. Locks close the check/DDL race.
+            migrationBuilder.Sql("""
+                LOCK TABLE "Companies", "Sales", "SaleItems", "CreditNotes", "CreditNoteItems", "Products",
+                    "CompanyFiscalProfiles", "ProductFiscalClassifications" IN ACCESS EXCLUSIVE MODE;
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM "CompanyFiscalProfiles")
+                        OR EXISTS (SELECT 1 FROM "ProductFiscalClassifications")
+                        OR EXISTS (SELECT 1 FROM "Products" WHERE "FiscalRevision" <> 0)
+                        OR EXISTS (SELECT 1 FROM "Sales" WHERE "FiscalProfileId" IS NOT NULL
+                            OR "FiscalIssuerSnapshotJson" IS NOT NULL OR "FiscalFingerprint" IS NOT NULL)
+                        OR EXISTS (SELECT 1 FROM "SaleItems" WHERE "FiscalDecisionJson" IS NOT NULL)
+                        OR EXISTS (SELECT 1 FROM "CreditNotes" WHERE "FiscalProfileId" IS NOT NULL OR "FiscalIssuerSnapshotJson" IS NOT NULL)
+                        OR EXISTS (SELECT 1 FROM "CreditNoteItems" WHERE "FiscalDecisionJson" IS NOT NULL)
+                    THEN
+                        RAISE EXCEPTION 'FISCAL_HISTORY_DOWNGRADE_BLOCKED';
+                    END IF;
+                END $$;
+                """);
+
             migrationBuilder.DropForeignKey(
                 name: "FK_CreditNotes_CompanyFiscalProfiles_CompanyId_FiscalProfileId",
                 table: "CreditNotes");

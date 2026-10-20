@@ -343,10 +343,20 @@ public sealed class SaleCheckoutRecoveryTests(PostgresDatabaseFixture database) 
     [Fact]
     public async Task Additive_migration_preserves_legacy_rows_without_fabricating_history()
     {
-        var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "legacy", 810, 5m);
+        var tenant = await TestDataBuilder.CreateTenantAsync(database, "legacy", 810, 5m);
         await Open(tenant);
         await using var scope = new TestServiceScope(database, tenant.OperationalContext);
-        var sale = await scope.Sales.CreateWithPreviewAsync(Request(tenant));
+        // A pre-feature row has no declared fiscal evidence; do not create then erase real snapshots to simulate it.
+        var sale = new Sale
+        {
+            CompanyId = tenant.CompanyId, EstablishmentId = tenant.EstablishmentId, EmissionPointId = tenant.EmissionPointId,
+            UserId = tenant.UserId, Number = "SYNTHETIC-LEGACY-810", Status = SaleStatus.Completed,
+            DocumentType = SaleDocumentType.Ticket, DocumentStatus = SaleDocumentStatus.NotRequired, PaymentMethod = SalePaymentMethod.Cash,
+            CreatedAt = DateTime.UtcNow, BusinessDate = new DateOnly(2026, 9, 18), GrossSubtotal = 10, Subtotal = 10, Total = 10,
+            Items = [new SaleItem { ProductId = tenant.Products[0].Id, Quantity = 1, UnitPrice = 10, GrossSubtotal = 10,
+                NetSubtotal = 10, LineSubtotal = 10, TaxableSubtotal = 10, LineTotal = 10, VatCategory = ProductVatCategory.Vat0 }]
+        };
+        scope.DbContext.Sales.Add(sale); await scope.DbContext.SaveChangesAsync();
         var migrator = scope.DbContext.GetService<IMigrator>();
         await migrator.MigrateAsync("20261004050131_AddInitialDataBatches");
         await migrator.MigrateAsync();

@@ -1,6 +1,8 @@
 using System.Xml.Linq;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -385,6 +387,37 @@ public sealed class FiscalCoreIntegrationTests(PostgresDatabaseFixture database)
             () => Notes(new FixedSriFiscalClock(Now.AddDays(1))).CreateDraftAsync(dto))).Message);
         Assert.Single(await scope.DbContext.CreditNotes.ToListAsync());
         Assert.Equal(name, (await scope.DbContext.Sales.AsNoTracking().SingleAsync()).FiscalIssuerSnapshotJson);
+    }
+
+    [Theory]
+    [InlineData("declarations")]
+    [InlineData("product-revision")]
+    [InlineData("snapshot")]
+    public async Task Downgrade_cannot_erase_fiscal_evidence_even_without_profile_foreign_keys(string evidence)
+    {
+        var tenant = evidence == "declarations" ? await Tenant("downgrade")
+            : await TestDataBuilder.CreateTenantAsync(database, "downgrade", 7153, 10m);
+        await using var db = database.CreateDbContext();
+        if (evidence == "product-revision") (await db.Products.SingleAsync()).FiscalRevision = 1;
+        if (evidence == "snapshot") db.Sales.Add(new Sale
+        {
+            CompanyId = tenant.CompanyId, EstablishmentId = tenant.EstablishmentId, EmissionPointId = tenant.EmissionPointId,
+            UserId = tenant.UserId, Number = "SYNTHETIC-DOWNGRADE", Status = SaleStatus.Completed,
+            DocumentType = SaleDocumentType.Ticket, DocumentStatus = SaleDocumentStatus.NotRequired,
+            CreatedAt = Now, BusinessDate = new(2026, 9, 18), FiscalIssuerSnapshotJson = "synthetic evidence sentinel"
+        });
+        await db.SaveChangesAsync();
+        var profiles = await db.CompanyFiscalProfiles.CountAsync(); var classifications = await db.ProductFiscalClassifications.CountAsync();
+        var error = await Assert.ThrowsAsync<PostgresException>(() => db.GetService<IMigrator>()
+            .MigrateAsync("20261005131215_AddAssistedPasswordRecovery"));
+        Assert.Equal(PostgresErrorCodes.RaiseException, error.SqlState);
+        Assert.Equal("FISCAL_HISTORY_DOWNGRADE_BLOCKED", error.MessageText);
+        db.ChangeTracker.Clear();
+        Assert.Equal(profiles, await db.CompanyFiscalProfiles.CountAsync());
+        Assert.Equal(classifications, await db.ProductFiscalClassifications.CountAsync());
+        Assert.Equal(evidence == "product-revision" ? 1 : 0, (await db.Products.SingleAsync()).FiscalRevision);
+        if (evidence == "snapshot") Assert.Equal("synthetic evidence sentinel", (await db.Sales.SingleAsync()).FiscalIssuerSnapshotJson);
+        Assert.Contains("20261020215533_AddTenantFiscalProfiles", await db.Database.GetAppliedMigrationsAsync());
     }
 
     private sealed class MutableFiscalClock(DateTime now) : ISriFiscalClock

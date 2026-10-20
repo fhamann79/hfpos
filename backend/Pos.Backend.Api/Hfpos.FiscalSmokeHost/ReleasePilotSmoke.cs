@@ -128,7 +128,7 @@ internal static class ReleasePilotSmoke
         await PostAsync<FiscalProfileDto>(tenant, "/api/FiscalSettings/profiles", new DeclareFiscalProfileDto
         {
             Regime = FiscalRegime.General, TaxpayerKind = TaxpayerKind.Natural,
-            EffectiveFrom = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-5)), Confirmed = true,
+            EffectiveFrom = app.Clock.GetEcuadorFiscalDate(app.Clock.UtcNow), Confirmed = true,
             Reason = "Synthetic pilot fiscal fixture", EvidenceReference = "Synthetic declaration, no real taxpayer"
         });
         await PostAsync<ProductFiscalClassificationDto>(tenant, $"/api/FiscalSettings/profiles/products/{product}",
@@ -168,6 +168,8 @@ internal static class ReleasePilotSmoke
         request.RequestId = Guid.NewGuid(); request.DocumentType = SaleDocumentType.Invoice; request.PaymentMethod = SalePaymentMethod.Card; request.CashReceived = null;
         request.FiscalFingerprint = (await PostAsync<SalePreviewDto>(tenant, "/api/Sales/preview", request)).Fingerprint;
         var invoice = await PostAsync<SaleDto>(tenant, "/api/Sales", request);
+        Assert.Equal(app.Clock.GetBusinessDate(app.Clock.UtcNow, "America/Guayaquil"), invoice.BusinessDate);
+        Assert.Equal(app.Clock.UtcNow.Ticks / 10, invoice.DocumentIssuedAt!.Value.Ticks / 10); // PostgreSQL microseconds.
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         do
         {
@@ -337,15 +339,18 @@ internal static class ReleasePilotSmoke
                 services.AddSingleton<SmokeTransport>();
                 services.AddSingleton<IHttpMessageHandlerBuilderFilter, SyntheticHttpFilter>();
                 services.Replace(ServiceDescriptor.Singleton<IBusinessClockService>(Clock));
+                services.Replace(ServiceDescriptor.Singleton<ISriFiscalClock>(Clock));
                 services.Replace(ServiceDescriptor.Scoped<IEmailSenderService>(_ => new NoEmail()));
             });
         }
     }
-    private sealed class PilotClock : IBusinessClockService
+    private sealed class PilotClock : IBusinessClockService, ISriFiscalClock
     {
         private readonly BusinessClockService inner = new();
-        internal DateTime Now = new(2026, 10, 5, 20, 0, 0, DateTimeKind.Utc);
+        private readonly SriFiscalClock fiscal = new();
+        internal DateTime Now = DateTime.UtcNow;
         public DateTime UtcNow => Now;
+        public DateOnly GetEcuadorFiscalDate(DateTime time) => fiscal.GetEcuadorFiscalDate(time);
         public TimeZoneInfo ResolveTimeZone(string id) => inner.ResolveTimeZone(id);
         public DateOnly GetBusinessDate(DateTime time, string id) => inner.GetBusinessDate(time, id);
         public DateTime GetBusinessDateStartUtc(DateOnly day, string id) => inner.GetBusinessDateStartUtc(day, id);

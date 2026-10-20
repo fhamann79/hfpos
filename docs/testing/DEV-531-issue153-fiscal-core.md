@@ -47,7 +47,7 @@ La regla general del 15% se versiona en codigo con referencia a la continuidad n
 
 **Requiere migracion en una futura ventana humana R4 autorizada; no se ejecuto contra una DB persistente.** Antes de esa ventana: backup/rollback aprobado, detener nuevos writers/worker antiguos de forma humana controlada y revisar borradores pendientes. Compatibilidad SQL no autoriza convivir con un binario anterior que emita sin los nuevos gates. No cambiar numeros existentes ni usar secuenciales reales en pruebas.
 
-Rollback conserva esquema, snapshots y auditoria; no usar `Down` para borrar historia. Un rollback de binario debe mantener bloqueada la emision afectada si no puede garantizar las mismas validaciones. No se incluye aqui ningun comando de operacion real ni autorizacion para ejecutarlo.
+Rollback conserva esquema, snapshots y auditoria; no usar `Down` para borrar historia. La migracion rechaza un downgrade con `FISCAL_HISTORY_DOWNGRADE_BLOCKED` si existe cualquier declaracion, clasificacion, revision fiscal o snapshot nuevo. El guard y el DDL mantienen locks exclusivos dentro de la misma transaccion; solo un esquema sin evidencia fiscal nueva admite retirada. Un rollback de binario debe mantener bloqueada la emision afectada si no puede garantizar las mismas validaciones. No se incluye aqui ningun comando de operacion real ni autorizacion para ejecutarlo.
 
 ## Evidencia normativa
 
