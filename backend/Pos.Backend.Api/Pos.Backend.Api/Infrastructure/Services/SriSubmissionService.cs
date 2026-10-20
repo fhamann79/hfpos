@@ -532,7 +532,8 @@ public class SriSubmissionService : ISriSubmissionService
                 MatrixAddress = ChildValue(infoTributaria, "dirMatriz"),
                 EstablishmentAddress = ChildValue(infoFactura, "dirEstablecimiento"),
                 AccountingRequired = ChildValue(infoFactura, "obligadoContabilidad"),
-                TaxpayerRegime = ChildValue(infoFactura, "contribuyenteRimpe")
+                TaxpayerRegime = ChildValue(infoTributaria, "contribuyenteRimpe")
+                    ?? ChildValue(infoFactura, "contribuyenteRimpe")
                     ?? ChildValue(infoFactura, "regimenMicroempresas")
             },
             Buyer = new SriRideBuyerDto
