@@ -238,6 +238,9 @@ public class ProductsController : ControllerBase
             return duplicateIdentifierError;
         }
 
+        if (product.VatCategory != (dto.VatCategory ?? product.VatCategory) || product.Name != dto.Name.Trim()
+            || product.Barcode != barcode || product.InternalCode != internalCode)
+            product.FiscalRevision = checked(product.FiscalRevision + 1);
         product.CategoryId = dto.CategoryId;
         product.Name = dto.Name.Trim();
         product.Barcode = barcode;

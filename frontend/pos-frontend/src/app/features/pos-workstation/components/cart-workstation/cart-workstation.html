@@ -75,11 +75,15 @@
           <div class="line-total">
             <div>
               <small>Bruto {{ lineSubtotal(item) | currency: 'USD' }}</small>
-              @if (item.discountAmount > 0) {
-                <small class="discount-line">-{{ item.discountAmount | currency: 'USD' }} desc.</small>
-                <small>Neto {{ lineNetSubtotal(item) | currency: 'USD' }}</small>
+              @if (effectiveLine(item); as effective) {
+                @if (effective.discountAmount > 0) {
+                  <small class="discount-line">-{{ effective.discountAmount | currency: 'USD' }} desc. total</small>
+                  <small>Neto {{ effective.taxableSubtotal | currency: 'USD' }}</small>
+                }
+                <span>{{ effective.lineTotal | currency: 'USD' }}</span>
+              } @else {
+                <span>Pendiente</span>
               }
-              <span>{{ lineTotal(item) | currency: 'USD' }}</span>
             </div>
             <p-button
               icon="pi pi-trash"
@@ -112,7 +116,7 @@
       </div>
       <div class="discount-total"><span>Descuento total</span><strong>-{{ (taxSummary?.discountAmount ?? 0) | currency: 'USD' }}</strong></div>
       <div><span>Subtotal neto</span><strong>{{ subtotal | currency: 'USD' }}</strong></div>
-      <div><span>IVA estimado</span><strong>{{ taxAmount | currency: 'USD' }}</strong></div>
+      <div><span>IVA</span><strong>{{ taxAmount | currency: 'USD' }}</strong></div>
       @if (taxSummary) {
         <div class="tax-breakdown">
           @if (taxSummary.vat15Subtotal > 0) {

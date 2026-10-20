@@ -18,6 +18,9 @@ import { Product } from '../../models/product.model';
 import { CategoryService } from '../../services/category.service';
 import { ProductPageQuery, ProductService, ProductStatusFilter } from '../../services/product.service';
 import { ProductDialog, ProductDialogSubmit } from './product-dialog';
+import { ProductFiscalDialog } from '../../../fiscal-settings/components/product-fiscal-dialog';
+import { PermissionService } from '../../../../core/services/permission.service';
+import { PERMISSIONS } from '../../../../core/constants/permissions';
 
 @Component({
   selector: 'app-products-table',
@@ -35,12 +38,16 @@ import { ProductDialog, ProductDialogSubmit } from './product-dialog';
     MessageModule,
     ConfirmDialogModule,
     ProductDialog,
+    ProductFiscalDialog,
   ],
   templateUrl: './products-table.html',
   styleUrl: './products-table.scss',
 })
 export class ProductsTable implements OnInit {
   @Input() canWrite = false;
+  readonly canClassify = inject(PermissionService).hasPermission(PERMISSIONS.fiscalSettingsWrite)
+    && inject(PermissionService).hasPermission(PERMISSIONS.fiscalSettingsRead);
+  fiscalProduct: Product | null = null;
 
   private readonly productService = inject(ProductService);
   private readonly categoryService = inject(CategoryService);

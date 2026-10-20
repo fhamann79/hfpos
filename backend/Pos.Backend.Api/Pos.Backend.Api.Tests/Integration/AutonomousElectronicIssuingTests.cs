@@ -75,6 +75,33 @@ public sealed class AutonomousElectronicIssuingTests(PostgresDatabaseFixture dat
         Assert.Equal(sale.AccessKey, (await verify.Sales.SingleAsync()).AccessKey);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Legacy_without_frozen_fiscal_evidence_stops_before_new_signing_or_reception(bool alreadySigned)
+    {
+        var f = await Setup(); var sale = await f.SellAsync();
+        if (alreadySigned) await f.ProcessNextAsync();
+        string? originalXml; string? signedXml;
+        await using (var db = database.CreateDbContext())
+        {
+            var legacy = await db.Sales.SingleAsync();
+            legacy.FiscalProfileId = null; legacy.FiscalIssuerSnapshotJson = null;
+            originalXml = legacy.SriXmlDraft; signedXml = legacy.SriSignedXml;
+            await db.SaveChangesAsync();
+        }
+        await f.ProcessNextAsync();
+        await using var verify = database.CreateDbContext();
+        var job = await verify.ElectronicIssuingJobs.SingleAsync();
+        Assert.Equal(ElectronicIssuingJobState.ManualAttention, job.State);
+        Assert.Equal("FISCAL_LEGACY_REVIEW_REQUIRED", job.SafeError);
+        Assert.Equal(0, f.Transport.Submissions); Assert.Equal(0, f.Transport.Queries);
+        var unchanged = await verify.Sales.SingleAsync();
+        Assert.Equal(originalXml, unchanged.SriXmlDraft); Assert.Equal(signedXml, unchanged.SriSignedXml);
+        Assert.Equal(sale.AccessKey, unchanged.AccessKey);
+        Assert.Empty(await verify.SriSubmissionAttempts.ToListAsync());
+    }
+
     [Fact]
     public async Task Final_expired_lease_release_rolls_back_document_attempt_and_job_mutations_together()
     {
@@ -155,6 +182,7 @@ public sealed class AutonomousElectronicIssuingTests(PostgresDatabaseFixture dat
             Assert.Empty(await db.DocumentSequences.ToListAsync()); Assert.Empty(await db.InventoryMovements.ToListAsync());
         }
         request.Items[0].Quantity = 1;
+        request.FiscalFingerprint = null; // Definitive rollback: review a new calculation for the corrected quantity.
         var sale = await f.SellAsync(request); Assert.Equal(sale.Id, (await f.SellAsync(request)).Id);
         await using var verify = database.CreateDbContext(); Assert.Single(await verify.ElectronicIssuingJobs.ToListAsync());
     }

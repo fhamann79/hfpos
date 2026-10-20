@@ -29,6 +29,7 @@
 
       <p-tabpanels>
         <p-tabpanel value="company">
+          <app-fiscal-profile-panel />
           <section class="settings-card">
             <div class="section-heading">
               <div>
@@ -106,8 +107,8 @@
                   </label>
 
                   <label class="field">
-                    <span>Régimen tributario</span>
-                    <input pInputText type="text" formControlName="taxpayerRegime" placeholder="GENERAL, RIMPE, etc." />
+                    <span>Régimen anterior (solo referencia)</span>
+                    <input pInputText type="text" formControlName="taxpayerRegime" />
                   </label>
 
                   <div class="switch-field field-wide">

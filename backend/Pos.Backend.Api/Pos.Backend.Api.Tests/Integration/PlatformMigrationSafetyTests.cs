@@ -19,9 +19,9 @@ public sealed class PlatformMigrationSafetyTests(PostgresDatabaseFixture databas
         {
             await database.RecreateDatabaseAsync();
             await using var context = database.CreateDbContext();
-            await context.GetService<IMigrator>().MigrateAsync("20260930001830_AddPaymentSettlements");
             var one = await TestDataBuilder.CreateTenantAsync(database, "duplicate-one", 330, 1m);
             var two = await TestDataBuilder.CreateTenantAsync(database, "duplicate-two", 331, 1m);
+            await context.GetService<IMigrator>().MigrateAsync("20260930001830_AddPaymentSettlements");
             var oneId = table == "Companies" ? one.CompanyId : one.UserId;
             var twoId = table == "Companies" ? two.CompanyId : two.UserId;
             var updateSql = (table, column) switch

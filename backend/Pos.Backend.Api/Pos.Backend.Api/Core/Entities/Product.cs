@@ -35,6 +35,7 @@ public class Product
     public decimal MinimumStock { get; set; } = 3m;
 
     public ProductVatCategory VatCategory { get; set; }
+    public long FiscalRevision { get; set; }
 
     public bool IsActive { get; set; }
 

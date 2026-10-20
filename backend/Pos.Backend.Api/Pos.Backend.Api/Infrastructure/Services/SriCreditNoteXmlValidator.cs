@@ -115,6 +115,7 @@ public class SriCreditNoteXmlValidator : ISriCreditNoteXmlValidator
             "ptoEmi",
             "secuencial",
             "dirMatriz",
+            "agenteRetencion",
             "contribuyenteRimpe"
         };
 
@@ -157,6 +158,8 @@ public class SriCreditNoteXmlValidator : ISriCreditNoteXmlValidator
         }
 
         RequiredText(element, "dirMatriz", 300);
+        var agent = OptionalText(element, "agenteRetencion", 8);
+        if (agent is not null && !Regex.IsMatch(agent, "^[1-9][0-9]{0,7}$")) Fail("Invalid agenteRetencion.");
         OptionalText(element, "contribuyenteRimpe", 50);
     }
 
@@ -204,9 +207,9 @@ public class SriCreditNoteXmlValidator : ISriCreditNoteXmlValidator
             13);
         if (specialTaxpayer is not null
             && (specialTaxpayer.Length < 3
-                || !DigitsRegex.IsMatch(specialTaxpayer)))
+                || !specialTaxpayer.All(char.IsAsciiLetterOrDigit)))
         {
-            Fail("contribuyenteEspecial must be numeric.");
+            Fail("contribuyenteEspecial must be alphanumeric (3..13).");
         }
 
         var accountingRequired = RequiredText(

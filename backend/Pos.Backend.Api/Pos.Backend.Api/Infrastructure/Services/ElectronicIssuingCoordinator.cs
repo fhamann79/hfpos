@@ -253,7 +253,8 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
             ? ElectronicIssuingJobState.ManualAttention : state;
         job.Phase = phase;
         job.NextAttemptAt = DateTime.UtcNow.AddSeconds(state == ElectronicIssuingJobState.Queued ? 0 : Math.Min(900, 5 * Math.Pow(2, Math.Min(8, job.AttemptCount))));
-        if (job.State == ElectronicIssuingJobState.ManualAttention) job.SafeError = "FISCAL_ATTEMPTS_EXHAUSTED";
+        if (job.State == ElectronicIssuingJobState.ManualAttention && state != ElectronicIssuingJobState.ManualAttention)
+            job.SafeError = "FISCAL_ATTEMPTS_EXHAUSTED";
     }
 
     private static void ApplyFailure(ElectronicIssuingJob job, string code, bool ambiguous)
@@ -333,6 +334,10 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
     {
         if (sale.Status != SaleStatus.Completed || sale.DocumentType != SaleDocumentType.Invoice)
             throw new InvalidOperationException("SRI_SUBMISSION_SALE_VOIDED");
+        // Legacy documents remain readable/queryable, but unknown fiscal facts cannot start a new signature/reception.
+        if (purpose is ElectronicIssuingPhase.ReadyToSign or ElectronicIssuingPhase.ReadyToSubmit
+            && (sale.FiscalProfileId is null || FiscalSnapshots.Read(sale.FiscalIssuerSnapshotJson) is null))
+            throw new InvalidOperationException("FISCAL_LEGACY_REVIEW_REQUIRED");
         if (!await context.Companies.AnyAsync(c => c.Id == sale.CompanyId && c.IsActive, ct)
             || !await context.EmissionPoints.AnyAsync(p => p.Id == sale.EmissionPointId && p.IsActive
                 && p.EstablishmentId == sale.EstablishmentId && p.Establishment.IsActive && p.Establishment.CompanyId == sale.CompanyId, ct))

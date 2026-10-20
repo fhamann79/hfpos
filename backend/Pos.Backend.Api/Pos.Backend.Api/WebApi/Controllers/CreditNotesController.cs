@@ -457,6 +457,7 @@ public class CreditNotesController : ControllerBase
     private ActionResult MapDomainError(Exception exception)
     {
         var code = exception.Message;
+        if (FiscalProfileErrors.IsValidation(code)) return Conflict(new ApiErrorResponse { Error = code });
 
         return code switch
         {

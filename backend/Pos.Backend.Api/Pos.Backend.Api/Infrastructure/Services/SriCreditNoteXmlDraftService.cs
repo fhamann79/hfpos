@@ -25,7 +25,8 @@ public class SriCreditNoteXmlDraftService : ISriCreditNoteXmlDraftService
             ValidateContext(request);
 
             var creditNote = request.CreditNote;
-            var company = request.Company;
+            var issuer = FiscalSnapshots.Read(creditNote.FiscalIssuerSnapshotJson);
+            var company = issuer is null ? request.Company : FiscalSnapshots.IssuerCompany(issuer);
 
             var infoTributaria = new XElement("infoTributaria",
                 new XElement("ambiente", request.Environment.ToString(CultureInfo.InvariantCulture)),
@@ -68,6 +69,7 @@ public class SriCreditNoteXmlDraftService : ISriCreditNoteXmlDraftService
                         company.MatrixAddress,
                         300,
                         "SRI_CREDIT_NOTE_XML_REQUIRED_FIELD_MISSING")),
+                OptionalElement("agenteRetencion", issuer?.WithholdingAgentResolution, 8),
                 ResolveRimpeElement(company.TaxpayerRegime));
 
             var infoNotaCredito = new XElement("infoNotaCredito",
@@ -76,7 +78,7 @@ public class SriCreditNoteXmlDraftService : ISriCreditNoteXmlDraftService
                     request.FiscalEmissionDate.ToString(
                         "dd/MM/yyyy",
                         CultureInfo.InvariantCulture)),
-                OptionalElement("dirEstablecimiento", request.Establishment.Address, 300),
+                OptionalElement("dirEstablecimiento", issuer is null ? request.Establishment.Address : issuer.EstablishmentAddress, 300),
                 new XElement(
                     "tipoIdentificacionComprador",
                     RequiredText(
@@ -375,7 +377,7 @@ public class SriCreditNoteXmlDraftService : ISriCreditNoteXmlDraftService
             return null;
         }
 
-        if (normalized.Length is < 3 or > 13 || !normalized.All(char.IsDigit))
+        if (normalized.Length is < 3 or > 13 || !normalized.All(char.IsAsciiLetterOrDigit))
         {
             throw new InvalidOperationException(
                 "SRI_CREDIT_NOTE_XML_DRAFT_GENERATION_FAILED");

@@ -7,7 +7,7 @@ import { vi } from 'vitest';
 import { AuthStore } from '../../../../core/stores/auth.store';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
-import { ProductVatCategory } from '../../../../core/utils/vat-category';
+import { ProductVatCategory, calculateTaxSummary } from '../../../../core/utils/vat-category';
 import { CashSession, CashSessionStatus } from '../../../cash-sessions/models/cash-session.model';
 import { CashSessionService } from '../../../cash-sessions/services/cash-session.service';
 import { CreditNoteService } from '../../../credit-notes/services/credit-note.service';
@@ -26,7 +26,7 @@ import { PosWorkstationPage } from './pos-workstation-page';
 
 describe('Checkout recovery', () => {
   let response: Subject<Sale>;
-  const api = { createSale: vi.fn(), resolveBusinessError: () => 'Synthetic rejection' };
+  const api = { createSale: vi.fn(), previewSale: vi.fn(), resolveBusinessError: () => 'Synthetic rejection' };
   const catalog = { refreshCartProducts: vi.fn(() => of([])) };
   const context = { companyTimeZoneId: () => 'America/Guayaquil', companyId: () => 1,
     establishmentId: () => 2, emissionPointId: () => 3, username: () => 'synthetic', me: () => ({ userId: '10' }) };
@@ -35,6 +35,7 @@ describe('Checkout recovery', () => {
 
   beforeEach(() => {
     sessionStorage.clear(); vi.clearAllMocks(); response = new Subject<Sale>(); api.createSale.mockReturnValue(response);
+    api.previewSale.mockReturnValue(new Subject());
     TestBed.configureTestingModule({ imports: [SaleReceiptDialog, CartWorkstation], providers: [
       { provide: PermissionService, useValue: { hasPermission: (permission: string) => permission !== PERMISSIONS.reportsSalesRead } },
       { provide: AuthStore, useValue: context }, { provide: Router, useValue: { navigateByUrl: vi.fn() } },
@@ -55,6 +56,15 @@ describe('Checkout recovery', () => {
       p.cart.set([{ productId: 7, productName: product.name, product, stock: 5, quantity: 1, unitPrice: 10, discountAmount: 0 }]);
       p.cashReceived.set(20);
     }
+    // Recovery tests start after a successful backend preview; dedicated tests exercise its lifecycle.
+    const confirm = p.confirmCheckout.bind(p);
+    vi.spyOn(p, 'fiscalPreviewCurrent').mockImplementation(() => !!p.fiscalPreview());
+    vi.spyOn(p, 'confirmCheckout').mockImplementation(() => {
+      p.fiscalPreviewLoading.set(false);
+      if (!p.pendingCheckout()) p.fiscalPreview.set({ ...calculateTaxSummary(p.cart(), p.effectiveSaleDiscountAmount()),
+        fingerprint: 'SYNTHETIC-FISCAL-PREVIEW', fiscalDate: '2026-09-18', profileRevision: 1, items: [] });
+      confirm();
+    });
     return p;
   }
   function sent(): CheckoutRequest { return api.createSale.mock.calls.at(-1)![0] as CheckoutRequest; }
@@ -231,6 +241,7 @@ describe('Checkout recovery', () => {
     dialog.loading = true; dialog.onKeydown(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(confirm).not.toHaveBeenCalled(); expect(close).not.toHaveBeenCalled();
     dialog.loading = false;
+    dialog.fiscalReady = true;
     const select = document.createElement('p-select'); const event = new KeyboardEvent('keydown', { key: 'Enter' });
     Object.defineProperty(event, 'target', { value: select }); dialog.onKeydown(event); expect(confirm).not.toHaveBeenCalled();
     dialog.onKeydown(new KeyboardEvent('keydown', { key: 'Enter' })); expect(confirm).toHaveBeenCalledTimes(1);

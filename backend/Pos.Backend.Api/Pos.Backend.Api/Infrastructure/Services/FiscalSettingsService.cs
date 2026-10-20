@@ -80,15 +80,16 @@ public class FiscalSettingsService : IFiscalSettingsService
             throw new InvalidOperationException("COMPANY_IDENTITY_ALREADY_USED");
         if (await _context.Companies.AnyAsync(c => c.Id != company.Id && c.Ruc == ruc))
             throw new InvalidOperationException("COMPANY_RUC_ALREADY_EXISTS");
+        if (dto.IsAccountingRequired != company.IsAccountingRequired
+            || specialTaxpayerNumber != NormalizeOptional(company.SpecialTaxpayerNumber)
+            || taxpayerRegime != NormalizeOptional(company.TaxpayerRegime))
+            throw new InvalidOperationException("FISCAL_PROFILE_VERSION_REQUIRED");
         company.Name = name!;
         company.Ruc = ruc!;
         company.TradeName = tradeName;
         company.MatrixAddress = matrixAddress;
         company.Email = email;
         company.Phone = phone;
-        company.IsAccountingRequired = dto.IsAccountingRequired;
-        company.SpecialTaxpayerNumber = specialTaxpayerNumber;
-        company.TaxpayerRegime = taxpayerRegime;
 
         try { await _context.SaveChangesAsync(); }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "IX_Companies_Ruc" })

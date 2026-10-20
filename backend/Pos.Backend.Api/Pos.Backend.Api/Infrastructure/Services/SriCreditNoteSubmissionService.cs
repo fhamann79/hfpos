@@ -64,6 +64,8 @@ public class SriCreditNoteSubmissionService : ISriCreditNoteSubmissionService
             return await GetCurrentCreditNoteAsync(creditNoteId);
         }
 
+        if (creditNote.FiscalProfileId is null || string.IsNullOrWhiteSpace(creditNote.FiscalIssuerSnapshotJson))
+            throw new InvalidOperationException("FISCAL_LEGACY_REVIEW_REQUIRED");
         ValidateUnsignedDraftIfPresent(creditNote);
 
         var sriContext = await ResolveSriSubmissionContextAsync(
@@ -905,6 +907,8 @@ public class SriCreditNoteSubmissionService : ISriCreditNoteSubmissionService
                 AccountingRequired = ChildValue(
                     infoNotaCredito,
                     "obligadoContabilidad"),
+                SpecialTaxpayerResolution = ChildValue(infoNotaCredito, "contribuyenteEspecial"),
+                WithholdingAgentResolution = ChildValue(infoTributaria, "agenteRetencion"),
                 TaxpayerRegime = ChildValue(
                     infoTributaria,
                     "contribuyenteRimpe")

@@ -45,6 +45,7 @@ import {
   readinessSummarySeverity,
 } from '../../models/fiscal-settings.model';
 import { FiscalSettingsService } from '../../services/fiscal-settings.service';
+import { FiscalProfilePanel } from '../../components/fiscal-profile-panel';
 
 type SequenceDialogMode = 'create' | 'update';
 type CertificateSeverity = 'success' | 'secondary' | 'warn' | 'danger';
@@ -76,6 +77,7 @@ interface ReadinessCheckGroup {
     TextareaModule,
     ToastModule,
     ToggleSwitchModule,
+    FiscalProfilePanel,
   ],
   providers: [MessageService, ConfirmationService],
   templateUrl: './fiscal-settings-page.html',
@@ -1217,6 +1219,9 @@ export class FiscalSettingsPage implements OnInit, OnDestroy {
   private syncWriteAccess(): void {
     if (this.canWrite()) {
       this.companyForm.enable({ emitEvent: false });
+      this.companyForm.controls.taxpayerRegime.disable({ emitEvent: false });
+      this.companyForm.controls.specialTaxpayerNumber.disable({ emitEvent: false });
+      this.companyForm.controls.isAccountingRequired.disable({ emitEvent: false });
       this.brandingForm.enable({ emitEvent: false });
       this.emailForm.enable({ emitEvent: false });
       this.sriForm.enable({ emitEvent: false });

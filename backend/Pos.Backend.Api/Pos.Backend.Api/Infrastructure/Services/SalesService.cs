@@ -30,6 +30,7 @@ public class SalesService : ISalesService
     private readonly ISriInvoiceXmlValidator _sriInvoiceXmlValidator;
     private readonly SriOptions _sriOptions;
     private readonly TenantAdministrationGuard _administrationGuard;
+    private readonly IFiscalProfileService _fiscalProfiles;
 
     public SalesService(
         PosDbContext context,
@@ -44,7 +45,8 @@ public class SalesService : ISalesService
         IBusinessClockService businessClock,
         ISriInvoiceXmlValidator sriInvoiceXmlValidator,
         IOptions<SriOptions> sriOptions,
-        TenantAdministrationGuard administrationGuard)
+        TenantAdministrationGuard administrationGuard,
+        IFiscalProfileService? fiscalProfiles = null)
     {
         _context = context;
         _logger = logger;
@@ -59,6 +61,7 @@ public class SalesService : ISalesService
         _sriInvoiceXmlValidator = sriInvoiceXmlValidator;
         _sriOptions = sriOptions.Value;
         _administrationGuard = administrationGuard;
+        _fiscalProfiles = fiscalProfiles ?? new FiscalProfileService(context, operationalContextAccessor, businessClock, sriFiscalClock);
     }
 
     public async Task<SaleListResultDto> GetSalesAsync(SaleListQueryDto request)
@@ -477,6 +480,80 @@ public class SalesService : ISalesService
             .FirstOrDefaultAsync();
     }
 
+    public async Task<SalePreviewDto> PreviewAsync(SaleCreateDto dto)
+    {
+        if (dto.Items is null || dto.Items.Count == 0) throw new InvalidOperationException("SALE_ITEMS_REQUIRED");
+        var operational = await _operationalContextAccessor.GetRequiredContextAsync();
+        var payment = dto.PaymentMethod ?? SalePaymentMethod.Cash;
+        var document = dto.DocumentType ?? SaleDocumentType.Ticket;
+        if (!Enum.IsDefined(payment)) throw new InvalidOperationException("INVALID_SALE_PAYMENT_METHOD");
+        if (!Enum.IsDefined(document)) throw new InvalidOperationException("INVALID_SALE_DOCUMENT_TYPE");
+        ValidateRequestAmounts(dto, payment, preview: true);
+        await using var tx = await _context.Database.BeginTransactionAsync();
+        await _administrationGuard.LockExclusiveOperationalWriteAsync(operational);
+        var ids = dto.Items.Select(i => i.ProductId).Distinct().ToArray();
+        var products = await _context.Products.AsNoTracking()
+            .Where(p => p.CompanyId == operational.CompanyId && ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
+        if (products.Count != ids.Length) throw new KeyNotFoundException("PRODUCT_NOT_FOUND");
+        if (products.Values.Any(p => !p.IsActive)) throw new InvalidOperationException("PRODUCT_INACTIVE");
+        var sale = new Sale { DocumentType = document, PaymentMethod = payment };
+        var now = _sriFiscalClock.UtcNow;
+        try { await CalculateFiscalSaleAsync(sale, dto, products, operational, now); }
+        catch (OverflowException) { throw new InvalidOperationException("SALE_AMOUNT_INVALID"); }
+        await tx.CommitAsync();
+        var issuer = JsonSerializer.Deserialize<FiscalIssuerSnapshot>(sale.FiscalIssuerSnapshotJson!)!;
+        return new SalePreviewDto(sale.FiscalFingerprint!, issuer.FiscalDate, issuer.ProfileRevision,
+            sale.GrossSubtotal, sale.DiscountAmount, sale.Subtotal, sale.TaxAmount, sale.Total,
+            sale.Vat15Subtotal, sale.Vat5Subtotal, sale.Vat0Subtotal, sale.VatExemptSubtotal, sale.VatNotSubjectSubtotal,
+            sale.Items.Select(i => new SalePreviewItemDto(i.ProductId, i.Quantity, i.UnitPrice, i.DiscountAmount,
+                i.VatCategory, i.VatRate, i.TaxableSubtotal, i.TaxAmount, i.LineTotal)).ToList());
+    }
+
+    private async Task CalculateFiscalSaleAsync(Sale sale, SaleCreateDto dto,
+        IReadOnlyDictionary<int, Product> products, OperationalContext operational, DateTime now)
+    {
+        var date = _sriFiscalClock.GetEcuadorFiscalDate(now);
+        var issuer = await _fiscalProfiles.SnapshotAsync(operational, date);
+        var profile = await _fiscalProfiles.ResolveAsync(operational.CompanyId, date);
+        var classifications = await _fiscalProfiles.ResolveClassificationsAsync(operational.CompanyId, products.Keys.ToArray());
+        sale.FiscalProfileId = issuer.ProfileId;
+        sale.FiscalIssuerSnapshotJson = JsonSerializer.Serialize(issuer);
+        foreach (var item in dto.Items.OrderBy(i => i.ProductId))
+        {
+            var product = products[item.ProductId];
+            var decision = FiscalTaxResolver.Resolve(profile, product, classifications.GetValueOrDefault(product.Id), date);
+            var gross = RoundMoney(item.Quantity * item.UnitPrice);
+            var discount = RoundMoney(item.DiscountAmount ?? 0m);
+            if (discount < 0m || discount > gross) throw new InvalidOperationException("INVALID_LINE_DISCOUNT");
+            var tax = CalculateLineTax(gross, discount, decision.Category);
+            sale.Items.Add(new SaleItem
+            {
+                ProductId = product.Id, ProductNameSnapshot = product.Name, ProductSkuSnapshot = product.InternalCode,
+                Quantity = item.Quantity, UnitPrice = item.UnitPrice, UnitCost = product.Cost,
+                GrossSubtotal = gross, DiscountAmount = discount, NetSubtotal = tax.TaxableSubtotal,
+                LineSubtotal = tax.TaxableSubtotal, TaxableSubtotal = tax.TaxableSubtotal,
+                VatCategory = decision.Category, VatRate = decision.Rate, TaxAmount = tax.TaxAmount,
+                LineTotal = tax.LineTotal, FiscalDecisionJson = JsonSerializer.Serialize(decision)
+            });
+        }
+        ApplySaleTaxTotals(sale, dto.DiscountAmount ?? 0m);
+        if (sale.Total > MaximumMoney || sale.GrossSubtotal > MaximumMoney)
+            throw new InvalidOperationException("SALE_AMOUNT_INVALID");
+        var material = new
+        {
+            Version = 1, operational.CompanyId, operational.EstablishmentId, operational.EmissionPointId,
+            operational.UserId, dto.CustomerId, sale.DocumentType, sale.PaymentMethod, Issuer = issuer,
+            Items = sale.Items.Select(i => new
+            {
+                i.ProductId, Quantity = i.Quantity.ToString("G29", CultureInfo.InvariantCulture),
+                UnitPrice = i.UnitPrice.ToString("G29", CultureInfo.InvariantCulture),
+                i.DiscountAmount, i.TaxableSubtotal, i.TaxAmount, i.LineTotal, i.FiscalDecisionJson,
+                products[i.ProductId].Name, products[i.ProductId].InternalCode, products[i.ProductId].Barcode
+            }), sale.DiscountAmount, sale.Subtotal, sale.TaxAmount, sale.Total
+        };
+        sale.FiscalFingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(material))));
+    }
+
     public async Task<SaleDto> CreateAsync(SaleCreateDto dto)
     {
         OperationalContext? operationalContext = null;
@@ -526,8 +603,6 @@ public class SalesService : ISalesService
             if ((dto.Notes?.Trim().Length ?? 0) > 500)
                 throw new InvalidOperationException("SALE_NOTES_TOO_LONG");
             ValidateRequestAmounts(dto, paymentMethod);
-            var cashSession = await _cashSessionService.GetRequiredOpenSessionForCurrentContextAsync();
-            await _administrationGuard.LockExclusiveOperationalWriteAsync(operationalContext);
 
             Customer? customer = null;
 
@@ -572,7 +647,7 @@ public class SalesService : ISalesService
                 }
             }
 
-            var now = _businessClock.UtcNow;
+            var now = _sriFiscalClock.UtcNow;
             var businessDate = _businessClock.GetBusinessDate(now, operationalContext.CompanyTimeZoneId);
             var buyerSnapshot = ResolveBuyerSnapshot(customer, documentType);
             var sale = new Sale
@@ -589,7 +664,6 @@ public class SalesService : ISalesService
                 BuyerIdentificationSnapshot = buyerSnapshot.Identification,
                 BuyerAddressSnapshot = buyerSnapshot.Address,
                 BuyerEmailSnapshot = buyerSnapshot.Email,
-                CashSessionId = cashSession.Id,
                 Status = SaleStatus.Completed,
                 PaymentMethod = paymentMethod,
                 DocumentType = documentType,
@@ -600,53 +674,11 @@ public class SalesService : ISalesService
                 UpdatedAt = now
             };
 
-            foreach (var itemDto in dto.Items.OrderBy(i => i.ProductId))
-            {
-                if (itemDto.Quantity <= 0m)
-                {
-                    throw new InvalidOperationException("INVALID_QUANTITY");
-                }
-
-                if (itemDto.UnitPrice < 0m)
-                {
-                    throw new InvalidOperationException("INVALID_UNIT_PRICE");
-                }
-
-                var product = products[itemDto.ProductId];
-                var unitCost = product.Cost;
-                var grossSubtotal = RoundMoney(itemDto.Quantity * itemDto.UnitPrice);
-                var lineDiscount = RoundMoney(itemDto.DiscountAmount ?? 0m);
-                var lineCost = RoundMoney(itemDto.Quantity * unitCost);
-
-                if (lineDiscount < 0m || lineDiscount > grossSubtotal)
-                {
-                    throw new InvalidOperationException("INVALID_LINE_DISCOUNT");
-                }
-
-                var taxSnapshot = CalculateLineTax(grossSubtotal, lineDiscount, product.VatCategory);
-
-                sale.Items.Add(new SaleItem
-                {
-                    ProductId = itemDto.ProductId,
-                    ProductNameSnapshot = product.Name,
-                    ProductSkuSnapshot = product.InternalCode,
-                    Quantity = itemDto.Quantity,
-                    UnitPrice = itemDto.UnitPrice,
-                    UnitCost = unitCost,
-                    GrossSubtotal = grossSubtotal,
-                    DiscountAmount = lineDiscount,
-                    NetSubtotal = taxSnapshot.TaxableSubtotal,
-                    LineSubtotal = taxSnapshot.TaxableSubtotal,
-                    VatCategory = product.VatCategory,
-                    VatRate = taxSnapshot.VatRate,
-                    TaxableSubtotal = taxSnapshot.TaxableSubtotal,
-                    TaxAmount = taxSnapshot.TaxAmount,
-                    LineTotal = taxSnapshot.LineTotal,
-                    LineCost = lineCost
-                });
-            }
-
-            ApplySaleTaxTotals(sale, dto.DiscountAmount ?? 0m);
+            await CalculateFiscalSaleAsync(sale, dto, products, operationalContext, now);
+            if (string.IsNullOrWhiteSpace(dto.FiscalFingerprint))
+                throw new InvalidOperationException("FISCAL_PREVIEW_REQUIRED");
+            if (!string.Equals(dto.FiscalFingerprint, sale.FiscalFingerprint, StringComparison.Ordinal))
+                throw new InvalidOperationException("FISCAL_PREVIEW_CHANGED");
             if (sale.Total > MaximumMoney || sale.GrossSubtotal > MaximumMoney)
                 throw new InvalidOperationException("SALE_AMOUNT_INVALID");
             if (paymentMethod == SalePaymentMethod.Cash)
@@ -658,9 +690,12 @@ public class SalesService : ISalesService
                 sale.CashChange = RoundMoney(received - sale.Total);
             }
 
+            // No cash/number/stock effects until the operator's fiscal preview is current.
+            var cashSession = await _cashSessionService.GetRequiredOpenSessionForCurrentContextAsync();
+            sale.CashSessionId = cashSession.Id;
             var numberAssignment = await _fiscalDocumentNumberService.AssignNextAsync(
                 operationalContext,
-                ToFiscalDocumentType(documentType));
+                ToFiscalDocumentType(documentType), now);
 
             sale.Number = numberAssignment.Number;
             sale.EstablishmentCodeSnapshot = numberAssignment.EstablishmentCode;
@@ -752,7 +787,7 @@ public class SalesService : ISalesService
 
     private const decimal MaximumMoney = 9999999999999999.99m;
 
-    private static void ValidateRequestAmounts(SaleCreateDto dto, SalePaymentMethod paymentMethod)
+    private static void ValidateRequestAmounts(SaleCreateDto dto, SalePaymentMethod paymentMethod, bool preview = false)
     {
         if (dto.Items.Count > 500 || dto.Items.Any(i => i.Quantity <= 0m
             || i.Quantity > 99999999999999.9999m || decimal.Round(i.Quantity, 4) != i.Quantity
@@ -760,6 +795,7 @@ public class SalesService : ISalesService
             || (i.DiscountAmount ?? 0m) < 0m || (i.DiscountAmount ?? 0m) > MaximumMoney)
             || (dto.DiscountAmount ?? 0m) < 0m || (dto.DiscountAmount ?? 0m) > MaximumMoney)
             throw new InvalidOperationException("SALE_AMOUNT_INVALID");
+        if (preview) return;
         if (paymentMethod == SalePaymentMethod.Cash)
         {
             if (!dto.CashReceived.HasValue || dto.CashReceived < 0m || dto.CashReceived > MaximumMoney)
@@ -1212,17 +1248,29 @@ public class SalesService : ISalesService
         decimal globalDiscount)
     {
         var orderedItems = items.OrderBy(i => i.ProductId).ToList();
-        var allocatedDiscount = 0m;
+        var allocations = new decimal[orderedItems.Count];
+        var remaining = globalDiscount;
 
         for (var index = 0; index < orderedItems.Count; index++)
         {
             var item = orderedItems[index];
-            var allocation = index == orderedItems.Count - 1
-                ? globalDiscount - allocatedDiscount
+            var proposed = index == orderedItems.Count - 1
+                ? remaining
                 : RoundMoney(globalDiscount * item.NetSubtotal / lineNetSubtotal);
-
-            allocatedDiscount += allocation;
-
+            allocations[index] = Math.Clamp(proposed, 0m, Math.Min(remaining, item.NetSubtotal));
+            remaining -= allocations[index];
+        }
+        // Preserve the established order/rounding, but never assign a negative residual or exceed a line base.
+        for (var index = orderedItems.Count - 1; index >= 0 && remaining > 0m; index--)
+        {
+            var extra = Math.Min(remaining, orderedItems[index].NetSubtotal - allocations[index]);
+            allocations[index] += extra; remaining -= extra;
+        }
+        if (remaining != 0m) throw new InvalidOperationException("INVALID_SALE_DISCOUNT");
+        for (var index = 0; index < orderedItems.Count; index++)
+        {
+            var item = orderedItems[index];
+            var allocation = allocations[index];
             item.DiscountAmount = RoundMoney(item.DiscountAmount + allocation);
             item.NetSubtotal = RoundMoney(item.NetSubtotal - allocation);
             item.LineSubtotal = item.NetSubtotal;

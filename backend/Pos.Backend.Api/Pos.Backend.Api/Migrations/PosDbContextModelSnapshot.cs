@@ -461,6 +461,81 @@ namespace Pos.Backend.Api.Migrations
                     b.ToTable("CompanyEmailSettings");
                 });
 
+            modelBuilder.Entity("Pos.Backend.Api.Core.Entities.CompanyFiscalProfile", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Confirmed")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("DeclaredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DeclaredByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("EffectiveUntil")
+                        .HasColumnType("date");
+
+                    b.Property<string>("EvidenceReference")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("IsAccountingRequired")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("Regime")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("RimpeEligibilityConfirmed")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("SpecialTaxpayerResolution")
+                        .HasMaxLength(13)
+                        .HasColumnType("character varying(13)");
+
+                    b.Property<int>("TaxpayerKind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("WithholdingAgentResolution")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "DeclaredByUserId");
+
+                    b.HasIndex("CompanyId", "Revision")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "EffectiveFrom", "Revision")
+                        .IsUnique();
+
+                    b.ToTable("CompanyFiscalProfiles", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanyFiscalProfiles_Declaration", "\"Revision\" > 0 AND \"Confirmed\" AND \"Regime\" BETWEEN 0 AND 2 AND \"TaxpayerKind\" BETWEEN 0 AND 1 AND (\"EffectiveUntil\" IS NULL OR \"EffectiveUntil\" > \"EffectiveFrom\")");
+                        });
+                });
+
             modelBuilder.Entity("Pos.Backend.Api.Core.Entities.CompanySriCertificate", b =>
                 {
                     b.Property<int>("Id")
@@ -682,6 +757,12 @@ namespace Pos.Backend.Api.Migrations
                     b.Property<int>("EstablishmentId")
                         .HasColumnType("integer");
 
+                    b.Property<string>("FiscalIssuerSnapshotJson")
+                        .HasColumnType("text");
+
+                    b.Property<long?>("FiscalProfileId")
+                        .HasColumnType("bigint");
+
                     b.Property<decimal>("GrossSubtotal")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
@@ -863,6 +944,8 @@ namespace Pos.Backend.Api.Migrations
 
                     b.HasIndex("UserId");
 
+                    b.HasIndex("CompanyId", "FiscalProfileId");
+
                     b.HasIndex("CompanyId", "EstablishmentId", "EmissionPointId", "Sequential")
                         .IsUnique()
                         .HasFilter("\"Sequential\" IS NOT NULL");
@@ -887,6 +970,9 @@ namespace Pos.Backend.Api.Migrations
                     b.Property<decimal>("DiscountAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("FiscalDecisionJson")
+                        .HasColumnType("text");
 
                     b.Property<decimal>("GrossSubtotal")
                         .HasPrecision(18, 2)
@@ -2164,6 +2250,9 @@ namespace Pos.Backend.Api.Migrations
                     b.Property<int?>("CurrentCostEventId")
                         .HasColumnType("integer");
 
+                    b.Property<long>("FiscalRevision")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("InternalCode")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -2271,6 +2360,80 @@ namespace Pos.Backend.Api.Migrations
                         {
                             t.HasCheckConstraint("CK_ProductCostEvents_Source", "(\"SourceType\" = 2 AND \"PurchaseReceiptItemId\" IS NOT NULL) OR (\"SourceType\" IN (0, 1) AND \"PurchaseReceiptItemId\" IS NULL)");
                         });
+                });
+
+            modelBuilder.Entity("Pos.Backend.Api.Core.Entities.ProductFiscalClassification", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("Activity")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Confirmed")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("ConstructionMaterialConfirmed")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("DeclaredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DeclaredByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("DeclaredVatCategory")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("EvidenceReference")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int?>("FoodProcessing")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("LegalReference")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("NaturalAgriculturalFoodConfirmed")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("ProductFiscalRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SriMaterialCode")
+                        .HasMaxLength(25)
+                        .HasColumnType("character varying(25)");
+
+                    b.Property<int>("TaxBasis")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "DeclaredByUserId");
+
+                    b.HasIndex("CompanyId", "ProductId", "Revision")
+                        .IsUnique();
+
+                    b.ToTable("ProductFiscalClassifications");
                 });
 
             modelBuilder.Entity("Pos.Backend.Api.Core.Entities.ProductStock", b =>
@@ -2642,6 +2805,15 @@ namespace Pos.Backend.Api.Migrations
                     b.Property<int>("EstablishmentId")
                         .HasColumnType("integer");
 
+                    b.Property<string>("FiscalFingerprint")
+                        .HasColumnType("text");
+
+                    b.Property<string>("FiscalIssuerSnapshotJson")
+                        .HasColumnType("text");
+
+                    b.Property<long?>("FiscalProfileId")
+                        .HasColumnType("bigint");
+
                     b.Property<decimal>("GrossMarginPercent")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(18, 4)
@@ -2847,6 +3019,8 @@ namespace Pos.Backend.Api.Migrations
 
                     b.HasIndex("VoidedByUserId");
 
+                    b.HasIndex("CompanyId", "FiscalProfileId");
+
                     b.HasIndex("CompanyId", "RequestId")
                         .IsUnique()
                         .HasFilter("\"RequestId\" IS NOT NULL");
@@ -2974,6 +3148,9 @@ namespace Pos.Backend.Api.Migrations
                     b.Property<decimal>("DiscountAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("FiscalDecisionJson")
+                        .HasColumnType("text");
 
                     b.Property<decimal>("GrossMarginPercent")
                         .ValueGeneratedOnAdd()
@@ -3429,6 +3606,22 @@ namespace Pos.Backend.Api.Migrations
                     b.Navigation("UpdatedByUser");
                 });
 
+            modelBuilder.Entity("Pos.Backend.Api.Core.Entities.CompanyFiscalProfile", b =>
+                {
+                    b.HasOne("Pos.Backend.Api.Core.Entities.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Pos.Backend.Api.Core.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DeclaredByUserId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Pos.Backend.Api.Core.Entities.CompanySriCertificate", b =>
                 {
                     b.HasOne("Pos.Backend.Api.Core.Entities.Company", "Company")
@@ -3519,6 +3712,12 @@ namespace Pos.Backend.Api.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("Pos.Backend.Api.Core.Entities.CompanyFiscalProfile", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "FiscalProfileId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("CancelledByUser");
 
@@ -4089,6 +4288,29 @@ namespace Pos.Backend.Api.Migrations
                     b.Navigation("PurchaseReceiptItem");
                 });
 
+            modelBuilder.Entity("Pos.Backend.Api.Core.Entities.ProductFiscalClassification", b =>
+                {
+                    b.HasOne("Pos.Backend.Api.Core.Entities.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Pos.Backend.Api.Core.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DeclaredByUserId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Pos.Backend.Api.Core.Entities.Product", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ProductId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Pos.Backend.Api.Core.Entities.ProductStock", b =>
                 {
                     b.HasOne("Pos.Backend.Api.Core.Entities.Company", "Company")
@@ -4256,6 +4478,12 @@ namespace Pos.Backend.Api.Migrations
                     b.HasOne("Pos.Backend.Api.Core.Entities.User", "VoidedByUser")
                         .WithMany()
                         .HasForeignKey("VoidedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Pos.Backend.Api.Core.Entities.CompanyFiscalProfile", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "FiscalProfileId")
+                        .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("CashSession");

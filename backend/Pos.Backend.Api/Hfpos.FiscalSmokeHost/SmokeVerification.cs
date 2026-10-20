@@ -38,7 +38,13 @@ internal static class SmokeVerification
         { environment = 1, emissionType = 1, isEnabled = true, automaticProcessingEnabled = true }))
             enabled.EnsureSuccessStatusCode();
         SaleDto sale;
-        using (var result = await cashier.PostAsJsonAsync("/api/Sales", fixture.Request()))
+        var request = fixture.Request();
+        using (var preview = await cashier.PostAsJsonAsync("/api/Sales/preview", request))
+        {
+            preview.EnsureSuccessStatusCode();
+            request.FiscalFingerprint = (await preview.Content.ReadFromJsonAsync<SalePreviewDto>())!.Fingerprint;
+        }
+        using (var result = await cashier.PostAsJsonAsync("/api/Sales", request))
         {
             result.EnsureSuccessStatusCode(); sale = (await result.Content.ReadFromJsonAsync<SaleDto>())!;
         }

@@ -61,12 +61,13 @@
       <span><strong>Subtotal bruto:</strong> {{ grossSubtotal | currency: 'USD' }}</span>
       <span class="discount-line"><strong>Descuentos:</strong> -{{ discountAmount | currency: 'USD' }}</span>
       <span><strong>Subtotal neto:</strong> {{ subtotal | currency: 'USD' }}</span>
-      <span><strong>IVA estimado:</strong> {{ taxAmount | currency: 'USD' }}</span>
+      <span><strong>IVA:</strong> {{ taxAmount | currency: 'USD' }}</span>
       <strong>Total: {{ total | currency: 'USD' }}</strong>
     </div>
     <p><strong>Notas:</strong> {{ notes || 'Sin notas' }}</p>
     <p class="hint">Presiona Enter para confirmar o Escape para cancelar.</p>
 
-    <p-button label="Confirmar" icon="pi pi-check" [loading]="loading" [disabled]="loading" (onClick)="confirm.emit()"></p-button>
+    @if (!fiscalReady) { <p role="alert">{{ fiscalError || 'Calculando impuestos en el servidor...' }}</p> }
+    <p-button label="Confirmar" icon="pi pi-check" [loading]="loading" [disabled]="loading || !fiscalReady" (onClick)="confirm.emit()"></p-button>
   </div>
 </p-dialog>

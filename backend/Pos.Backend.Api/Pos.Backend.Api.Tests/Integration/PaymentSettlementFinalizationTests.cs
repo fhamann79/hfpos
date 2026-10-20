@@ -39,7 +39,7 @@ public sealed class PaymentSettlementFinalizationTests(PostgresDatabaseFixture d
 
         var writing = voidSale
             ? writer.Sales.VoidAsync(saleId, new VoidSaleDto { Reason = "Synthetic void" })
-            : writer.Sales.CreateAsync(SaleRequest(tenant, SalePaymentMethod.Card));
+            : writer.Sales.CreateWithPreviewAsync(SaleRequest(tenant, SalePaymentMethod.Card));
         Task<PaymentSettlementDto>? settling = null;
         try
         {
@@ -179,7 +179,7 @@ public sealed class PaymentSettlementFinalizationTests(PostgresDatabaseFixture d
 
     private async Task<TestTenant> TenantAsync(string key, int seed)
     {
-        var tenant = await TestDataBuilder.CreateTenantAsync(database, key, seed, 5m);
+        var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, key, seed, 5m);
         await using var services = new TestServiceScope(database, tenant.OperationalContext,
             new FixedBusinessClock(BeforeMidnight));
         await services.CashSessions.OpenAsync(new OpenCashSessionDto { OpeningAmount = 20m });
@@ -190,7 +190,7 @@ public sealed class PaymentSettlementFinalizationTests(PostgresDatabaseFixture d
     {
         await using var services = new TestServiceScope(database, tenant.OperationalContext,
             new FixedBusinessClock(BeforeMidnight));
-        return (await services.Sales.CreateAsync(SaleRequest(tenant, method))).Id;
+        return (await services.Sales.CreateWithPreviewAsync(SaleRequest(tenant, method))).Id;
     }
 
     private async Task<int> AddAuthorizedNoteAsync(TestTenant tenant, int saleId)

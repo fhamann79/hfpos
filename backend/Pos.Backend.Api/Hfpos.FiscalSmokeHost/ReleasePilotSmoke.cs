@@ -125,8 +125,25 @@ internal static class ReleasePilotSmoke
         }
         await LoginAsync(tenant, "/api/Auth/login", "pilot-tenant", TenantPassword);
         var cash = await PostAsync<CashSessionDto>(tenant, "/api/CashSessions/open", new OpenCashSessionDto { OpeningAmount = 10 });
+        await PostAsync<FiscalProfileDto>(tenant, "/api/FiscalSettings/profiles", new DeclareFiscalProfileDto
+        {
+            Regime = FiscalRegime.General, TaxpayerKind = TaxpayerKind.Natural,
+            EffectiveFrom = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-5)), Confirmed = true,
+            Reason = "Synthetic pilot fiscal fixture", EvidenceReference = "Synthetic declaration, no real taxpayer"
+        });
+        await PostAsync<ProductFiscalClassificationDto>(tenant, $"/api/FiscalSettings/profiles/products/{product}",
+            new DeclareProductFiscalClassificationDto
+            {
+                ExpectedProductRevision = 0,
+                Kind = FiscalProductKind.Goods, Activity = FiscalActivity.EligibleCommerce,
+                TaxBasis = FiscalTaxBasis.NaturalAgriculturalFoodArt55_1, NaturalAgriculturalFoodConfirmed = true,
+                FoodProcessing = NaturalFoodProcessing.None, Confirmed = true,
+                LegalReference = "LRTI 55.1 - synthetic natural agricultural food fixture",
+                EvidenceReference = "Synthetic product facts only"
+            });
         var request = new SaleCreateDto { RequestId = Guid.NewGuid(), CashReceived = 20, DocumentType = SaleDocumentType.Ticket,
             Items = [new() { ProductId = product, Quantity = 1, UnitPrice = 10 }] };
+        request.FiscalFingerprint = (await PostAsync<SalePreviewDto>(tenant, "/api/Sales/preview", request)).Fingerprint;
         var ticket = await PostAsync<SaleDto>(tenant, "/api/Sales", request);
         Assert.Equal(10, ticket.Total); Assert.Equal(10, ticket.CashChange);
         Assert.Equal(ticket.Id, (await PostAsync<SaleDto>(tenant, "/api/Sales", request)).Id);
@@ -149,6 +166,7 @@ internal static class ReleasePilotSmoke
         using (var response = await tenant.PutAsJsonAsync("/api/FiscalSettings/sri", new { environment = 1, emissionType = 1, isEnabled = true, automaticProcessingEnabled = true }))
             response.EnsureSuccessStatusCode();
         request.RequestId = Guid.NewGuid(); request.DocumentType = SaleDocumentType.Invoice; request.PaymentMethod = SalePaymentMethod.Card; request.CashReceived = null;
+        request.FiscalFingerprint = (await PostAsync<SalePreviewDto>(tenant, "/api/Sales/preview", request)).Fingerprint;
         var invoice = await PostAsync<SaleDto>(tenant, "/api/Sales", request);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         do

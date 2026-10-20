@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Pos.Backend.Api.Core.Entities;
@@ -16,36 +17,39 @@ public class SriXmlDraftService : ISriXmlDraftService
     public string GenerateInvoiceXmlDraft(SriXmlDraftRequest request)
     {
         var sale = request.Sale;
+        var issuer = FiscalSnapshots.Read(sale.FiscalIssuerSnapshotJson);
+        var company = issuer is null ? request.Company : FiscalSnapshots.IssuerCompany(issuer);
 
         ValidateInvoiceContext(sale, request.Environment, request.EmissionType);
 
         var buyer = ResolveBuyer(sale, request.Customer);
         var matrixAddress = RequiredText(
-            request.Company.MatrixAddress,
+            company.MatrixAddress,
             300,
             "SRI_COMPANY_MATRIX_ADDRESS_REQUIRED");
 
         var infoTributaria = new XElement("infoTributaria",
             new XElement("ambiente", request.Environment.ToString(CultureInfo.InvariantCulture)),
             new XElement("tipoEmision", request.EmissionType.ToString(CultureInfo.InvariantCulture)),
-            new XElement("razonSocial", RequiredText(request.Company.Name, 300, "SRI_XML_REQUIRED_FIELD_MISSING")),
-            OptionalElement("nombreComercial", request.Company.TradeName, 300),
-            new XElement("ruc", RequiredNumeric(request.Company.Ruc, 13, "INVALID_ISSUER_RUC")),
+            new XElement("razonSocial", RequiredText(company.Name, 300, "SRI_XML_REQUIRED_FIELD_MISSING")),
+            OptionalElement("nombreComercial", company.TradeName, 300),
+            new XElement("ruc", RequiredNumeric(company.Ruc, 13, "INVALID_ISSUER_RUC")),
             new XElement("claveAcceso", RequiredNumeric(sale.AccessKey, 49, "INVALID_SRI_DOCUMENT_CONTEXT")),
             new XElement("codDoc", "01"),
             new XElement("estab", RequiredNumeric(sale.EstablishmentCodeSnapshot, 3, "INVALID_SRI_DOCUMENT_CONTEXT")),
             new XElement("ptoEmi", RequiredNumeric(sale.EmissionPointCodeSnapshot, 3, "INVALID_SRI_DOCUMENT_CONTEXT")),
             new XElement("secuencial", sale.Sequential!.Value.ToString("000000000", CultureInfo.InvariantCulture)),
             new XElement("dirMatriz", matrixAddress),
-            ResolveRimpeElement(request.Company.TaxpayerRegime));
+            OptionalElement("agenteRetencion", issuer?.WithholdingAgentResolution, 8),
+            ResolveRimpeElement(company.TaxpayerRegime));
 
         var emissionDate = request.FiscalEmissionDate ?? DateOnly.FromDateTime(sale.DocumentIssuedAt!.Value);
 
         var infoFactura = new XElement("infoFactura",
             new XElement("fechaEmision", emissionDate.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)),
-            OptionalElement("dirEstablecimiento", request.Establishment.Address, 300),
-            OptionalElement("contribuyenteEspecial", NormalizeSpecialTaxpayerNumber(request.Company.SpecialTaxpayerNumber), 13),
-            new XElement("obligadoContabilidad", request.Company.IsAccountingRequired ? "SI" : "NO"),
+            OptionalElement("dirEstablecimiento", issuer is null ? request.Establishment.Address : issuer.EstablishmentAddress, 300),
+            OptionalElement("contribuyenteEspecial", NormalizeSpecialTaxpayerNumber(company.SpecialTaxpayerNumber), 13),
+            new XElement("obligadoContabilidad", company.IsAccountingRequired ? "SI" : "NO"),
             new XElement("tipoIdentificacionComprador", buyer.IdentificationType),
             new XElement("razonSocialComprador", buyer.Name),
             new XElement("identificacionComprador", buyer.Identification),
@@ -224,10 +228,15 @@ public class SriXmlDraftService : ISriXmlDraftService
         var product = ResolveProduct(request, item.ProductId);
         var productCodes = ResolveProductCodes(product);
         var vatMapping = ResolveVatMapping(item.VatCategory);
+        var decision = item.FiscalDecisionJson is null ? null : JsonSerializer.Deserialize<FiscalDecision>(item.FiscalDecisionJson);
+        if (decision is not null && (decision.Category != item.VatCategory || decision.Rate != item.VatRate
+            || decision.PercentageCode != vatMapping.PercentageCode))
+            throw new InvalidOperationException("FISCAL_SNAPSHOT_INVALID");
 
         return new XElement("detalle",
             new XElement("codigoPrincipal", productCodes.MainCode),
-            productCodes.AuxiliaryCode is null ? null : new XElement("codigoAuxiliar", productCodes.AuxiliaryCode),
+            (decision?.SriMaterialCode ?? productCodes.AuxiliaryCode) is { } auxiliary
+                ? new XElement("codigoAuxiliar", auxiliary) : null,
             new XElement("descripcion", RequiredText(product.Name, 300, "SRI_XML_REQUIRED_FIELD_MISSING", allowSafeTruncate: true)),
             new XElement("cantidad", FormatQuantity(item.Quantity)),
             new XElement("precioUnitario", FormatUnitPrice(item.UnitPrice)),
@@ -326,7 +335,7 @@ public class SriXmlDraftService : ISriXmlDraftService
             return null;
         }
 
-        if (normalized.Length is < 3 or > 13 || !normalized.All(char.IsDigit))
+        if (normalized.Length is < 3 or > 13 || !normalized.All(char.IsAsciiLetterOrDigit))
         {
             throw new InvalidOperationException("SRI_XML_INVALID_FIELD_FORMAT");
         }

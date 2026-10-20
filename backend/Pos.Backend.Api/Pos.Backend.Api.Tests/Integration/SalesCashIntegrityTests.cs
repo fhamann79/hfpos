@@ -18,12 +18,12 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
     [Fact]
     public async Task Create_without_open_cash_session_leaves_no_partial_sale_or_inventory()
     {
-        var tenant = await TestDataBuilder.CreateTenantAsync(database, "no-cash", 1, 5m);
+        var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "no-cash", 1, 5m);
 
         await using (var services = new TestServiceScope(database, tenant.OperationalContext))
         {
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => services.Sales.CreateAsync(CreateCashSaleRequest(tenant.Products[0])));
+                () => services.Sales.CreateWithPreviewAsync(CreateCashSaleRequest(tenant.Products[0])));
 
             Assert.Equal("CASH_SESSION_REQUIRED", exception.Message);
         }
@@ -39,7 +39,7 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
     [Fact]
     public async Task Create_wins_over_close_and_closed_snapshot_includes_the_sale()
     {
-        var tenant = await TestDataBuilder.CreateTenantAsync(database, "create-wins", 2, 5m);
+        var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "create-wins", 2, 5m);
         var sessionId = await OpenCashSessionAsync(tenant);
         var createLockAcquired = new AsyncTestSignal();
 
@@ -59,7 +59,7 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
         var closeOutcomeTask = CaptureAsync(closeServices.CashSessions.CloseAsync(
             sessionId,
             new CloseCashSessionDto { CountedCashAmount = 30m }));
-        var createOutcomeTask = CaptureAsync(createServices.Sales.CreateAsync(
+        var createOutcomeTask = CaptureAsync(createServices.Sales.CreateWithPreviewAsync(
             CreateCashSaleRequest(tenant.Products[0])));
 
         await Task.WhenAll(new Task[] { createOutcomeTask, closeOutcomeTask })
@@ -91,7 +91,7 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
     [Fact]
     public async Task Close_wins_over_create_and_create_rolls_back_without_consuming_stock_or_number()
     {
-        var tenant = await TestDataBuilder.CreateTenantAsync(database, "close-wins", 3, 5m);
+        var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "close-wins", 3, 5m);
         var sessionId = await OpenCashSessionAsync(tenant);
         var closeLockAcquired = new AsyncTestSignal();
 
@@ -108,7 +108,7 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
                 SqlCommandMatchers.CashSessionByIdForUpdate,
                 closeLockAcquired));
 
-        var createOutcomeTask = CaptureAsync(createServices.Sales.CreateAsync(
+        var createOutcomeTask = CaptureAsync(createServices.Sales.CreateWithPreviewAsync(
             CreateCashSaleRequest(tenant.Products[0])));
         var closeOutcomeTask = CaptureAsync(closeServices.CashSessions.CloseAsync(
             sessionId,
@@ -140,7 +140,7 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
     [Fact]
     public async Task Void_cash_sale_with_original_open_session_restores_stock_without_cash_out()
     {
-        var tenant = await TestDataBuilder.CreateTenantAsync(database, "void-open", 4, 5m);
+        var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "void-open", 4, 5m);
         var (sessionId, saleId) = await OpenAndCreateCashSaleAsync(tenant);
 
         await using (var services = new TestServiceScope(database, tenant.OperationalContext))
@@ -174,7 +174,7 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
     [Fact]
     public async Task Void_cash_sale_after_close_preserves_original_snapshot_and_creates_one_current_cash_out()
     {
-        var tenant = await TestDataBuilder.CreateTenantAsync(database, "void-closed", 5, 5m);
+        var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "void-closed", 5, 5m);
         var (originalSessionId, saleId) = await OpenAndCreateCashSaleAsync(tenant);
         await CloseCashSessionAsync(tenant, originalSessionId, 30m);
         var currentSessionId = await OpenCashSessionAsync(tenant);
@@ -213,7 +213,7 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
     [Fact]
     public async Task Void_cash_sale_after_close_without_current_session_is_fully_rejected()
     {
-        var tenant = await TestDataBuilder.CreateTenantAsync(database, "void-no-current", 6, 5m);
+        var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "void-no-current", 6, 5m);
         var (originalSessionId, saleId) = await OpenAndCreateCashSaleAsync(tenant);
         await CloseCashSessionAsync(tenant, originalSessionId, 30m);
 
@@ -249,7 +249,7 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
     [Fact]
     public async Task Concurrent_double_void_restores_stock_and_creates_cash_out_exactly_once()
     {
-        var tenant = await TestDataBuilder.CreateTenantAsync(database, "double-void", 7, 5m);
+        var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "double-void", 7, 5m);
         var (originalSessionId, saleId) = await OpenAndCreateCashSaleAsync(tenant);
         await CloseCashSessionAsync(tenant, originalSessionId, 30m);
         var currentSessionId = await OpenCashSessionAsync(tenant);
@@ -307,8 +307,8 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
     [Fact]
     public async Task Tenant_cannot_void_another_company_sale_by_id()
     {
-        var tenantA = await TestDataBuilder.CreateTenantAsync(database, "tenant-a", 8, 5m);
-        var tenantB = await TestDataBuilder.CreateTenantAsync(database, "tenant-b", 9, 5m);
+        var tenantA = await FiscalTestData.CreateFiscalTenantAsync(database, "tenant-a", 8, 5m);
+        var tenantB = await FiscalTestData.CreateFiscalTenantAsync(database, "tenant-b", 9, 5m);
         var (_, tenantBSaleId) = await OpenAndCreateCashSaleAsync(tenantB);
 
         await using (var services = new TestServiceScope(database, tenantA.OperationalContext))
@@ -337,7 +337,7 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
     [Fact]
     public async Task Inventory_failure_after_first_item_rolls_back_sale_sequence_and_all_stock_changes()
     {
-        var tenant = await TestDataBuilder.CreateTenantAsync(database, "rollback", 10, 5m, 0m);
+        var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "rollback", 10, 5m, 0m);
         await OpenCashSessionAsync(tenant);
         var request = new SaleCreateDto
         {
@@ -365,7 +365,7 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
         await using (var services = new TestServiceScope(database, tenant.OperationalContext))
         {
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => services.Sales.CreateAsync(request));
+                () => services.Sales.CreateWithPreviewAsync(request));
 
             Assert.Equal("INSUFFICIENT_STOCK", exception.Message);
         }
@@ -408,7 +408,7 @@ public sealed class SalesCashIntegrityTests(PostgresDatabaseFixture database) : 
     {
         var sessionId = await OpenCashSessionAsync(tenant);
         await using var services = new TestServiceScope(database, tenant.OperationalContext);
-        var sale = await services.Sales.CreateAsync(CreateCashSaleRequest(tenant.Products[0]));
+        var sale = await services.Sales.CreateWithPreviewAsync(CreateCashSaleRequest(tenant.Products[0]));
         return (sessionId, sale.Id);
     }
 

@@ -4,8 +4,9 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { TextareaModule } from 'primeng/textarea';
-import { TaxSummary, calculateLineNetSubtotal, calculateLineTotal, getVatCategoryOption } from '../../../../core/utils/vat-category';
+import { TaxSummary, calculateLineNetSubtotal, getVatCategoryOption } from '../../../../core/utils/vat-category';
 import { CartItem } from '../../models/cart-item.model';
+import { SalePreview } from '../../models/checkout-request.model';
 
 @Component({
   selector: 'app-cart-workstation',
@@ -20,6 +21,7 @@ export class CartWorkstation {
   @Input({ required: true }) taxAmount = 0;
   @Input({ required: true }) total = 0;
   @Input() taxSummary: TaxSummary | null = null;
+  @Input() fiscalPreview: SalePreview | null = null;
   @Input() saleDiscountAmount = 0;
   @Input() notes = '';
   @Input() canCheckout = false;
@@ -47,12 +49,17 @@ export class CartWorkstation {
     return calculateLineNetSubtotal(item.quantity, item.unitPrice, item.discountAmount);
   }
 
-  lineTotal(item: CartItem): number {
-    return calculateLineTotal(item.quantity, item.unitPrice, item.product.vatCategory, item.discountAmount);
+  effectiveLine(item: CartItem): SalePreview['items'][number] | undefined {
+    return this.fiscalPreview?.items.find(line => line.productId === item.productId);
+  }
+
+  lineTotal(item: CartItem): number | null {
+    return this.effectiveLine(item)?.lineTotal ?? null;
   }
 
   vatLabel(item: CartItem): string {
-    return getVatCategoryOption(item.product.vatCategory).shortLabel;
+    const line = this.effectiveLine(item);
+    return line ? getVatCategoryOption(line.vatCategory).shortLabel : 'IVA pendiente';
   }
 
   isActive(item: CartItem): boolean {

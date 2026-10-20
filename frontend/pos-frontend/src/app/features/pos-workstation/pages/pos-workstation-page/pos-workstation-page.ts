@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, ViewChild, computed, effect, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -13,7 +13,7 @@ import { PermissionService } from '../../../../core/services/permission.service'
 import { AuthStore } from '../../../../core/stores/auth.store';
 import { formatBusinessTime as formatBusinessTimeValue } from '../../../../core/utils/business-date-format';
 import { readErrorCode } from '../../../../core/utils/http-error-normalizer';
-import { calculateTaxSummary, roundMoney } from '../../../../core/utils/vat-category';
+import { TaxSummary, roundMoney } from '../../../../core/utils/vat-category';
 import { CartWorkstation } from '../../components/cart-workstation/cart-workstation';
 import { CheckoutConfirmDialog } from '../../components/checkout-confirm-dialog/checkout-confirm-dialog';
 import { CustomerSelectorDialog } from '../../components/customer-selector-dialog/customer-selector-dialog';
@@ -44,7 +44,7 @@ import {
 } from '../../../credit-notes/models/credit-note.model';
 import { CreditNoteService } from '../../../credit-notes/services/credit-note.service';
 import { CartItem } from '../../models/cart-item.model';
-import { CheckoutRequest } from '../../models/checkout-request.model';
+import { CheckoutRequest, SalePreview, SalePreviewRequest } from '../../models/checkout-request.model';
 import { CheckoutDraft, CheckoutIntent } from '../../models/checkout-intent.model';
 import { PosCustomer } from '../../models/pos-customer.model';
 import { PosProduct } from '../../models/pos-product.model';
@@ -155,6 +155,47 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly quickSearchVisible = signal(false);
   readonly recentSalesVisible = signal(false);
   readonly checkoutLoading = signal(false);
+  readonly fiscalPreview = signal<SalePreview | null>(null);
+  readonly fiscalPreviewLoading = signal(false);
+  readonly fiscalPreviewError = signal('');
+  private readonly acceptedPreviewKey = signal('');
+  readonly fiscalPreviewCurrent = computed(() => !!this.fiscalPreview() && this.acceptedPreviewKey() === this.previewIdentity());
+  private readonly previewRetry = signal(0);
+  private previewGeneration = 0;
+  private readonly previewEffect = effect((onCleanup) => {
+    const request = this.previewRequest();
+    const requestKey = this.previewIdentity();
+    const scope = [this.authStore.companyId(), this.authStore.establishmentId(), this.authStore.emissionPointId(), this.authStore.me()?.userId].join(':');
+    this.previewRetry();
+    const generation = ++this.previewGeneration;
+    if (this.pendingCheckout()) return;
+    this.fiscalPreview.set(null);
+    this.fiscalPreviewError.set('');
+    this.fiscalPreviewLoading.set(request.items.length > 0);
+    if (!request.items.length || !this.canSell) return;
+    const timer = setTimeout(() => {
+      if (this.destroyed || generation !== this.previewGeneration) return;
+      const subscription = this.workstationService.previewSale(request).subscribe({
+        next: (preview) => {
+          if (this.destroyed || generation !== this.previewGeneration || scope !== [this.authStore.companyId(), this.authStore.establishmentId(), this.authStore.emissionPointId(), this.authStore.me()?.userId].join(':')) return;
+          if (!preview.fingerprint || !Number.isFinite(preview.total) || preview.total < 0) {
+            this.fiscalPreviewError.set('No se recibió un cálculo fiscal válido.');
+          } else {
+            this.fiscalPreview.set(preview);
+            this.acceptedPreviewKey.set(requestKey);
+          }
+          this.fiscalPreviewLoading.set(false);
+        },
+        error: (error: HttpErrorResponse) => {
+          if (this.destroyed || generation !== this.previewGeneration) return;
+          this.fiscalPreviewLoading.set(false);
+          this.fiscalPreviewError.set(this.workstationService.resolveBusinessError(error));
+        },
+      });
+      this.subscriptions.push(subscription);
+    }, 150);
+    onCleanup(() => clearTimeout(timer));
+  });
 
   readonly sales = signal<SaleListItem[]>([]);
   readonly recentSalesTotalItems = signal(0);
@@ -253,7 +294,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     roundMoney(Math.min(Math.max(this.saleDiscountAmount(), 0), this.maxSaleDiscountAmount()))
   );
 
-  readonly taxSummary = computed(() => calculateTaxSummary(this.cart(), this.effectiveSaleDiscountAmount()));
+  readonly taxSummary = computed<TaxSummary>(() => this.fiscalPreview() ?? {
+    grossSubtotal: 0, discountAmount: 0, subtotal: 0, taxAmount: 0, total: 0,
+    vat15Subtotal: 0, vat5Subtotal: 0, vat0Subtotal: 0, vatExemptSubtotal: 0, vatNotSubjectSubtotal: 0,
+  });
 
   readonly subtotal = computed(() => this.taxSummary().subtotal);
 
@@ -616,6 +660,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   openCheckoutDialog(): void {
     if (this.pendingCheckout()) { this.confirmCheckout(); return; }
     if (this.checkoutLocked()) return;
+    if (!this.fiscalPreviewCurrent() || this.fiscalPreviewLoading()) {
+      this.messageService.add({ severity: 'warn', summary: 'Cálculo fiscal pendiente',
+        detail: this.fiscalPreviewError() || 'Espera el cálculo del servidor antes de confirmar.' });
+      return;
+    }
     if (!this.canSell || !this.cart().length) {
       return;
     }
@@ -652,6 +701,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     if (this.destroyed || this.checkoutLoading() || this.checkoutRecoveryError() || this.receiptSale() || !this.canSell) return;
     const pending = this.pendingCheckout();
     if (pending) { this.sendCheckout(pending); return; }
+    const preview = this.fiscalPreview();
+    if (!preview || !this.fiscalPreviewCurrent() || this.fiscalPreviewLoading()) return;
     if (this.notes().trim().length > 500) {
       this.messageService.add({ severity: 'warn', summary: 'Notas demasiado largas', detail: 'Las notas admiten hasta 500 caracteres. Corrige el texto sin truncarlo.' });
       return;
@@ -692,6 +743,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
     const payload: CheckoutRequest = {
       requestId: crypto.randomUUID(),
+      fiscalFingerprint: preview.fingerprint,
       cashReceived: this.selectedPaymentMethod() === SalePaymentMethod.Cash
         ? this.cashReceived() ?? this.total() : undefined,
       customerId: this.selectedCustomer()?.id ?? null,
@@ -792,7 +844,11 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
           'INVALID_ISSUER_RUC', 'INVALID_SRI_DOCUMENT_CONTEXT', 'SRI_COMPANY_MATRIX_ADDRESS_REQUIRED',
           'INVALID_SRI_CUSTOMER_IDENTIFICATION', 'SRI_XML_REQUIRED_FIELD_MISSING', 'SRI_XML_INVALID_FIELD_FORMAT',
           'SRI_BUYER_IDENTIFICATION_TYPE_REQUIRED', 'INVALID_SRI_PRODUCT_CODE', 'INVALID_SRI_PAYMENT_METHOD',
-          'SRI_XML_DRAFT_GENERATION_FAILED', 'INVALID_PRODUCT_VAT_CATEGORY']
+          'SRI_XML_DRAFT_GENERATION_FAILED', 'INVALID_PRODUCT_VAT_CATEGORY',
+          'FISCAL_PREVIEW_REQUIRED', 'FISCAL_PREVIEW_CHANGED', 'FISCAL_PROFILE_REQUIRED',
+          'PRODUCT_FISCAL_CLASSIFICATION_REQUIRED', 'FISCAL_PROFILE_NOT_EFFECTIVE',
+          'FISCAL_OPERATION_FACTS_UNSUPPORTED', 'RIMPE_EXCLUDED_ACTIVITY_UNSUPPORTED',
+          'FISCAL_CLASSIFICATION_CONFLICT', 'FISCAL_LEGAL_BASIS_UNSUPPORTED', 'FISCAL_ACTIVITY_UNDETERMINED']
           .includes(code ?? '') && (error.status === 400 || error.status === 404 || error.status === 409)
           || (code === 'SALE_NOTES_TOO_LONG' && error.status === 400);
         if (definitive) {
@@ -821,6 +877,16 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   updateDocumentType(type: SaleDocumentType): void { if (!this.checkoutLocked()) this.selectedDocumentType.set(type); }
   updatePaymentMethod(method: SalePaymentMethod): void { if (!this.checkoutLocked()) this.selectedPaymentMethod.set(method); }
   updateCashReceived(received: number | null): void { if (!this.checkoutLocked()) this.cashReceived.set(received); }
+  refreshFiscalPreview(): void { this.previewRetry.update(value => value + 1); }
+  private previewIdentity(): string {
+    return JSON.stringify([this.authStore.companyId(), this.authStore.establishmentId(), this.authStore.emissionPointId(),
+      this.authStore.me()?.userId, this.previewRequest()]);
+  }
+  private previewRequest(): SalePreviewRequest {
+    return { customerId: this.selectedCustomer()?.id ?? null, documentType: this.selectedDocumentType(),
+      paymentMethod: this.selectedPaymentMethod(), discountAmount: this.effectiveSaleDiscountAmount(),
+      items: this.cart().map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice, discountAmount: i.discountAmount })) };
+  }
   openReceipt(sale: Sale): void {
     this.saleDetailVisible.set(false);
     if (this.receiptSale()?.id === sale.id) this.receiptSale.set(sale);

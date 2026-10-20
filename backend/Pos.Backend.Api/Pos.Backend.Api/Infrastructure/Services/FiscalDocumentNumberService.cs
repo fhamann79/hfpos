@@ -25,7 +25,8 @@ public class FiscalDocumentNumberService : IFiscalDocumentNumberService
 
     public async Task<FiscalDocumentNumberAssignment> AssignNextAsync(
         OperationalContext operationalContext,
-        FiscalDocumentType documentType)
+        FiscalDocumentType documentType,
+        DateTime? issuedAt = null)
     {
         if (!Enum.IsDefined(documentType))
         {
@@ -63,7 +64,7 @@ public class FiscalDocumentNumberService : IFiscalDocumentNumberService
                 throw new InvalidOperationException("DOCUMENT_NUMBER_GENERATION_FAILED");
             }
 
-            var now = _sriFiscalClock.UtcNow;
+            var now = issuedAt ?? _sriFiscalClock.UtcNow;
             var documentTypeValue = (int)documentType;
 
             await _context.Database.ExecuteSqlInterpolatedAsync($@"

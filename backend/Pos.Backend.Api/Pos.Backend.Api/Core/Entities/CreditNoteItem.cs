@@ -6,6 +6,8 @@ public class CreditNoteItem
 {
     public int Id { get; set; }
 
+    public string? FiscalDecisionJson { get; set; }
+
     public int CreditNoteId { get; set; }
     public CreditNote CreditNote { get; set; } = null!;
 

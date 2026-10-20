@@ -29,7 +29,7 @@ internal sealed class AutonomousIssuingFixture(PostgresDatabaseFixture database,
 
     public async Task InitializeAsync(string key, int seed)
     {
-        Tenant = await TestDataBuilder.CreateTenantAsync(database, key, seed, 50m);
+        Tenant = await FiscalTestData.CreateFiscalTenantAsync(database, key, seed, 50m);
         Tenant.OperationalContext.UserSessionVersion = 1; Tenant.OperationalContext.RoleAuthorizationVersion = 1;
         await using (var db = database.CreateDbContext())
         {
@@ -98,7 +98,7 @@ internal sealed class AutonomousIssuingFixture(PostgresDatabaseFixture database,
     public async Task<SaleDto> SellAsync(SaleCreateDto? request = null)
     {
         await using var scope = new TestServiceScope(database, Tenant.OperationalContext);
-        return await Sales(scope).CreateAsync(request ?? Request());
+        return await Sales(scope).CreateWithPreviewAsync(request ?? Request());
     }
 
     public FiscalWorkerTestScope Worker(params IInterceptor[] interceptors) => new(database.CreateDbContext(interceptors), Protection, Transport, Options);

@@ -33,7 +33,7 @@ internal static class CriticalOperationsSmoke
         {
             var database = new PostgresDatabaseFixture();
             await database.RecreateDatabaseAsync();
-            var tenant = await TestDataBuilder.CreateTenantAsync(database, "critical-529", 9529, 10m, 10m);
+            var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "critical-529", 9529, 10m, 10m);
             await using var db = database.CreateDbContext();
             var admin = new Role { CompanyId = tenant.CompanyId, Code = AppRoles.Admin, Name = "Synthetic admin",
                 IsActive = true, CreatedAt = DateTime.UtcNow };

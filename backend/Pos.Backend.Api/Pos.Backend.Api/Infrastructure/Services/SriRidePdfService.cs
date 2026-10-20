@@ -259,6 +259,10 @@ public class SriRidePdfService : ISriRidePdfService
             }
             issuerHeight += MeasuredFieldHeight(_ride.Issuer.MatrixAddress, issuerWidth)
                 + MeasuredFieldHeight(_ride.Issuer.EstablishmentAddress, issuerWidth);
+            if (!string.IsNullOrWhiteSpace(_ride.Issuer.SpecialTaxpayerResolution))
+                issuerHeight += MeasuredFieldHeight(_ride.Issuer.SpecialTaxpayerResolution, issuerWidth);
+            if (!string.IsNullOrWhiteSpace(_ride.Issuer.WithholdingAgentResolution))
+                issuerHeight += MeasuredFieldHeight(_ride.Issuer.WithholdingAgentResolution, issuerWidth);
             var height = Math.Max(146, issuerHeight + 16);
             var x = Margin;
             var rightX = x + leftWidth + Gap;
@@ -304,7 +308,11 @@ public class SriRidePdfService : ISriRidePdfService
             }
 
             rowY = DrawMeasuredField("Dir. matriz", _ride.Issuer.MatrixAddress, x, rowY, width);
-            DrawMeasuredField("Dir. establecimiento", _ride.Issuer.EstablishmentAddress, x, rowY, width);
+            rowY = DrawMeasuredField("Dir. establecimiento", _ride.Issuer.EstablishmentAddress, x, rowY, width);
+            if (!string.IsNullOrWhiteSpace(_ride.Issuer.SpecialTaxpayerResolution))
+                rowY = DrawMeasuredField("Contribuyente especial", _ride.Issuer.SpecialTaxpayerResolution, x, rowY, width);
+            if (!string.IsNullOrWhiteSpace(_ride.Issuer.WithholdingAgentResolution))
+                DrawMeasuredField("Agente de retencion", _ride.Issuer.WithholdingAgentResolution, x, rowY, width);
         }
 
         private void DrawDocumentHeader(double x, double y, double width, double height)

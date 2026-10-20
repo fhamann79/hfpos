@@ -38,6 +38,8 @@ export interface SriRideIssuer {
   establishmentAddress: string | null;
   accountingRequired: string | null;
   taxpayerRegime: string | null;
+  specialTaxpayerResolution?: string | null;
+  withholdingAgentResolution?: string | null;
 }
 
 export interface SriRideBuyer {
