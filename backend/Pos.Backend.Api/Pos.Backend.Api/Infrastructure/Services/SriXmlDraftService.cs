@@ -316,15 +316,7 @@ public class SriXmlDraftService : ISriXmlDraftService
     }
 
     private static XElement? ResolveRimpeElement(string? taxpayerRegime)
-    {
-        var normalized = NormalizeText(taxpayerRegime);
-        if (normalized is null || !normalized.Contains("RIMPE", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        return new XElement("contribuyenteRimpe", "CONTRIBUYENTE RÉGIMEN RIMPE");
-    }
+        => SriRimpeLegend.ResolveElement(taxpayerRegime);
 
     private static string? NormalizeSpecialTaxpayerNumber(string? value)
     {

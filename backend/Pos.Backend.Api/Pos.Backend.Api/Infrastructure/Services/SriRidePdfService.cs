@@ -251,7 +251,15 @@ public class SriRidePdfService : ISriRidePdfService
         {
             var leftWidth = ContentWidth - 185 - Gap;
             var rightWidth = 185;
-            var height = 146;
+            var issuerWidth = leftWidth - 16;
+            var issuerHeight = 86d;
+            if (!string.IsNullOrWhiteSpace(_ride.Issuer.TaxpayerRegime))
+            {
+                issuerHeight += MeasuredFieldHeight(_ride.Issuer.TaxpayerRegime, issuerWidth);
+            }
+            issuerHeight += MeasuredFieldHeight(_ride.Issuer.MatrixAddress, issuerWidth)
+                + MeasuredFieldHeight(_ride.Issuer.EstablishmentAddress, issuerWidth);
+            var height = Math.Max(146, issuerHeight + 16);
             var x = Margin;
             var rightX = x + leftWidth + Gap;
 
@@ -287,17 +295,16 @@ public class SriRidePdfService : ISriRidePdfService
 
             _gfx.DrawLine(_brandPen, x, y + 52, x + width, y + 52);
 
-            var rowY = y + 60;
-            rowY = DrawField("RUC", _ride.Issuer.Ruc, x, rowY, 105);
-            DrawField("Obligado contabilidad", _ride.Issuer.AccountingRequired, x + 116, y + 60, 120);
+            DrawField("RUC", _ride.Issuer.Ruc, x, y + 60, 105);
+            DrawField("Obligado contabilidad", _ride.Issuer.AccountingRequired, x + 116, y + 60, width - 116);
+            var rowY = y + 86;
             if (!string.IsNullOrWhiteSpace(_ride.Issuer.TaxpayerRegime))
             {
-                DrawField("Regimen", _ride.Issuer.TaxpayerRegime, x + 244, y + 60, width - 244);
+                rowY = DrawMeasuredField("Regimen", _ride.Issuer.TaxpayerRegime, x, rowY, width);
             }
 
-            rowY += 4;
-            rowY = DrawWideField("Dir. matriz", _ride.Issuer.MatrixAddress, x, rowY, width);
-            DrawWideField("Dir. establecimiento", _ride.Issuer.EstablishmentAddress, x, rowY, width);
+            rowY = DrawMeasuredField("Dir. matriz", _ride.Issuer.MatrixAddress, x, rowY, width);
+            DrawMeasuredField("Dir. establecimiento", _ride.Issuer.EstablishmentAddress, x, rowY, width);
         }
 
         private void DrawDocumentHeader(double x, double y, double width, double height)
@@ -389,7 +396,7 @@ public class SriRidePdfService : ISriRidePdfService
 
             if (_ride.Items.Count == 0)
             {
-                EnsureSpaceForItemRow(20, true);
+                EnsureSpace(20);
                 DrawEmptyItemsRow();
                 return;
             }
@@ -397,10 +404,7 @@ public class SriRidePdfService : ISriRidePdfService
             for (var index = 0; index < _ride.Items.Count; index++)
             {
                 var item = _ride.Items[index];
-                var rowHeight = EstimateItemRowHeight(item);
-                var reserve = index == _ride.Items.Count - 1 ? EstimateSummaryHeight() + 45 : 28;
-                EnsureSpaceForItemRow(rowHeight, reserve > 80);
-                DrawItemRow(item, rowHeight);
+                DrawItemRows(item);
             }
         }
 
@@ -431,11 +435,9 @@ public class SriRidePdfService : ISriRidePdfService
             _y += 20 + Gap;
         }
 
-        private void DrawItemRow(SriRideItemDto item, double rowHeight)
+        private void DrawItemRows(SriRideItemDto item)
         {
             var columns = ItemColumns();
-            var x = Margin;
-            var y = _y;
             var values = new[]
             {
                 ValueOrDash(item.MainCode),
@@ -448,53 +450,52 @@ public class SriRidePdfService : ISriRidePdfService
                 FormatMoney(item.LineTotal)
             };
 
-            DrawBox(Margin, y, ContentWidth, rowHeight, XBrushes.White, _softBorderPen);
-
-            for (var index = 0; index < columns.Length; index++)
+            var lines = values.Select((value, index) =>
+                WrapTextByWidth(value, ItemFont(index), columns[index] - 6)).ToArray();
+            var offset = 0;
+            var lineCount = lines.Max(column => column.Count);
+            var lineHeight = LineHeight(_bodyFont);
+            var fullHeight = Math.Max(22, lineCount * lineHeight + 8);
+            // Keep ordinary rows together; oversized rows continue without repeating amounts.
+            if (fullHeight <= BottomY - Margin - 53 && _y + fullHeight > BottomY)
             {
-                var rect = new XRect(x + 3, y + 4, columns[index] - 6, rowHeight - 6);
-                if (index <= 1)
-                {
-                    DrawWrapped(values[index], index == 1 ? _bodyFont : _smallFont, _textBrush, rect.X, rect.Y, rect.Width, rect.Height);
-                }
-                else
-                {
-                    _gfx.DrawString(values[index], _bodyFont, _textBrush, rect, TopRight);
-                }
-
-                if (index < columns.Length - 1)
-                {
-                    _gfx.DrawLine(_softBorderPen, x + columns[index], y, x + columns[index], y + rowHeight);
-                }
-
-                x += columns[index];
+                NewPage(true);
+                DrawItemsHeader();
             }
 
-            _y += rowHeight;
+            while (offset < lineCount)
+            {
+                var capacity = (int)Math.Floor((BottomY - _y - 8) / lineHeight);
+                if (capacity < 1 || BottomY - _y < 22)
+                {
+                    NewPage(true);
+                    DrawItemsHeader();
+                    continue;
+                }
+                var count = Math.Min(capacity, lineCount - offset);
+                var rowHeight = Math.Max(22, count * lineHeight + 8);
+                var x = Margin;
+                DrawBox(Margin, _y, ContentWidth, rowHeight, XBrushes.White, _softBorderPen);
+                for (var index = 0; index < columns.Length; index++)
+                {
+                    var segment = lines[index].Skip(offset).Take(count).ToArray();
+                    DrawWrappedLines(segment, ItemFont(index), _textBrush, x + 3, _y + 4,
+                        columns[index] - 6, index <= 1 ? TopLeft : TopRight);
+                    if (index < columns.Length - 1)
+                    {
+                        _gfx.DrawLine(_softBorderPen, x + columns[index], _y, x + columns[index], _y + rowHeight);
+                    }
+                    x += columns[index];
+                }
+                _y += rowHeight;
+                offset += count;
+            }
         }
+
+        private XFont ItemFont(int index) => index == 0 ? _smallFont : _bodyFont;
 
         private double[] ItemColumns()
-            => new[] { 48d, 174d, 37d, 54d, 47d, 56d, 45d, ContentWidth - 48d - 174d - 37d - 54d - 47d - 56d - 45d };
-
-        private double EstimateItemRowHeight(SriRideItemDto item)
-        {
-            var descriptionWidth = ItemColumns()[1] - 6;
-            var descriptionHeight = EstimateWrappedHeight(ValueOrDash(item.Description), _bodyFont, descriptionWidth);
-
-            return Math.Max(22, Math.Min(descriptionHeight + 9, 56));
-        }
-
-        private void EnsureSpaceForItemRow(double rowHeight, bool reserveSummary)
-        {
-            var reserve = reserveSummary ? EstimateSummaryHeight() + 45 : 28;
-            if (_y + rowHeight + reserve <= BottomY)
-            {
-                return;
-            }
-
-            NewPage(true);
-            DrawItemsHeader();
-        }
+            => new[] { 64d, 151d, 37d, 54d, 47d, 56d, 45d, ContentWidth - 64d - 151d - 37d - 54d - 47d - 56d - 45d };
 
         private void DrawSummary()
         {
@@ -843,6 +844,17 @@ public class SriRidePdfService : ISriRidePdfService
             DrawWrapped(ValueOrDash(value), _bodyFont, _textBrush, x, y + 10, width, height);
 
             return y + 12 + height;
+        }
+
+        private double MeasuredFieldHeight(string? value, double width)
+            => 12 + Math.Max(12, LinesHeight(WrapTextByWidth(ValueOrDash(value), _bodyFont, width), _bodyFont));
+
+        private double DrawMeasuredField(string label, string? value, double x, double y, double width)
+        {
+            DrawKicker(label, x, y, width);
+            DrawWrappedLines(WrapTextByWidth(ValueOrDash(value), _bodyFont, width),
+                _bodyFont, _textBrush, x, y + 10, width, TopLeft);
+            return y + MeasuredFieldHeight(value, width);
         }
 
         private double DrawCodeField(string label, string? value, double x, double y, double width)
