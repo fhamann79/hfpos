@@ -6,6 +6,9 @@ public class CreditNote
 {
     public int Id { get; set; }
 
+    public long? FiscalProfileId { get; set; }
+    public string? FiscalIssuerSnapshotJson { get; set; }
+
     public int CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 

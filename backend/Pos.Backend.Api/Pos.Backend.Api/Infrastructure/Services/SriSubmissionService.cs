@@ -532,6 +532,8 @@ public class SriSubmissionService : ISriSubmissionService
                 MatrixAddress = ChildValue(infoTributaria, "dirMatriz"),
                 EstablishmentAddress = ChildValue(infoFactura, "dirEstablecimiento"),
                 AccountingRequired = ChildValue(infoFactura, "obligadoContabilidad"),
+                SpecialTaxpayerResolution = ChildValue(infoFactura, "contribuyenteEspecial"),
+                WithholdingAgentResolution = ChildValue(infoTributaria, "agenteRetencion"),
                 TaxpayerRegime = ChildValue(infoTributaria, "contribuyenteRimpe")
                     ?? ChildValue(infoFactura, "contribuyenteRimpe")
                     ?? ChildValue(infoFactura, "regimenMicroempresas")

@@ -6,6 +6,8 @@ public class SaleItem
 {
     public int Id { get; set; }
 
+    public string? FiscalDecisionJson { get; set; }
+
     public int SaleId { get; set; }
     public Sale Sale { get; set; }
 

@@ -5,6 +5,7 @@ namespace Pos.Backend.Api.Core.DTOs;
 public class SaleCreateDto
 {
     public Guid RequestId { get; set; }
+    public string? FiscalFingerprint { get; set; }
 
     public decimal? CashReceived { get; set; }
 

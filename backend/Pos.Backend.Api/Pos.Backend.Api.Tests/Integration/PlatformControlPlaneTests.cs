@@ -269,7 +269,7 @@ public sealed class PlatformControlPlaneTests(PostgresDatabaseFixture database) 
         Assert.Equal(2, second.TotalItems); Assert.Single(second.Items);
         var byRuc = await service.GetAsync(new() { Search = one.Tenant.Company.Ruc, PageSize = 1000 });
         Assert.Equal(200, byRuc.PageSize); Assert.Single(byRuc.Items);
-        var legacy = await TestDataBuilder.CreateTenantAsync(database, "legacy-platform", 312, 0m);
+        var legacy = await FiscalTestData.CreateFiscalTenantAsync(database, "legacy-platform", 312, 0m);
         var detail = await service.GetByIdAsync(legacy.CompanyId);
         Assert.Empty(detail.Events); Assert.Equal(1, detail.UserCount); Assert.Equal(1, detail.EstablishmentCount);
     }
@@ -339,7 +339,7 @@ public sealed class PlatformControlPlaneTests(PostgresDatabaseFixture database) 
     public async Task Suspension_waits_for_existing_operational_writer_to_commit()
     {
         var actor = await ActorAsync();
-        var tenant = await TestDataBuilder.CreateTenantAsync(database, "writer-first", 322, 5m);
+        var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "writer-first", 322, 5m);
         await using (var setup = new TestServiceScope(database, tenant.OperationalContext))
             await setup.CashSessions.OpenAsync(new OpenCashSessionDto { OpeningAmount = 20m });
         var gate = new UncommittedSaveGate(db => db.ChangeTracker.Entries<Sale>().Any(e => e.State == EntityState.Added));
@@ -347,7 +347,7 @@ public sealed class PlatformControlPlaneTests(PostgresDatabaseFixture database) 
         await using var lifecycle = database.CreateDbContext();
         await writer.DbContext.Database.OpenConnectionAsync();
         await lifecycle.Database.OpenConnectionAsync();
-        var sale = writer.Sales.CreateAsync(SaleRequest(tenant));
+        var sale = writer.Sales.CreateWithPreviewAsync(SaleRequest(tenant));
         await gate.Saved.WaitAsync();
         var suspend = Service(lifecycle, actor).SetActiveAsync(tenant.CompanyId, false, new("Synthetic concurrent suspension"));
         try { await AssertBlockedAsync(suspend, lifecycle, writer.DbContext); }
@@ -365,7 +365,7 @@ public sealed class PlatformControlPlaneTests(PostgresDatabaseFixture database) 
     public async Task Writer_waiting_behind_suspension_revalidates_and_cannot_write()
     {
         var actor = await ActorAsync();
-        var tenant = await TestDataBuilder.CreateTenantAsync(database, "suspend-first", 323, 5m);
+        var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "suspend-first", 323, 5m);
         await using (var setup = new TestServiceScope(database, tenant.OperationalContext))
             await setup.CashSessions.OpenAsync(new OpenCashSessionDto { OpeningAmount = 20m });
         var gate = new UncommittedSaveGate(db => db.ChangeTracker.Entries<PlatformTenantEvent>()
@@ -376,7 +376,7 @@ public sealed class PlatformControlPlaneTests(PostgresDatabaseFixture database) 
         await writer.DbContext.Database.OpenConnectionAsync();
         var suspend = Service(lifecycle, actor).SetActiveAsync(tenant.CompanyId, false, new("Synthetic barrier"));
         await gate.Saved.WaitAsync();
-        var sale = writer.Sales.CreateAsync(SaleRequest(tenant));
+        var sale = writer.Sales.CreateWithPreviewAsync(SaleRequest(tenant));
         try { await AssertBlockedAsync(sale, writer.DbContext, lifecycle); }
         finally { gate.Release.Set(); }
         await suspend.WaitAsync(Timeout);
@@ -494,7 +494,7 @@ public sealed class PlatformControlPlaneTests(PostgresDatabaseFixture database) 
     public async Task Suspension_requires_reason_and_revokes_inactive_users_without_changing_assignments()
     {
         var actor = await ActorAsync();
-        var tenant = await TestDataBuilder.CreateTenantAsync(database, "all-sessions", 341, 1m);
+        var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "all-sessions", 341, 1m);
         await using var context = database.CreateDbContext();
         var user = await context.Users.SingleAsync();
         context.Users.Add(new User { CompanyId = user.CompanyId, EstablishmentId = user.EstablishmentId,

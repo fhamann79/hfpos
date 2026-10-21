@@ -96,6 +96,23 @@ public sealed class SriRimpeRideTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Ride_reads_independent_conditions_only_from_authorized_XML(bool credit)
+    {
+        var xml = Draft(credit, "GENERAL");
+        var info = xml.Element("infoTributaria")!;
+        info.Add(new XElement("agenteRetencion", "12345678"));
+        var detail = xml.Element(credit ? "infoNotaCredito" : "infoFactura")!;
+        detail.Element("obligadoContabilidad")!.AddBeforeSelf(new XElement("contribuyenteEspecial", "001AB9"));
+        ValidateLocal(credit, xml.ToString());
+        var ride = BuildRide(credit, xml);
+        Assert.Equal("001AB9", ride.Issuer.SpecialTaxpayerResolution);
+        Assert.Equal("12345678", ride.Issuer.WithholdingAgentResolution);
+        Assert.Null(ride.Issuer.TaxpayerRegime);
+    }
+
+    [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
     [InlineData(false, true)]
@@ -107,6 +124,8 @@ public sealed class SriRimpeRideTests
         ride.Issuer.TradeName = "COMERCIO SINTETICO";
         ride.Issuer.MatrixAddress = "MATRIZ SINTETICA - Avenida de prueba 123";
         ride.Issuer.EstablishmentAddress = "LOCAL SINTETICO - Calle de prueba 456";
+        ride.Issuer.SpecialTaxpayerResolution = "001AB9";
+        ride.Issuer.WithholdingAgentResolution = "12345678";
         var description = "INICIO DESCRIPCION\n" + string.Join("\n", Enumerable.Range(1, multipage ? 95 : 8)
             .Select(i => $"Linea {i:000} descripcion sintetica completa"))
             + "\n" + new string('W', multipage ? 450 : 70) + "\nFIN DESCRIPCION";

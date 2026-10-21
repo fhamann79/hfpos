@@ -73,6 +73,8 @@ public class SriRideIssuerDto
     public string? AccountingRequired { get; set; }
 
     public string? TaxpayerRegime { get; set; }
+    public string? SpecialTaxpayerResolution { get; set; }
+    public string? WithholdingAgentResolution { get; set; }
 }
 
 public class SriRideBuyerDto

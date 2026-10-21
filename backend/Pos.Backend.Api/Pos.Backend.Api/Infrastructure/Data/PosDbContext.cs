@@ -20,6 +20,8 @@ public class PosDbContext : DbContext
     public DbSet<Permission> Permissions { get; set; }
     public DbSet<RolePermission> RolePermissions { get; set; }
     public DbSet<Company> Companies { get; set; }
+    public DbSet<CompanyFiscalProfile> CompanyFiscalProfiles { get; set; }
+    public DbSet<ProductFiscalClassification> ProductFiscalClassifications { get; set; }
     public DbSet<CompanyBranding> CompanyBrandings { get; set; }
     public DbSet<CompanyEmailSettings> CompanyEmailSettings { get; set; }
     public DbSet<CompanySriSettings> CompanySriSettings { get; set; }
@@ -57,6 +59,40 @@ public class PosDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<CompanyFiscalProfile>(e =>
+        {
+            e.HasAlternateKey(p => new { p.CompanyId, p.Id });
+            e.HasIndex(p => new { p.CompanyId, p.Revision }).IsUnique();
+            e.HasIndex(p => new { p.CompanyId, p.EffectiveFrom, p.Revision }).IsUnique();
+            e.Property(p => p.Reason).HasMaxLength(500).IsRequired();
+            e.Property(p => p.EvidenceReference).HasMaxLength(500).IsRequired();
+            e.Property(p => p.SpecialTaxpayerResolution).HasMaxLength(13);
+            e.Property(p => p.WithholdingAgentResolution).HasMaxLength(8);
+            e.HasOne<Company>().WithMany().HasForeignKey(p => p.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(p => new { p.CompanyId, p.DeclaredByUserId })
+                .HasPrincipalKey(u => new { u.CompanyId, u.Id }).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("CK_CompanyFiscalProfiles_Declaration",
+                "\"Revision\" > 0 AND \"Confirmed\" AND \"Regime\" BETWEEN 0 AND 2 AND \"TaxpayerKind\" BETWEEN 0 AND 1 AND (\"EffectiveUntil\" IS NULL OR \"EffectiveUntil\" > \"EffectiveFrom\")"));
+        });
+        modelBuilder.Entity<ProductFiscalClassification>(e =>
+        {
+            e.HasIndex(p => new { p.CompanyId, p.ProductId, p.Revision }).IsUnique();
+            e.Property(p => p.LegalReference).HasMaxLength(500).IsRequired();
+            e.Property(p => p.EvidenceReference).HasMaxLength(500).IsRequired();
+            e.Property(p => p.SriMaterialCode).HasMaxLength(25);
+            e.HasOne<Company>().WithMany().HasForeignKey(p => p.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Product>().WithMany().HasForeignKey(p => new { p.CompanyId, p.ProductId })
+                .HasPrincipalKey(p => new { p.CompanyId, p.Id }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(p => new { p.CompanyId, p.DeclaredByUserId })
+                .HasPrincipalKey(u => new { u.CompanyId, u.Id }).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<Sale>().HasOne<CompanyFiscalProfile>().WithMany()
+            .HasForeignKey(s => new { s.CompanyId, s.FiscalProfileId })
+            .HasPrincipalKey(p => new { p.CompanyId, p.Id }).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<CreditNote>().HasOne<CompanyFiscalProfile>().WithMany()
+            .HasForeignKey(s => new { s.CompanyId, s.FiscalProfileId })
+            .HasPrincipalKey(p => new { p.CompanyId, p.Id }).OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<PasswordRecoveryChallenge>(e =>
         {

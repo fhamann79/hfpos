@@ -83,6 +83,7 @@ builder.Services.AddScoped<ISriCreditNoteXmlDraftService, SriCreditNoteXmlDraftS
 builder.Services.AddScoped<ISriCreditNoteXmlValidator, SriCreditNoteXmlValidator>();
 builder.Services.AddScoped<IFiscalDocumentNumberService, FiscalDocumentNumberService>();
 builder.Services.AddScoped<IFiscalSettingsService, FiscalSettingsService>();
+builder.Services.AddScoped<IFiscalProfileService, FiscalProfileService>();
 builder.Services.AddScoped<ICompanyEmailSettingsService, CompanyEmailSettingsService>();
 builder.Services.AddScoped<IEmailSenderService, SmtpEmailSenderService>();
 builder.Services.AddScoped<ISriCertificateService, SriCertificateService>();

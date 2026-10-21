@@ -10,5 +10,6 @@ public interface ISalesService
     Task<SaleDto?> GetByIdAsync(int id);
     Task<string?> GetSriXmlDraftAsync(int id);
     Task<SaleDto> CreateAsync(SaleCreateDto dto);
+    Task<SalePreviewDto> PreviewAsync(SaleCreateDto dto);
     Task<SaleDto> VoidAsync(int id, VoidSaleDto dto);
 }

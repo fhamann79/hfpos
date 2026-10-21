@@ -324,9 +324,19 @@ public class SalesController : ControllerBase
         }
     }
 
+    [HttpPost("preview")]
+    [Authorize(Policy = AppPermissions.PosSalesCreate)]
+    public async Task<ActionResult<SalePreviewDto>> Preview(SaleCreateDto dto)
+    {
+        try { return Ok(await _salesService.PreviewAsync(dto)); }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        { return MapDomainError(ex); }
+    }
+
     private ActionResult MapDomainError(Exception exception)
     {
         var code = exception.Message;
+        if (FiscalProfileErrors.IsValidation(code)) return Conflict(new ApiErrorResponse { Error = code });
 
         return code switch
         {

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -25,6 +26,7 @@ public class CreditNoteService : ICreditNoteService
     private readonly SriOptions _sriOptions;
     private readonly ILogger<CreditNoteService> _logger;
     private readonly TenantAdministrationGuard _administrationGuard;
+    private readonly IFiscalProfileService _fiscalProfiles;
 
     public CreditNoteService(
         PosDbContext context,
@@ -37,7 +39,8 @@ public class CreditNoteService : ICreditNoteService
         ISriFiscalClock sriFiscalClock,
         IOptions<SriOptions> sriOptions,
         ILogger<CreditNoteService> logger,
-        TenantAdministrationGuard administrationGuard)
+        TenantAdministrationGuard administrationGuard,
+        IFiscalProfileService? fiscalProfiles = null)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
@@ -50,6 +53,7 @@ public class CreditNoteService : ICreditNoteService
         _sriOptions = sriOptions.Value;
         _logger = logger;
         _administrationGuard = administrationGuard;
+        _fiscalProfiles = fiscalProfiles ?? new FiscalProfileService(context, operationalContextAccessor, businessClockService, sriFiscalClock);
     }
 
     public async Task<CreditNoteEligibilityDto> GetEligibilityAsync(int originalSaleId)
@@ -96,7 +100,7 @@ public class CreditNoteService : ICreditNoteService
             var (reason, notes) = ValidateDraftRequest(dto);
 
             await using var transaction = await _context.Database.BeginTransactionAsync();
-            await _administrationGuard.LockOperationalWriteAsync(operationalContext);
+            await _administrationGuard.LockExclusiveOperationalWriteAsync(operationalContext);
 
             var originalSale = await LockOriginalSaleAsync(dto.OriginalSaleId, operationalContext);
             var aggregates = await GetActiveCreditNoteItemAggregatesAsync(
@@ -132,9 +136,15 @@ public class CreditNoteService : ICreditNoteService
                 }
             }
 
-            var now = _businessClockService.UtcNow;
+            var now = _sriFiscalClock.UtcNow;
+            var issuer = await _fiscalProfiles.SnapshotAsync(operationalContext, _sriFiscalClock.GetEcuadorFiscalDate(now));
+            var originalIssuer = FiscalSnapshots.Read(originalSale.FiscalIssuerSnapshotJson)
+                ?? throw new InvalidOperationException("CREDIT_NOTE_LEGACY_FISCAL_CONTEXT_REQUIRED");
+            if (issuer.Regime != originalIssuer.Regime)
+                throw new InvalidOperationException("CREDIT_NOTE_FISCAL_TRANSITION_UNSUPPORTED");
             var creditNote = new CreditNote
             {
+                FiscalProfileId = issuer.ProfileId, FiscalIssuerSnapshotJson = JsonSerializer.Serialize(issuer),
                 CompanyId = operationalContext.CompanyId,
                 EstablishmentId = operationalContext.EstablishmentId,
                 EmissionPointId = operationalContext.EmissionPointId,
@@ -180,18 +190,23 @@ public class CreditNoteService : ICreditNoteService
                 var aggregate = aggregates.GetValueOrDefault(requestedItem.SaleItemId)
                     ?? new CreditNoteItemAggregate { SaleItemId = requestedItem.SaleItemId };
 
-                creditNote.Items.Add(CreateCreditNoteItem(
+                var item = CreateCreditNoteItem(
                     originalItem,
                     requestedItem.Quantity,
                     availableItem.AvailableQuantity,
-                    aggregate));
+                    aggregate);
+                item.FiscalDecisionJson = originalItem.FiscalDecisionJson;
+                var decision = originalItem.FiscalDecisionJson is null ? null
+                    : JsonSerializer.Deserialize<FiscalDecision>(originalItem.FiscalDecisionJson);
+                if (decision?.SriMaterialCode is { } material) item.ProductAuxiliaryCodeSnapshot = material;
+                creditNote.Items.Add(item);
             }
 
             ApplyCreditNoteTotals(creditNote);
 
             var numberAssignment = await _fiscalDocumentNumberService.AssignNextAsync(
                 operationalContext,
-                FiscalDocumentType.CreditNote);
+                FiscalDocumentType.CreditNote, now);
 
             creditNote.Number = numberAssignment.Number;
             creditNote.EstablishmentCodeSnapshot = numberAssignment.EstablishmentCode;
@@ -350,6 +365,7 @@ public class CreditNoteService : ICreditNoteService
         try
         {
             await using var transaction = await _context.Database.BeginTransactionAsync();
+            await _administrationGuard.LockExclusiveOperationalWriteAsync(operationalContext);
 
             var originalSaleId = await GetCreditNoteOriginalSaleIdAsync(
                 creditNoteId,
@@ -382,7 +398,9 @@ public class CreditNoteService : ICreditNoteService
             var fiscalContext = await LoadFiscalContextAsync(
                 creditNote,
                 operationalContext);
-            var issuerRuc = fiscalContext.Company.Ruc?.Trim();
+            var frozenIssuer = FiscalSnapshots.Read(creditNote.FiscalIssuerSnapshotJson)
+                ?? throw new InvalidOperationException("CREDIT_NOTE_LEGACY_FISCAL_CONTEXT_REQUIRED");
+            var issuerRuc = frozenIssuer.Ruc?.Trim();
 
             if (!IsNumeric(issuerRuc, 13))
             {

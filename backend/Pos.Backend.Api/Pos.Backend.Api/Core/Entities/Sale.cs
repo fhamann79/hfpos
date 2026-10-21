@@ -6,6 +6,10 @@ public class Sale
 {
     public int Id { get; set; }
 
+    public long? FiscalProfileId { get; set; }
+    public string? FiscalIssuerSnapshotJson { get; set; }
+    public string? FiscalFingerprint { get; set; }
+
     public Guid? RequestId { get; set; }
     public string? RequestHash { get; set; }
     public decimal? CashReceived { get; set; }

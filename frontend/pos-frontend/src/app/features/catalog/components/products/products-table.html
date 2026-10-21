@@ -74,7 +74,7 @@
         <th pSortableColumn="cost">Costo <p-sortIcon field="cost"></p-sortIcon></th>
         <th>Stock minimo</th>
         <th pSortableColumn="isActive">Estado <p-sortIcon field="isActive"></p-sortIcon></th>
-        @if (canWrite) { <th>Acciones</th> }
+        @if (canWrite || canClassify) { <th>Acciones</th> }
       </tr>
     </ng-template>
 
@@ -100,9 +100,11 @@
         <td><span class="cost-cell">{{ product.cost | currency: 'USD' }}</span></td>
         <td><span class="minimum-stock-cell">{{ product.minimumStock }}</span></td>
         <td><p-tag [severity]="product.isActive ? 'success' : 'danger'" [value]="product.isActive ? 'Activo' : 'Inactivo'"></p-tag></td>
-        @if (canWrite) {
+        @if (canWrite || canClassify) {
           <td>
             <div class="actions">
+              @if (canClassify) { <p-button icon="pi pi-shield" label="Fiscal" [text]="true" (onClick)="fiscalProduct = product" /> }
+              @if (canWrite) {
               <p-button icon="pi pi-pencil" [rounded]="true" [text]="true" (onClick)="openEditDialog(product)"></p-button>
               <p-button
                 [icon]="product.isActive ? 'pi pi-ban' : 'pi pi-check-circle'"
@@ -111,6 +113,7 @@
                 [text]="true"
                 (onClick)="confirmLifecycle(product)"
               ></p-button>
+              }
             </div>
           </td>
         }
@@ -119,7 +122,7 @@
 
     <ng-template pTemplate="emptymessage">
       <tr>
-        <td [attr.colspan]="canWrite ? 8 : 7">
+        <td [attr.colspan]="canWrite || canClassify ? 8 : 7">
           <div class="empty-state">
             <span>No hay registros</span>
             @if (canWrite) { <p-button label="Crear" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button> }
@@ -129,6 +132,9 @@
     </ng-template>
   </p-table>
 </div>
+@if (canClassify) {
+  <app-product-fiscal-dialog [visible]="!!fiscalProduct" [product]="fiscalProduct" (visibleChange)="!$event && (fiscalProduct = null)" />
+}
 
 @if (canWrite) {
   <app-product-dialog

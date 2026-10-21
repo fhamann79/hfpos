@@ -70,6 +70,12 @@
                 <dd>{{ ride.issuer.taxpayerRegime }}</dd>
               </div>
             }
+            @if (ride.issuer.specialTaxpayerResolution) {
+              <div><dt>Contribuyente especial</dt><dd>{{ ride.issuer.specialTaxpayerResolution }}</dd></div>
+            }
+            @if (ride.issuer.withholdingAgentResolution) {
+              <div><dt>Agente de retención</dt><dd>{{ ride.issuer.withholdingAgentResolution }}</dd></div>
+            }
           </dl>
         </section>
 

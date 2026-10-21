@@ -10,5 +10,6 @@ public interface IFiscalDocumentNumberService
     /// </remarks>
     Task<FiscalDocumentNumberAssignment> AssignNextAsync(
         OperationalContext operationalContext,
-        FiscalDocumentType documentType);
+        FiscalDocumentType documentType,
+        DateTime? issuedAt = null);
 }

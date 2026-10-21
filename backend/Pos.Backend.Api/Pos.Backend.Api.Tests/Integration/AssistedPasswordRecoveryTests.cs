@@ -233,9 +233,10 @@ public sealed class AssistedPasswordRecoveryTests(PostgresDatabaseFixture databa
     {
         await using var db = database.CreateDbContext();
         var migrator = db.GetService<IMigrator>();
-        await migrator.MigrateAsync("20261005003734_AddCriticalOperationRequests");
         var t1 = await TestDataBuilder.CreateTenantAsync(database, "migration530a", 535, 1m);
         var t2 = await TestDataBuilder.CreateTenantAsync(database, "migration530b", 536, 1m);
+        // Seed while the current EF model matches SQL, then exercise the older permission migration.
+        await migrator.MigrateAsync("20261005003734_AddCriticalOperationRequests");
         var first = await db.Roles.SingleAsync(r => r.CompanyId == t1.CompanyId); first.Code = AppRoles.Admin;
         var second = await db.Roles.SingleAsync(r => r.CompanyId == t2.CompanyId); second.Code = AppRoles.Admin;
         var supervisor = new Role { CompanyId = t1.CompanyId, Code = AppRoles.Supervisor, Name = "Supervisor", IsActive = true, CreatedAt = DateTime.UtcNow };

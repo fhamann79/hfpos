@@ -33,6 +33,8 @@ export class CheckoutConfirmDialog {
   @Input({ required: true }) itemCount = 0;
   @Input() notes = '';
   @Input() loading = false;
+  @Input() fiscalReady = false;
+  @Input() fiscalError = '';
   @Input() cashReceived: number | null = null;
   @Output() cashReceivedChange = new EventEmitter<number | null>();
   readonly SalePaymentMethod = SalePaymentMethod;
@@ -65,7 +67,7 @@ export class CheckoutConfirmDialog {
     }
 
     const target = event.target as HTMLElement | null;
-    if (event.key === 'Enter' && !target?.closest('p-select, button, textarea') && !this.loading) {
+    if (event.key === 'Enter' && !target?.closest('p-select, button, textarea') && !this.loading && this.fiscalReady) {
       this.confirm.emit();
       event.preventDefault();
     }

@@ -24,6 +24,13 @@
     <p-message severity="warn" text="No tienes permisos para usar la estación POS."></p-message>
   } @else {
     @if (checkoutRecoveryError()) { <p-message severity="error" [text]="checkoutRecoveryError()" /> }
+    @if (fiscalPreviewLoading()) { <p-message severity="info" text="Calculando impuestos..." /> }
+    @if (fiscalPreviewError() && !pendingCheckout()) {
+      <div class="cash-context" role="alert">
+        <p-message severity="error" [text]="fiscalPreviewError()" />
+        <p-button icon="pi pi-refresh" label="Recalcular" severity="secondary" (onClick)="refreshFiscalPreview()" />
+      </div>
+    }
     @if (pendingCheckout()) {
       <section class="cash-context" aria-live="polite">
         <strong>Cobro pendiente de recuperar</strong>
@@ -132,6 +139,7 @@
             [taxAmount]="taxAmount()"
             [total]="total()"
             [taxSummary]="taxSummary()"
+            [fiscalPreview]="fiscalPreviewCurrent() ? fiscalPreview() : null"
             [saleDiscountAmount]="effectiveSaleDiscountAmount()"
             [notes]="notes()"
             [canCheckout]="canSell && (hasOpenCashSession() || !!pendingCheckout()) && !checkoutLoading()"
@@ -198,6 +206,8 @@
   <app-checkout-confirm-dialog
     [visible]="checkoutVisible()"
     [loading]="checkoutLoading()"
+    [fiscalReady]="fiscalPreviewCurrent() && !fiscalPreviewLoading()"
+    [fiscalError]="fiscalPreviewError()"
     [itemCount]="itemCount()"
     [subtotal]="subtotal()"
     [grossSubtotal]="taxSummary().grossSubtotal"

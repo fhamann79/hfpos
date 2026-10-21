@@ -5,7 +5,7 @@ import { environment } from '../../../../environments/environment';
 import { PagedResult } from '../../../core/models/paged-result.model';
 import { hasHttpBusinessError, resolveHttpErrorMessage } from '../../../core/utils/http-error-normalizer';
 import { normalizeVatCategory } from '../../../core/utils/vat-category';
-import { CheckoutRequest } from '../models/checkout-request.model';
+import { CheckoutRequest, SalePreview, SalePreviewRequest } from '../models/checkout-request.model';
 import { normalizeSaleDocumentStatus, normalizeSaleDocumentType } from '../models/sale-document.model';
 import {
   SaleInvoiceEmailDelivery,
@@ -52,6 +52,10 @@ export class PosWorkstationService {
 
   getSaleDetail(id: number): Observable<Sale> {
     return this.http.get<unknown>(`${this.salesUrl}/${id}`).pipe(map((row) => this.toSale(row)));
+  }
+
+  previewSale(payload: SalePreviewRequest): Observable<SalePreview> {
+    return this.http.post<SalePreview>(`${this.salesUrl}/preview`, payload);
   }
 
   createSale(payload: CheckoutRequest): Observable<Sale> {

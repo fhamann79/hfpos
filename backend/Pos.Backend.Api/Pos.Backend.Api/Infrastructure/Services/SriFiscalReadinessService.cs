@@ -66,7 +66,33 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
             generatedAt,
             checks);
 
-        var companyReady = AddCompanyChecks(checks, company);
+        var fiscalDate = new SriFiscalClock().GetEcuadorFiscalDate(generatedAt);
+        var profile = await _context.CompanyFiscalProfiles.AsNoTracking()
+            .Where(p => p.CompanyId == operationalContext.CompanyId && p.EffectiveFrom <= fiscalDate)
+            .OrderByDescending(p => p.EffectiveFrom).ThenByDescending(p => p.Revision).FirstOrDefaultAsync();
+        var diagnosticCompany = company;
+        try
+        {
+            if (profile is null || (profile.EffectiveUntil is { } until && fiscalDate >= until))
+                throw new InvalidOperationException("FISCAL_PROFILE_REQUIRED");
+            FiscalTaxResolver.ValidateProfile(profile);
+            if (company is not null)
+            {
+                diagnosticCompany = FiscalSnapshots.IssuerCompany(new(profile.Id, profile.Revision, profile.Regime,
+                    profile.TaxpayerKind, company.Name, company.Ruc, company.TradeName, company.MatrixAddress,
+                    establishment?.Address, profile.IsAccountingRequired, profile.SpecialTaxpayerResolution,
+                    profile.WithholdingAgentResolution, fiscalDate));
+                diagnosticCompany.Id = company.Id; diagnosticCompany.IsActive = company.IsActive;
+            }
+            AddSuccess(checks, "Company", "FISCAL_PROFILE_CONFIRMED", "Perfil tributario declarado",
+                "Perfil confirmado y vigente. Cada operacion valida por separado sus productos y tratamiento tributario.");
+        }
+        catch (InvalidOperationException ex) when (FiscalProfileErrors.IsValidation(ex.Message))
+        {
+            AddError(checks, "Company", ex.Message, "Perfil tributario pendiente",
+                "Confirma un perfil estructurado compatible y vigente antes de emitir nuevas operaciones.");
+        }
+        var companyReady = AddCompanyChecks(checks, diagnosticCompany);
         var operationalStructureReady = AddOperationalStructureChecks(
             checks,
             operationalContext.CompanyId,
@@ -306,14 +332,15 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
                 "Contribuyente especial no configurado",
                 "El numero de contribuyente especial es opcional.");
         }
-        else if (IsNumericInRange(company.SpecialTaxpayerNumber, 3, 13))
+        else if (company.SpecialTaxpayerNumber.Length is >= 3 and <= 13
+            && company.SpecialTaxpayerNumber.All(char.IsAsciiLetterOrDigit))
         {
             AddSuccess(
                 checks,
                 "Company",
                 "COMPANY_SPECIAL_TAXPAYER_VALID",
                 "Contribuyente especial valido",
-                "El numero de contribuyente especial configurado es numerico.");
+                "La resolucion de contribuyente especial tiene formato alfanumerico de 3 a 13 caracteres.");
         }
         else
         {
@@ -323,7 +350,7 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
                 "Company",
                 "COMPANY_SPECIAL_TAXPAYER_INVALID",
                 "Contribuyente especial invalido",
-                "Si se configura, el numero de contribuyente especial debe ser numerico y tener entre 3 y 13 digitos.",
+                "Si se configura, la resolucion de contribuyente especial debe ser alfanumerica y tener entre 3 y 13 caracteres.",
                 isBlocking: true);
         }
 

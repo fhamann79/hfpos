@@ -1,0 +1,42 @@
+<section class="profile-panel">
+  <header><h3>Perfil tributario</h3><p-button icon="pi pi-refresh" label="Recargar" severity="secondary" [disabled]="loading() || saving()" (onClick)="reload()" /></header>
+  @if (error()) { <p-message severity="error" [text]="error()" /> }
+  @if (success()) { <p-message severity="success" [text]="success()" /> }
+  @if (!loading() && !activeProfile()) { <p-message severity="warn" text="Sin perfil confirmado y vigente hoy. La emisión de nuevas ventas está bloqueada." /> }
+  @if (activeProfile(); as active) {
+    <div class="current-profile">
+      <span><strong>{{ label(active.regime) }}</strong><small>Versión vigente {{ active.revision }}</small></span>
+      <span>Contabilidad: {{ active.isAccountingRequired ? 'Sí' : 'No' }}</span>
+      <span>Especial: {{ active.specialTaxpayerResolution || 'No declarado' }}</span>
+      <span>Agente: {{ active.withholdingAgentResolution || 'No declarado' }}</span>
+    </div>
+  }
+  @if (canWrite()) {
+    <form #form="ngForm" (ngSubmit)="save()">
+      <fieldset [disabled]="loading() || saving()">
+        <div class="profile-grid">
+          <label>Régimen<p-select name="regime" [options]="regimes" optionLabel="label" optionValue="value" [(ngModel)]="draft.regime" placeholder="Seleccionar" appendTo="body" required /></label>
+          <label>Naturaleza<p-select name="kind" [options]="kinds" optionLabel="label" optionValue="value" [(ngModel)]="draft.taxpayerKind" placeholder="Seleccionar" appendTo="body" required /></label>
+          <label>Vigente desde (Ecuador)<input pInputText name="from" type="date" [(ngModel)]="draft.effectiveFrom" required /></label>
+          <label>Vigente hasta, exclusivo (opcional)<input pInputText name="until" type="date" [ngModel]="draft.effectiveUntil" (ngModelChange)="draft.effectiveUntil = $event || null" /></label>
+          <label>Resolución contribuyente especial<input pInputText name="special" [(ngModel)]="draft.specialTaxpayerResolution" minlength="3" maxlength="13" pattern="[A-Za-z0-9]{3,13}" /></label>
+          <label>Resolución agente de retención<input pInputText name="agent" [(ngModel)]="draft.withholdingAgentResolution" maxlength="8" pattern="[0-9]{1,8}" /></label>
+          <label class="wide">Referencia RUC / evidencia de la declaración<input pInputText name="evidence" [(ngModel)]="draft.evidenceReference" maxlength="500" required /></label>
+          <label class="wide">Motivo de esta versión<input pInputText name="reason" [(ngModel)]="draft.reason" maxlength="500" required /></label>
+        </div>
+        <label class="check"><input name="accounting" type="checkbox" [(ngModel)]="draft.isAccountingRequired" /> Obligado a llevar contabilidad</label>
+        @if (draft.regime !== null && draft.regime !== 0) {
+          <label class="check"><input name="eligibility" type="checkbox" [(ngModel)]="draft.rimpeEligibilityConfirmed" /> Declaro que la empresa cumple los requisitos RIMPE y no realiza actividades que la excluyan.</label>
+        }
+        <label class="check"><input name="confirmed" type="checkbox" [(ngModel)]="draft.confirmed" /> Confirmo régimen, condiciones y vigencia con respaldo documental. Esta declaración no es una verificación automática del SRI.</label>
+        <footer><p-button type="submit" label="Confirmar nueva versión" icon="pi pi-check" [loading]="saving()" [disabled]="form.invalid || !draft.confirmed || loading()" /></footer>
+      </fieldset>
+    </form>
+  }
+  <h4>Historial fiscal</h4>
+  <p-table [value]="history()" [loading]="loading()" [scrollable]="true" [tableStyle]="{ 'min-width': '44rem' }">
+    <ng-template pTemplate="header"><tr><th>Versión</th><th>Régimen</th><th>Vigencia</th><th>Declaración</th><th>Motivo / evidencia</th></tr></ng-template>
+    <ng-template pTemplate="body" let-row><tr><td>{{ row.revision }}</td><td>{{ label(row.regime) }}<small>{{ row.taxpayerKind === 0 ? 'Persona natural' : 'Persona jurídica' }}</small></td><td>{{ row.effectiveFrom }}<small>Hasta {{ row.effectiveUntil || 'nueva versión' }}</small></td><td>{{ row.declaredAt | date:'short' }}<small>Usuario {{ row.declaredByUserId }}</small></td><td>{{ row.reason }}<small>{{ row.evidenceReference }}</small></td></tr></ng-template>
+    <ng-template pTemplate="emptymessage"><tr><td colspan="5">No hay versiones confirmadas.</td></tr></ng-template>
+  </p-table>
+</section>

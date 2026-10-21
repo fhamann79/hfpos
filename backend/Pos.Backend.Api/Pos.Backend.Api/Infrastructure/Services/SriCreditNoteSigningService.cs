@@ -80,6 +80,8 @@ public class SriCreditNoteSigningService : ISriCreditNoteSigningService
             }
 
             ValidateCanSign(creditNote);
+            if (creditNote.FiscalProfileId is null || string.IsNullOrWhiteSpace(creditNote.FiscalIssuerSnapshotJson))
+                throw new InvalidOperationException("FISCAL_LEGACY_REVIEW_REQUIRED");
             _sriCreditNoteXmlValidator.ValidateUnsignedCreditNoteXml(
                 creditNote.SriXmlDraft!);
             ValidateXmlAccessKey(
@@ -392,6 +394,7 @@ public class SriCreditNoteSigningService : ISriCreditNoteSigningService
     private static readonly HashSet<string> DomainErrorCodes =
         new(StringComparer.Ordinal)
         {
+            "FISCAL_LEGACY_REVIEW_REQUIRED",
             "CREDIT_NOTE_NOT_FOUND",
             "CREDIT_NOTE_SRI_ACCESS_KEY_REQUIRED",
             "CREDIT_NOTE_SRI_DRAFT_INCONSISTENT",
