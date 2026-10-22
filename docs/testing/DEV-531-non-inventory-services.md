@@ -66,7 +66,8 @@ certificados reales, servicios SRI reales, DB persistente ni produccion.
 
 1. Crear un producto sintetico con inventario. Confirmar Service en Fiscal y
    desmarcar Controla inventario en Editar. Refrescar y verificar persistencia.
-2. Con stock cero: POS muestra Sin inventario y permite agregar cantidades;
+2. Con stock cero: POS muestra Sin inventario y permite cantidad mayor que uno
+   mediante input/stepper;
    Goods muestra Sin stock y no permite agregar. Vender servicio y verificar
    total/IVA/caja, sin fila de stock ni movimiento nuevo para el servicio.
 3. Anular esa venta: efecto de caja esperado y ningun movimiento/stock fisico.

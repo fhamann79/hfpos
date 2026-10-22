@@ -408,11 +408,21 @@ public sealed class FiscalCoreIntegrationTests(PostgresDatabaseFixture database)
         });
         await db.SaveChangesAsync();
         var profiles = await db.CompanyFiscalProfiles.CountAsync(); var classifications = await db.ProductFiscalClassifications.CountAsync();
-        var error = await Assert.ThrowsAsync<PostgresException>(() => db.GetService<IMigrator>()
-            .MigrateAsync("20261005131215_AddAssistedPasswordRecovery"));
-        Assert.Equal(PostgresErrorCodes.RaiseException, error.SqlState);
-        Assert.Equal("FISCAL_HISTORY_DOWNGRADE_BLOCKED", error.MessageText);
-        db.ChangeTracker.Clear();
+        var migrator = db.GetService<IMigrator>();
+        try
+        {
+            var error = await Assert.ThrowsAsync<PostgresException>(() => migrator
+                .MigrateAsync("20261005131215_AddAssistedPasswordRecovery"));
+            Assert.Equal(PostgresErrorCodes.RaiseException, error.SqlState);
+            Assert.Equal("FISCAL_HISTORY_DOWNGRADE_BLOCKED", error.MessageText);
+            Assert.Contains("20261020215533_AddTenantFiscalProfiles", await db.Database.GetAppliedMigrationsAsync());
+        }
+        finally
+        {
+            // Later additive migrations may already have been reverted before the fiscal guard rejects Down.
+            await migrator.MigrateAsync();
+            db.ChangeTracker.Clear();
+        }
         Assert.Equal(profiles, await db.CompanyFiscalProfiles.CountAsync());
         Assert.Equal(classifications, await db.ProductFiscalClassifications.CountAsync());
         Assert.Equal(evidence == "product-revision" ? 1 : 0, (await db.Products.SingleAsync()).FiscalRevision);

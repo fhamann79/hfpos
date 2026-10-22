@@ -10,6 +10,7 @@ import { ProductsTable } from './products-table';
 import { ProductDialog, ProductDialogSubmit } from './product-dialog';
 import { DEFAULT_VAT_CATEGORY } from '../../../../core/utils/vat-category';
 import { CategoryService } from '../../services/category.service';
+import { FiscalProfileService } from '../../../fiscal-settings/services/fiscal-profile.service';
 
 describe('Product lifecycle', () => {
   const item = { id: 1, categoryId: 1, name: 'Producto histórico', price: 10, cost: 4, minimumStock: 3, vatCategory: DEFAULT_VAT_CATEGORY, isActive: true };
@@ -22,6 +23,10 @@ describe('Product lifecycle', () => {
         ConfirmationService, MessageService],
     });
     vi.spyOn(TestBed.inject(CategoryService), 'getAll').mockReturnValue(of([{ id: 1, name: 'Categoría', isActive: true }]));
+    vi.spyOn(TestBed.inject(FiscalProfileService), 'product').mockReturnValue(of({
+      productRevision: 0, name: item.name, internalCode: null, barcode: null,
+      vatCategory: item.vatCategory, classification: null,
+    }));
   });
 
   afterEach(() => {
@@ -102,6 +107,8 @@ describe('Product lifecycle', () => {
     fixture.detectChanges();
     expect(fixture.componentInstance.categories().map((category) => category.id)).toEqual([1, 3]);
     expect(fixture.componentInstance.form.controls.categoryId.value).toBe(1);
+    expect(TestBed.inject(FiscalProfileService).product).toHaveBeenCalledWith(item.id);
+    expect(fixture.componentInstance.inventoryClassification()).toBeNull();
   });
 
   it('reports a failed lifecycle change and preserves the loaded records', () => {

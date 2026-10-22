@@ -67,7 +67,7 @@ export class CartWorkstation {
   }
 
   maxQuantity(item: CartItem): number | null {
-    if (!this.inventoryAvailable) {
+    if (!this.inventoryAvailable || (item.product.isActive && item.product.tracksInventory === false)) {
       return null;
     }
 
