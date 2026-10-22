@@ -127,7 +127,7 @@ export class PurchaseReceiptsPage implements OnInit, OnDestroy {
 
   readonly canWrite = computed(() => this.permissionService.hasPermission(PERMISSIONS.purchasesWrite));
   readonly activeSuppliers = computed(() => this.suppliers().filter((supplier) => supplier.isActive));
-  readonly activeProducts = computed(() => this.products().filter((product) => product.isActive));
+  readonly activeProducts = computed(() => this.products().filter((product) => product.isActive && product.tracksInventory !== false));
   readonly totalReceived = computed(() => this.summary().totalReceived);
   readonly postedCount = computed(() => this.summary().postedCount);
   readonly canceledCount = computed(() => this.summary().canceledCount);

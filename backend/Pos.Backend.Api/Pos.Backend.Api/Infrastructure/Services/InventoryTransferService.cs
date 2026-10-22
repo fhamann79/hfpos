@@ -50,6 +50,9 @@ public sealed class InventoryTransferService(
                 .CountAsync(p => p.CompanyId == operationalContext.CompanyId && productIds.Contains(p.Id));
             if (validProductCount != productIds.Length)
                 throw new KeyNotFoundException("PRODUCT_NOT_FOUND");
+            if (await context.Products.AnyAsync(p => p.CompanyId == operationalContext.CompanyId
+                && productIds.Contains(p.Id) && !p.TracksInventory))
+                throw new InvalidOperationException("PRODUCT_DOES_NOT_TRACK_INVENTORY");
 
             var now = businessClock.UtcNow;
             var transfer = new InventoryTransfer

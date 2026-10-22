@@ -8,6 +8,7 @@ using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.Infrastructure.Data;
+using Pos.Backend.Api.Infrastructure.Services;
 using Pos.Backend.Api.WebApi.Filters;
 
 namespace Pos.Backend.Api.WebApi.Controllers;
@@ -101,6 +102,8 @@ public class ProductsController : ControllerBase
         var operationalContext = await _operationalContextAccessor.GetRequiredContextAsync();
 
         await using var transaction = await _administrationGuard.BeginChangeAsync(operationalContext.CompanyId);
+        if (!dto.TracksInventory)
+            return Conflict(new ApiErrorResponse { Error = "NON_INVENTORY_REQUIRES_CURRENT_SERVICE" });
         var category = await _context.Categories.SingleOrDefaultAsync(c =>
             c.Id == dto.CategoryId && c.CompanyId == operationalContext.CompanyId);
 
@@ -248,6 +251,17 @@ public class ProductsController : ControllerBase
         product.Price = dto.Price;
         product.MinimumStock = dto.MinimumStock;
         product.VatCategory = dto.VatCategory ?? product.VatCategory;
+        try
+        {
+            await ProductInventoryModeService.ApplyAsync(_context, product, dto.TracksInventory,
+                dto.ExpectedClassificationRevision);
+        }
+        catch (InvalidOperationException ex) when (FiscalProfileErrors.IsValidation(ex.Message)
+            || ex.Message is "PRODUCT_CLASSIFICATION_REVISION_CONFLICT" or "PRODUCT_INVENTORY_MODE_HAS_STOCK")
+        {
+            _context.ChangeTracker.Clear();
+            return Conflict(new ApiErrorResponse { Error = ex.Message });
+        }
         _productCostService.ApplyManualCost(
             product,
             dto.Cost,
@@ -306,6 +320,7 @@ public class ProductsController : ControllerBase
             Price = product.Price,
             Cost = product.Cost,
             MinimumStock = product.MinimumStock,
+            TracksInventory = product.TracksInventory,
             VatCategory = product.VatCategory,
             IsActive = product.IsActive
         };

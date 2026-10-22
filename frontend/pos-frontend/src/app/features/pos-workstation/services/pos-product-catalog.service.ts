@@ -83,6 +83,7 @@ export class PosProductCatalogService {
       vatCategory,
       isActive,
       stock,
+      tracksInventory: this.readBoolean(row, ['tracksInventory', 'TracksInventory'], true),
     };
   }
 

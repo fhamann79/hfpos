@@ -98,7 +98,7 @@
         <td>{{ getCategoryName(product.categoryId) }}</td>
         <td><div class="price-cell"><strong>{{ product.price | currency: 'USD' }}</strong><span class="vat-pill">{{ getVatLabel(product) }}</span></div></td>
         <td><span class="cost-cell">{{ product.cost | currency: 'USD' }}</span></td>
-        <td><span class="minimum-stock-cell">{{ product.minimumStock }}</span></td>
+        <td><span class="minimum-stock-cell">{{ product.tracksInventory === false ? 'Sin inventario' : product.minimumStock }}</span></td>
         <td><p-tag [severity]="product.isActive ? 'success' : 'danger'" [value]="product.isActive ? 'Activo' : 'Inactivo'"></p-tag></td>
         @if (canWrite || canClassify) {
           <td>

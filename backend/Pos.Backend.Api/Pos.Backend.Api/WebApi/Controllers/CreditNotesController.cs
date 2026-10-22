@@ -461,6 +461,8 @@ public class CreditNotesController : ControllerBase
 
         return code switch
         {
+            "CREDIT_NOTE_NO_PHYSICAL_ITEMS" => Conflict(new ApiErrorResponse { Error = code }),
+            "INVENTORY_HISTORICAL_SOURCE_INVALID" => Conflict(new ApiErrorResponse { Error = code }),
             "SALE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "CREDIT_NOTE_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "PRODUCT_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),

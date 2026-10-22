@@ -12,6 +12,7 @@ import { CashSession, CashSessionStatus } from '../../../cash-sessions/models/ca
 import { CashSessionService } from '../../../cash-sessions/services/cash-session.service';
 import { CreditNoteService } from '../../../credit-notes/services/credit-note.service';
 import { CheckoutRequest } from '../../models/checkout-request.model';
+import { PosProduct } from '../../models/pos-product.model';
 import { Sale } from '../../models/sale.model';
 import { SaleDocumentType } from '../../models/sale-document.model';
 import { SalePaymentMethod } from '../../models/sale-payment-method.model';
@@ -27,7 +28,7 @@ import { PosWorkstationPage } from './pos-workstation-page';
 describe('Checkout recovery', () => {
   let response: Subject<Sale>;
   const api = { createSale: vi.fn(), previewSale: vi.fn(), resolveBusinessError: () => 'Synthetic rejection' };
-  const catalog = { refreshCartProducts: vi.fn(() => of([])) };
+  const catalog = { refreshCartProducts: vi.fn(() => of([] as PosProduct[])) };
   const context = { companyTimeZoneId: () => 'America/Guayaquil', companyId: () => 1,
     establishmentId: () => 2, emissionPointId: () => 3, username: () => 'synthetic', me: () => ({ userId: '10' }) };
   const product = { id: 7, name: 'Synthetic product', barcode: 'SYN7', internalCode: 'SYN7',
@@ -35,6 +36,7 @@ describe('Checkout recovery', () => {
 
   beforeEach(() => {
     sessionStorage.clear(); vi.clearAllMocks(); response = new Subject<Sale>(); api.createSale.mockReturnValue(response);
+    catalog.refreshCartProducts.mockReset().mockReturnValue(of([]));
     api.previewSale.mockReturnValue(new Subject());
     TestBed.configureTestingModule({ imports: [SaleReceiptDialog, CartWorkstation], providers: [
       { provide: PermissionService, useValue: { hasPermission: (permission: string) => permission !== PERMISSIONS.reportsSalesRead } },
@@ -150,6 +152,8 @@ describe('Checkout recovery', () => {
   });
 
   it('restores an empty fresh page draft before releasing a definitive stock rejection', () => {
+    const stockRefresh = new Subject<PosProduct[]>();
+    catalog.refreshCartProducts.mockReturnValueOnce(stockRefresh);
     const p = page(); p.cart.update(items => [
       { ...items[0], quantity: 2, unitPrice: 11, discountAmount: 1 },
       { ...items[0], productId: 8, productName: 'Other synthetic', product: { ...product, id: 8 }, quantity: 3, unitPrice: 4, discountAmount: 2 },
@@ -170,7 +174,13 @@ describe('Checkout recovery', () => {
     expect(fresh.selectedDocumentType()).toBe(SaleDocumentType.Invoice); expect(fresh.notes()).toBe('Draft notes');
     expect(fresh.cashReceived()).toBe(50); expect(fresh.pendingCheckout()).toBeNull(); expect(sessionStorage.length).toBe(0);
     expect(catalog.refreshCartProducts).toHaveBeenCalledWith([7, 8]);
-    fresh.updateNotes('Corrected draft'); fresh.cart.update(items => items.map(item => ({ ...item, stock: 5 })));
+    stockRefresh.next([]);
+    fresh.updateNotes('Corrected draft'); fresh.confirmCheckout();
+    expect(api.createSale).toHaveBeenCalledTimes(2);
+    expect(fresh.pendingCheckout()).toBeNull();
+    expect(fresh.cart().every(item => !item.product.isActive)).toBe(true);
+    stockRefresh.next([product, { ...product, id: 8 }]);
+    expect(fresh.cart().every(item => item.product.isActive && item.stock === 5)).toBe(true);
     response = new Subject<Sale>(); api.createSale.mockReturnValue(response); fresh.confirmCheckout();
     expect(sent().requestId).not.toBe(first.requestId); expect(sent().customerId).toBe(9); expect(sent().items).toHaveLength(2);
     fresh.ngOnDestroy();
@@ -212,13 +222,20 @@ describe('Checkout recovery', () => {
   });
 
   it('keeps every cart line/quantity/price/discount after stock rejection and creates a new key for the correction', () => {
+    const stockRefresh = new Subject<PosProduct[]>();
+    catalog.refreshCartProducts.mockReturnValueOnce(stockRefresh);
     const p = page(); p.cart.update(items => [...items, { ...items[0], productId: 8, product: { ...product, id: 8 }, discountAmount: 1 }]);
     const originalCart = p.cart(); p.cashReceived.set(40); p.confirmCheckout(); const first = sent();
     response.error(new HttpErrorResponse({ status: 409, error: { error: 'INSUFFICIENT_STOCK' } }));
     expect(p.cart().map(i => [i.productId, i.quantity, i.unitPrice, i.discountAmount]))
       .toEqual(originalCart.map(i => [i.productId, i.quantity, i.unitPrice, i.discountAmount]));
     expect(catalog.refreshCartProducts).toHaveBeenCalledWith([7, 8]); expect(p.pendingCheckout()).toBeNull();
-    p.removeItem(7); p.cart.update(items => items.map(item => ({ ...item, stock: 5 })));
+    stockRefresh.next([]);
+    p.removeItem(7); p.confirmCheckout();
+    expect(api.createSale).toHaveBeenCalledTimes(1);
+    expect(p.pendingCheckout()).toBeNull();
+    stockRefresh.next([{ ...product, id: 8 }]);
+    expect(p.cart()[0].product.isActive).toBe(true);
     response = new Subject<Sale>(); api.createSale.mockReturnValue(response); p.confirmCheckout();
     expect(sent().requestId).not.toBe(first.requestId); expect(sent().items).toHaveLength(1);
   });

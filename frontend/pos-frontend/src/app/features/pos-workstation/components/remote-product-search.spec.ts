@@ -28,6 +28,27 @@ describe('POS remote product search', () => {
     TestBed.resetTestingModule();
   });
 
+  it('renders Sin inventario separately from Sin stock and allows a zero-stock service', () => {
+    const service = { ...product(71, 'Synthetic service', 10), stock: 0, tracksInventory: false };
+    const physical = { ...product(72, 'Synthetic goods', 10), stock: 0, tracksInventory: true };
+    catalogService.searchProducts.mockReturnValue(of([service, physical]));
+    const fixture = TestBed.createComponent(ProductSearchPanel);
+    const panel = fixture.componentInstance;
+    panel.canSell = true; panel.inventoryAvailable = true; panel.searchTerm = 'Synthetic';
+    panel.onSearchChange('Synthetic'); vi.advanceTimersByTime(150); fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    expect(element.textContent).toContain('Sin inventario');
+    expect(element.textContent).toContain('Sin stock');
+    expect(element.querySelectorAll('.product-item--out')).toHaveLength(1);
+    const added = vi.fn(); panel.addProduct.subscribe(added);
+    panel.add(service); panel.add(physical);
+    expect(added).toHaveBeenCalledExactlyOnceWith(service);
+    const dialog = createDialog(); dialog.inventoryAvailable = true;
+    const selected = vi.fn(); dialog.selectProduct.subscribe(selected);
+    dialog.pick(service); dialog.pick(physical);
+    expect(selected).toHaveBeenCalledExactlyOnceWith(service);
+  });
+
   it('main search sends the latest term remotely and ignores an older response', () => {
     const older = new Subject<PosProduct[]>();
     const newer = new Subject<PosProduct[]>();

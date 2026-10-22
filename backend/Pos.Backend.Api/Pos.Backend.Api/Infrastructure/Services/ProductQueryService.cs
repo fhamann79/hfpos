@@ -156,6 +156,7 @@ public sealed class ProductQueryService : IProductQueryService
             Price = product.Price,
             Cost = product.Cost,
             MinimumStock = product.MinimumStock,
+            TracksInventory = product.TracksInventory,
             VatCategory = product.VatCategory,
             IsActive = product.IsActive
         };

@@ -112,7 +112,7 @@ export class QuickProductSearchDialog implements AfterViewInit, OnChanges, OnDes
   }
 
   pick(product: PosProduct): void {
-    if (!this.inventoryAvailable || product.stock <= 0) {
+    if (!this.inventoryAvailable || !product.isActive || (product.tracksInventory !== false && product.stock <= 0)) {
       this.unavailableProduct.emit(product);
       return;
     }

@@ -890,6 +890,7 @@ public class CreditNoteService : ICreditNoteService
         return new CreditNoteItem
         {
             SaleItemId = originalItem.Id,
+            TracksInventorySnapshot = originalItem.TracksInventorySnapshot,
             ProductId = originalItem.ProductId,
             ProductNameSnapshot = productSnapshot.Name,
             ProductMainCodeSnapshot = productSnapshot.MainCode,
@@ -1038,6 +1039,7 @@ public class CreditNoteService : ICreditNoteService
             HasInventoryReturn = creditNote.InventoryReturnedAt.HasValue
                 && creditNote.InventoryReturnedByUserId.HasValue,
             InventoryReturnedAt = creditNote.InventoryReturnedAt,
+            HasPhysicalItems = creditNote.Items.Any(i => i.TracksInventorySnapshot),
             InventoryReturnedByUserId = creditNote.InventoryReturnedByUserId,
             InventoryReturnedByUsername = creditNote.InventoryReturnedByUser?.Username,
             InventoryReturnNotes = creditNote.InventoryReturnNotes,
@@ -1069,6 +1071,7 @@ public class CreditNoteService : ICreditNoteService
 
                     return new CreditNoteItemDto
                     {
+                        TracksInventorySnapshot = item.TracksInventorySnapshot,
                         Id = item.Id,
                         SaleItemId = item.SaleItemId,
                         ProductId = item.ProductId,

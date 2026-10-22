@@ -789,6 +789,7 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<Product>(entity =>
         {
+            entity.Property(e => e.TracksInventory).HasDefaultValue(true).HasSentinel(true);
             entity.Property(p => p.Name)
                 .IsRequired()
                 .HasMaxLength(150);
@@ -1556,6 +1557,7 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<CreditNoteItem>(entity =>
         {
+            entity.Property(e => e.TracksInventorySnapshot).HasDefaultValue(true).HasSentinel(true);
             entity.Property(cni => cni.ProductNameSnapshot)
                 .IsRequired()
                 .HasMaxLength(300);
@@ -1794,6 +1796,7 @@ public class PosDbContext : DbContext
 
         modelBuilder.Entity<SaleItem>(entity =>
         {
+            entity.Property(e => e.TracksInventorySnapshot).HasDefaultValue(true).HasSentinel(true);
             entity.Property(si => si.Quantity)
                 .HasPrecision(18, 4);
 

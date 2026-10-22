@@ -1,6 +1,7 @@
 import { ProductVatCategory } from '../../../core/utils/vat-category';
 
 export interface Product {
+  tracksInventory?: boolean;
   id: number;
   categoryId: number;
   name: string;
@@ -14,6 +15,7 @@ export interface Product {
 }
 
 export interface CreateProductRequest {
+  tracksInventory?: boolean;
   categoryId: number;
   name: string;
   barcode?: string | null;
@@ -25,6 +27,8 @@ export interface CreateProductRequest {
 }
 
 export interface UpdateProductRequest {
+  tracksInventory?: boolean;
+  expectedClassificationRevision?: number;
   categoryId: number;
   name: string;
   barcode?: string | null;

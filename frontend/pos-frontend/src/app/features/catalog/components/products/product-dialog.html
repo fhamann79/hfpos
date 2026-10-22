@@ -136,6 +136,22 @@
       </div>
     </div>
 
+    @if (isEditMode) {
+      <div class="field">
+        <label for="product-tracks-inventory">Controla inventario</label>
+        <label class="app-boolean-switch inventory-switch">
+          <input id="product-tracks-inventory" type="checkbox" formControlName="tracksInventory"
+            aria-label="Controla inventario" />
+          <span class="app-boolean-switch__track" aria-hidden="true">
+            <span class="app-boolean-switch__thumb"></span>
+          </span>
+          <span class="app-boolean-switch__state" aria-hidden="true">
+            {{ form.controls.tracksInventory.value ? 'Sí' : 'No' }}
+          </span>
+        </label>
+      </div>
+    }
+
     <div class="dialog-actions">
       <p-button label="Cancelar" severity="secondary" [outlined]="true" (onClick)="hide()"></p-button>
       <p-button label="Guardar" icon="pi pi-check" type="submit"></p-button>

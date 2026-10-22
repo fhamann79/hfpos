@@ -1026,6 +1026,11 @@ namespace Pos.Backend.Api.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<bool>("TracksInventorySnapshot")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<decimal>("UnitCost")
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)");
@@ -2280,6 +2285,11 @@ namespace Pos.Backend.Api.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<bool>("TracksInventory")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<int>("VatCategory")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -3209,6 +3219,11 @@ namespace Pos.Backend.Api.Migrations
                     b.Property<decimal>("TaxableSubtotal")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
+
+                    b.Property<bool>("TracksInventorySnapshot")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<decimal>("UnitCost")
                         .ValueGeneratedOnAdd()

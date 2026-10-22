@@ -132,6 +132,7 @@ public sealed class FiscalProfileService(PosDbContext db, IOperationalContextAcc
             DeclaredByUserId = context.UserId, DeclaredAt = clock.UtcNow, Confirmed = true
         };
         FiscalTaxResolver.ValidateClassification(product, classification);
+        ProductInventoryPolicy.ValidateClassification(product, classification);
         db.ProductFiscalClassifications.Add(classification);
         await db.SaveChangesAsync();
         await tx.CommitAsync();

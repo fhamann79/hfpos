@@ -28,7 +28,7 @@
         <li
           class="result-item"
           [class.result-item--active]="i === highlightedIndex"
-          [class.result-item--out]="!inventoryAvailable || product.stock <= 0"
+          [class.result-item--out]="!inventoryAvailable || (product.tracksInventory !== false && product.stock <= 0)"
           (click)="pick(product)"
         >
           <span>
@@ -48,7 +48,7 @@
             @if (!inventoryAvailable) {
               Stock no disponible
             } @else {
-              {{ getVatLabel(product) }} · Stock: {{ product.stock }}
+              {{ getVatLabel(product) }} · {{ product.tracksInventory === false ? 'Sin inventario' : (product.stock <= 0 ? 'Sin stock' : 'Stock: ' + product.stock) }}
             }
           </small>
         </li>

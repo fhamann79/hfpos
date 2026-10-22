@@ -34,6 +34,8 @@ public class Product
 
     public decimal MinimumStock { get; set; } = 3m;
 
+    public bool TracksInventory { get; set; } = true;
+
     public ProductVatCategory VatCategory { get; set; }
     public long FiscalRevision { get; set; }
 

@@ -260,6 +260,7 @@ export class CreditNoteDetailDialog {
         === 'AUTORIZADO';
 
     return this.canReturnInventory
+      && creditNote.hasPhysicalItems !== false
       && creditNote.voidedAt === null
       && !creditNote.hasInventoryReturn
       && isAuthorized
