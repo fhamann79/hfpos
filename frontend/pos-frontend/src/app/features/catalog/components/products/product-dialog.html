@@ -138,10 +138,16 @@
 
     @if (isEditMode) {
       <div class="field">
-        <label for="product-tracks-inventory">
-          <p-checkbox inputId="product-tracks-inventory" formControlName="tracksInventory" [binary]="true"
-            [readonly]="form.controls.tracksInventory.value && !(inventoryClassification()?.confirmed && inventoryClassification()?.isCurrent && inventoryClassification()?.kind === 1)" />
-          Controla inventario
+        <label for="product-tracks-inventory">Controla inventario</label>
+        <label class="app-boolean-switch inventory-switch">
+          <input id="product-tracks-inventory" type="checkbox" formControlName="tracksInventory"
+            aria-label="Controla inventario" />
+          <span class="app-boolean-switch__track" aria-hidden="true">
+            <span class="app-boolean-switch__thumb"></span>
+          </span>
+          <span class="app-boolean-switch__state" aria-hidden="true">
+            {{ form.controls.tracksInventory.value ? 'Sí' : 'No' }}
+          </span>
         </label>
       </div>
     }

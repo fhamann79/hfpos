@@ -1,12 +1,12 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { SelectModule } from 'primeng/select';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
-import { CheckboxModule } from 'primeng/checkbox';
 import { FiscalProfileService } from '../../../fiscal-settings/services/fiscal-profile.service';
 import { ProductFiscalClassification } from '../../../fiscal-settings/models/fiscal-profile.model';
 import { DEFAULT_VAT_CATEGORY, VAT_CATEGORY_OPTIONS, normalizeVatCategory } from '../../../../core/utils/vat-category';
@@ -29,7 +29,6 @@ export type ProductDialogSubmit =
     SelectModule,
     InputNumberModule,
     ButtonModule,
-    CheckboxModule,
   ],
   templateUrl: './product-dialog.html',
   styleUrl: './product-dialog.scss',
@@ -59,6 +58,12 @@ export class ProductDialog implements OnChanges {
     minimumStock: [3, [Validators.required, Validators.min(0)]],
     vatCategory: [DEFAULT_VAT_CATEGORY, [Validators.required]],
   });
+
+  constructor() {
+    this.form.controls.tracksInventory.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.syncInventoryControl();
+    });
+  }
 
   get isEditMode() {
     return !!this.product;
@@ -137,9 +142,20 @@ export class ProductDialog implements OnChanges {
     if (this.product) {
       const id = this.product.id;
       this.inventoryClassification.set(null);
+      this.syncInventoryControl();
       this.fiscalService.product(id).subscribe({
-        next: state => { if (this.visible && this.product?.id === id) this.inventoryClassification.set(state.classification); },
-        error: () => { if (this.product?.id === id) this.inventoryClassification.set(null); },
+        next: state => {
+          if (this.visible && this.product?.id === id) {
+            this.inventoryClassification.set(state.classification);
+            this.syncInventoryControl();
+          }
+        },
+        error: () => {
+          if (this.product?.id === id) {
+            this.inventoryClassification.set(null);
+            this.syncInventoryControl();
+          }
+        },
       });
       this.form.setValue({
         name: this.product.name,
@@ -166,6 +182,16 @@ export class ProductDialog implements OnChanges {
       minimumStock: 3,
       vatCategory: DEFAULT_VAT_CATEGORY,
     });
+  }
+
+  private syncInventoryControl(): void {
+    const control = this.form.controls.tracksInventory;
+    const classification = this.inventoryClassification();
+    if (control.value && !(classification?.confirmed && classification.isCurrent && classification.kind === 1)) {
+      control.disable({ emitEvent: false });
+    } else {
+      control.enable({ emitEvent: false });
+    }
   }
 
   private normalizeOptionalIdentifier(value: string): string | null {

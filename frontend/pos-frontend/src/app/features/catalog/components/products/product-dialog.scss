@@ -26,6 +26,10 @@
   gap: 0.5rem;
 }
 
+.inventory-switch input:checked + .app-boolean-switch__track .app-boolean-switch__thumb {
+  transform: translate(1.35rem, -50%);
+}
+
 .field-help {
   color: var(--app-text-muted);
   font-size: 0.78rem;
