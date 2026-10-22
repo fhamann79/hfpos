@@ -53,6 +53,7 @@ public sealed class InventoryTransfersController(IInventoryTransferService servi
                 "INVENTORY_TRANSFER_DESTINATION_NOT_FOUND" or "PRODUCT_NOT_FOUND" =>
                     NotFound(response),
                 "INVENTORY_TRANSFER_INSUFFICIENT_STOCK"
+                    or "PRODUCT_DOES_NOT_TRACK_INVENTORY"
                     or "INVENTORY_TRANSFER_CONCURRENCY_CONFLICT"
                     or "INVENTORY_TRANSFER_REQUEST_CONFLICT" => Conflict(response),
                 "INVENTORY_TRANSFER_REQUEST_ID_REQUIRED"

@@ -6,6 +6,9 @@ import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
+import { CheckboxModule } from 'primeng/checkbox';
+import { FiscalProfileService } from '../../../fiscal-settings/services/fiscal-profile.service';
+import { ProductFiscalClassification } from '../../../fiscal-settings/models/fiscal-profile.model';
 import { DEFAULT_VAT_CATEGORY, VAT_CATEGORY_OPTIONS, normalizeVatCategory } from '../../../../core/utils/vat-category';
 import { Category } from '../../models/category.model';
 import { CreateProductRequest, Product, UpdateProductRequest } from '../../models/product.model';
@@ -26,6 +29,7 @@ export type ProductDialogSubmit =
     SelectModule,
     InputNumberModule,
     ButtonModule,
+    CheckboxModule,
   ],
   templateUrl: './product-dialog.html',
   styleUrl: './product-dialog.scss',
@@ -33,6 +37,8 @@ export type ProductDialogSubmit =
 export class ProductDialog implements OnChanges {
   private readonly fb = inject(FormBuilder);
   private readonly categoryService = inject(CategoryService);
+  private readonly fiscalService = inject(FiscalProfileService);
+  readonly inventoryClassification = signal<ProductFiscalClassification | null>(null);
 
   @Input({ required: true }) visible = false;
   @Input() product: Product | null = null;
@@ -44,6 +50,7 @@ export class ProductDialog implements OnChanges {
 
   readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required]],
+    tracksInventory: [true],
     categoryId: [0, [Validators.required, Validators.min(1)]],
     barcode: [''],
     internalCode: [''],
@@ -86,6 +93,8 @@ export class ProductDialog implements OnChanges {
         id: this.product.id,
         payload: {
           name: values.name.trim(),
+          tracksInventory: values.tracksInventory,
+          expectedClassificationRevision: this.inventoryClassification()?.revision,
           categoryId: values.categoryId,
           barcode: this.normalizeOptionalIdentifier(values.barcode),
           internalCode: this.normalizeOptionalIdentifier(values.internalCode),
@@ -126,8 +135,15 @@ export class ProductDialog implements OnChanges {
     }
 
     if (this.product) {
+      const id = this.product.id;
+      this.inventoryClassification.set(null);
+      this.fiscalService.product(id).subscribe({
+        next: state => { if (this.visible && this.product?.id === id) this.inventoryClassification.set(state.classification); },
+        error: () => { if (this.product?.id === id) this.inventoryClassification.set(null); },
+      });
       this.form.setValue({
         name: this.product.name,
+        tracksInventory: this.product.tracksInventory !== false,
         categoryId: this.product.categoryId,
         barcode: this.product.barcode ?? '',
         internalCode: this.product.internalCode ?? '',
@@ -141,6 +157,7 @@ export class ProductDialog implements OnChanges {
 
     this.form.reset({
       name: '',
+      tracksInventory: true,
       categoryId: 0,
       barcode: '',
       internalCode: '',

@@ -195,7 +195,8 @@ export class ProductSearchPanel implements AfterViewInit, OnDestroy {
   }
 
   private canAdd(product: PosProduct): boolean {
-    return this.canSell && this.inventoryAvailable && product.stock > 0;
+    return this.canSell && this.inventoryAvailable && product.isActive
+      && (product.tracksInventory === false || product.stock > 0);
   }
 
   private findExactIdentifierMatch(term: string): PosProduct | null {

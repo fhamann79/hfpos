@@ -136,6 +136,16 @@
       </div>
     </div>
 
+    @if (isEditMode) {
+      <div class="field">
+        <label for="product-tracks-inventory">
+          <p-checkbox inputId="product-tracks-inventory" formControlName="tracksInventory" [binary]="true"
+            [readonly]="form.controls.tracksInventory.value && !(inventoryClassification()?.confirmed && inventoryClassification()?.isCurrent && inventoryClassification()?.kind === 1)" />
+          Controla inventario
+        </label>
+      </div>
+    }
+
     <div class="dialog-actions">
       <p-button label="Cancelar" severity="secondary" [outlined]="true" (onClick)="hide()"></p-button>
       <p-button label="Guardar" icon="pi pi-check" type="submit"></p-button>

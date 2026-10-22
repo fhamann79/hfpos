@@ -98,6 +98,8 @@ public sealed class PurchaseReceiptService(
                 throw new KeyNotFoundException("PRODUCT_NOT_FOUND");
             }
 
+            if (productById.Values.Any(product => !product.TracksInventory))
+                throw new InvalidOperationException("PRODUCT_DOES_NOT_TRACK_INVENTORY");
             if (productById.Values.Any(product => !product.IsActive))
             {
                 throw new InvalidOperationException("PRODUCT_INACTIVE");

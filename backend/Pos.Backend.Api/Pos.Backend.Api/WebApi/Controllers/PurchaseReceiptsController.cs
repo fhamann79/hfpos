@@ -147,7 +147,8 @@ public class PurchaseReceiptsController : ControllerBase
         {
             return NotFound(new ApiErrorResponse { Error = ex.Message });
         }
-        catch (InvalidOperationException ex) when (ex.Message is "REQUEST_CONFLICT" or "INVENTORY_CONCURRENCY_CONFLICT")
+        catch (InvalidOperationException ex) when (ex.Message is "REQUEST_CONFLICT" or "INVENTORY_CONCURRENCY_CONFLICT"
+            or "PRODUCT_DOES_NOT_TRACK_INVENTORY")
         {
             return Conflict(new ApiErrorResponse { Error = ex.Message });
         }

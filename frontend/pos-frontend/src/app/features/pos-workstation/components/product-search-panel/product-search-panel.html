@@ -48,7 +48,7 @@
   } @else {
     <ul class="product-list">
       @for (product of results; track product.id) {
-        <li class="product-item" [class.product-item--out]="product.stock <= 0">
+        <li class="product-item" [class.product-item--out]="product.tracksInventory !== false && product.stock <= 0">
           <div>
             <strong>{{ product.name }}</strong>
             @if (product.barcode || product.internalCode) {
@@ -64,12 +64,12 @@
             <div class="meta">
               <span>{{ product.price | currency: 'USD' }}</span>
               <span class="vat-meta">{{ getVatLabel(product) }}</span>
-              <span>Stock: {{ product.stock }}</span>
+              <span>{{ product.tracksInventory === false ? 'Sin inventario' : 'Stock: ' + product.stock }}</span>
             </div>
           </div>
           @if (!inventoryAvailable) {
             <span class="stock-empty">Stock no disponible</span>
-          } @else if (product.stock <= 0) {
+          } @else if (product.tracksInventory !== false && product.stock <= 0) {
             <span class="stock-empty">Sin stock</span>
           } @else {
             <p-button label="Agregar" icon="pi pi-plus" [disabled]="!canSell" (onClick)="add(product)"></p-button>

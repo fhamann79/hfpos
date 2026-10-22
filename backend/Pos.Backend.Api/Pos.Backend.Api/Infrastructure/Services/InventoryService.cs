@@ -4,6 +4,7 @@ using Npgsql;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Enums;
+using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.Infrastructure.Data;
 
@@ -51,6 +52,8 @@ public class InventoryService : IInventoryService
                     .Select(s => (decimal?)s.Quantity)
                     .FirstOrDefault() ?? 0m
             });
+
+        query = query.Where(x => x.Product.TracksInventory || x.Quantity != 0m);
 
         if (productId.HasValue)
         {
@@ -580,6 +583,16 @@ public class InventoryService : IInventoryService
                 ? await GetValidProductAsync(productId, operationalContext.CompanyId)
                 : await GetProductInCompanyAsync(productId, operationalContext.CompanyId);
 
+            if (sourceType is InventoryMovementSourceType.SaleVoid or InventoryMovementSourceType.CreditNoteReturn
+                or InventoryMovementSourceType.PurchaseReceiptCancel)
+            {
+                if (!await HasPhysicalHistoricalSourceAsync(operationalContext, productId, sourceType,
+                    sourceId, sourceLineId, quantity))
+                    throw new InvalidOperationException("INVENTORY_HISTORICAL_SOURCE_INVALID");
+            }
+            else if (!product.TracksInventory)
+                throw new InvalidOperationException("PRODUCT_DOES_NOT_TRACK_INVENTORY");
+
             var productStock = await GetLockedProductStockAsync(
                 product.Id,
                 operationalContext.CompanyId,
@@ -738,6 +751,36 @@ public class InventoryService : IInventoryService
             if (requestId.HasValue) _context.ChangeTracker.Clear();
             throw;
         }
+    }
+
+    private async Task<bool> HasPhysicalHistoricalSourceAsync(OperationalContext operational, int productId,
+        InventoryMovementSourceType sourceType, int? sourceId, int? sourceLineId, decimal quantity)
+    {
+        if (sourceType == InventoryMovementSourceType.PurchaseReceiptCancel)
+            return await _context.PurchaseReceiptItems.AsNoTracking().AnyAsync(i => i.Id == sourceLineId
+                && i.PurchaseReceiptId == sourceId && i.ProductId == productId && i.Quantity == quantity
+                && i.PurchaseReceipt.CompanyId == operational.CompanyId
+                && i.PurchaseReceipt.EstablishmentId == operational.EstablishmentId
+                && _context.InventoryMovements.Any(m => m.CompanyId == operational.CompanyId
+                    && m.EstablishmentId == operational.EstablishmentId && m.ProductId == productId
+                    && m.SourceType == InventoryMovementSourceType.PurchaseReceipt
+                    && m.SourceId == sourceId && m.SourceLineId == sourceLineId && m.Quantity == quantity));
+        if (sourceType == InventoryMovementSourceType.SaleVoid)
+            return await _context.SaleItems.AsNoTracking().AnyAsync(i => i.Id == sourceLineId
+                && i.SaleId == sourceId && i.ProductId == productId && i.Quantity == quantity
+                && i.TracksInventorySnapshot && i.Sale.CompanyId == operational.CompanyId
+                && i.Sale.EstablishmentId == operational.EstablishmentId
+                && i.Sale.EmissionPointId == operational.EmissionPointId);
+
+        return await _context.CreditNoteItems.AsNoTracking().AnyAsync(i => i.Id == sourceLineId
+            && i.CreditNoteId == sourceId && i.ProductId == productId && i.Quantity == quantity
+            && i.TracksInventorySnapshot && i.CreditNote.CompanyId == operational.CompanyId
+            && i.CreditNote.EstablishmentId == operational.EstablishmentId
+            && i.CreditNote.EmissionPointId == operational.EmissionPointId
+            && i.SaleItem != null && i.SaleItem.TracksInventorySnapshot
+            && i.SaleItem.SaleId == i.CreditNote.OriginalSaleId
+            && i.SaleItem.ProductId == productId && i.SaleItem.Quantity >= quantity
+            && i.SaleItem.Sale.CompanyId == operational.CompanyId);
     }
 
     private async Task<Product> GetValidProductAsync(int productId, int companyId)

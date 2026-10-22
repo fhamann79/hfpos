@@ -64,6 +64,7 @@ export interface CreditNoteListItem {
 }
 
 export interface CreditNote {
+  hasPhysicalItems?: boolean;
   id: number;
   originalSaleId: number;
   originalSalePaymentMethod: SalePaymentMethod;

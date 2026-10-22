@@ -16,6 +16,18 @@ describe('PosProductCatalogService remote stock lookup', () => {
 
   afterEach(() => http.verify());
 
+  it('maps explicit nontracking and defaults missing or malformed flags to physical', () => {
+    service.searchProducts().subscribe(products => {
+      expect(products.map(p => p.tracksInventory)).toEqual([false, true, true]);
+      expect(products[0].stock).toBe(0);
+    });
+    http.expectOne(r => r.url.endsWith('/api/Inventory/pos-products')).flush([
+      { id: 71, name: 'Synthetic service', price: 10, stock: 0, isActive: true, tracksInventory: false },
+      { id: 72, name: 'Synthetic legacy', price: 10, stock: 0, isActive: true },
+      { id: 73, name: 'Synthetic malformed', price: 10, stock: 0, isActive: true, tracksInventory: 'false' },
+    ]);
+  });
+
   it('searches the integrated bounded POS endpoint and maps product stock', () => {
     service.searchProducts('ABC-123', 30).subscribe((products) => {
       expect(products).toEqual([

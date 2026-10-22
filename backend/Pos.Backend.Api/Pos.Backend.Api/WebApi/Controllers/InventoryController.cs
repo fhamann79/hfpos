@@ -186,6 +186,7 @@ public class InventoryController : ControllerBase
             "REQUEST_ID_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "PRODUCT_NOT_FOUND" => NotFound(new ApiErrorResponse { Error = code }),
             "PRODUCT_INACTIVE" => BadRequest(new ApiErrorResponse { Error = code }),
+            "PRODUCT_DOES_NOT_TRACK_INVENTORY" => Conflict(new ApiErrorResponse { Error = code }),
             "INVALID_QUANTITY" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVENTORY_SNAPSHOT_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "INVENTORY_SNAPSHOT_STALE" => Conflict(new ApiErrorResponse { Error = code }),

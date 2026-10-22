@@ -12,6 +12,7 @@ public class SaleItem
     public Sale Sale { get; set; }
 
     public int ProductId { get; set; }
+    public bool TracksInventorySnapshot { get; set; } = true;
     public string? ProductNameSnapshot { get; set; }
     public string? ProductSkuSnapshot { get; set; }
     public Product Product { get; set; }

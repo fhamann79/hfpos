@@ -100,8 +100,8 @@
         <div>
           <span>Estado</span>
           <p-tag
-            [value]="note.hasInventoryReturn ? 'Registrada' : 'Pendiente'"
-            [severity]="note.hasInventoryReturn ? 'success' : 'warn'"
+            [value]="note.hasPhysicalItems === false ? 'Sin devolución física' : (note.hasInventoryReturn ? 'Registrada' : 'Pendiente')"
+            [severity]="note.hasPhysicalItems === false ? 'info' : (note.hasInventoryReturn ? 'success' : 'warn')"
           ></p-tag>
         </div>
         <div>

@@ -29,7 +29,7 @@
               }
             </div>
             @if (inventoryAvailable) {
-              <small>{{ vatLabel(item) }} · Disponible: {{ item.stock }}</small>
+              <small>{{ vatLabel(item) }} · {{ item.product.tracksInventory === false ? 'Sin inventario' : 'Disponible: ' + item.stock }}</small>
             }
           </div>
 

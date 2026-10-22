@@ -15,6 +15,7 @@ public class CreditNoteItem
     public SaleItem? SaleItem { get; set; }
 
     public int ProductId { get; set; }
+    public bool TracksInventorySnapshot { get; set; } = true;
     public Product Product { get; set; } = null!;
 
     public string ProductNameSnapshot { get; set; } = string.Empty;

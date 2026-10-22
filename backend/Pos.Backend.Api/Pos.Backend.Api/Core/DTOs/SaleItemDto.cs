@@ -5,6 +5,7 @@ namespace Pos.Backend.Api.Core.DTOs;
 public class SaleItemDto
 {
     public int Id { get; set; }
+    public bool TracksInventorySnapshot { get; set; } = true;
 
     public int ProductId { get; set; }
     public string? ProductNameSnapshot { get; set; }

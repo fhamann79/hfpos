@@ -97,11 +97,13 @@ public class CreditNoteInventoryReturnService : ICreditNoteInventoryReturnServic
                     && movement.SourceId == creditNote.Id)
                 .ToListAsync();
 
+            var physicalItems = items.Where(i => i.TracksInventorySnapshot).ToList();
+
             var hasCompleteAudit = creditNote.InventoryReturnedAt.HasValue
                 && creditNote.InventoryReturnedByUserId.HasValue;
             var hasCompleteMovements = HasCompleteMovementSet(
                 creditNote,
-                items,
+                physicalItems,
                 existingMovements);
 
             if (hasCompleteAudit && hasCompleteMovements)
@@ -127,9 +129,11 @@ public class CreditNoteInventoryReturnService : ICreditNoteInventoryReturnServic
 
             ValidateCreditNoteState(creditNote);
             ValidateItems(items);
+            if (physicalItems.Count == 0)
+                throw new InvalidOperationException("CREDIT_NOTE_NO_PHYSICAL_ITEMS");
 
             var movementNotes = BuildMovementNotes(creditNote, notes);
-            foreach (var item in items)
+            foreach (var item in physicalItems)
             {
                 await _inventoryService.RegisterCreditNoteReturnAsync(
                     item.ProductId,
@@ -362,6 +366,8 @@ public class CreditNoteInventoryReturnService : ICreditNoteInventoryReturnServic
             or "CREDIT_NOTE_INVENTORY_RETURN_REJECTED"
             or "CREDIT_NOTE_INVENTORY_RETURN_ONLY_AUTHORIZED"
             or "CREDIT_NOTE_INVENTORY_RETURN_INCONSISTENT"
+            or "CREDIT_NOTE_NO_PHYSICAL_ITEMS"
+            or "INVENTORY_HISTORICAL_SOURCE_INVALID"
             or "INVENTORY_CONCURRENCY_CONFLICT"
             or "INVALID_QUANTITY";
     }

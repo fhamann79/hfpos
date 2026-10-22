@@ -490,7 +490,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       return false;
     }
 
-    if (product.stock <= 0) {
+    if (!product.isActive || (product.tracksInventory !== false && product.stock <= 0)) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Producto no disponible',
@@ -505,14 +505,14 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       const found = items.find((item) => item.productId === product.id);
 
       if (found) {
-        if (found.quantity >= found.stock) {
+        if (product.tracksInventory !== false && found.quantity >= product.stock) {
           this.notifyStockLimit(found.productName, found.stock);
           return items;
         }
 
         productAdded = true;
         return items.map((item) =>
-          item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item
+          item.productId === product.id ? { ...item, stock: product.stock, product, quantity: item.quantity + 1 } : item
         );
       }
 
@@ -552,7 +552,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         }
 
         const requestedQuantity = Math.max(1, Math.floor(event.quantity || 1));
-        const maxQuantity = this.inventoryAvailable() ? Math.max(item.stock, 1) : requestedQuantity;
+        const maxQuantity = this.inventoryAvailable() && item.product.tracksInventory !== false
+          ? Math.max(item.stock, 1) : requestedQuantity;
         const nextQuantity = Math.min(requestedQuantity, maxQuantity);
 
         if (this.inventoryAvailable() && nextQuantity !== requestedQuantity) {
@@ -3210,7 +3211,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         const byId = new Map(products.map(p => [p.id, p]));
         this.cart.update(items => items.map(item => {
           const current = byId.get(item.productId);
-          return { ...item, stock: current?.isActive ? current.stock : 0, product: current ?? item.product };
+          return { ...item, stock: current?.isActive ? current.stock : 0,
+            product: current ?? { ...item.product, isActive: false, tracksInventory: true } };
         }));
       },
       error: () => { if (!this.destroyed && generation === this.cartStockGeneration && scope === this.checkoutScope()) this.inventoryAvailable.set(false); },
@@ -3222,7 +3224,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       return [];
     }
 
-    return this.cart().filter((item) => item.quantity > item.stock);
+    return this.cart().filter((item) => !item.product.isActive
+      || (item.product.tracksInventory !== false && item.quantity > item.stock));
   }
 
   private buildStockValidationMessage(items: CartItem[]): string {
@@ -3731,6 +3734,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         return 'No se puede devolver al inventario una nota rechazada.';
       case 'CREDIT_NOTE_INVENTORY_RETURN_ONLY_AUTHORIZED':
         return 'Solo se pueden devolver notas de crédito autorizadas por el SRI.';
+      case 'CREDIT_NOTE_NO_PHYSICAL_ITEMS':
+        return 'Esta nota solo contiene servicios sin inventario; no hay devolución física.';
       case 'CREDIT_NOTE_INVENTORY_RETURN_INCONSISTENT':
         return 'La devolución tiene datos parciales y requiere revisión antes de continuar.';
       case 'INVENTORY_CONCURRENCY_CONFLICT':

@@ -5,6 +5,7 @@ namespace Pos.Backend.Api.Core.DTOs;
 public class ProductCreateDto
 {
     public int CategoryId { get; set; }
+    public bool TracksInventory { get; set; } = true;
     public string Name { get; set; }
     public string? Barcode { get; set; }
     public string? InternalCode { get; set; }

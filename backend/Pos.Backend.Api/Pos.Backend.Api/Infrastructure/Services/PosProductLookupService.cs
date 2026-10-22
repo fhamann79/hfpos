@@ -64,6 +64,7 @@ public sealed class PosProductLookupService : IPosProductLookupService
             .Select(product => new PosProductLookupDto
             {
                 Id = product.Id,
+                TracksInventory = product.TracksInventory,
                 Name = product.Name,
                 Barcode = product.Barcode,
                 InternalCode = product.InternalCode,

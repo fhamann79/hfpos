@@ -429,6 +429,7 @@ public class SalesService : ISalesService
                     .OrderBy(i => i.Id)
                     .Select(i => new SaleItemDto
                     {
+                        TracksInventorySnapshot = i.TracksInventorySnapshot,
                         Id = i.Id,
                         ProductId = i.ProductId,
                         ProductName = i.ProductNameSnapshot ?? i.Product.Name,
@@ -521,6 +522,7 @@ public class SalesService : ISalesService
         foreach (var item in dto.Items.OrderBy(i => i.ProductId))
         {
             var product = products[item.ProductId];
+            ProductInventoryPolicy.ValidateClassification(product, classifications.GetValueOrDefault(product.Id));
             var decision = FiscalTaxResolver.Resolve(profile, product, classifications.GetValueOrDefault(product.Id), date);
             var gross = RoundMoney(item.Quantity * item.UnitPrice);
             var discount = RoundMoney(item.DiscountAmount ?? 0m);
@@ -529,6 +531,7 @@ public class SalesService : ISalesService
             sale.Items.Add(new SaleItem
             {
                 ProductId = product.Id, ProductNameSnapshot = product.Name, ProductSkuSnapshot = product.InternalCode,
+                TracksInventorySnapshot = product.TracksInventory,
                 Quantity = item.Quantity, UnitPrice = item.UnitPrice, UnitCost = product.Cost,
                 GrossSubtotal = gross, DiscountAmount = discount, NetSubtotal = tax.TaxableSubtotal,
                 LineSubtotal = tax.TaxableSubtotal, TaxableSubtotal = tax.TaxableSubtotal,
@@ -541,13 +544,16 @@ public class SalesService : ISalesService
             throw new InvalidOperationException("SALE_AMOUNT_INVALID");
         var material = new
         {
-            Version = 1, operational.CompanyId, operational.EstablishmentId, operational.EmissionPointId,
+            Version = 2, operational.CompanyId, operational.EstablishmentId, operational.EmissionPointId,
             operational.UserId, dto.CustomerId, sale.DocumentType, sale.PaymentMethod, Issuer = issuer,
             Items = sale.Items.Select(i => new
             {
                 i.ProductId, Quantity = i.Quantity.ToString("G29", CultureInfo.InvariantCulture),
                 UnitPrice = i.UnitPrice.ToString("G29", CultureInfo.InvariantCulture),
                 i.DiscountAmount, i.TaxableSubtotal, i.TaxAmount, i.LineTotal, i.FiscalDecisionJson,
+                i.TracksInventorySnapshot,
+                ClassificationRevision = classifications[i.ProductId].Revision,
+                ClassificationKind = classifications[i.ProductId].Kind,
                 products[i.ProductId].Name, products[i.ProductId].InternalCode, products[i.ProductId].Barcode
             }), sale.DiscountAmount, sale.Subtotal, sale.TaxAmount, sale.Total
         };
@@ -725,7 +731,7 @@ public class SalesService : ISalesService
             }
             await _context.SaveChangesAsync();
 
-            foreach (var item in sale.Items.OrderBy(i => i.ProductId))
+            foreach (var item in sale.Items.Where(i => i.TracksInventorySnapshot).OrderBy(i => i.ProductId))
             {
                 await _inventoryService.RegisterSaleAsync(
                     item.ProductId,
@@ -939,7 +945,7 @@ public class SalesService : ISalesService
                 voidCashEffect = SaleVoidCashEffect.NoCashMovement;
             }
 
-            foreach (var item in sale.Items.OrderBy(i => i.ProductId))
+            foreach (var item in sale.Items.Where(i => i.TracksInventorySnapshot).OrderBy(i => i.ProductId))
             {
                 await _inventoryService.RegisterVoidAsync(
                     item.ProductId,

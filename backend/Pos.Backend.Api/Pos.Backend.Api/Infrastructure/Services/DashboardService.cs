@@ -155,6 +155,7 @@ public class DashboardService : IDashboardService
                 ProductName = p.Name,
                 CategoryName = p.Category.Name,
                 MinimumStock = p.MinimumStock,
+                p.TracksInventory,
                 Cost = p.Cost,
                 Quantity = _context.ProductStocks
                     .Where(s => s.ProductId == p.Id
@@ -163,6 +164,7 @@ public class DashboardService : IDashboardService
                     .Select(s => (decimal?)s.Quantity)
                     .FirstOrDefault() ?? 0m
             })
+            .Where(s => s.TracksInventory || s.Quantity != 0m)
             .ToListAsync();
 
         return new DashboardInventorySummaryDto

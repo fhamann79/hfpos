@@ -85,6 +85,7 @@ public class CreditNoteDto
     public DateTime? SriLastCheckedAt { get; set; }
 
     public bool HasInventoryReturn { get; set; }
+    public bool HasPhysicalItems { get; set; }
 
     public DateTime? InventoryReturnedAt { get; set; }
 
@@ -139,6 +140,7 @@ public class CreditNoteDto
 
 public class CreditNoteItemDto
 {
+    public bool TracksInventorySnapshot { get; set; } = true;
     public int Id { get; set; }
 
     public int? SaleItemId { get; set; }

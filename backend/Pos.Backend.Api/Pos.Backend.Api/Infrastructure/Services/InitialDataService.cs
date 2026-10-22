@@ -271,7 +271,7 @@ public sealed class InitialDataService(PosDbContext db, IOperationalContextAcces
         else if (preview.Kind == "opening-inventory")
         {
             var products = await db.Products.AsNoTracking().Where(p => p.CompanyId == ctx.CompanyId && codes.Contains(p.InternalCode!))
-                .Select(p => new { p.Id, p.InternalCode, p.IsActive,
+                .Select(p => new { p.Id, p.InternalCode, p.IsActive, p.TracksInventory,
                     Quantity = db.ProductStocks.Where(s => s.CompanyId == ctx.CompanyId && s.EstablishmentId == ctx.EstablishmentId && s.ProductId == p.Id)
                         .Select(s => (decimal?)s.Quantity).FirstOrDefault() ?? 0m,
                     Watermark = db.InventoryMovements.Where(m => m.CompanyId == ctx.CompanyId && m.EstablishmentId == ctx.EstablishmentId && m.ProductId == p.Id)
@@ -282,6 +282,7 @@ public sealed class InitialDataService(PosDbContext db, IOperationalContextAcces
                 var product = products.SingleOrDefault(p => p.InternalCode == r.Values["internalCode"]);
                 r.ResolvedId = product?.Id;
                 if (product is null || !product.IsActive) r.Errors.Add("internalCode:NOT_ACTIVE_IN_COMPANY");
+                else if (!product.TracksInventory) r.Errors.Add("PRODUCT_DOES_NOT_TRACK_INVENTORY");
                 else if (product.Quantity != 0m || product.Watermark != 0) r.Errors.Add("OPENING_INVENTORY_ALREADY_USED");
             }
         }

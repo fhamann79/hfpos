@@ -20,6 +20,7 @@ import { PosWorkstationPage } from './pos-workstation-page';
 
 describe('PosWorkstationPage void refresh', () => {
   const catalogService = {
+    refreshCartProducts: vi.fn(() => of([] as PosProduct[])),
     getProductsWithStock: vi.fn(() => of({ products: [], inventoryAvailable: true })),
   };
 
@@ -45,6 +46,34 @@ describe('PosWorkstationPage void refresh', () => {
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
+  });
+
+  it('adds and increases a zero-stock service but rejects physical zero stock and inactive services', () => {
+    const component = TestBed.runInInjectionContext(() => new PosWorkstationPage());
+    component.inventoryAvailable.set(true);
+    const service: PosProduct = { id: 71, name: 'Synthetic service', price: 10,
+      vatCategory: ProductVatCategory.Vat15, stock: 0, isActive: true, tracksInventory: false };
+    expect(component.addProduct({ ...service, tracksInventory: true })).toBe(false);
+    expect(component.addProduct({ ...service, isActive: false })).toBe(false);
+    expect(component.addProduct(service)).toBe(true);
+    expect(component.addProduct(service)).toBe(true);
+    component.updateQuantity({ productId: service.id, quantity: 5 });
+    expect(component.cart()[0].quantity).toBe(5);
+    expect(component['findCartItemsExceedingStock']()).toEqual([]);
+    component.inventoryAvailable.set(false);
+    expect(component.addProduct(service)).toBe(false);
+  });
+
+  it('does not keep a stale nontracking exemption when cart refresh no longer authorizes the product', () => {
+    const component = TestBed.runInInjectionContext(() => new PosWorkstationPage());
+    component.inventoryAvailable.set(true);
+    const service: PosProduct = { id: 71, name: 'Synthetic service', price: 10,
+      vatCategory: ProductVatCategory.Vat15, stock: 0, isActive: true, tracksInventory: false };
+    component.addProduct(service);
+    component['refreshCartStock']();
+    expect(component.cart()[0].product.isActive).toBe(false);
+    expect(component.cart()[0].product.tracksInventory).toBe(true);
+    expect(component['findCartItemsExceedingStock']()).toHaveLength(1);
   });
 
   it('refreshes sales, cash session and inventory after a successful void', () => {
