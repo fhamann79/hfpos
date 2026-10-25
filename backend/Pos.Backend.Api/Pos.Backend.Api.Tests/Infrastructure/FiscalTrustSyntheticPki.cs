@@ -39,6 +39,15 @@ internal sealed class FiscalTrustSyntheticPki : IDisposable
         request.CertificateExtensions.Add(new X509KeyUsageExtension(usage ?? (ca
             ? X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign : X509KeyUsageFlags.DigitalSignature), true));
         request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
+        if (issuer is not null)
+        {
+            var aki = new AsnWriter(AsnEncodingRules.DER);
+            aki.PushSequence();
+            aki.WriteOctetString(Convert.FromHexString(issuer.Extensions.OfType<X509SubjectKeyIdentifierExtension>()
+                .Single().SubjectKeyIdentifier!), new Asn1Tag(TagClass.ContextSpecific, 0));
+            aki.PopSequence();
+            request.CertificateExtensions.Add(new X509Extension("2.5.29.35", aki.Encode(), false));
+        }
         // Unreachable tenant-provided URI: deterministic evaluation must never follow it.
         var aia = new AsnWriter(AsnEncodingRules.DER);
         aia.PushSequence(); aia.PushSequence(); aia.WriteObjectIdentifier("1.3.6.1.5.5.7.48.2");

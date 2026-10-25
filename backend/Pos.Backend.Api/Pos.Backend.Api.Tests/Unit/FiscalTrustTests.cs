@@ -2,6 +2,9 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
+using Pos.Backend.Api.Configuration;
+using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Infrastructure.Services;
 using Pos.Backend.Api.Tests.Infrastructure;
@@ -10,16 +13,88 @@ namespace Pos.Backend.Api.Tests.Unit;
 
 public sealed class FiscalTrustTests
 {
-    [Fact]
-    public void Two_independent_authorities_and_tenants_coexist_without_cross_identity()
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void Two_independent_authorities_and_tenants_coexist_without_cross_identity(bool reverseAuthorities)
     {
         using var a = new FiscalTrustSyntheticPki(); using var b = new FiscalTrustSyntheticPki(FiscalTrustSyntheticPki.RucB, "Synthetic root B");
         a.Manifest.Authorities.AddRange(b.Manifest.Authorities); a.Manifest.Crls.AddRange(b.Manifest.Crls);
+        Assert.Equal(a.Intermediate.SubjectName.RawData, b.Intermediate.SubjectName.RawData);
+        Assert.NotEqual(a.Intermediate.GetCertHashString(HashAlgorithmName.SHA256), b.Intermediate.GetCertHashString(HashAlgorithmName.SHA256));
+        if (reverseAuthorities) a.Manifest.Authorities.Reverse();
         var evaluator = new FiscalCertificateEvaluator(a.Registry());
-        Assert.True(evaluator.Evaluate(a.Leaf, [], FiscalTrustSyntheticPki.RucA, a.Now).Eligible);
-        Assert.True(evaluator.Evaluate(b.Leaf, [], FiscalTrustSyntheticPki.RucB, a.Now).Eligible);
+        var first = evaluator.Evaluate(a.Leaf, [], FiscalTrustSyntheticPki.RucA, a.Now);
+        var second = evaluator.Evaluate(b.Leaf, [], FiscalTrustSyntheticPki.RucB, a.Now);
+        Assert.True(first.Eligible, JsonSerializer.Serialize(first));
+        Assert.True(second.Eligible, JsonSerializer.Serialize(second));
         var cross = evaluator.Evaluate(b.Leaf, [], FiscalTrustSyntheticPki.RucA, a.Now);
         Assert.False(cross.Eligible); Assert.Equal(FiscalIdentityState.Mismatch, cross.Identity);
+    }
+
+    [Theory]
+    [InlineData("Root")] [InlineData("Intermediate")] [InlineData("CrlIssuer")]
+    public void Ocsp_required_by_any_applicable_authority_cannot_be_satisfied_by_full_crls(string role)
+    {
+        using var p = new FiscalTrustSyntheticPki();
+        var authority = p.Manifest.Authorities[role == "Root" ? 0 : 1];
+        authority.Role = role; authority.RequiresOcsp = true;
+        var decision = new FiscalCertificateEvaluator(p.Registry()).Evaluate(p.Leaf, [p.Intermediate], FiscalTrustSyntheticPki.RucA, p.Now);
+        Assert.False(decision.Eligible);
+        Assert.Equal(FiscalEvidenceState.Unknown, decision.Revocation);
+        Assert.Equal("FISCAL_OCSP_NOT_IMPLEMENTED", decision.Reason);
+    }
+
+    [Fact]
+    public void Ocsp_requirement_of_an_unrelated_authority_does_not_change_the_other_tenant_profile()
+    {
+        using var a = new FiscalTrustSyntheticPki();
+        using var b = new FiscalTrustSyntheticPki(FiscalTrustSyntheticPki.RucB, "Synthetic OCSP root");
+        b.Manifest.Authorities[1].RequiresOcsp = true;
+        a.Manifest.Authorities.AddRange(b.Manifest.Authorities); a.Manifest.Crls.AddRange(b.Manifest.Crls);
+        var evaluator = new FiscalCertificateEvaluator(a.Registry());
+        Assert.True(evaluator.Evaluate(a.Leaf, [], FiscalTrustSyntheticPki.RucA, a.Now).Eligible);
+        Assert.Equal("FISCAL_OCSP_NOT_IMPLEMENTED", evaluator.Evaluate(b.Leaf, [], FiscalTrustSyntheticPki.RucB, a.Now).Reason);
+    }
+
+    [Theory]
+    [InlineData("Intermediate", false)] [InlineData("Intermediate", true)]
+    [InlineData("CrlIssuer", false)] [InlineData("CrlIssuer", true)]
+    public void Non_root_profile_lists_are_rejected_instead_of_silently_ignored(string role, bool policies)
+    {
+        using var p = new FiscalTrustSyntheticPki();
+        var authority = p.Manifest.Authorities[1]; authority.Role = role;
+        if (policies) authority.RequiredCertificatePolicies = ["1.3.6.1.4.1.55555.1"];
+        else authority.AllowedExtendedKeyUsages = ["1.3.6.1.5.5.7.3.2"];
+        var registry = p.Registry();
+        Assert.False(registry.Available);
+        var result = new FiscalCertificateEvaluator(registry).Evaluate(p.Leaf, [p.Intermediate], FiscalTrustSyntheticPki.RucA, p.Now);
+        Assert.False(result.Eligible);
+        Assert.Equal("FISCAL_TRUST_REGISTRY_INVALID", result.Reason);
+    }
+
+    [Fact]
+    public void Preflight_preserves_fresh_negative_reason_but_never_allows_expired_positive_decision()
+    {
+        using var p = new FiscalTrustSyntheticPki();
+        var cache = new FiscalPreflightCache(Options.Create(new FiscalTrustOptions()));
+        var snapshot = new FiscalTenantTrustSnapshot { CompanyId = 1, Ruc = FiscalTrustSyntheticPki.RucA };
+        var negative = new FiscalTrustDecision(p.Manifest.Version, p.Now, p.Now, "synthetic-sha256", false,
+            FiscalIdentityState.Match, true, true, FiscalEvidenceState.Unknown, "CERTIFICATE_CHAIN_BUILD_FAILED", "synthetic");
+        cache.Record(snapshot, negative, negative.Reason);
+        var now = DateTime.UtcNow;
+        var report = cache.Read(snapshot, p.Registry(), now);
+        Assert.Equal("NO_GO", report.State);
+        Assert.Equal(negative.Reason, report.Reason);
+        Assert.Equal(negative, report.CandidateRc6);
+        Assert.Equal("UNKNOWN", cache.Read(snapshot, p.Registry(), now.AddMinutes(6)).State);
+
+        var positive = negative with { ChainTrusted = true, Revocation = FiscalEvidenceState.Good,
+            Reason = "FISCAL_TRUST_GOOD", ValidUntil = now.AddMinutes(1) };
+        cache.Record(snapshot, positive, positive.Reason);
+        Assert.Equal("CANDIDATE_ELIGIBLE", cache.Read(snapshot, p.Registry(), now).State);
+        var expired = cache.Read(snapshot, p.Registry(), now.AddMinutes(2));
+        Assert.Equal("UNKNOWN", expired.State);
+        Assert.Equal("FISCAL_PREFLIGHT_STALE", expired.Reason);
     }
 
     [Theory]
@@ -238,5 +313,73 @@ public sealed class FiscalTrustTests
             Assert.NotEqual(signed, malformed);
             Assert.Throws<InvalidOperationException>(() => FiscalSignedXmlVerifier.Verify(malformed, Hash(malformed), p.Leaf.Thumbprint, key, FiscalTrustSyntheticPki.RucA, root));
         }
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void Public_chain_cache_rejects_oversized_certificates_and_aggregate_chains(bool aggregate)
+    {
+        using var p = new FiscalTrustSyntheticPki();
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest("CN=Synthetic cache size limit", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509Extension("1.3.6.1.4.1.55555.99", new byte[aggregate ? 31_000 : 33_000], false));
+        using var large = request.CreateSelfSigned(p.Now.AddDays(-1), p.Now.AddDays(1));
+        var auxiliary = Enumerable.Repeat(large, aggregate ? 34 : 1).ToArray();
+        if (aggregate) Assert.True(auxiliary.Sum(c => c.RawData.Length) > FiscalPublicChainCache.MaximumEntryBytes);
+        else Assert.True(large.RawData.Length > FiscalPublicChainCache.MaximumCertificateBytes);
+        var cache = new FiscalPublicChainCache();
+        cache.Remember(1, new() { Certificate = p.Leaf, Thumbprint = p.Leaf.Thumbprint, AuxiliaryCertificates = auxiliary });
+        Assert.Equal((0, 0), cache.Usage);
+        Assert.Empty(cache.Read(1, p.Leaf.Thumbprint));
+    }
+
+    [Fact]
+    public void Public_chain_cache_global_budget_cannot_be_bypassed_by_parallel_inserts_or_replacements()
+    {
+        using var p = new FiscalTrustSyntheticPki();
+        var clock = new CacheClock();
+        var size = p.Intermediate.RawData.Length;
+        var budget = size * 2;
+        var cache = new FiscalPublicChainCache(clock, budget);
+        var material = new SriSigningCertificateMaterial
+        { Certificate = p.Leaf, Thumbprint = p.Leaf.Thumbprint, AuxiliaryCertificates = [p.Intermediate] };
+        Parallel.For(1, 257, company => cache.Remember(company, material));
+        Assert.Equal((2, budget), cache.Usage);
+        Parallel.For(1, 257, company => cache.Remember(company, material));
+        Assert.Equal((2, budget), cache.Usage);
+        Assert.Empty(cache.Read(999, p.Leaf.Thumbprint));
+
+        clock.Advance(TimeSpan.FromMinutes(5));
+        Assert.Equal((0, 0), cache.Usage);
+        cache.Remember(999, material);
+        Assert.Equal((1, size), cache.Usage);
+        var read = cache.Read(999, p.Leaf.Thumbprint);
+        try { Assert.Equal(p.Intermediate.RawData, Assert.Single(read).RawData); }
+        finally { foreach (var cert in read) cert.Dispose(); }
+        Assert.Empty(cache.Read(998, p.Leaf.Thumbprint));
+    }
+
+    [Fact]
+    public void Public_chain_cache_replacement_releases_old_bytes_and_expired_reads_reclaim_storage()
+    {
+        using var p = new FiscalTrustSyntheticPki();
+        var clock = new CacheClock();
+        var cache = new FiscalPublicChainCache(clock, FiscalPublicChainCache.MaximumTotalBytes);
+        cache.Remember(1, new() { Certificate = p.Leaf, Thumbprint = p.Leaf.Thumbprint,
+            AuxiliaryCertificates = [p.Intermediate, p.Root] });
+        Assert.Equal(p.Intermediate.RawData.Length + p.Root.RawData.Length, cache.Usage.Bytes);
+        cache.Remember(1, new() { Certificate = p.Leaf, Thumbprint = p.Leaf.Thumbprint,
+            AuxiliaryCertificates = [p.Intermediate] });
+        Assert.Equal((1, p.Intermediate.RawData.Length), cache.Usage);
+        clock.Advance(TimeSpan.FromMinutes(5));
+        Assert.Empty(cache.Read(1, p.Leaf.Thumbprint));
+        Assert.Equal((0, 0), cache.Usage);
+    }
+
+    private sealed class CacheClock : TimeProvider
+    {
+        private DateTimeOffset _now = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan duration) => _now += duration;
     }
 }

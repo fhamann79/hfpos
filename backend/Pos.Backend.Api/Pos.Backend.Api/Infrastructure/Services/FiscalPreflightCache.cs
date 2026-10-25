@@ -26,7 +26,7 @@ public sealed class FiscalPreflightCache(IOptions<FiscalTrustOptions> options)
             return new(snapshot, "UNKNOWN", "FISCAL_PREFLIGHT_NOT_OBSERVED", null, null);
         if (entry.Snapshot != snapshot)
             return new(snapshot, "UNKNOWN", "FISCAL_PREFLIGHT_SNAPSHOT_CHANGED", entry.AsOf, null);
-        if (entry.AsOf <= now.AddMinutes(-5) || entry.Decision?.ValidUntil <= now
+        if (entry.AsOf <= now.AddMinutes(-5) || entry.Decision is { Eligible: true } positive && positive.ValidUntil <= now
             || entry.Decision is { } d && d.TrustVersion != registry.Version)
             return new(snapshot, "UNKNOWN", "FISCAL_PREFLIGHT_STALE", entry.AsOf, null);
         return new(snapshot, entry.Decision is null ? "UNKNOWN" : entry.Decision.Eligible ? "CANDIDATE_ELIGIBLE" : "NO_GO",

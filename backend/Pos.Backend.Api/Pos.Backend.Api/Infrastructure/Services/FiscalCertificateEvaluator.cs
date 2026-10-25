@@ -70,7 +70,10 @@ public sealed class FiscalCertificateEvaluator(FiscalTrustRegistry registry) : I
             if (!HasApprovedPurpose(path, profile)) suitable = false;
             if (path.Any(c => c.Extensions.Cast<X509Extension>().Any(e => e.Oid?.Value == "2.5.29.46")))
                 return Result(true, FiscalEvidenceState.Error, "CERTIFICATE_REVOCATION_ERROR");
-            if (profile.RequiresOcsp) return Result(true, FiscalEvidenceState.Unknown, "FISCAL_OCSP_NOT_IMPLEMENTED");
+            var authorityHashes = path.Skip(1).Select(c => c.GetCertHashString(HashAlgorithmName.SHA256))
+                .ToHashSet(StringComparer.Ordinal);
+            if (manifest.Authorities.Any(a => authorityHashes.Contains(a.Sha256) && a.RequiresOcsp))
+                return Result(true, FiscalEvidenceState.Unknown, "FISCAL_OCSP_NOT_IMPLEMENTED");
             var validUntil = path.Select(c => c.NotAfter.ToUniversalTime()).Append(manifest.ValidUntil).Min();
             var results = new List<FiscalEvidenceState>();
             for (var i = 0; i < path.Length - 1; i++)

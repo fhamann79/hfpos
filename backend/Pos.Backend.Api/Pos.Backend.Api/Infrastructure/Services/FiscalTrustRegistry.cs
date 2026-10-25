@@ -99,6 +99,8 @@ public sealed class FiscalTrustRegistry
                     || a.Sha256 != Convert.ToHexString(SHA256.HashData(der))
                     || a.AllowedExtendedKeyUsages.Count > 16 || a.RequiredCertificatePolicies.Count > 16)
                     throw new InvalidDataException();
+                if (a.Role != "Root" && (a.AllowedExtendedKeyUsages.Count > 0 || a.RequiredCertificatePolicies.Count > 0))
+                    throw new InvalidDataException(); // These two profile lists are root-only, never silently ignored.
                 using var cert = new X509Certificate2(der);
                 if (cert.HasPrivateKey || !FiscalCertificateEvaluator.IsAuthority(cert)) throw new InvalidDataException();
                 if (a.Role == "Root" && (!cert.SubjectName.RawData.AsSpan().SequenceEqual(cert.IssuerName.RawData)
