@@ -42,6 +42,10 @@ jobs:
       - uses: docker/setup-buildx-action@v3
         with:
           driver: docker
+      - name: RC6 actual cryptographic tests on Debian Bookworm with runtime network disabled
+        run: |
+          docker build -f backend/Pos.Backend.Api/Dockerfile.fiscal-trust-tests -t hfpos-rc6-crypto:${{ github.sha }} .
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m hfpos-rc6-crypto:${{ github.sha }}
       - name: Supervised signed receiver and isolated PostgreSQL/keyring E2E (synthetic only)
         env:
           HFPOS_SUPERVISED_DOCKER_TESTS: 'YES'

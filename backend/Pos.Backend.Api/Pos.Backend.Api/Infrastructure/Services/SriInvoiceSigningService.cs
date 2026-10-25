@@ -19,6 +19,7 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
     private readonly ISalesService _salesService;
     private readonly ILogger<SriInvoiceSigningService> _logger;
     private readonly ElectronicIssuingCoordinator _coordinator;
+    private readonly FiscalExecutionGuard? _fiscalTrust;
 
     public SriInvoiceSigningService(
         PosDbContext context,
@@ -28,7 +29,8 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
         ISriInvoiceXmlValidator sriInvoiceXmlValidator,
         ISalesService salesService,
         ILogger<SriInvoiceSigningService> logger,
-        ElectronicIssuingCoordinator coordinator)
+        ElectronicIssuingCoordinator coordinator,
+        FiscalExecutionGuard? fiscalTrust = null)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
@@ -38,6 +40,7 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
         _salesService = salesService;
         _logger = logger;
         _coordinator = coordinator;
+        _fiscalTrust = fiscalTrust;
     }
 
     public async Task<SaleDto> SignInvoiceDraftAsync(int saleId)
@@ -58,11 +61,16 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
             await _coordinator.CompleteAsync(admission, async (sale, job) =>
             {
             ValidateSaleCanBeSigned(sale);
+            if (sale.SriEnvironment is not (1 or 2)) throw new InvalidOperationException("INVALID_SRI_ENVIRONMENT");
             _sriInvoiceXmlValidator.ValidateUnsignedInvoiceXml(sale.SriXmlDraft!);
             using var certificateMaterial = _certificateProvider is SriSigningCertificateProvider provider
                 ? await provider.GetForAdmissionAsync(admission)
                 : throw new InvalidOperationException("FISCAL_CERTIFICATE_PROVIDER_REQUIRED");
             var now = DateTime.UtcNow;
+            _fiscalTrust?.RememberPublicChain(sale.CompanyId, certificateMaterial);
+            if (sale.SriEnvironment == 2)
+                (_fiscalTrust ?? throw new InvalidOperationException("FISCAL_TRUST_GUARD_REQUIRED")).RequireMaterial(
+                    certificateMaterial, FiscalSnapshots.Read(sale.FiscalIssuerSnapshotJson)!.Ruc, 2);
             var signedXml = _sriXadesBesSigner.SignInvoiceXml(
                 sale.SriXmlDraft!,
                 certificateMaterial.Certificate,

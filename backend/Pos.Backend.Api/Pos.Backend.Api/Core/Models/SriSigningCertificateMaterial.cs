@@ -16,8 +16,11 @@ public sealed class SriSigningCertificateMaterial : IDisposable
 
     public DateTime NotAfter { get; init; }
 
+    public IReadOnlyList<X509Certificate2> AuxiliaryCertificates { get; init; } = [];
+
     public void Dispose()
     {
         Certificate.Dispose();
+        foreach (var auxiliary in AuxiliaryCertificates) auxiliary.Dispose();
     }
 }

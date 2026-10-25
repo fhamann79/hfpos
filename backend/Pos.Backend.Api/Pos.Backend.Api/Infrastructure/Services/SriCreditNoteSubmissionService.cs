@@ -25,6 +25,7 @@ public class SriCreditNoteSubmissionService : ISriCreditNoteSubmissionService
     private readonly IBusinessClockService _businessClockService;
     private readonly SriOptions _sriOptions;
     private readonly ILogger<SriCreditNoteSubmissionService> _logger;
+    private readonly FiscalExecutionGuard? _fiscalTrust;
 
     public SriCreditNoteSubmissionService(
         PosDbContext context,
@@ -34,7 +35,8 @@ public class SriCreditNoteSubmissionService : ISriCreditNoteSubmissionService
         ISriCreditNoteXmlValidator sriCreditNoteXmlValidator,
         IBusinessClockService businessClockService,
         IOptions<SriOptions> sriOptions,
-        ILogger<SriCreditNoteSubmissionService> logger)
+        ILogger<SriCreditNoteSubmissionService> logger,
+        FiscalExecutionGuard? fiscalTrust = null)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
@@ -44,6 +46,7 @@ public class SriCreditNoteSubmissionService : ISriCreditNoteSubmissionService
         _businessClockService = businessClockService;
         _sriOptions = sriOptions.Value;
         _logger = logger;
+        _fiscalTrust = fiscalTrust;
     }
 
     public async Task<CreditNoteDto> SubmitSignedAsync(int creditNoteId)
@@ -73,6 +76,10 @@ public class SriCreditNoteSubmissionService : ISriCreditNoteSubmissionService
             creditNote.SriEnvironment);
 
         SriReceptionResponse response;
+
+        if (sriContext.Environment == 2)
+            (_fiscalTrust ?? throw new InvalidOperationException("FISCAL_TRUST_GUARD_REQUIRED"))
+                .BeforeCreditNoteReception(creditNote, sriContext.Environment);
 
         try
         {

@@ -38,12 +38,16 @@ public class SriSigningCertificateProvider : ISriSigningCertificateProvider
     internal Task<SriSigningCertificateMaterial> GetForAdmissionAsync(ElectronicIssuingCoordinator.Admission authority)
         => GetForCompanyAsync(authority.Sale.CompanyId);
 
+    internal Task<SriSigningCertificateMaterial> GetForCreationAsync(OperationalContext authority)
+        => GetForCompanyAsync(authority.CompanyId);
+
     private async Task<SriSigningCertificateMaterial> GetForCompanyAsync(int companyId)
     {
 
         var storedCertificate = await _context.CompanySriCertificates
             .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.CompanyId == companyId && c.IsActive);
+            .Where(c => c.CompanyId == companyId && c.IsActive)
+            .OrderByDescending(c => c.Id).FirstOrDefaultAsync();
 
         if (storedCertificate is null)
         {
@@ -78,48 +82,31 @@ public class SriSigningCertificateProvider : ISriSigningCertificateProvider
                 throw new InvalidOperationException("CERTIFICATE_UNPROTECT_FAILED", ex);
             }
 
-            X509Certificate2 certificate;
+            SriSigningCertificateMaterial material;
 
             try
             {
-                certificate = new X509Certificate2(
-                    certificateBytes,
-                    password,
-                    X509KeyStorageFlags.EphemeralKeySet);
+                material = SriPfxReader.Load(certificateBytes, password, storedCertificate.Id);
             }
             catch (CryptographicException ex)
             {
                 throw new InvalidOperationException("CERTIFICATE_LOAD_FAILED", ex);
             }
 
-            if (!certificate.HasPrivateKey)
-            {
-                certificate.Dispose();
-                throw new InvalidOperationException("CERTIFICATE_WITHOUT_PRIVATE_KEY");
-            }
-
-            var notAfter = certificate.NotAfter.ToUniversalTime();
+            var notAfter = material.Certificate.NotAfter.ToUniversalTime();
 
             if (notAfter <= DateTime.UtcNow)
             {
-                certificate.Dispose();
+                material.Dispose();
                 throw new InvalidOperationException("CERTIFICATE_EXPIRED");
             }
-            if (certificate.NotBefore.ToUniversalTime() > DateTime.UtcNow)
+            if (material.Certificate.NotBefore.ToUniversalTime() > DateTime.UtcNow)
             {
-                certificate.Dispose();
+                material.Dispose();
                 throw new InvalidOperationException("CERTIFICATE_NOT_YET_VALID");
             }
 
-            return new SriSigningCertificateMaterial
-            {
-                CertificateId = storedCertificate.Id,
-                Certificate = certificate,
-                Thumbprint = certificate.Thumbprint,
-                Subject = certificate.Subject,
-                SerialNumber = certificate.SerialNumber,
-                NotAfter = notAfter
-            };
+            return material;
         }
         finally
         {

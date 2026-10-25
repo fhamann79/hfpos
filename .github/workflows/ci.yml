@@ -79,6 +79,9 @@ jobs:
           --disable-build-servers
           -p:UseSharedCompilation=false
 
+      - name: Build isolated read-only RC6 preflight (never starts production API)
+        run: dotnet build backend/Pos.Backend.Api/Hfpos.FiscalPreflight/Hfpos.FiscalPreflight.csproj --configuration Release
+
       - name: Run backend tests
         run: >-
           dotnet test backend/Pos.Backend.Api/Pos.Backend.Api.sln

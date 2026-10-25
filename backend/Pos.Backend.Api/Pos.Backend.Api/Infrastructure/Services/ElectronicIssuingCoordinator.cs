@@ -13,7 +13,8 @@ using Pos.Backend.Api.Infrastructure.Data;
 namespace Pos.Backend.Api.Infrastructure.Services;
 
 // All writers admit and complete in Company -> Sale -> Job order. Claiming is job-only.
-public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<SriOptions> options) : IElectronicIssuingRecoveryService
+public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<SriOptions> options,
+    FiscalExecutionGuard? fiscalTrust = null) : IElectronicIssuingRecoveryService
 {
     public const int MaximumAttempts = 12;
     public static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
@@ -71,7 +72,8 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
               AND ""Fence"" = {claim.Fence} AND ""LeaseExpiresAt"" > clock_timestamp()", ct) == 1;
 
     internal async Task<Admission> AdmitAsync(int saleId, ElectronicIssuingPhase purpose,
-        OperationalContext? manual, ElectronicIssuingJob? claim, CancellationToken ct)
+        OperationalContext? manual, ElectronicIssuingJob? claim, CancellationToken ct,
+        Func<Sale, Task>? beforeReception = null)
     {
         context.ChangeTracker.Clear();
         var companyId = manual?.CompanyId ?? claim?.CompanyId ?? throw new InvalidOperationException("FISCAL_AUTHORITY_REQUIRED");
@@ -144,6 +146,9 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
         {
             if (job.ReceptionStartedAt.HasValue || job.Phase != ElectronicIssuingPhase.ReadyToSubmit)
                 throw new InvalidOperationException("FISCAL_RECEPTION_ALREADY_ADMITTED");
+            if (sale.SriEnvironment == 2)
+                await (fiscalTrust ?? throw new InvalidOperationException("FISCAL_TRUST_GUARD_REQUIRED")).BeforeReceptionAsync(sale, ct);
+            if (beforeReception is not null) await beforeReception(sale);
             job.ReceptionStartedAt = DateTime.UtcNow;
             job.Phase = ElectronicIssuingPhase.ReceptionInFlight;
             sale.SriReceptionStatus = "IN_FLIGHT";
@@ -338,6 +343,8 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
         if (purpose is ElectronicIssuingPhase.ReadyToSign or ElectronicIssuingPhase.ReadyToSubmit
             && (sale.FiscalProfileId is null || FiscalSnapshots.Read(sale.FiscalIssuerSnapshotJson) is null))
             throw new InvalidOperationException("FISCAL_LEGACY_REVIEW_REQUIRED");
+        if (purpose is ElectronicIssuingPhase.ReadyToSign or ElectronicIssuingPhase.ReadyToSubmit
+            && sale.SriEnvironment is not (1 or 2)) throw new InvalidOperationException("INVALID_SRI_ENVIRONMENT");
         if (!await context.Companies.AnyAsync(c => c.Id == sale.CompanyId && c.IsActive, ct)
             || !await context.EmissionPoints.AnyAsync(p => p.Id == sale.EmissionPointId && p.IsActive
                 && p.EstablishmentId == sale.EstablishmentId && p.Establishment.IsActive && p.Establishment.CompanyId == sale.CompanyId, ct))

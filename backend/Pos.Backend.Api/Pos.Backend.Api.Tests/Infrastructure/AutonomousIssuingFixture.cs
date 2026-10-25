@@ -24,6 +24,7 @@ internal sealed class AutonomousIssuingFixture(PostgresDatabaseFixture database,
     public OperationalContext Admin { get; private set; } = null!;
     public IDataProtectionProvider Protection { get; } = protection ?? new EphemeralDataProtectionProvider();
     public SyntheticSriTransport Transport { get; } = new();
+    public FiscalPublicChainCache PublicChains { get; } = new();
     public IOptions<SriOptions> Options { get; } = Microsoft.Extensions.Options.Options.Create(new SriOptions
     { Environment = 1, EmissionType = 1, AllowProductionSubmission = false });
 
@@ -83,11 +84,13 @@ internal sealed class AutonomousIssuingFixture(PostgresDatabaseFixture database,
             .UpdateCompanySriSettingsAsync(new() { Environment = 1, EmissionType = 1, IsEnabled = true, AutomaticProcessingEnabled = enabled });
     }
 
-    public SalesService Sales(TestServiceScope scope) => new(scope.DbContext, NullLogger<SalesService>.Instance,
+    public SalesService Sales(TestServiceScope scope, IFiscalCertificateEvaluator? trust = null) => new(scope.DbContext, NullLogger<SalesService>.Instance,
         new StaticOperationalContextAccessor(Tenant.OperationalContext), scope.Inventory, scope.CashSessions,
         new FiscalDocumentNumberService(scope.DbContext, NullLogger<FiscalDocumentNumberService>.Instance, new SriFiscalClock()),
         new SriAccessKeyService(), new SriXmlDraftService(), new SriFiscalClock(), new BusinessClockService(),
-        new SriInvoiceXmlValidator(), Options, new TenantAdministrationGuard(scope.DbContext));
+        new SriInvoiceXmlValidator(), Options, new TenantAdministrationGuard(scope.DbContext), fiscalTrust: trust is null ? null :
+            new FiscalExecutionGuard(scope.DbContext, new SriSigningCertificateProvider(scope.DbContext,
+                new StaticOperationalContextAccessor(Tenant.OperationalContext), Protection, NullLogger<SriSigningCertificateProvider>.Instance), trust, PublicChains));
 
     public SaleCreateDto Request() => new()
     {
@@ -134,14 +137,17 @@ internal sealed class FiscalWorkerTestScope : IAsyncDisposable
     public SriSubmissionService Submission { get; }
     public SriInvoiceSigningService Signing { get; }
     public FiscalWorkerTestScope(PosDbContext db, IDataProtectionProvider protection, ISriWebServiceClient transport, IOptions<SriOptions> options,
-        IOperationalContextAccessor? accessor = null)
+        IOperationalContextAccessor? accessor = null, IFiscalCertificateEvaluator? trust = null,
+        FiscalPublicChainCache? publicChains = null, ISalesService? salesService = null)
     {
-        Db = db; Coordinator = new(db, options);
+        Db = db;
         accessor ??= new NoHttpContext();
         var provider = new SriSigningCertificateProvider(db, accessor, protection, NullLogger<SriSigningCertificateProvider>.Instance);
-        Signing = new(db, accessor, provider, new SriXadesBesSigner(), new SriInvoiceXmlValidator(), null!,
-            NullLogger<SriInvoiceSigningService>.Instance, Coordinator);
-        Submission = new(db, accessor, transport, null!, new SriInvoiceXmlValidator(), options,
+        var guard = trust is null ? null : new FiscalExecutionGuard(db, provider, trust, publicChains ?? new());
+        Coordinator = new(db, options, guard);
+        Signing = new(db, accessor, provider, new SriXadesBesSigner(), new SriInvoiceXmlValidator(), salesService!,
+            NullLogger<SriInvoiceSigningService>.Instance, Coordinator, guard);
+        Submission = new(db, accessor, transport, salesService!, new SriInvoiceXmlValidator(), options,
             NullLogger<SriSubmissionService>.Instance, Coordinator);
         Processor = new(Coordinator, Signing, Submission);
     }

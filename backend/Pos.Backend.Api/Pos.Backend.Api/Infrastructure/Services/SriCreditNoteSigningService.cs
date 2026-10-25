@@ -22,6 +22,7 @@ public class SriCreditNoteSigningService : ISriCreditNoteSigningService
     private readonly ICreditNoteService _creditNoteService;
     private readonly IBusinessClockService _businessClockService;
     private readonly ILogger<SriCreditNoteSigningService> _logger;
+    private readonly FiscalExecutionGuard? _fiscalTrust;
 
     public SriCreditNoteSigningService(
         PosDbContext context,
@@ -31,7 +32,8 @@ public class SriCreditNoteSigningService : ISriCreditNoteSigningService
         ISriCreditNoteXmlValidator sriCreditNoteXmlValidator,
         ICreditNoteService creditNoteService,
         IBusinessClockService businessClockService,
-        ILogger<SriCreditNoteSigningService> logger)
+        ILogger<SriCreditNoteSigningService> logger,
+        FiscalExecutionGuard? fiscalTrust = null)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
@@ -41,6 +43,7 @@ public class SriCreditNoteSigningService : ISriCreditNoteSigningService
         _creditNoteService = creditNoteService;
         _businessClockService = businessClockService;
         _logger = logger;
+        _fiscalTrust = fiscalTrust;
     }
 
     public async Task<CreditNoteDto> SignDraftAsync(int creditNoteId)
@@ -80,6 +83,7 @@ public class SriCreditNoteSigningService : ISriCreditNoteSigningService
             }
 
             ValidateCanSign(creditNote);
+            if (creditNote.SriEnvironment is not (1 or 2)) throw new InvalidOperationException("INVALID_SRI_ENVIRONMENT");
             if (creditNote.FiscalProfileId is null || string.IsNullOrWhiteSpace(creditNote.FiscalIssuerSnapshotJson))
                 throw new InvalidOperationException("FISCAL_LEGACY_REVIEW_REQUIRED");
             _sriCreditNoteXmlValidator.ValidateUnsignedCreditNoteXml(
@@ -91,6 +95,10 @@ public class SriCreditNoteSigningService : ISriCreditNoteSigningService
             using var certificateMaterial =
                 await _certificateProvider.GetActiveCertificateMaterialAsync();
             var now = _businessClockService.UtcNow;
+            _fiscalTrust?.RememberPublicChain(creditNote.CompanyId, certificateMaterial);
+            if (creditNote.SriEnvironment == 2)
+                (_fiscalTrust ?? throw new InvalidOperationException("FISCAL_TRUST_GUARD_REQUIRED")).RequireMaterial(
+                    certificateMaterial, FiscalSnapshots.Read(creditNote.FiscalIssuerSnapshotJson)!.Ruc, 2);
             var signedXml = _sriXadesBesSigner.SignCreditNoteXml(
                 creditNote.SriXmlDraft!,
                 certificateMaterial.Certificate,
@@ -386,7 +394,7 @@ public class SriCreditNoteSigningService : ISriCreditNoteSigningService
         {
             KeyNotFoundException => true,
             InvalidOperationException invalidOperationException =>
-                DomainErrorCodes.Contains(invalidOperationException.Message),
+                DomainErrorCodes.Contains(invalidOperationException.Message) || FiscalTrustErrors.IsValidation(invalidOperationException.Message),
             _ => false
         };
     }
@@ -395,6 +403,7 @@ public class SriCreditNoteSigningService : ISriCreditNoteSigningService
         new(StringComparer.Ordinal)
         {
             "FISCAL_LEGACY_REVIEW_REQUIRED",
+            "INVALID_SRI_ENVIRONMENT",
             "CREDIT_NOTE_NOT_FOUND",
             "CREDIT_NOTE_SRI_ACCESS_KEY_REQUIRED",
             "CREDIT_NOTE_SRI_DRAFT_INCONSISTENT",

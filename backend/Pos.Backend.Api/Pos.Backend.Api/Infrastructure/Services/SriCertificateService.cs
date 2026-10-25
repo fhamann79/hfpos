@@ -59,6 +59,8 @@ public class SriCertificateService : ISriCertificateService
         ValidateUploadBasics(file, password);
 
         var certificateBytes = await ReadCertificateBytesAsync(file!);
+        try
+        {
         var metadata = LoadAndValidateCertificate(certificateBytes, password!);
 
         byte[] encryptedCertificateBytes;
@@ -67,7 +69,9 @@ public class SriCertificateService : ISriCertificateService
         try
         {
             encryptedCertificateBytes = _protector.Protect(certificateBytes);
-            encryptedPassword = _protector.Protect(Encoding.UTF8.GetBytes(password!));
+            var passwordBytes = Encoding.UTF8.GetBytes(password!);
+            try { encryptedPassword = _protector.Protect(passwordBytes); }
+            finally { CryptographicOperations.ZeroMemory(passwordBytes); }
         }
         catch (Exception ex)
         {
@@ -129,6 +133,8 @@ public class SriCertificateService : ISriCertificateService
         await transaction.CommitAsync();
 
         return MapCertificate(certificate);
+        }
+        finally { CryptographicOperations.ZeroMemory(certificateBytes); }
     }
 
     public async Task DeactivateCertificateAsync()
@@ -208,26 +214,25 @@ public class SriCertificateService : ISriCertificateService
 
     private static CertificateMetadata LoadAndValidateCertificate(byte[] certificateBytes, string password)
     {
-        X509Certificate2 certificate;
+        Core.Models.SriSigningCertificateMaterial material;
 
         try
         {
-            certificate = new X509Certificate2(
-                certificateBytes,
-                password,
-                X509KeyStorageFlags.EphemeralKeySet);
+            material = SriPfxReader.Load(certificateBytes, password);
         }
         catch (CryptographicException ex)
         {
             throw new InvalidOperationException("INVALID_CERTIFICATE_PASSWORD", ex);
         }
+        catch (InvalidOperationException) { throw; }
         catch (Exception ex)
         {
             throw new InvalidOperationException("INVALID_CERTIFICATE_FILE", ex);
         }
 
-        using (certificate)
+        using (material)
         {
+            var certificate = material.Certificate;
             if (!certificate.HasPrivateKey)
             {
                 throw new InvalidOperationException("CERTIFICATE_WITHOUT_PRIVATE_KEY");
