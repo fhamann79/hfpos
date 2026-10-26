@@ -337,7 +337,8 @@ public sealed class FiscalSigningRuntimeTests(PostgresDatabaseFixture database, 
             f.Options, NullLogger<CreditNoteService>.Instance, new TenantAdministrationGuard(db));
         var note = await notes.CreateDraftAsync(new() { OriginalSaleId = sale.Id, Reason = "Synthetic RC6 return",
             Items = [new() { SaleItemId = sale.Items[0].Id, Quantity = 1 }] });
-        await notes.PrepareSriDraftAsync(note.Id);
+        note = await notes.PrepareSriDraftAsync(note.Id);
+        Assert.False(string.IsNullOrWhiteSpace(note.AccessKey));
         var provider = new SriSigningCertificateProvider(db, accessor, f.Protection, NullLogger<SriSigningCertificateProvider>.Instance);
         var signing = new SriCreditNoteSigningService(db, accessor, provider, new SriXadesBesSigner(), new SriCreditNoteXmlValidator(),
             notes, clock, NullLogger<SriCreditNoteSigningService>.Instance);
