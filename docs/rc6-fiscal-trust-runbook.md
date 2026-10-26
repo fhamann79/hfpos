@@ -231,6 +231,6 @@ actual, reconciliacion y autorizacion expresa. No hay rollback destructivo auton
 - No se acredita confianza fiscal/estado de revocacion local; el SRI puede rechazar certificado, firma o documento.
 - Identidad NOT_CONFIRMED sigue sin demostrarse; no significa MATCH.
 - La recuperacion transaccional de notas de credito conserva un riesgo previo conocido; esta rectificacion no reescribe su concurrencia.
-- La plataforma sigue en .NET 8; su evolucion/soporte es trabajo separado, sin upgrade en RC6.
+- .NET 8 termina soporte el **10-Nov-2026**, segun la [politica oficial de Microsoft](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core). El upgrade a una version soportada es una prioridad separada ya aprobada, pendiente y fuera de RC6; esta rectificacion no lo ejecuta ni lo da por resuelto. Conservar un digest no convierte una imagen antigua en un runtime soportado para activacion.
 - No incluye CA CRUD, OCSP, monitor global, nuevas reglas IVA/roles, nuevos productos, backup automatico, RC7 ni redisenos UI.
 - No se ha usado ni se autoriza aqui entorno/dato/certificado/SRI real.
