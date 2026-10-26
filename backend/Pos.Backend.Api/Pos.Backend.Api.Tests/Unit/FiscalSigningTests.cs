@@ -174,6 +174,28 @@ public sealed class FiscalSigningTests(ITestOutputHelper output)
         }
     }
 
+    [Fact]
+    public void Actually_signed_duplicate_fiscal_fields_or_blocks_are_rejected()
+    {
+        using var p = new SyntheticSigningCertificates();
+        var key = AccessKey("factura");
+        foreach (var duplicateBlock in new[] { false, true })
+        {
+            var xml = XElement.Parse(Xml("factura", key));
+            var info = xml.Element("infoTributaria")!;
+            if (duplicateBlock)
+            {
+                var other = new XElement(info);
+                other.Element("ambiente")!.Value = "1";
+                xml.Add(other);
+            }
+            else info.Add(new XElement("ambiente", "1"));
+            var signed = new SriXadesBesSigner().SignInvoiceXml(xml.ToString(SaveOptions.DisableFormatting), p.Leaf, key, p.Now);
+            Assert.Equal("FISCAL_SIGNED_XML_INVALID", Assert.Throws<InvalidOperationException>(() =>
+                FiscalSignedXmlVerifier.Verify(signed, Hash(signed), p.Leaf.Thumbprint, key, SyntheticSigningCertificates.RucA, "factura", 2)).Message);
+        }
+    }
+
     [Theory]
     [InlineData("RECIBIDA")] [InlineData("DEVUELTA")]
     public async Task PartialChain_allows_actual_signature_and_mock_SOAP_transport_without_network(string status)
