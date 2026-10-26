@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Xml.Linq;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Pos.Backend.Api.Configuration;
@@ -147,6 +148,33 @@ public sealed class FiscalSigningTests(ITestOutputHelper output)
     }
 
     [Theory]
+    [InlineData("factura", 1)] [InlineData("factura", 2)]
+    [InlineData("notaCredito", 1)] [InlineData("notaCredito", 2)]
+    public void Cryptographically_valid_XML_must_bind_all_fiscal_fields_to_persisted_key(string root, int environment)
+    {
+        using var p = new SyntheticSigningCertificates();
+        var key = AccessKey(root, environment);
+        var signer = new SriXadesBesSigner();
+        string Sign(string xml) => root == "factura" ? signer.SignInvoiceXml(xml, p.Leaf, key, p.Now)
+            : signer.SignCreditNoteXml(xml, p.Leaf, key, p.Now);
+        var baseline = Sign(Xml(root, key));
+        using var verified = FiscalSignedXmlVerifier.Verify(baseline, Hash(baseline), p.Leaf.Thumbprint, key, SyntheticSigningCertificates.RucA, root, environment);
+        foreach (var (field, wrong) in new[]
+        {
+            ("ambiente", environment == 1 ? "2" : "1"), ("codDoc", root == "factura" ? "04" : "01"),
+            ("estab", "999"), ("ptoEmi", "999"), ("secuencial", "000000009"), ("tipoEmision", "2")
+        })
+        {
+            var xml = XElement.Parse(Xml(root, key));
+            xml.Element("infoTributaria")!.Element(field)!.Value = wrong;
+            // The actual signer verifies the new signature. Only its fiscal binding is contradictory.
+            var signed = Sign(xml.ToString(SaveOptions.DisableFormatting));
+            Assert.Equal("FISCAL_SIGNED_XML_INVALID", Assert.Throws<InvalidOperationException>(() =>
+                FiscalSignedXmlVerifier.Verify(signed, Hash(signed), p.Leaf.Thumbprint, key, SyntheticSigningCertificates.RucA, root, environment)).Message);
+        }
+    }
+
+    [Theory]
     [InlineData("RECIBIDA")] [InlineData("DEVUELTA")]
     public async Task PartialChain_allows_actual_signature_and_mock_SOAP_transport_without_network(string status)
     {
@@ -168,11 +196,15 @@ public sealed class FiscalSigningTests(ITestOutputHelper output)
     }
 
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
-    private static string Xml(string root, string key) => $"<{root} id=\"comprobante\"><infoTributaria><claveAcceso>{key}</claveAcceso><ruc>{SyntheticSigningCertificates.RucA}</ruc></infoTributaria></{root}>";
-    private static string AccessKey(string root)
+    private static string Xml(string root, string key) => new XElement(root, new XAttribute("id", "comprobante"),
+        new XElement("infoTributaria", new XElement("ambiente", key.Substring(23, 1)), new XElement("tipoEmision", key.Substring(47, 1)),
+            new XElement("ruc", SyntheticSigningCertificates.RucA), new XElement("claveAcceso", key), new XElement("codDoc", key.Substring(8, 2)),
+            new XElement("estab", key.Substring(24, 3)), new XElement("ptoEmi", key.Substring(27, 3)), new XElement("secuencial", key.Substring(30, 9))))
+        .ToString(SaveOptions.DisableFormatting);
+    private static string AccessKey(string root, int environment = 2)
     {
         var request = new SriAccessKeyRequest { DocumentCode = root == "factura" ? "01" : "04", IssuerRuc = SyntheticSigningCertificates.RucA,
-            EmissionDate = DateTime.UtcNow, Environment = 2, EmissionType = 1, EstablishmentCode = "001", EmissionPointCode = "001", Sequential = 1, NumericCodeSeed = "synthetic" };
+            EmissionDate = DateTime.UtcNow, Environment = environment, EmissionType = 1, EstablishmentCode = "001", EmissionPointCode = "001", Sequential = 1, NumericCodeSeed = "synthetic" };
         var service = new SriAccessKeyService();
         return (root == "factura" ? service.GenerateInvoiceAccessKey(request) : service.GenerateCreditNoteAccessKey(request)).AccessKey;
     }

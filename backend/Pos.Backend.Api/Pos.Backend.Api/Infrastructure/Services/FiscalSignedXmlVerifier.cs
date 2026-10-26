@@ -17,6 +17,7 @@ public static class FiscalSignedXmlVerifier
                 || environment is not (1 or 2) || accessKey[23] - '0' != environment
                 || accessKey.Substring(10, 13) != ruc
                 || accessKey.Substring(8, 2) != (rootName == "factura" ? "01" : "04")
+                || accessKey[47] != '1'
                 || new SriAccessKeyService().CalculateModulo11CheckDigit(accessKey[..48]) != accessKey[48] - '0')
                 throw new CryptographicException();
             if (xml.Length > 4_194_304 || string.IsNullOrEmpty(persistedHash)
@@ -28,9 +29,20 @@ public static class FiscalSignedXmlVerifier
             document.Load(reader);
             var root = document.DocumentElement;
             if (root?.Name != rootName || root.NamespaceURI != "" || root.GetAttribute("id") != "comprobante"
-                || document.SelectSingleNode($"/{rootName}/infoTributaria/claveAcceso")?.InnerText != accessKey
-                || document.SelectSingleNode($"/{rootName}/infoTributaria/ruc")?.InnerText != ruc)
+                || root.SelectNodes("infoTributaria")?.Count != 1)
                 throw new CryptographicException();
+            var info = root.SelectSingleNode("infoTributaria")!;
+            foreach (var (name, expected) in new[]
+            {
+                ("claveAcceso", accessKey), ("ruc", ruc), ("codDoc", accessKey.Substring(8, 2)),
+                ("ambiente", accessKey.Substring(23, 1)), ("estab", accessKey.Substring(24, 3)),
+                ("ptoEmi", accessKey.Substring(27, 3)), ("secuencial", accessKey.Substring(30, 9)),
+                ("tipoEmision", accessKey.Substring(47, 1))
+            })
+            {
+                var fields = info.SelectNodes(name);
+                if (fields?.Count != 1 || fields[0]!.InnerText != expected) throw new CryptographicException();
+            }
             var ids = new Dictionary<string, XmlElement>(StringComparer.Ordinal);
             foreach (XmlElement element in document.GetElementsByTagName("*"))
             foreach (var name in new[] { "id", "Id", "ID" })

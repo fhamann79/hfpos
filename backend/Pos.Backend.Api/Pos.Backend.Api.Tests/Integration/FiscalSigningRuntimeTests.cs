@@ -143,6 +143,7 @@ public sealed class FiscalSigningRuntimeTests(PostgresDatabaseFixture database, 
     [InlineData(1, "crypto")] [InlineData(2, "crypto")]
     [InlineData(1, "draft")] [InlineData(2, "draft")]
     [InlineData(1, "key")] [InlineData(2, "key")]
+    [InlineData(1, "signed-context")] [InlineData(2, "signed-context")]
     [InlineData(2, "settings")]
     public async Task Local_reception_failure_has_zero_transport_calls_and_no_false_ambiguity(int environment, string failure)
     {
@@ -169,6 +170,13 @@ public sealed class FiscalSigningRuntimeTests(PostgresDatabaseFixture database, 
                 (await db.ElectronicIssuingJobs.SingleAsync()).AccessKey = stored.AccessKey;
             }
             if (failure == "settings") (await db.CompanySriSettings.SingleAsync()).IsEnabled = false;
+            if (failure == "signed-context")
+            {
+                var xml = XElement.Parse(stored.SriXmlDraft!);
+                xml.Element("infoTributaria")!.Element("ambiente")!.Value = environment == 1 ? "2" : "1";
+                stored.SriSignedXml = new SriXadesBesSigner().SignInvoiceXml(xml.ToString(SaveOptions.DisableFormatting), p.Leaf, stored.AccessKey!, DateTime.UtcNow);
+                stored.SriSignatureHash = Hash(stored.SriSignedXml);
+            }
             await db.SaveChangesAsync();
         }
         await f.ProcessNextAsync();
@@ -312,6 +320,7 @@ public sealed class FiscalSigningRuntimeTests(PostgresDatabaseFixture database, 
     [Theory]
     [InlineData(1, "positive")] [InlineData(2, "positive")]
     [InlineData(1, "corrupt-xml")] [InlineData(2, "corrupt-xml")]
+    [InlineData(1, "signed-context")] [InlineData(2, "signed-context")]
     [InlineData(2, "null-environment")]
     public async Task Credit_note_signing_reception_and_history_preserve_integrity(int environment, string scenario)
     {
@@ -341,6 +350,15 @@ public sealed class FiscalSigningRuntimeTests(PostgresDatabaseFixture database, 
         await signing.SignDraftAsync(note.Id);
         var signed = (await db.CreditNotes.AsNoTracking().SingleAsync()).SriSignedXml; Assert.NotNull(signed);
         if (scenario == "corrupt-xml") { (await db.CreditNotes.SingleAsync()).SriSignatureHash = "00"; await db.SaveChangesAsync(); }
+        if (scenario == "signed-context")
+        {
+            var row = await db.CreditNotes.SingleAsync();
+            var xml = XElement.Parse(row.SriXmlDraft!);
+            xml.Element("infoTributaria")!.Element("secuencial")!.Value = "999999999";
+            signed = row.SriSignedXml = new SriXadesBesSigner().SignCreditNoteXml(xml.ToString(SaveOptions.DisableFormatting), p.Leaf, row.AccessKey!, DateTime.UtcNow);
+            row.SriSignatureHash = Hash(signed);
+            await db.SaveChangesAsync();
+        }
         var submission = new SriCreditNoteSubmissionService(db, accessor, f.Transport, notes, new SriCreditNoteXmlValidator(),
             clock, f.Options, NullLogger<SriCreditNoteSubmissionService>.Instance);
         if (scenario == "positive")
