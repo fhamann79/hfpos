@@ -20,11 +20,11 @@ public static class SriPfxReader
             if (signers.Length == 0) throw new InvalidOperationException("CERTIFICATE_WITHOUT_PRIVATE_KEY");
             if (signers.Length != 1) throw new InvalidOperationException("CERTIFICATE_SIGNER_AMBIGUOUS");
             var cert = signers[0];
+            foreach (var auxiliary in collection.Cast<X509Certificate2>().Where(c => c != cert)) auxiliary.Dispose();
             return new SriSigningCertificateMaterial
             {
                 CertificateId = certificateId, Certificate = cert, Thumbprint = cert.Thumbprint,
-                Subject = cert.Subject, SerialNumber = cert.SerialNumber, NotAfter = cert.NotAfter.ToUniversalTime(),
-                AuxiliaryCertificates = collection.Cast<X509Certificate2>().Where(c => c != cert).ToArray()
+                Subject = cert.Subject, SerialNumber = cert.SerialNumber, NotAfter = cert.NotAfter.ToUniversalTime()
             };
         }
         catch

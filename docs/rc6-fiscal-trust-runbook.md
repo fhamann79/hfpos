@@ -1,98 +1,236 @@
-# DEV-531 RC6: confianza fiscal y preflight multitenant
+# RC6 - aptitud de firma y diagnostico X.509 informativo
 
-Issue #162, relacionado con #133/#127 y exclusivamente preflight fiscal de #158.
-R3. NO MERGE, RELEASE, DEPLOY, CONTABO ni SRI real por agentes.
-Este documento prepara una operacion humana R4 separada; no la ejecuta ni la autoriza.
+## Alcance y trazabilidad
 
-## Arquitectura y diferencias frente a RC5
+DEV-531, issue #162, [PR #163](https://github.com/fhamann79/hfpos/pull/163), R3.
+Base de la rectificacion: `c5c8539b478291d74fe2484f8277add3b10ff5b0`.
+HEAD anterior: `2d31fbf4bb9ca34691321195982ba4bb1566e758`.
+La primera implementacion RC6 contenia infraestructura propia de confianza PKI.
+El propietario aprobo retirarla del mismo PR mediante commits correctivos normales.
+La clasificacion previa se publico en el [comentario de auditoria](https://github.com/fhamann79/hfpos/pull/163#issuecomment-6417933451).
+Este documento sustituye las instrucciones operativas de esa arquitectura descartada.
+No autoriza merge, release, despliegue ni operaciones reales.
 
-- RC5 diagnosticaba confianza del sistema operativo con `NoCheck`. RC6 usa un registro publico aprobado, independiente de TLS, `CustomRootTrust` y auxiliares `ExtraStore`; AIA/descargas estan deshabilitados. `NoCheck` solo construye la cadena: Produccion exige ademas revocacion offline GOOD.
-- El manifiesto es inmutable durante la vida del proceso. Cambiarlo requiere una nueva version/pin aprobado y reinicio supervisado; no hay CRUD CA, nuevos roles, permisos tenant globales ni migraciones EF.
-- `FiscalCertificateEvaluator` separa cadena, identidad, vigencia, aptitud y revocacion. Identidad reutiliza `SriCertificateIdentityReader`: MATCH, MISMATCH, NOT_CONFIRMED. MISMATCH bloquea; NOT_CONFIRMED conserva el warning de RC5 y NO acredita identidad. No se infiere RUC desde nombres comerciales.
-- `SriPfxReader` importa colecciones efimeras: exactamente un certificado con clave privada, hasta 32 auxiliares, 2 MiB y cuatro importaciones simultaneas. Subida valida antes de desactivar el certificado anterior. Se conserva el PFX original cifrado, Data Protection, proposito, ApplicationName y keyring. Bytes temporales se limpian; las cadenas password administradas no son borrables de forma garantizada.
-- Nueva factura de Produccion: replay comprometido primero; despues settings/permiso operativo de Produccion y confianza, antes de caja/secuencial/stock. Orden de locks Company -> CashSession -> DocumentSequence -> ProductStock intacto.
-- Firma manual/worker: evalua el certificado concreto usado y RUC del snapshot. No hay constructor legacy que permita Produccion sin guard. Ambiente desconocido no equivale a Pruebas.
-- Recepcion: hash persistido, un solo certificado embebido, firma RSA-SHA256, referencias internas y transforms del perfil XAdES existente, clave/RUC/snapshot, cadena y revocacion actuales, todos antes de `ReceptionStartedAt`. XSD y resolucion de contexto tambien preceden la intencion. Una falla local no es recepcion incierta.
-- Recepcion nunca descifra PFX. Auxiliares publicos provienen del registro o cache del monitor/firma, vinculada por CompanyId y thumbprint. Rotar el certificado activo no cambia el firmante persistido. Se conserva el control operativo preexistente de certificado activo para recepcion/worker; no se autoriza nueva semantica de desactivacion.
-- Consultas/autorizaciones e historicos no vuelven a firmar ni pasan por el nuevo evaluador. Conservan controles operativos ya existentes. Retirar CA no reescribe XML, claves, numeros, RIDE ni historia.
-- NC reutiliza los mismos guards de firma/recepcion sin reescribir su concurrencia. Riesgo preexistente: recepcion NC realiza transporte antes de su transaccion de persistencia y no tiene el mismo lease/fence durable que facturas. Debe revisarse como trabajo separado; RC6 no afirma resolverlo.
+## Que Comprueba HF One
 
-## Perfil soportado y limites
+- Contexto tenant/establecimiento/punto, permisos y delegacion revocable server-side.
+- Configuracion operativa, ambiente valido y habilitacion explicita de Produccion.
+- Certificado activo: PFX descifrable, password correcta y firmante unico.
+- Importacion efimera, PFX limitado a 2 MiB/33 certificados y concurrencia de importacion limitada.
+- Clave RSA de 2048 a 8192 bits realmente utilizable: firma un desafio con SHA-256/PKCS#1 y la clave publica del certificado verifica el resultado.
+- Vigencia real del certificado y contradiccion de identidad fiscal tipada. `NOT_CONFIRMED` es advertencia, no identidad acreditada.
+- No se exige un algoritmo particular de firma del certificado/emisor. La compatibilidad exigida corresponde a la clave que firma el XML.
+- Firma XAdES-BES existente, hash persistido, certificado embebido, referencias/transforms permitidos, clave de acceso y RUC coherentes.
+- Integridad local de XML antes de admitir recepcion en ambos ambientes. Un fallo local no registra `ReceptionStartedAt` ni se convierte en recepcion incierta.
+- Rechazo anterior a efectos comerciales; replay comprometido sin cargar otra vez el certificado. Locks, fencing, leases, caja, stock y numeracion conservan sus reglas.
 
-`rsa-full-crl-v1`: RSA 2048..8192; firmas de certificados/CRL RSA PKCS#1 SHA-256/384/512; firma XML existente RSA-SHA256. CA con BasicConstraints y keyCertSign; emisor CRL tambien cRLSign; firmante no CA con digitalSignature. X509Chain aplica path length, firmas, vigencia y restricciones criticas con NoFlag. Autofirma de raiz verificada explicitamente.
+Los certificados auxiliares importados se liberan; no se retienen para emitir.
+No hay tablas ni migraciones nuevas. Ciphertext existente, keyring, `ApplicationName`
+y purpose `SriCertificateProtectionPurposes.CertificateV1` no cambian.
+No se requiere volver a subir certificados ya almacenados.
 
-EKU no se presume serverAuth/codeSigning. Si cualquier certificado de la ruta declara EKU, al menos un mismo proposito aprobado por el perfil/ancla debe sobrevivir a TODAS las restricciones de la ruta, no solo a las del firmante. EKU ausente no restringe; anyExtendedKeyUsage no elimina las restricciones de los demas niveles ni aprueba propositos no configurados. Sin interseccion compatible se bloquea. `AllowedExtendedKeyUsages` y `RequiredCertificatePolicies` son listas del perfil Root: valores no vacios en Intermediate/CrlIssuer INVALIDAN el manifiesto, no se ignoran. `RequiredCertificatePolicies` configura OID exigidos al construir cadena; cualquier reconstruccion debe conservar exactamente la ruta y ancla evaluadas. `RequiresOcsp` aplica a TODAS las autoridades de la ruta, incluido CrlIssuer; cualquier requisito no implementado bloquea. Estos perfiles NO constituyen compatibilidad universal con emisores ecuatorianos.
+## Cadena Local: Solo Informacion
 
-CRL DER v2 completa/directa: firma del TBSCertList original, algoritmos interior/exterior iguales (parametros NULL/ausentes), unusedBits=0, issuer DER y AKI keyIdentifier/SKI, numero de CRL aprobado, tiempos y todas las entradas verificadas antes de GOOD. Seriales positivos normalizados; certificado high-bit usa serial sin signo. certificateHold = SUSPENDED. Revocacion comprobada de firmante e intermediarios; raiz por ciclo de vida del registro.
+Solo readiness ejecuta `X509Chain.Build()`, despues de comprobar aptitud tecnica.
+Usa el almacen estandar del SO, `RevocationMode=NoCheck`,
+`VerificationFlags=NoFlag` y `DisableCertificateDownloads=true`.
+No agrega raices, no usa AIA/descargas, ni consultas CRL/OCSP, ni cambia TLS global.
+La operacion nativa es sincrona; no se afirma que un timeout asincrono la cancele.
+No existe worker/cache/monitor de cadena, ni se ejecuta durante ventas, firma o transporte.
 
-Se rechazan delta, freshestCRL (tanto en CRL como en cualquier certificado de la ruta), IDP/particiones, indirect CRL/certificateIssuer, removeFromCRL, extensiones no soportadas, entradas duplicadas, fechas de revocacion futuras, evidencia falsificada y DER sobrante. No hay fallback a otra CRL favorable. OCSP NO implementado; un perfil con `RequiresOcsp=true` queda UNKNOWN/NO-GO.
+| Resultado | Severidad | Bloquea |
+|---|---|---|
+| `CERTIFICATE_CHAIN_BUILD_OK` | success | NO |
+| `CERTIFICATE_CHAIN_BUILD_FAILED`, incluidos PartialChain/UntrustedRoot | warning | NO |
+| `CERTIFICATE_CHAIN_DIAGNOSTIC_FAILED`, incluso excepcion | warning | NO |
+| `CERTIFICATE_SELF_SIGNED` (codigo compatible; solo Subject=Issuer) | warning | NO |
 
-GOOD significa evidencia autentica vigente bajo esta politica, NO prueba criptografica de ser la ultima publicacion del emisor. La ultima publicacion debe observarse y aprobarse operativamente. Se separan `MaximumAgeHours` de emision (1..8784, aprobado por perfil CRL/ARL) y observacion `ProvisionedAt`/`ApprovedCurrentUntil` (maximo 24 horas). `nextUpdate`, ambas frescuras, vigencia CA y manifiesto limitan la decision por cada uso. Una ARL semestral puede estar vigente sin considerarse fresca una observacion antigua.
+Subject=Issuer no prueba autofirma. Cadena construida no prueba aceptacion del SRI.
+Cadena fallida no se convierte en PASS: la advertencia se muestra honestamente.
+`IsUsableForProduction` no contiene condiciones de cadena/autofirma y puede coexistir
+con `IsReadyForProductionSubmission=true`, `BlockingErrorCount=0` y advertencias.
+El frontend usa el booleano del backend y presenta la advertencia separadamente.
+Un fallo de PFX/clave/vigencia/identidad sigue siendo error bloqueante, distinto de
+una excepcion del diagnostico informativo de cadena.
 
-Registro: 8 MiB, 64 certificados/64 CRL, certificado 32 KiB, CRL 1 MiB/16384 entradas, cadena maximo 10, auxiliares maximo 32, cuatro evaluaciones simultaneas. No HTTP/DNS/OCSP/CRL client en evaluador. Limites nativos de importacion PKCS#12 de .NET/OS siguen aplicando; las APIs sincronicas no ofrecen cancelacion dura a mitad de criptografia. Monitor pagina 1..50 empresas, cache hasta 10000 empresas, maximo 32 certificados historicos por tenant; excesos son bloqueos concretos, nunca PASS parcial. Cache publica: DER maximo 32 KiB por certificado, 1 MiB por entrada y 64 MiB globales, con validacion/reserva/reemplazo atomicos y reclamacion de entradas vencidas al leer/escribir. Material fuera del presupuesto no se retiene; falta de auxiliares nunca equivale a confianza. Cache maximo cinco minutos: un positivo nunca sobrevive la vigencia de evidencia; un rechazo reciente conserva su causa hasta el TTL de observacion sin convertirse en GO. Reinicio pierde cache y produce UNKNOWN hasta nueva observacion.
+Readiness solo lee; si faltan settings, informa `SRI_SETTINGS_MISSING` y no los crea.
+Los valores conservadores transitorios (Pruebas/deshabilitado) no acreditan configuracion.
 
-Pruebas SRI ambiente 1 conserva la politica sintetica previa (autofirmados permitidos y sin elegibilidad de Produccion); los nuevos guards criptograficos de ejecucion son obligatorios para ambiente 2. No se reutilizan sentinels de pruebas como XML de Produccion. Historicos ya firmados no se regeneran.
+## SRI, Tenants e Historia
 
-## Registro operativo protegido
+El SRI decide recepcion/autorizacion con sus propias reglas. XML bien firmado y
+readiness positivo solo permiten intentar el flujo, no garantizan autorizacion.
+Se conservan respuesta cruda, codigo/mensaje, fecha, intento y documento asociado.
+Un rechazo determinista no crea otra factura ni consume otro secuencial.
+Una respuesta ambigua conserva evidencia durable y pasa a consulta, sin reenvio ciego.
+Consultar autorizacion/historia no construye cadenas, carga claves privadas ni refirma.
+No se reescriben XML, claves o numeros historicos.
 
-1. Operador obtiene certificados **publicos** y CRL/ARL desde fuentes oficiales autenticadas; confirma DPC, perfil aplicable, jerarquia completa y cadena por cada emisor real, sin suponer que dos empresas comparten CA. Nunca recibe PFX/password para aprobar confianza global.
-2. Segundo aprobador verifica procedencia, SHA-256, vigencias, rol Root/Intermediate/CrlIssuer, politica/EKU y necesidad de OCSP. `CrlIssuer` aprueba el emisor exacto de evidencia sin suministrarlo a la construccion de cadena; necesita auxiliar PFX/cache para esa funcion. Nunca ancla un certificado tenant.
-3. Crear manifiesto con `SchemaVersion=1`, `Version`, `ValidFrom`/`ValidUntil` UTC, `Authorities` y `Crls`. Cada autoridad: `Sha256` en hex mayuscula, `CertificateBase64` DER, `Role`, `Provenance`, `Profile`, `RequiresOcsp`, `AllowedExtendedKeyUsages`, `RequiredCertificatePolicies`. Cada CRL: `IssuerSha256`, `Sha256`, `DerBase64`, `Provenance`, `MaximumAgeHours`, `ProvisionedAt`, `ApprovedCurrentUntil`, `ApprovalReference`, `CrlNumberHex` (INTEGER normalizado hex mayuscula).
-4. Mantener ledger operativo independiente de versiones/pins y CRLNumber por issuer. Verificar ultima CRL **completa**/ARL de cada nivel y que no hay publicacion mas reciente/delta obligatoria. Rechazar rollback de numero/fecha/version; conservar evidencia de consulta/aprobacion. Refrescar antes del deadline; alarmar y bloquear si no puede probarse actualidad. No existe downloader automatico en RC6.
-5. Aprobador publica SHA-256 esperado por canal operativo independiente, no mediante un script que calcule y apruebe cualquier archivo presente. Conservar firma/cambio/aprobadores/fuente en el sistema operativo de cambios. El pin autentica **todo** el manifiesto, incluidos tiempos y CRLNumber.
-6. Montar archivo y configuracion aprobada read-only, propietario protegido, sin escritura del usuario de app. Configurar `FiscalTrust:RegistryPath` y `FiscalTrust:ExpectedSha256` por configuracion operativa. No usar SSL_CERT_FILE ni modificar TLS global. Registro no aprobado/corrupto/ausente/caducado impide nuevas acciones de Produccion pero no tumba todos los tenants ni reescribe historia.
-7. Integridad se verifica al cargar el singleton, antes de evaluar el primer documento/ciclo; el endpoint muestra AVAILABLE o causa concreta. Archivo modificado despues del arranque no altera el snapshot aprobado vivo. No copiar CA reales a este repositorio.
+Cada empresa selecciona exclusivamente su certificado por CompanyId. Dos CA
+diferentes no requieren aprobacion previa en HF One. El rechazo o material corrupto
+de una empresa no cambia la otra. Platform conserva su autenticacion y separacion
+de tokens/permisos; no tiene endpoints PKI ni acceso a material privado tenant.
 
-## Preflight candidato ANTES de sustituir RC5
+## Clasificacion de los 43 Archivos Originales
 
-No arrancar el entrypoint de la API RC6 sobre DB real para obtener este reporte: podria iniciar workers y sus probes actuales. Existe un entrypoint aislado `Hfpos.FiscalPreflight`, sin WebApplication/seed/auth/fiscal workers/migraciones/write probes. Solo usa consultas, monitor y Data Protection con `DisableAutomaticKeyGeneration`; no fabrica JWT ni contexto Platform.
+API = `backend/Pos.Backend.Api/Pos.Backend.Api`; TEST = proyecto hermano `Pos.Backend.Api.Tests`.
+Las acciones describen el tratamiento de la implementacion anterior, no los estados
+Git finales (los renombres se cuentan desde el diff real).
 
-Ejecucion exclusivamente HUMANA con autorizacion R4 separada y el aislamiento del runbook de recuperacion existente:
+| # | Archivo original | Tratamiento final |
+|---|---|---|
+| 1 | .github/workflows/ci.yml | RESTAURAR a main; fuera build CLI PKI |
+| 2 | .github/workflows/container-images.yml | SIMPLIFICAR; conservar Debian sin red |
+| 3 | Dockerfile.fiscal-trust-tests | REEMPLAZAR por Dockerfile.fiscal-signing-tests |
+| 4 | Hfpos.FiscalPreflight/Hfpos.FiscalPreflight.csproj | ELIMINAR |
+| 5 | Hfpos.FiscalPreflight/Program.cs | ELIMINAR |
+| 6 | TEST/Infrastructure/AutonomousIssuingFixture.cs | SIMPLIFICAR; sin evaluador/cache |
+| 7 | TEST/Infrastructure/FiscalTrustSyntheticPki.cs | REEMPLAZAR por SyntheticSigningCertificates |
+| 8 | TEST/Integration/FiscalTrustRuntimeTests.cs | REEMPLAZAR por FiscalSigningRuntimeTests |
+| 9 | TEST/Integration/PlatformControlPlaneTests.cs | RESTAURAR matriz; agregar no-PKI/no-acceso-certificados |
+| 10 | TEST/Unit/FiscalTrustTests.cs | REEMPLAZAR por FiscalSigningTests |
+| 11 | API/Configuration/FiscalTrustOptions.cs | ELIMINAR |
+| 12 | API/Core/DTOs/FiscalTrustDtos.cs | ELIMINAR |
+| 13 | API/Core/Models/FiscalTrustDecision.cs | ELIMINAR |
+| 14 | API/Core/Models/SriSigningCertificateMaterial.cs | RESTAURAR ownership del firmante, sin auxiliares |
+| 15 | API/Core/Services/FiscalTrustErrors.cs | REEMPLAZAR por FiscalCertificateErrors |
+| 16 | API/Core/Services/IFiscalCertificateEvaluator.cs | ELIMINAR |
+| 17 | API/Core/Services/IPlatformFiscalTrustService.cs | ELIMINAR |
+| 18 | API/Infrastructure/Services/ElectronicIssuingCoordinator.cs | SIMPLIFICAR; verificar antes del marker |
+| 19 | API/Infrastructure/Services/FiscalCertificateEvaluator.cs | ELIMINAR |
+| 20 | API/Infrastructure/Services/FiscalExecutionGuard.cs | REEMPLAZAR por FiscalDocumentGuard esencial |
+| 21 | API/Infrastructure/Services/FiscalPreflightCache.cs | ELIMINAR |
+| 22 | API/Infrastructure/Services/FiscalPublicChainCache.cs | ELIMINAR |
+| 23 | API/Infrastructure/Services/FiscalSignedXmlVerifier.cs | CONSERVAR y comprobar clave/RUC/ambiente |
+| 24 | API/Infrastructure/Services/FiscalTrustMonitor.cs | ELIMINAR |
+| 25 | API/Infrastructure/Services/FiscalTrustRegistry.cs | ELIMINAR |
+| 26 | API/Infrastructure/Services/FiscalTrustSnapshots.cs | ELIMINAR |
+| 27 | API/Infrastructure/Services/OfflineFiscalCrl.cs | ELIMINAR |
+| 28 | API/Infrastructure/Services/PlatformFiscalTrustService.cs | ELIMINAR |
+| 29 | API/Infrastructure/Services/SalesService.cs | SIMPLIFICAR; aptitud antes de efectos/replay primero |
+| 30 | API/Infrastructure/Services/SriCertificateService.cs | CONSERVAR PFX/cifrado/buffers |
+| 31 | API/Infrastructure/Services/SriCreditNoteSigningService.cs | SIMPLIFICAR; aptitud sin cadena |
+| 32 | API/Infrastructure/Services/SriCreditNoteSubmissionService.cs | SIMPLIFICAR; integridad sin cadena |
+| 33 | API/Infrastructure/Services/SriFiscalReadinessService.cs | REEMPLAZAR decision; cadena solo informacion |
+| 34 | API/Infrastructure/Services/SriInvoiceSigningService.cs | SIMPLIFICAR; aptitud sin cadena |
+| 35 | API/Infrastructure/Services/SriPfxReader.cs | CONSERVAR limites/efimero/firmante unico; liberar auxiliares |
+| 36 | API/Infrastructure/Services/SriSigningCertificateProvider.cs | CONSERVAR CompanyId/DP/vigencia |
+| 37 | API/Infrastructure/Services/SriSubmissionService.cs | CONSERVAR comprobaciones antes del marker |
+| 38 | API/Program.cs | SIMPLIFICAR DI; sin configuracion/servicios PKI |
+| 39 | API/Properties/AssemblyInfo.cs | CONSERVAR acceso interno acotado para tests |
+| 40 | API/WebApi/Controllers/CreditNotesController.cs | SIMPLIFICAR codigos esenciales |
+| 41 | API/WebApi/Controllers/PlatformFiscalTrustController.cs | ELIMINAR |
+| 42 | API/WebApi/Controllers/SalesController.cs | SIMPLIFICAR codigos esenciales |
+| 43 | docs/rc6-fiscal-trust-runbook.md | REEMPLAZAR contenido por este runbook |
 
-1. Conservar RC5 sirviendo; preparar candidato exacto, aprobado por digest/commit. No sustituir contenedores, DB, configuracion ni keyring de RC5. Validar backup cifrado de PostgreSQL **y** keyring, integridad/custodia y restore aislado antes de un corte posterior.
-2. Provisionar rol temporal lector dedicado sin superuser/createdb/createrole/bypassrls, sin membresias/escrituras, solo SELECT necesario; `default_transaction_read_only=on`. CLI verifica modo y privilegios de tablas antes del monitor; no hace prueba de escritura. Aislar red: solo DB autorizada, sin SRI/Internet; no usar conexion persistente de Development. No exponer credenciales/keyring/PFX a agentes.
-3. Montar keyring existente **read-only** y fijar el ApplicationName real previamente confirmado. No crear keyring ni permitir generacion automatica. Falta de claves/DP incompatible produce UNKNOWN por tenant, no regeneracion de material.
-4. Publicar host con `dotnet publish backend/Pos.Backend.Api/Hfpos.FiscalPreflight -c Release -o <salida-controlada> /p:UseAppHost=false`. En el contenedor/entorno aislado establecer `HF_RC6_READONLY_CONNECTION`, `HF_RC6_READONLY_KEYRING`, `HF_RC6_APPLICATION_NAME`, `HF_RC6_REGISTRY_PATH`, `HF_RC6_APPROVED_SHA256`. No imprimir secretos en comandos/logs compartidos. Ejecutar `dotnet Hfpos.FiscalPreflight.dll --read-only-cycle`. No llamar `Pos.Backend.Api.dll`.
-5. Esperar ciclo completo: recorre por CompanyId **todas** las paginas, incluidas empresas suspendidas/sin settings. Salida JSON por pagina hasta TotalPages, con TotalCompanies, version, LastCompletedCycleAt, AsOf, CertID, SHA-256 evaluado, RUC snapshot, expiracion y token SHA-256 del ciphertext (calculado en SQL sin retornarlo a Platform). Limite diez minutos; timeout/limite/cobertura incompleta => NO-GO.
-6. Conciliar conjunto de CompanyId y conteos, no solo primera pagina/TakeN. Snapshot cambiado (incluidos bytes cifrados/password, certificado activo, RUC/settings) invalida resultado. Ausente, stale, error de un tenant o historial fuera de limites => UNKNOWN/NO-GO para ese tenant; otros siguen evaluandose. Repetir ciclo si RC5 cambia datos entre paginas y corte. La observacion no es un snapshot transaccional global.
-7. Capturar baseline RC5 por procedimiento humano read-only ya autorizado, con version/fecha y limitaciones. Columna `Rc5Baseline=UNKNOWN_OPERATOR_BASELINE_REQUIRED` permanece separada: RC6 NO inventa RC5 PASS ni ejecuta validacion global OS con descargas. Comparar por CompanyId/certificado/RUC los flags RC5 reportados y decision RC6. Cadena GOOD no implica readiness comercial ni permiso de envio.
-8. Revisar delegaciones activas, jobs/leases pendientes, recepciones ambiguas y firmantes historicos que deben conservar auxiliares publicos. No cambiar delegaciones ni reprocesar trabajos en preflight. Cache publica de auxiliares se llena con los 32 certificados retenidos por tenant; historia mayor requiere resolucion operativa, no eliminar historia.
-9. Guardar reporte en almacenamiento controlado (contiene RUC/metadatos), con hash/version/fechas y aprobacion. Retirar solo rol/host temporales propios segun procedimiento humano; no borrar DB/keyring ni alterar RC5. No se ejecuta este procedimiento por agentes.
+Fuera de esos 43: se actualizan solo expectativas obsoletas de cadena/autofirma del
+test heredado `SriFiscalReadinessCertificateIdentityTests`; se preservan todos sus
+casos de identidad tipada. Se agrega una regresion de presentacion al spec de
+`FiscalSettingsPage`, sin redisenar ni cambiar comportamiento UI.
 
-## Platform despues de activacion autorizada
+## Matriz de Evidencia de los 43 Casos del Mandato
 
-`GET /api/platform/fiscal-trust` y `GET /api/platform/fiscal-trust/preflight?page=1&pageSize=20` usan AppPolicies.PlatformAdmin + RequirePlatformContext y accessor vigente. Solo metadatos y cache; sin dependencia de provider privado, protector o evaluador en el servicio HTTP. No CRUD/wake/evaluacion viva. Tenant/admin no puede escribir autoridades; token Platform no sirve en endpoints tenant.
+U = `Unit/FiscalSigningTests`; R = `Integration/FiscalSigningRuntimeTests`;
+A = `Integration/AutonomousElectronicIssuingTests`; P = `Integration/PlatformControlPlaneTests`.
+Los nombres abreviados identifican metodos reales. Esta matriz es trazabilidad de
+cobertura, no declara PASS por existir un test. Resultados/contadores y SHA exactos
+se publican con la evidencia de implementacion/CI del PR, nunca se heredan del HEAD anterior.
 
-Monitor servidor descifra efimeramente material existente, extrae cadena publica y descarta claves; nunca cachea PFX/password/privatekey. Cache de decision liga CertID/SHA256/version/RUC/expiracion, UploadedAt, hash del ciphertext/password y settings. Un error se registra UNKNOWN y no impide recorrer otras empresas. Reinicio/rotacion/frescura vencida exige esperar observacion nueva, no activar a ciegas.
+| Caso | Evidencia |
+|---|---|
+| 1 Cadena OK informativa | U.Chain_diagnostic_never_changes_signing_eligibility(success) |
+| 2 PartialChain warning | U.Chain_diagnostic_never_changes_signing_eligibility(native) |
+| 3 Raiz desconocida warning | U.Self_issued_unknown_root_and_unconfirmed_identity_are_only_warnings |
+| 4 Excepcion no bloquea | U.Chain_diagnostic_never_changes_signing_eligibility(exception) |
+| 5 Material inutilizable omite cadena | U.Unusable_material_blocks_and_skips_chain_diagnostic |
+| 6 Clave privada bloquea | U.Private_key_must_sign_and_match_the_certificate_public_key; U.Unusable_material(public) |
+| 7 Vigencia bloquea | U.Unusable_material(expired/future); R.Production_rejects_before_sequence_stock_cash_or_durable_job |
+| 8 Contradiccion bloquea | U.Unusable_material(identity); suite SriFiscalReadinessCertificateIdentityTests intacta |
+| 9 No confirmada warning | U.Self_issued_unknown_root_and_unconfirmed_identity_are_only_warnings |
+| 10 IsUsable independiente | U.Chain_diagnostic_never_changes_signing_eligibility |
+| 11 IsReady independiente | R.PartialChain_readiness_is_production_ready_with_consistent_counters_and_no_writes |
+| 12 BlockingErrorCount | mismo R: cero |
+| 13 WarningCount | mismo R: igual al numero de checks warning; spec FiscalSettingsPage |
+| 14 Firmar sin cadena | U.PartialChain_allows_actual_signature_and_mock_SOAP_transport_without_network |
+| 15 XML verificable | U.Actual_signer_roundtrip_and_tamper_guards |
+| 16 XML manipulado | mismo U; R.Local_reception_failure_has_zero_transport_calls_and_no_false_ambiguity |
+| 17 Clave incorrecta | U.Private_key_must_sign_and_match_the_certificate_public_key; PFX password incorrecta |
+| 18 Expirado | U.Unusable_material(expired); R.Production_rejects...(expired) |
+| 19 Algoritmo incompatible | U.Unusable_material(ecdsa/weak-rsa); R.Production_rejects...(unsupported) |
+| 20 Emisor contradictorio | U.Unusable_material(identity); R.Production_rejects...(identity); verifier RUC |
+| 21 Sin secuencial al rechazar | R.Production_rejects_before_sequence_stock_cash_or_durable_job |
+| 22 Sin stock/caja al rechazar | mismo R |
+| 23 Replay idempotente | R.Committed_replay_does_not_load_replaced_certificate_or_require_guard; A.Sale_outbox_stock_failure_rolls_back_all_effects_and_replay_has_one_job |
+| 24 Transporte simulado sin PKI | U.PartialChain_allows_actual_signature_and_mock_SOAP_transport_without_network; R.Production_sign_reception_rotation_and_historical_authorization_without_private_material |
+| 25 Rechazo firma SRI registrado | R.Mock_rejection_or_ambiguous_reception_preserves_document_and_number(DEVUELTA) |
+| 26 Rechazo no duplica numero | mismo R; A.Pending_backoff_is_bounded_rejection_is_terminal_and_disabling_preserves_documents |
+| 27 Ambiguedad durable | R.Mock_rejection_or_ambiguous_reception...(AMBIGUOUS); A.Ambiguous_remote_accept_and_eventual_not_found_are_query_only_never_resubmitted_even_manually |
+| 28 Autorizacion sin refirma | R.Production_sign_reception_rotation_and_historical_authorization_without_private_material |
+| 29 Dos CA/tenants funcionales | R.Two_tenants_with_different_uninstalled_authorities_sign_independently_and_keep_ciphertext |
+| 30 PFX aislados | mismo R: seleccion B devuelve exclusivamente B con keyring compartido |
+| 31 RUC contradictorio | U.Unusable_material(identity); suite de identidad tipada |
+| 32 Contextos/permisos | P.Platform_and_tenant_tokens_never_cross_planes_and_existing_restrictions_remain; A.Cashier_actual_jwt_cannot_manually_sign_submit_query_or_change_company_delegation |
+| 33 Platform sin material privado | mismo P: GET/POST/DELETE certificado denegados; endpoints PKI inexistentes |
+| 34 Ciphertext compatible | R.Two_tenants...; R.Ambiguous_upload_preserves_active_cipher_and_settings |
+| 35 Keyring/purpose compatible | mismo R, purpose sin cambios; Containers/recovery restaura DB/keyring sinteticos y prueba app |
+| 36 XAdES factura | U.Actual_signer_roundtrip...; SriXadesBesSignerTests(factura) |
+| 37 XAdES NC | mismo U(notaCredito); R.Credit_note_signing_reception_and_history_preserve_integrity |
+| 38 Sin migraciones | diff sin Migrations/modelo; CI EF migrations/model check |
+| 39 Sin FiscalTrust config | Program/DI y diff; CI arranque API/Containers sin esa seccion |
+| 40 API inicia sin PKI | P (WebApplicationFactory real); CI Containers/recovery |
+| 41 Historia legible | R.Production_sign_reception...; A.Legacy_known_reception_can_be_queried_but_definitive_rejection_stays_terminal; R.Credit_note_signing_reception_and_history_preserve_integrity |
+| 42 Sin bloqueo indirecto | U y R anteriores; busqueda X509Chain/PKI en codigo/DI; revision independiente |
+| 43 Debian PartialChain+firma+mock | Dockerfile.fiscal-signing-tests ejecuta U.PartialChain_allows_actual_signature_and_mock_SOAP_transport_without_network con --network none |
 
-## GO/NO-GO, corte y rollback (no ejecutar)
+Debian prueba criptografia nativa, diagnostico y cliente SOAP con HttpMessageHandler
+simulado: no DB ni red. La durabilidad/transacciones se prueban por separado en CI
+Ubuntu con PostgreSQL efimero. No se afirma un flujo PostgreSQL dentro de Debian.
+La imagen de pruebas nunca es imagen de release. Se conservan todos los checks
+obligatorios de backend/frontend, Governance, EF y Containers/recovery.
 
-GO requiere CI/review del HEAD exacto, validacion humana pre-merge, aprobacion R4 separada, runtime soportado/parcheado, backups/restore verificados, pin/procedencia/ledger anticompromiso, evidencia fresca autentica en todos los niveles de cada CA, cobertura TOTAL del preflight y baseline RC5 real comparado. NOT_CONFIRMED queda visible para revision, no se presenta como MATCH. Toda decision material/perfil desconocido requiere resolucion humana; OCSP obligatorio/no disponible = NO-GO. No afirmar compatibilidad real con Security Data u otro emisor sin material publico/perfil/preflight operativamente verificados.
+## Gate Humano Pre-Merge
 
-Corte humano: ventana supervisada y cierre de admision segun runbook vigente; dejar terminar/reconciliar leases/recepciones sin reenviar ambiguos; fijar imagenes por digest; montar registro y claves protegidas; arrancar y comprobar health/readiness y cobertura monitor; validar humanamente cada empresa critica con procedimiento separado. Abrir operaciones solo tras GO explicito. La factura real 437 NO es experimento ni prueba automatizada de RC6.
+**VALIDACION HUMANA PRE-MERGE REQUERIDA**. No merge por este implementador.
+Tras CI exacta y revision independiente sin BLOCKER/MAJOR, Fernando acepta con
+`VALIDADO OK` el cambio de politica funcional en un entorno exclusivamente sintetico:
 
-Rollback: cerrar admision, detener candidato supervisadamente, preservar DB/keyring/XML/jobs y evidencia, volver a imagen/config RC5 por digest previamente verificado. Cero migraciones nuevas y formato cifrado/contratos de almacenamiento compatibles. No borrar intenciones durables, numeros, XML ni autorizaciones; reconciliar ambiguos bajo politica previa sin nueva firma. Un rollback de codigo no autoriza rebajar confianza/revocacion ni reenviar documentos; resolver el incidente con humano.
+1. Abrir readiness: cadena local incompleta se muestra como advertencia, sin falso bloqueo si el resto esta correcto.
+2. Confirmar que el permiso de intentar emision no se presenta como autorizacion SRI.
+3. Aceptar el comportamiento demostrado de rechazo local sin efectos/marker y rechazo/ambiguedad SRI sin duplicacion.
 
-Alta futura de CA: mismo proceso independiente de procedencia/pins/perfil, nueva version de manifiesto, CRL/ARL y observacion aprobada, preflight total y nueva autorizacion de activacion. Sin cambios de producto si el perfil esta soportado. Perfiles no soportados requieren desarrollo/review separado, no cambiar flags hasta aparentar GOOD.
+No se pide repetir suites tecnicas, crear multiples ventas ni usar Produccion.
+El coordinador conserva la evidencia de CI/revision y las decisiones pendientes.
 
-## Validacion humana pre-merge
+## Futuro Runbook Humano R4: Primera Factura
 
-VALIDACION HUMANA PRE-MERGE REQUERIDA, exclusivamente con datos sinteticos/DB efimera propia:
+Esta seccion es preparacion, NO autorizacion de ejecucion. Solo un humano, con
+aprobacion separada del propietario, operara infraestructura/datos/certificados reales.
+No aportar secretos, conexiones, certificados o copias reales al sandbox del agente.
 
-1. Dos jerarquias y tenants; revisar MATCH/MISMATCH/NOT_CONFIRMED y registro aprobado vs pin incorrecto.
-2. GOOD/revoked/suspended/unknown/stale/falsificada, incluida revocacion de intermedio y ARL semestral con observacion vencida. Sin trafico externo.
-3. Venta Produccion elegible y bloqueo previo sin numeracion/stock/caja; replay comprometido tras retiro de confianza.
-4. Firma real factura/NC; hash/firma/identidad modificados bloqueados antes de recepcion; cero marker ante falla local. Rotacion no cambia XML persistido; consulta historica no firma/evalua otra vez.
-5. Platform tenant-token rechazado, sin endpoints privados ni wake; monitor pagina todas las empresas, error aislado, cero writes/settings y UNKNOWN al cambiar snapshot.
-6. CLI aislada con rol lector y keyring read-only: cero API/seed/workers y cobertura completa; baseline RC5 ausente permanece UNKNOWN. Aceptacion de Fernando pendiente, nunca inferida de CI.
+1. Verificar merge real, SHA main, CI, aceptacion humana y release aprobada; identificar imagen por digest, no solo tag.
+2. Inventariar version/configuracion actuales y ventana de mantenimiento. Respaldar PostgreSQL y keyring compatible juntos, con permisos y custodia humanos.
+3. Verificar recuperabilidad/restauracion del backup con el procedimiento humano aprobado. Guardar digest anterior, configuracion y plan de retorno. No borrar claves antiguas.
+4. Verificar compatibilidad con empresas existentes, configuracion Produccion y autorizacion operativa. Revisar pendientes/recepciones ambiguas antes del cambio; no reenviarlas.
+5. Desplegar exclusivamente bajo autorizacion R4 separada. RC6 no necesita migraciones nuevas, autoridades, manifiestos ni renovaciones de listas.
+6. Verificar salud HTTP/backend, contexto de la empresa y disponibilidad del keyring/certificado existente sin exponer PFX/password.
+7. Entrar a HF One y consultar readiness. PartialChain debe ser solo advertencia. Confirmar aptitud real, identidad/configuracion y permisos/delegacion deseados.
+8. Consultar el secuencial vigente inmediatamente antes de emitir. 437 fue una expectativa historica, no un numero reservado ni autorizado; no forzarlo ni usar ventas de prueba en Produccion para diagnosticar cadena.
+9. Confirmar producto, valores e identificacion comercial fuera de artefactos de desarrollo. Emitir una sola vez, unicamente con autorizacion expresa del propietario.
+10. Consultar hasta conocer recepcion/autorizacion. Conservar XML exacto, respuestas, intentos y autorizacion/RIDE cuando exista. Un rechazo no autoriza otra factura automatica.
+11. Ante rechazo o estado ambiguo, detener nuevas operaciones afectadas y conservar evidencia; consultar por la clave original, no refirmar/renumerar/reenviar ciegamente.
 
-## Fuentes primarias y limites pendientes
+Rollback humano: detener admisiones nuevas segun el runbook aprobado, preservar
+evidencia externa y pendientes, volver al digest/configuracion compatibles si es
+seguro. No restaurar una DB antigua sobre documentos enviados al SRI sin reconciliar
+primero esas emisiones: podria perder evidencia y reutilizar secuenciales.
+Restaurar PostgreSQL/keyring solo por el plan humano probado, con backup del estado
+actual, reconciliacion y autorizacion expresa. No hay rollback destructivo autonomo.
 
-- [Microsoft CustomRootTrust/CustomTrustStore](https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.x509certificates.x509chainpolicy.customtruststore?view=net-8.0) y [DisableCertificateDownloads](https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.x509certificates.x509chainpolicy.disablecertificatedownloads?view=net-8.0).
-- [.NET 8 CRL builder Load](https://github.com/dotnet/runtime/blob/v8.0.0/src/libraries/System.Security.Cryptography/src/System/Security/Cryptography/X509Certificates/CertificateRevocationListBuilder.Load.cs): parsear no equivale a autenticar. ExtraStore no contiene CRL.
-- [RFC 5280 secciones 4/5/6](https://www.rfc-editor.org/rfc/rfc5280.html): cadena y CRL. RC6 implementa el subconjunto directo/completo descrito, no OCSP/deltas/indirectas universales.
-- [Security Data representante legal V10, 25-Feb-2026, 4.9.6/4.9.7/4.9.10](https://www.securitydata.net.ec/wp-content/downloads/Normativas/P_de_Certificados/politica_certificacion_representante_legal.pdf): consulta por uso, distinta cadencia CRL/ARL y actualidad jerarquica; inferencia de diseno: separar edad de emision y observacion actual. Su aplicabilidad a certificados reales concretos esta PENDIENTE.
-- [ARCOTEL: obligaciones CRL/OCSP de las entidades](https://www.arcotel.gob.ec/preguntas-frecuentes-relacionadas-con-las-entidades-de-certificacion/). No convertir la obligacion del emisor en una afirmacion de soporte OCSP implementado.
-- [.NET soporte oficial](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core): fin .NET 8 el 10-Nov-2026; upgrade a version soportada es prioridad independiente. No framework upgrade dentro de RC6 ni aceptacion automatica de imagen antigua por conservar digest.
+## Riesgos Residuales y No Objetivos
 
-Pendientes reales: CA/perfiles/certificados publicos reales, evidencias actuales CRL/ARL y canal de refresco/antirollback operativos, baseline y cobertura empresas reales, runtime de activacion, backup/restore/corte y validacion por empresa. Ninguno se ha verificado usando datos/infraestructura reales en esta implementacion.
+- No se acredita confianza fiscal/estado de revocacion local; el SRI puede rechazar certificado, firma o documento.
+- Identidad NOT_CONFIRMED sigue sin demostrarse; no significa MATCH.
+- La recuperacion transaccional de notas de credito conserva un riesgo previo conocido; esta rectificacion no reescribe su concurrencia.
+- La plataforma sigue en .NET 8; su evolucion/soporte es trabajo separado, sin upgrade en RC6.
+- No incluye CA CRUD, OCSP, monitor global, nuevas reglas IVA/roles, nuevos productos, backup automatico, RC7 ni redisenos UI.
+- No se ha usado ni se autoriza aqui entorno/dato/certificado/SRI real.

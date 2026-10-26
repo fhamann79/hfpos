@@ -8,7 +8,7 @@ import { vi } from 'vitest';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { AuthStore } from '../../../../core/stores/auth.store';
-import { CompanySriSettings } from '../../models/fiscal-settings.model';
+import { CompanySriSettings, SriFiscalReadiness } from '../../models/fiscal-settings.model';
 import { FiscalSettingsService } from '../../services/fiscal-settings.service';
 import { FiscalSettingsPage } from './fiscal-settings-page';
 
@@ -55,6 +55,25 @@ describe('FiscalSettingsPage company delegation', () => {
     confirmation?.accept?.();
     expect(service['updateSriSettings']).toHaveBeenCalledOnce();
     expect(page.sriSettings()?.automaticProcessingRevision).toBe(1);
+  });
+
+  it('shows production ready and a separate PartialChain warning without implying SRI authorization', () => {
+    const readiness: SriFiscalReadiness = {
+      companyId: 1, establishmentId: 1, emissionPointId: 1, environment: 2,
+      environmentLabel: 'Produccion', isReadyForSandboxSubmission: false,
+      isReadyForProductionSubmission: true, hasBlockingErrors: false, hasWarnings: true,
+      generatedAt: '2026-10-26T12:00:00Z', blockingErrorCount: 0, warningCount: 1, successCount: 0,
+      checks: [{ category: 'CertificateTrust', code: 'CERTIFICATE_CHAIN_BUILD_FAILED',
+        severity: 'warning', isBlocking: false, title: 'Cadena local no construida',
+        message: 'Diagnostico local informativo; el SRI efectuara sus validaciones.', details: 'PartialChain' }],
+    };
+    page.readiness.set(readiness);
+    expect(page.readinessStatusLabel(readiness, 'production')).toBe('Sí');
+    expect(page.readinessStatusSeverity(readiness, 'production')).toBe('success');
+    expect(page.readinessCheckSeverity(readiness.checks[0])).toBe('warn');
+    expect(page.readinessSeverityLabel(readiness.checks[0])).toBe('Advertencia');
+    expect(page.readiness()?.blockingErrorCount).toBe(0);
+    expect(page.readinessChecksByCategory().flatMap(group => group.checks)).toEqual(readiness.checks);
   });
 
   it.each([403, 500])('restores confirmed delegation after HTTP %s instead of displaying optimistic authority', status => {

@@ -9,10 +9,16 @@ namespace Pos.Backend.Api.Infrastructure.Services;
 public static class FiscalSignedXmlVerifier
 {
     public static X509Certificate2 Verify(string xml, string persistedHash, string persistedThumbprint,
-        string accessKey, string ruc, string rootName)
+        string accessKey, string ruc, string rootName, int environment)
     {
         try
         {
+            if (accessKey.Length != 49 || accessKey.Any(c => c is < '0' or > '9')
+                || environment is not (1 or 2) || accessKey[23] - '0' != environment
+                || accessKey.Substring(10, 13) != ruc
+                || accessKey.Substring(8, 2) != (rootName == "factura" ? "01" : "04")
+                || new SriAccessKeyService().CalculateModulo11CheckDigit(accessKey[..48]) != accessKey[48] - '0')
+                throw new CryptographicException();
             if (xml.Length > 4_194_304 || string.IsNullOrEmpty(persistedHash)
                 || !string.Equals(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(xml))), persistedHash, StringComparison.OrdinalIgnoreCase))
                 throw new CryptographicException();

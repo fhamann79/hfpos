@@ -13,8 +13,7 @@ using Pos.Backend.Api.Infrastructure.Data;
 namespace Pos.Backend.Api.Infrastructure.Services;
 
 // All writers admit and complete in Company -> Sale -> Job order. Claiming is job-only.
-public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<SriOptions> options,
-    FiscalExecutionGuard? fiscalTrust = null) : IElectronicIssuingRecoveryService
+public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<SriOptions> options) : IElectronicIssuingRecoveryService
 {
     public const int MaximumAttempts = 12;
     public static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
@@ -146,8 +145,7 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
         {
             if (job.ReceptionStartedAt.HasValue || job.Phase != ElectronicIssuingPhase.ReadyToSubmit)
                 throw new InvalidOperationException("FISCAL_RECEPTION_ALREADY_ADMITTED");
-            if (sale.SriEnvironment == 2)
-                await (fiscalTrust ?? throw new InvalidOperationException("FISCAL_TRUST_GUARD_REQUIRED")).BeforeReceptionAsync(sale, ct);
+            FiscalDocumentGuard.BeforeReception(sale);
             if (beforeReception is not null) await beforeReception(sale);
             job.ReceptionStartedAt = DateTime.UtcNow;
             job.Phase = ElectronicIssuingPhase.ReceptionInFlight;

@@ -19,7 +19,6 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
     private readonly ISalesService _salesService;
     private readonly ILogger<SriInvoiceSigningService> _logger;
     private readonly ElectronicIssuingCoordinator _coordinator;
-    private readonly FiscalExecutionGuard? _fiscalTrust;
 
     public SriInvoiceSigningService(
         PosDbContext context,
@@ -29,8 +28,7 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
         ISriInvoiceXmlValidator sriInvoiceXmlValidator,
         ISalesService salesService,
         ILogger<SriInvoiceSigningService> logger,
-        ElectronicIssuingCoordinator coordinator,
-        FiscalExecutionGuard? fiscalTrust = null)
+        ElectronicIssuingCoordinator coordinator)
     {
         _context = context;
         _operationalContextAccessor = operationalContextAccessor;
@@ -40,7 +38,6 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
         _salesService = salesService;
         _logger = logger;
         _coordinator = coordinator;
-        _fiscalTrust = fiscalTrust;
     }
 
     public async Task<SaleDto> SignInvoiceDraftAsync(int saleId)
@@ -67,10 +64,8 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
                 ? await provider.GetForAdmissionAsync(admission)
                 : throw new InvalidOperationException("FISCAL_CERTIFICATE_PROVIDER_REQUIRED");
             var now = DateTime.UtcNow;
-            _fiscalTrust?.RememberPublicChain(sale.CompanyId, certificateMaterial);
-            if (sale.SriEnvironment == 2)
-                (_fiscalTrust ?? throw new InvalidOperationException("FISCAL_TRUST_GUARD_REQUIRED")).RequireMaterial(
-                    certificateMaterial, FiscalSnapshots.Read(sale.FiscalIssuerSnapshotJson)!.Ruc, 2);
+            FiscalDocumentGuard.RequireSigningCertificate(certificateMaterial.Certificate,
+                FiscalSnapshots.Read(sale.FiscalIssuerSnapshotJson)!.Ruc, now);
             var signedXml = _sriXadesBesSigner.SignInvoiceXml(
                 sale.SriXmlDraft!,
                 certificateMaterial.Certificate,

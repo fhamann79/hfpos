@@ -4,4 +4,4 @@ WORKDIR /src
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 DOTNET_CLI_HOME=/tmp
 COPY backend/Pos.Backend.Api/ ./
 RUN dotnet build Pos.Backend.Api.Tests/Pos.Backend.Api.Tests.csproj -c Release -o /tests
-ENTRYPOINT ["dotnet", "vstest", "/tests/Pos.Backend.Api.Tests.dll", "--TestCaseFilter:FullyQualifiedName~Pos.Backend.Api.Tests.Unit.FiscalTrustTests"]
+ENTRYPOINT ["dotnet", "vstest", "/tests/Pos.Backend.Api.Tests.dll", "--TestCaseFilter:FullyQualifiedName~Pos.Backend.Api.Tests.Unit.FiscalSigningTests"]

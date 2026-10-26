@@ -173,12 +173,12 @@ public sealed class PlatformControlPlaneTests(PostgresDatabaseFixture database) 
         var tenant = await LoginAsync(client, "/api/Auth/login", "admin-first");
         Assert.Equal(HttpStatusCode.Unauthorized, (await SendAsync(client, HttpMethod.Get, "/api/platform/tenants", tenant)).StatusCode);
         foreach (var route in new[] { "/api/platform/fiscal-trust", "/api/platform/fiscal-trust/preflight" })
+            Assert.Equal(HttpStatusCode.NotFound, (await SendAsync(client, HttpMethod.Get, route, platform)).StatusCode);
+        foreach (var method in new[] { HttpMethod.Get, HttpMethod.Post, HttpMethod.Delete })
         {
-            Assert.Equal(HttpStatusCode.Unauthorized, (await SendAsync(client, HttpMethod.Get, route, tenant)).StatusCode);
-            Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync(route)).StatusCode);
-            Assert.Equal(HttpStatusCode.OK, (await SendAsync(client, HttpMethod.Get, route, platform)).StatusCode);
+            var response = await SendAsync(client, method, "/api/FiscalSettings/sri/certificate", platform);
+            Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
         }
-        Assert.Equal(HttpStatusCode.MethodNotAllowed, (await SendAsync(client, HttpMethod.Post, "/api/platform/fiscal-trust", platform)).StatusCode);
         await ErrorAsync(await SendAsync(client, HttpMethod.Get, "/api/Auth/me", platform), 401, "INVALID_CLAIMS");
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/platform/tenants")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/platform/tenants", Request("public", 304))).StatusCode);
