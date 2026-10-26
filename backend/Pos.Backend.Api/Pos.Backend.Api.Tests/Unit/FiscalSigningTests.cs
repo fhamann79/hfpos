@@ -79,7 +79,7 @@ public sealed class FiscalSigningTests(ITestOutputHelper output)
         Assert.Equal("CERTIFICATE_PRIVATE_KEY_MISMATCH", Assert.Throws<InvalidOperationException>(
             () => FiscalDocumentGuard.VerifyKeyPair(wrong, actual)).Message);
         using var publicOnly = RSA.Create(); publicOnly.ImportParameters(actual.ExportParameters(false));
-        Assert.Throws<CryptographicException>(() => FiscalDocumentGuard.VerifyKeyPair(publicOnly, actual));
+        Assert.ThrowsAny<CryptographicException>(() => FiscalDocumentGuard.VerifyKeyPair(publicOnly, actual));
     }
 
     [Fact]

@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Xml.Linq;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -350,7 +351,15 @@ public sealed class FiscalSigningRuntimeTests(PostgresDatabaseFixture database, 
             Assert.Equal(note.Id, (await replaySigner.SignDraftAsync(note.Id)).Id);
             (await db.CompanySriCertificates.SingleAsync(c => c.IsActive)).EncryptedCertificateBytes = [7, 8, 9];
             await db.SaveChangesAsync();
-            await submission.CheckAuthorizationAsync(note.Id);
+            f.Transport.Authorization = _ => Task.FromResult(new SriAuthorizationResponse
+            {
+                Estado = "AUTORIZADO", AuthorizationNumber = note.AccessKey, AuthorizationDate = DateTime.UtcNow,
+                AuthorizedXml = signed,
+                RawResponseXml = new XElement("autorizacion", new XElement("estado", "AUTORIZADO"),
+                    new XElement("numeroAutorizacion", note.AccessKey), new XElement("comprobante", new XCData(signed!)))
+                    .ToString(SaveOptions.DisableFormatting)
+            });
+            Assert.Equal(SaleDocumentStatus.Authorized, (await submission.CheckAuthorizationAsync(note.Id)).DocumentStatus);
             Assert.Equal(1, f.Transport.Queries); Assert.Equal(1, f.Transport.Submissions);
         }
         else
