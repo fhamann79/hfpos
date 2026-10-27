@@ -337,6 +337,7 @@ public class SalesController : ControllerBase
     {
         var code = exception.Message;
         if (FiscalProfileErrors.IsValidation(code)) return Conflict(new ApiErrorResponse { Error = code });
+        if (FiscalCertificateErrors.IsValidation(code)) return Conflict(new ApiErrorResponse { Error = code });
 
         return code switch
         {

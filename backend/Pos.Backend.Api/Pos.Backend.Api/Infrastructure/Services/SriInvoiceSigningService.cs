@@ -58,11 +58,14 @@ public class SriInvoiceSigningService : ISriInvoiceSigningService
             await _coordinator.CompleteAsync(admission, async (sale, job) =>
             {
             ValidateSaleCanBeSigned(sale);
+            if (sale.SriEnvironment is not (1 or 2)) throw new InvalidOperationException("INVALID_SRI_ENVIRONMENT");
             _sriInvoiceXmlValidator.ValidateUnsignedInvoiceXml(sale.SriXmlDraft!);
             using var certificateMaterial = _certificateProvider is SriSigningCertificateProvider provider
                 ? await provider.GetForAdmissionAsync(admission)
                 : throw new InvalidOperationException("FISCAL_CERTIFICATE_PROVIDER_REQUIRED");
             var now = DateTime.UtcNow;
+            FiscalDocumentGuard.RequireSigningCertificate(certificateMaterial.Certificate,
+                FiscalSnapshots.Read(sale.FiscalIssuerSnapshotJson)!.Ruc, now);
             var signedXml = _sriXadesBesSigner.SignInvoiceXml(
                 sale.SriXmlDraft!,
                 certificateMaterial.Certificate,

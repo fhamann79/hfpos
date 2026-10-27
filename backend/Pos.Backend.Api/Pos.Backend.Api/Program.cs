@@ -89,6 +89,7 @@ builder.Services.AddScoped<IEmailSenderService, SmtpEmailSenderService>();
 builder.Services.AddScoped<ISriCertificateService, SriCertificateService>();
 builder.Services.AddScoped<ISriFiscalReadinessService, SriFiscalReadinessService>();
 builder.Services.AddScoped<ISriSigningCertificateProvider, SriSigningCertificateProvider>();
+builder.Services.AddScoped<FiscalDocumentGuard>();
 builder.Services.AddSingleton<ISriXadesBesSigner, SriXadesBesSigner>();
 builder.Services.AddScoped<ISriInvoiceSigningService, SriInvoiceSigningService>();
 builder.Services.AddScoped<ISriCreditNoteSigningService, SriCreditNoteSigningService>();

@@ -59,13 +59,14 @@ public class SriSubmissionService : ISriSubmissionService
 
     private async Task<string?> SubmitCoreAsync(int saleId, OperationalContext? manual, ElectronicIssuingJob? claim, CancellationToken ct)
     {
-        var admission = await _coordinator.AdmitAsync(saleId, ElectronicIssuingPhase.ReadyToSubmit, manual, claim, ct);
+        (int Environment, int EmissionType) sriContext = default;
+        var admission = await _coordinator.AdmitAsync(saleId, ElectronicIssuingPhase.ReadyToSubmit, manual, claim, ct, async candidate =>
+        {
+            ValidateSaleCanBeSubmitted(candidate);
+            ValidateUnsignedDraftIfPresent(candidate);
+            sriContext = await ResolveSriSubmissionContextAsync(candidate.CompanyId, candidate.SriEnvironment);
+        });
         var sale = admission.Sale;
-
-        ValidateSaleCanBeSubmitted(sale);
-        ValidateUnsignedDraftIfPresent(sale);
-
-        var sriContext = await ResolveSriSubmissionContextAsync(sale.CompanyId, sale.SriEnvironment);
 
         SriReceptionResponse response;
 

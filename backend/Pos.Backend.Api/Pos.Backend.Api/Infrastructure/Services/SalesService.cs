@@ -31,6 +31,7 @@ public class SalesService : ISalesService
     private readonly SriOptions _sriOptions;
     private readonly TenantAdministrationGuard _administrationGuard;
     private readonly IFiscalProfileService _fiscalProfiles;
+    private readonly FiscalDocumentGuard? _fiscalDocumentGuard;
 
     public SalesService(
         PosDbContext context,
@@ -46,7 +47,8 @@ public class SalesService : ISalesService
         ISriInvoiceXmlValidator sriInvoiceXmlValidator,
         IOptions<SriOptions> sriOptions,
         TenantAdministrationGuard administrationGuard,
-        IFiscalProfileService? fiscalProfiles = null)
+        IFiscalProfileService? fiscalProfiles = null,
+        FiscalDocumentGuard? fiscalDocumentGuard = null)
     {
         _context = context;
         _logger = logger;
@@ -62,6 +64,7 @@ public class SalesService : ISalesService
         _sriOptions = sriOptions.Value;
         _administrationGuard = administrationGuard;
         _fiscalProfiles = fiscalProfiles ?? new FiscalProfileService(context, operationalContextAccessor, businessClock, sriFiscalClock);
+        _fiscalDocumentGuard = fiscalDocumentGuard;
     }
 
     public async Task<SaleListResultDto> GetSalesAsync(SaleListQueryDto request)
@@ -696,7 +699,19 @@ public class SalesService : ISalesService
                 sale.CashChange = RoundMoney(received - sale.Total);
             }
 
-            // No cash/number/stock effects until the operator's fiscal preview is current.
+            if (documentType == SaleDocumentType.Invoice)
+            {
+                var sri = await ResolveSriSettingsAsync(operationalContext.CompanyId);
+                if (sri.Environment == 2)
+                {
+                    if (!_sriOptions.AllowProductionSubmission) throw new InvalidOperationException("SRI_PRODUCTION_SUBMISSION_DISABLED");
+                    if (!await _context.CompanySriSettings.AsNoTracking().AnyAsync(s => s.CompanyId == operationalContext.CompanyId && s.IsEnabled))
+                        throw new InvalidOperationException("SRI_SETTINGS_DISABLED");
+                    await (_fiscalDocumentGuard ?? throw new InvalidOperationException("FISCAL_CERTIFICATE_GUARD_REQUIRED"))
+                        .BeforeCreateProductionAsync(operationalContext);
+                }
+            }
+            // No cash/number/stock effects until the fiscal preview and signing material are valid.
             var cashSession = await _cashSessionService.GetRequiredOpenSessionForCurrentContextAsync();
             sale.CashSessionId = cashSession.Id;
             var numberAssignment = await _fiscalDocumentNumberService.AssignNextAsync(

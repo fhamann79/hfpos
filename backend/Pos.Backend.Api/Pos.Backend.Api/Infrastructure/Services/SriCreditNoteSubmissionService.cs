@@ -74,6 +74,8 @@ public class SriCreditNoteSubmissionService : ISriCreditNoteSubmissionService
 
         SriReceptionResponse response;
 
+        FiscalDocumentGuard.BeforeCreditNoteReception(creditNote, sriContext.Environment);
+
         try
         {
             response = await _sriWebServiceClient.SubmitAsync(

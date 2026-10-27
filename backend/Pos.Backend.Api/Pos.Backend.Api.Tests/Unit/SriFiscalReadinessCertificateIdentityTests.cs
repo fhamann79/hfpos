@@ -339,9 +339,7 @@ public sealed class SriFiscalReadinessCertificateIdentityTests(ITestOutputHelper
     [Theory]
     [InlineData("MetadataUsable", false)]
     [InlineData("MaterialLoaded", false)]
-    [InlineData("SelfSigned", true)]
-    [InlineData("ChainBuildEvaluated", true)]
-    [InlineData("ChainBuildSucceeded", true)]
+    [InlineData("SigningUsable", false)]
     public void Matching_identity_does_not_bypass_other_existing_certificate_guards(string guard, bool sandboxUsable)
     {
         using var certificate = CreateCertificate([], subject: Subject((OrganizationOid, "TINEC-" + CompanyRuc)));
@@ -464,14 +462,14 @@ public sealed class SriFiscalReadinessCertificateIdentityTests(ITestOutputHelper
         var serviceType = typeof(SriFiscalReadinessService);
         var diagnosticsType = serviceType.GetNestedType("CertificateReadinessDiagnostics", BindingFlags.NonPublic)!;
         var diagnostics = Activator.CreateInstance(diagnosticsType, nonPublic: true)!;
-        foreach (var property in new[] { "MetadataUsable", "MaterialLoaded", "ChainBuildEvaluated", "ChainBuildSucceeded" })
+        foreach (var property in new[] { "MetadataUsable", "MaterialLoaded", "SigningUsable" })
         {
             diagnosticsType.GetProperty(property)!.SetValue(diagnostics, true);
         }
 
         if (disabledGuard is not null)
         {
-            diagnosticsType.GetProperty(disabledGuard)!.SetValue(diagnostics, disabledGuard == "SelfSigned");
+            diagnosticsType.GetProperty(disabledGuard)!.SetValue(diagnostics, false);
         }
 
         var checks = new List<SriFiscalReadinessCheckDto>();

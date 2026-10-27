@@ -6,6 +6,7 @@ using Pos.Backend.Api.Configuration;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
 using Pos.Backend.Api.Core.Enums;
+using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Services;
 using Pos.Backend.Api.Infrastructure.Data;
 
@@ -60,7 +61,7 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
             .AsNoTracking()
             .FirstOrDefaultAsync(c => c.CompanyId == operationalContext.CompanyId && c.IsActive);
 
-        var settings = await GetOrCreateCompanySriSettingsAsync(
+        var settings = await ReadCompanySriSettingsAsync(
             operationalContext.CompanyId,
             operationalContext.UserId,
             generatedAt,
@@ -151,13 +152,14 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
         };
     }
 
-    private async Task<CompanySriSettings> GetOrCreateCompanySriSettingsAsync(
+    private async Task<CompanySriSettings> ReadCompanySriSettingsAsync(
         int companyId,
         int userId,
         DateTime now,
         List<SriFiscalReadinessCheckDto> checks)
     {
         var settings = await _context.CompanySriSettings
+            .AsNoTracking()
             .FirstOrDefaultAsync(s => s.CompanyId == companyId);
 
         if (settings is not null)
@@ -183,15 +185,12 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
             CreatedAt = now
         };
 
-        _context.CompanySriSettings.Add(settings);
-        await _context.SaveChangesAsync();
-
         AddInfo(
             checks,
             "SriSettings",
-            "SRI_SETTINGS_CREATED",
-            "Configuracion SRI inicializada",
-            "No existia configuracion SRI, se inicializo con ambiente de pruebas y envio deshabilitado.");
+            "SRI_SETTINGS_MISSING",
+            "Configuracion SRI ausente",
+            "No existe configuracion SRI. El diagnostico no crea ni modifica configuracion.");
 
         return settings;
     }
@@ -765,9 +764,13 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
                 "Material de certificado cargado internamente",
                 "El certificado activo pudo cargarse para diagnostico local sin exponer bytes, password ni clave privada.");
 
-            AddSelfSignedCheck(checks, material.Certificate, environment, diagnostics);
-            AddChainBuildCheck(checks, material.Certificate, environment, diagnostics);
+            FiscalDocumentGuard.RequireSigningCertificate(material.Certificate, company?.Ruc ?? "", now);
+            diagnostics.SigningUsable = true;
+            AddSuccess(checks, "Certificate", "CERTIFICATE_SIGNING_KEY_USABLE", "Clave RSA utilizable",
+                "La clave privada firma con RSA-SHA256 y la clave publica del certificado verifica el resultado.");
             AddCertificateRucCheck(checks, company?.Ruc, material.Certificate, diagnostics);
+            AddSelfIssuedCheck(checks, material.Certificate);
+            AddChainBuildCheck(checks, material.Certificate);
         }
         catch (KeyNotFoundException ex) when (ex.Message == "CERTIFICATE_NOT_FOUND")
         {
@@ -786,17 +789,12 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
         catch (Exception ex)
         {
             _logger.LogWarning(
-                ex,
-                "Unexpected SRI certificate readiness diagnostic failure. CompanyId {CompanyId} CertificateId {CertificateId}",
+                "Unexpected SRI certificate material failure ({FailureType}). CompanyId {CompanyId} CertificateId {CertificateId}",
+                ex.GetType().Name,
                 certificate.CompanyId,
                 certificate.Id);
 
-            AddWarning(
-                checks,
-                "CertificateTrust",
-                "CERTIFICATE_DIAGNOSTIC_FAILED",
-                "Diagnostico local de certificado incompleto",
-                "No se pudo completar el diagnostico local del certificado. Revisa logs del servidor sin exponer secretos.");
+            AddCertificateMaterialFailure(checks);
         }
 
         return diagnostics;
@@ -846,66 +844,65 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
                     "El certificado cargado internamente esta expirado.",
                     isBlocking: true);
                 break;
+            case "CERTIFICATE_SIGNER_AMBIGUOUS":
+            case "CERTIFICATE_COLLECTION_LIMIT":
+            case "CERTIFICATE_IMPORT_CAPACITY":
+            case "CERTIFICATE_NOT_YET_VALID":
+            case "CERTIFICATE_SIGNING_PROFILE_UNSUPPORTED":
+            case "CERTIFICATE_PRIVATE_KEY_UNUSABLE":
+            case "CERTIFICATE_PRIVATE_KEY_MISMATCH":
+            case "CERTIFICATE_RUC_MISMATCH":
+                AddError(checks, "Certificate", code, "Material de certificado no utilizable",
+                    "No se pudo acreditar un firmante unico con clave RSA utilizable, vigente y sin contradiccion fiscal.");
+                break;
             default:
-                AddWarning(
-                    checks,
-                    "CertificateTrust",
-                    "CERTIFICATE_DIAGNOSTIC_FAILED",
-                    "Diagnostico local de certificado incompleto",
-                    "No se pudo completar el diagnostico local del certificado.");
+                AddCertificateMaterialFailure(checks);
                 break;
         }
     }
 
-    private static void AddSelfSignedCheck(
-        List<SriFiscalReadinessCheckDto> checks,
-        X509Certificate2 certificate,
-        int environment,
-        CertificateReadinessDiagnostics diagnostics)
-    {
-        diagnostics.SelfSigned = IsSelfSigned(certificate);
+    private static void AddCertificateMaterialFailure(List<SriFiscalReadinessCheckDto> checks)
+        => AddError(checks, "Certificate", "CERTIFICATE_DIAGNOSTIC_FAILED",
+            "Material de certificado no comprobado",
+            "No se pudo comprobar la aptitud tecnica del certificado para firmar.");
 
-        if (!diagnostics.SelfSigned)
+    private static void AddSelfIssuedCheck(
+        List<SriFiscalReadinessCheckDto> checks,
+        X509Certificate2 certificate)
+    {
+        if (!IsSelfIssued(certificate))
         {
             AddSuccess(
                 checks,
                 "CertificateTrust",
                 "CERTIFICATE_NOT_SELF_SIGNED",
-                "Certificado no parece autofirmado",
+                "Subject e issuer diferentes",
                 "Subject e issuer son diferentes en los metadatos del certificado.");
 
             return;
         }
 
-        var blocksCurrentEnvironment = environment == 2;
-        AddCheck(
+        AddWarning(
             checks,
             "CertificateTrust",
             "CERTIFICATE_SELF_SIGNED",
-            blocksCurrentEnvironment ? SeverityError : SeverityWarning,
-            "Certificado posiblemente autofirmado",
-            "El certificado parece autofirmado. SRI normalmente requiere un certificado emitido por una entidad certificadora reconocida.",
-            null,
-            blocksCurrentEnvironment);
+            "Subject e issuer iguales",
+            "Observacion de metadatos: no demuestra autofirma ni aceptacion del SRI y no bloquea la emision.");
     }
 
     private void AddChainBuildCheck(
         List<SriFiscalReadinessCheckDto> checks,
-        X509Certificate2 certificate,
-        int environment,
-        CertificateReadinessDiagnostics diagnostics)
+        X509Certificate2 certificate)
     {
         try
         {
             using var chain = new X509Chain();
             chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            chain.ChainPolicy.DisableCertificateDownloads = true;
             chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
             chain.ChainPolicy.VerificationTime = DateTime.UtcNow;
 
-            diagnostics.ChainBuildEvaluated = true;
-            diagnostics.ChainBuildSucceeded = chain.Build(certificate);
-
-            if (diagnostics.ChainBuildSucceeded)
+            if (BuildLocalChain(chain, certificate))
             {
                 AddSuccess(
                     checks,
@@ -919,37 +916,27 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
             }
 
             var details = BuildChainStatusDetails(chain);
-            var blocksCurrentEnvironment = environment == 2;
-
-            AddCheck(
+            AddWarning(
                 checks,
                 "CertificateTrust",
                 "CERTIFICATE_CHAIN_BUILD_FAILED",
-                blocksCurrentEnvironment ? SeverityError : SeverityWarning,
-                "Posible problema de confianza local",
-                "La cadena local del certificado no pudo construirse. La tienda local puede diferir de la validacion de SRI.",
-                details,
-                blocksCurrentEnvironment);
+                "Cadena local no construida",
+                "El servidor no pudo completar la cadena local. Esto no impide firmar ni enviar comprobantes. El SRI efectuara sus validaciones al procesar el documento.",
+                details);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "SRI certificate chain diagnostic failed.");
-
-            diagnostics.ChainBuildEvaluated = false;
-            diagnostics.ChainBuildSucceeded = false;
-
-            var blocksCurrentEnvironment = environment == 2;
-            AddCheck(
+            _logger.LogWarning("SRI certificate chain diagnostic failed ({FailureType}).", ex.GetType().Name);
+            AddWarning(
                 checks,
                 "CertificateTrust",
                 "CERTIFICATE_CHAIN_DIAGNOSTIC_FAILED",
-                blocksCurrentEnvironment ? SeverityError : SeverityWarning,
                 "Diagnostico de cadena no completado",
-                "No se pudo ejecutar el diagnostico local de cadena del certificado.",
-                null,
-                blocksCurrentEnvironment);
+                "No fue posible completar la comprobacion informativa de cadena. La aptitud para firmar se determina mediante los controles esenciales del certificado.");
         }
     }
+
+    internal virtual bool BuildLocalChain(X509Chain chain, X509Certificate2 certificate) => chain.Build(certificate);
 
     private static void AddCertificateRucCheck(
         List<SriFiscalReadinessCheckDto> checks,
@@ -1212,7 +1199,7 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
         return $"RevocationMode=NoCheck; Estados: {string.Join(" | ", statuses)}";
     }
 
-    private static bool IsSelfSigned(X509Certificate2 certificate)
+    private static bool IsSelfIssued(X509Certificate2 certificate)
         => string.Equals(
             NormalizeOptional(certificate.Subject),
             NormalizeOptional(certificate.Issuer),
@@ -1261,23 +1248,17 @@ public class SriFiscalReadinessService : ISriFiscalReadinessService
     {
         public bool MetadataUsable { get; set; }
         public bool MaterialLoaded { get; set; }
-        public bool SelfSigned { get; set; }
-        public bool ChainBuildEvaluated { get; set; }
-        public bool ChainBuildSucceeded { get; set; }
+        public bool SigningUsable { get; set; }
         public bool HasRucMismatch { get; set; }
 
         public bool IsUsableForSandbox
             => MetadataUsable
                 && MaterialLoaded
+                && SigningUsable
                 && !HasRucMismatch;
 
         public bool IsUsableForProduction
-            => MetadataUsable
-                && MaterialLoaded
-                && !SelfSigned
-                && ChainBuildEvaluated
-                && ChainBuildSucceeded
-                && !HasRucMismatch;
+            => IsUsableForSandbox;
     }
 
 }
