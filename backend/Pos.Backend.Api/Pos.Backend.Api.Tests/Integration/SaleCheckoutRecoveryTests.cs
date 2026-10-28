@@ -1,3 +1,6 @@
+using System.Data.Common;
+using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -36,41 +39,119 @@ public sealed class SaleCheckoutRecoveryTests(PostgresDatabaseFixture database) 
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Manual_cash_movement_and_sale_take_company_before_cash_in_both_orders(bool movementFirst)
+    [MemberData(nameof(CheckoutLockCases))]
+    public async Task Manual_cash_movement_and_sale_take_company_before_cash_in_both_orders(bool movementFirst, int ordinal)
     {
+        var trace = new CheckoutLockTrace(movementFirst, ordinal);
         var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "cash-order", 812, 5m);
         var cash = await Open(tenant);
+        var request = Request(tenant);
+        // Preview owns a separate Company transaction; it must never consume the winner gate.
+        await using (var preparation = new TestServiceScope(database, tenant.OperationalContext))
+            request.FiscalFingerprint = (await preparation.Sales.PreviewAsync(request)).Fingerprint;
+        var fingerprint = request.FiscalFingerprint;
+        trace.Add("prepared", "sale");
         var companyAcquired = new AsyncTestSignal();
+        var cashGateReached = new AsyncTestSignal();
+        var waiterReached = new AsyncTestSignal();
         var releaseCash = new AsyncTestSignal();
+        var passThrough = new AsyncTestSignal();
+        passThrough.Set();
+        CommandIdentity? companyOwner = null;
+        CommandIdentity? cashOwner = null;
+        CommandIdentity? waiter = null;
         var winnerInterceptors = new Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] {
-            SqlCommandGateInterceptor.SignalAfter(SqlCommandMatchers.CompanyLock, companyAcquired),
+            SqlCommandGateInterceptor.SignalAfter(SqlCommandMatchers.CompanyLock, companyAcquired, command =>
+            {
+                companyOwner = CommandIdentity.Capture(command);
+                trace.Add("acquired", "winner", command);
+            }),
             SqlCommandGateInterceptor.WaitBefore(movementFirst
-                ? SqlCommandMatchers.CashSessionByIdForUpdate : SqlCommandMatchers.OpenCashSessionForUpdate, releaseCash)
+                ? SqlCommandMatchers.CashSessionByIdForUpdate : SqlCommandMatchers.OpenCashSessionForUpdate,
+                releaseCash, command =>
+                {
+                    cashOwner = CommandIdentity.Capture(command);
+                    trace.Add("cash-gate-reached", "winner", command);
+                    cashGateReached.Set();
+                })
         };
-        await using var movement = new TestServiceScope(database, tenant.OperationalContext,
-            movementFirst ? winnerInterceptors : []);
-        await using var sale = new TestServiceScope(database, tenant.OperationalContext,
-            movementFirst ? [] : winnerInterceptors);
+        var waiterInterceptors = new Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] {
+            SqlCommandGateInterceptor.WaitBefore(SqlCommandMatchers.CompanyLock, passThrough, command =>
+            {
+                waiter = CommandIdentity.Capture(command);
+                trace.Add("company-attempt", "waiter", command);
+                waiterReached.Set();
+            })
+        };
+        var movement = new TestServiceScope(database, tenant.OperationalContext,
+            movementFirst ? winnerInterceptors : waiterInterceptors);
+        var sale = new TestServiceScope(database, tenant.OperationalContext,
+            movementFirst ? waiterInterceptors : winnerInterceptors);
         Task? first = null;
         Task? second = null;
+        Exception? failure = null;
         Task Move() => movement.CashSessions.AddMovementAsync(cash,
             new() { RequestId = Guid.NewGuid(), Type = CashMovementType.CashIn, Amount = 2m, Reason = "Synthetic manual cash" });
-        Task Sell() => sale.Sales.CreateWithPreviewAsync(Request(tenant));
+        Task Sell() => sale.Sales.CreateAsync(request);
         try
         {
+            trace.Add("start", "winner");
             first = movementFirst ? Move() : Sell();
             await companyAcquired.WaitAsync();
+            await cashGateReached.WaitAsync();
+            Assert.NotNull(companyOwner);
+            Assert.NotNull(cashOwner);
+            Assert.NotNull(companyOwner.Transaction);
+            Assert.Same(companyOwner.Transaction, cashOwner.Transaction);
+            Assert.Equal(companyOwner.Pid, cashOwner.Pid);
+            Assert.Equal(fingerprint, request.FiscalFingerprint);
+            Assert.False(first.IsCompleted);
+            trace.Add("start", "waiter");
             second = movementFirst ? Sell() : Move();
-            await WaitBlocked(movementFirst ? sale : movement, (movementFirst ? movement : sale).DbContext);
+            await waiterReached.WaitAsync();
+            Assert.NotNull(waiter);
+            Assert.NotNull(waiter.Transaction);
+            Assert.NotSame(companyOwner.Transaction, waiter.Transaction);
+            Assert.NotEqual(companyOwner.Pid, waiter.Pid);
+            await WaitForCheckoutBlockAsync(waiter.Pid, companyOwner.Pid, trace);
             Assert.False(first.IsCompleted);
             Assert.False(second.IsCompleted);
         }
+        catch (Exception exception)
+        {
+            failure = exception;
+            trace.Add($"failure:{exception.GetType().Name};winner={first?.Status};waiter={second?.Status}", "harness");
+            await CaptureCheckoutActivityAsync(companyOwner?.Pid, waiter?.Pid, trace);
+            throw;
+        }
         finally
         {
+            trace.Add("release-cash", "harness");
             releaseCash.Set();
-            await Task.WhenAll(new[] { first, second }.OfType<Task>()).WaitAsync(TimeSpan.FromSeconds(30));
+            Exception? cleanupFailure = null;
+            try
+            {
+                await Task.WhenAll(new[] { first, second }.OfType<Task>()).WaitAsync(TimeSpan.FromSeconds(30));
+                trace.Add($"drained:winner={first?.Status};waiter={second?.Status}", "harness");
+            }
+            catch (Exception cleanup)
+            {
+                cleanupFailure = cleanup;
+                trace.Add($"drain-failed:{cleanup.GetType().Name}", "harness");
+            }
+            foreach (var scope in new[] { movement, sale })
+            {
+                try { await scope.DisposeAsync(); }
+                catch (Exception cleanup)
+                {
+                    cleanupFailure ??= cleanup;
+                    trace.Add($"dispose-failed:{cleanup.GetType().Name}", "harness");
+                }
+            }
+            trace.Write();
+            // Neither drain nor scope disposal may mask the original coordination failure.
+            if (failure is null && cleanupFailure is not null)
+                ExceptionDispatchInfo.Capture(cleanupFailure).Throw();
         }
         await using var verify = database.CreateDbContext();
         Assert.Single(await verify.Sales.ToListAsync());
@@ -84,6 +165,155 @@ public sealed class SaleCheckoutRecoveryTests(PostgresDatabaseFixture database) 
         Assert.Equal(10m, session.CashSalesAmount);
         Assert.Equal(2m, session.CashInAmount);
         Assert.Equal(17m, session.ExpectedCashAmount);
+    }
+
+    public static IEnumerable<object[]> CheckoutLockCases()
+    {
+        // Fixed batch, not retries: every failure remains an individual failing xUnit case.
+        for (var ordinal = 1; ordinal <= 20; ordinal++)
+        {
+            yield return [false, ordinal];
+            yield return [true, ordinal];
+        }
+    }
+
+    [Fact]
+    public async Task Preview_consumes_the_old_company_signal_without_reaching_the_create_cash_gate()
+    {
+        var tenant = await FiscalTestData.CreateFiscalTenantAsync(database, "preview-signal", 812, 5m);
+        await Open(tenant);
+        var companyAcquired = new AsyncTestSignal();
+        var release = new AsyncTestSignal();
+        release.Set();
+        DbTransaction? previewTransaction = null;
+        DbTransaction? createTransaction = null;
+        var companySignals = 0;
+        var cashGates = 0;
+        await using var scope = new TestServiceScope(database, tenant.OperationalContext,
+            SqlCommandGateInterceptor.SignalAfter(SqlCommandMatchers.CompanyLock, companyAcquired, command =>
+            {
+                previewTransaction = command.Transaction;
+                Interlocked.Increment(ref companySignals);
+            }),
+            SqlCommandGateInterceptor.WaitBefore(SqlCommandMatchers.OpenCashSessionForUpdate, release, command =>
+            {
+                createTransaction = command.Transaction;
+                Interlocked.Increment(ref cashGates);
+            }));
+        var request = Request(tenant);
+        request.FiscalFingerprint = (await scope.Sales.PreviewAsync(request)).Fingerprint;
+        await companyAcquired.WaitAsync();
+        Assert.Equal(1, companySignals);
+        Assert.Equal(0, cashGates);
+        Assert.NotNull(previewTransaction);
+        Assert.Null(scope.DbContext.Database.CurrentTransaction);
+        Assert.Empty(await scope.DbContext.Sales.ToListAsync());
+        await scope.Sales.CreateAsync(request);
+        Assert.Equal(1, companySignals);
+        Assert.Equal(1, cashGates);
+        Assert.NotNull(createTransaction);
+        Assert.NotSame(previewTransaction, createTransaction);
+    }
+
+    private sealed record CommandIdentity(int Pid, DbTransaction? Transaction)
+    {
+        public static CommandIdentity Capture(DbCommand command)
+            => new(((NpgsqlConnection)command.Connection!).ProcessID, command.Transaction);
+    }
+
+    private sealed class CheckoutLockTrace(bool movementFirst, int ordinal)
+    {
+        private readonly Stopwatch _clock = Stopwatch.StartNew();
+        private readonly List<string> _events = [];
+        private readonly List<DbTransaction> _transactions = [];
+
+        public void Add(string phase, string actor, DbCommand? command = null)
+        {
+            lock (_events)
+            {
+                if (_events.Count >= 64) return;
+                var sql = command is null ? "none"
+                    : SqlCommandMatchers.CompanyLock(command.CommandText) ? "company-lock"
+                    : SqlCommandMatchers.OpenCashSessionForUpdate(command.CommandText) ? "open-cash-lock"
+                    : SqlCommandMatchers.CashSessionByIdForUpdate(command.CommandText) ? "cash-id-lock" : "other";
+                var transaction = command?.Transaction;
+                if (transaction is not null && !_transactions.Any(tx => ReferenceEquals(tx, transaction)))
+                    _transactions.Add(transaction);
+                var txId = transaction is null ? 0 : _transactions.FindIndex(tx => ReferenceEquals(tx, transaction)) + 1;
+                var pid = command?.Connection is NpgsqlConnection connection ? connection.ProcessID : 0;
+                _events.Add($"ticks={_clock.ElapsedTicks} actor={actor} phase={phase} sql={sql} pid={pid} local-tx={txId}");
+            }
+        }
+
+        public void Write()
+        {
+            lock (_events)
+                Console.WriteLine($"Checkout lock case movementFirst={movementFirst} ordinal={ordinal}/20\n{string.Join("\n", _events)}");
+        }
+    }
+
+    private async Task WaitForCheckoutBlockAsync(int waiter, int owner, CheckoutLockTrace trace)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var observer = new NpgsqlConnection(database.ConnectionString);
+        int[] blockers = [];
+        try
+        {
+            await observer.OpenAsync(timeout.Token);
+            while (true)
+            {
+                await using var command = new NpgsqlCommand("""
+                    WITH RECURSIVE blockers(pid) AS (
+                        SELECT unnest(pg_blocking_pids(@pid))
+                        UNION
+                        SELECT unnest(pg_blocking_pids(pid)) FROM blockers
+                    )
+                    SELECT ARRAY(SELECT pid FROM blockers ORDER BY pid)
+                    """, observer);
+                command.Parameters.AddWithValue("pid", waiter);
+                blockers = (int[])(await command.ExecuteScalarAsync(timeout.Token))!;
+                if (blockers.Contains(owner))
+                {
+                    trace.Add($"blocked:waiter={waiter};owner={owner};chain=[{string.Join(",", blockers)}]", "observer");
+                    return;
+                }
+                await Task.Delay(10, timeout.Token);
+            }
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            throw new Xunit.Sdk.XunitException($"Owner lock not observed: waiter={waiter}, owner={owner}, blocker chain=[{string.Join(",", blockers)}]");
+        }
+    }
+
+    private async Task CaptureCheckoutActivityAsync(int? owner, int? waiter, CheckoutLockTrace trace)
+    {
+        // Observer only; never execute reentrant SQL on a command callback's connection.
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            await using var observer = new NpgsqlConnection(database.ConnectionString);
+            await observer.OpenAsync(timeout.Token);
+            await using var command = new NpgsqlCommand("""
+                WITH RECURSIVE involved(pid) AS (
+                    SELECT unnest(@pids)
+                    UNION
+                    SELECT unnest(pg_blocking_pids(pid)) FROM involved
+                )
+                SELECT pid, state, wait_event_type, wait_event, backend_xid::text,
+                       pg_blocking_pids(pid)
+                FROM pg_stat_activity WHERE pid IN (SELECT pid FROM involved)
+                ORDER BY pid LIMIT 8
+                """, observer);
+            command.Parameters.AddWithValue("pids", new[] { owner, waiter }.OfType<int>().Distinct().ToArray());
+            await using var reader = await command.ExecuteReaderAsync(timeout.Token);
+            while (await reader.ReadAsync(timeout.Token))
+                trace.Add($"activity:pid={reader.GetInt32(0)};state={reader.GetValue(1)};wait-type={reader.GetValue(2)};wait={reader.GetValue(3)};xid={reader.GetValue(4)};blockers=[{string.Join(",", reader.GetFieldValue<int[]>(5))}]", "observer");
+        }
+        catch (Exception diagnostic)
+        {
+            trace.Add($"diagnostic-unavailable:{diagnostic.GetType().Name}", "observer");
+        }
     }
 
     [Fact]
