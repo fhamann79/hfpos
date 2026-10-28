@@ -166,6 +166,24 @@ class HumanTests(unittest.TestCase):
             with self.assertRaises((ValueError, tarfile.TarError)):
                 self.h.transfer_plan(self.value, payload)
 
+    def test_legacy_extra_metadata_is_validated_but_never_transferred(self):
+        values = fixture()
+        values["metadata/previous-operator-note.json"] = b"SYNTHETIC_SECRET_SENTINEL_EXTRA"
+        values["metadata/internal-sha256.txt"] = "".join(hashlib.sha256(v).hexdigest() + "  " + n + "\n"
+            for n, v in values.items() if n != "metadata/internal-sha256.txt").encode()
+        tar = self.folder / "extra.tar"
+        tar.write_bytes(tar_bytes(values))
+        parent = self.private_parent() if os.name == "nt" else self.folder
+        output = parent / "legacy-extra"
+        manifest = self.archive.filtered_export(tar, output, self.value["recovery_id"], self.value["ciphertext_sha256"])
+        self.assertNotIn("metadata/previous-operator-note.json", manifest["files"])
+        self.assertFalse(any(b"SYNTHETIC_SECRET_SENTINEL" in (output / n).read_bytes() for n in manifest["files"]))
+        values["metadata/previous-operator-note.json"] += b"corrupt"
+        tar.write_bytes(tar_bytes(values))
+        with self.assertRaises(self.archive.ops.Denied):
+            self.archive.filtered_export(tar, parent / "corrupt-export", self.value["recovery_id"], self.value["ciphertext_sha256"])
+        self.assertFalse((parent / "corrupt-export").exists())
+
     def test_docker_fixed_endpoint_env_and_config_no_global_credentials(self):
         with patch.object(self.h.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"PASS", b"")) as run:
             with patch.dict(os.environ, {"DOCKER_HOST": "tcp://synthetic.invalid:2375", "DOCKER_CONTEXT": "production", "DOCKER_CONFIG": "unsafe"}):

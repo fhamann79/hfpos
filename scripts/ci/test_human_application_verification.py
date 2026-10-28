@@ -62,13 +62,14 @@ class ApplicationTests(unittest.TestCase):
             digest_code=lambda: "c" * 64, IMAGE="synthetic-postgres", decode=self.app.decode)
         self.proof = {"network": "PASS_IPV4_IPV6", "keyring": "PASS_BYTES", "backend": "PASS_HTTP",
             "platform": "PASS_HTTP_LOGIN_ME", "tenant": "PASS_HTTP_LOGIN_ME", "protectedValue": "PASS_EXISTING_SMTP",
+            "smtp": "PASS_EXISTING_SMTP", "certificate": "NOT_PRESENT",
             "worker": "REGISTERED_DB_CLAIMS_DENIED", "authWrites": "NONE_ALLOWED", "businessRead": "PASS_EXISTING_SALE"}
         self.calls = []
 
     def tearDown(self):
         self.temp.cleanup()
 
-    def run_fixture(self, counts=(1, 1, 1, 1), payloads=("synthetic-ciphertext",), fingerprints=("same", "same"), deny_role=False):
+    def run_fixture(self, counts=(1, 1, 1, 1), payloads=("synthetic-ciphertext",), fingerprints=("same", "same"), deny_role=False, certificates=()):
         app = self.app
         def docker(*args, **kwargs):
             self.calls.append(args)
@@ -85,6 +86,8 @@ class ApplicationTests(unittest.TestCase):
             self.calls.append(("sql", statement))
             if "json_build_array" in statement:
                 return app.canonical(counts)
+            if '"CompanySriCertificates"' in statement:
+                return app.canonical(certificates)
             if "json_agg" in statement:
                 return app.canonical(payloads)
             return b""
@@ -120,12 +123,52 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(self.saved, self.app.decode((self.folder / "human-checkpoint.json").read_bytes()))
 
     def test_empty_tenant_and_payload_are_partial_never_canary_success(self):
-        self.proof.update(tenant="EMPTY", protectedValue="NOT_PRESENT", businessRead="EMPTY")
+        self.proof.update(tenant="EMPTY", protectedValue="NOT_PRESENT", smtp="NOT_PRESENT", businessRead="EMPTY")
         output = self.run_fixture(counts=(1, 0, 0, 0), payloads=())
         self.assertIn("APP_VERIFICATION_PARTIAL_HUMAN_GATE", output)
         self.assertNotIn("APP_VERIFICATION_PASS", output)
         state = self.app.decode((self.folder / "application-checkpoint.json").read_bytes())
         self.assertEqual("EMPTY", state["history"])
+
+    def test_existing_certificate_can_prove_dp_without_fabricating_smtp(self):
+        self.proof.update(protectedValue="PASS_EXISTING_CERTIFICATE", certificate="PASS_EXISTING_CERTIFICATE", smtp="NOT_PRESENT")
+        output = self.run_fixture(payloads=(), certificates=({"Certificate": "synthetic-cipher-bytes", "Password": "synthetic-cipher-password"},))
+        self.assertIn("APP_VERIFICATION_PASS", output)
+        self.assertIn('"smtp":"NOT_PRESENT"', output)
+        self.assertTrue(any('"EncryptedCertificateBytes"' in str(c) and "LIMIT 129" in str(c) for c in self.calls))
+
+    def test_rc6_identity_is_closed_on_digest_revision_version_and_never_pulls(self):
+        app = self.app
+        image = {"Os": "linux", "Architecture": "amd64", "RepoDigests": [app.IMAGE], "Id": "synthetic-id",
+                 "Config": {"Labels": {"org.opencontainers.image.revision": app.REVISION,
+                 "org.opencontainers.image.version": app.RELEASE}, "User": "1654:1654", "Entrypoint": ["dotnet", "Pos.Backend.Api.dll"]}}
+        self.assertEqual("52403ce0805ddd98ad04139c0a72419b2df90195", app.REVISION)
+        self.assertTrue(app.IMAGE.endswith("dc2d30192fc65b9c204a3e4a1d38c2535ca7a597029aaa8f3a714e826aaffcb7"))
+        with patch.object(app, "docker", return_value=app.canonical([image])) as docker:
+            self.assertEqual("synthetic-id", app.image_identity())
+            self.assertEqual(("image", "inspect", app.IMAGE), docker.call_args.args)
+        for field, bad in (("org.opencontainers.image.revision", "a" * 40), ("org.opencontainers.image.version", "v0.1.0-rc.1")):
+            changed = copy.deepcopy(image)
+            changed["Config"]["Labels"][field] = bad
+            with patch.object(app, "docker", return_value=app.canonical([changed])), self.assertRaises(ValueError):
+                app.image_identity()
+
+    def test_seal_checks_all_three_exact_sources_before_creating_output(self):
+        app = self.app
+        sources = ("scripts/ops/human-application-verification.py", app.SOURCE + "Program.cs", app.SOURCE + "RestoredApplicationProbe.csproj")
+        binary = self.folder / "probe.dll"
+        binary.write_bytes(b"synthetic-public-dll")
+        sha = "a" * 40
+        for changed in sources:
+            def native(args):
+                if args[-2:] == ["rev-parse", "HEAD"]:
+                    return (sha + "\n").encode()
+                name = args[-1].split(":", 1)[1]
+                return (ROOT / name).read_bytes().replace(b"\r\n", b"\n") + (b"\n# tampered" if name == changed else b"")
+            out = self.folder / "sealed"
+            with patch.object(app, "native", side_effect=native), self.assertRaises(ValueError):
+                app.seal(argparse.Namespace(source_sha=sha, probe_dll=str(binary), output=str(out)))
+            self.assertFalse(out.exists())
 
     def test_business_or_sequence_change_stops_without_destructive_cleanup(self):
         with self.assertRaises(ValueError):
@@ -178,6 +221,22 @@ class ApplicationTests(unittest.TestCase):
         self.assertTrue(all("sri.invalid" in value for key, value in env.items() if key.startswith("Sri__") and key.endswith("Url")))
         self.assertNotEqual(self.app.configuration("synthetic_role", "HFPOS")["Jwt__Key"], env["Jwt__Key"])
         self.assertFalse(any("Enabled" in key and "Issuing" in key for key in env))
+
+    def test_restored_key_snapshot_limits_match_archive_one_mib_member_four_mib_total(self):
+        folder = self.folder / "keyring-restored"
+        folder.mkdir()
+        key = folder / "key-synthetic.xml"
+        key.write_bytes(b"x" * 1048576)
+        values, _ = self.app.key_snapshot(self.core, self.folder)
+        self.assertEqual(1048576, len(base64.b64decode(values[key.name])))
+        key.write_bytes(b"x" * 1048577)
+        with self.assertRaises(ValueError):
+            self.app.key_snapshot(self.core, self.folder)
+        key.write_bytes(b"x" * 1048576)
+        for suffix in ("a", "b", "c", "d"):
+            (folder / ("key-" + suffix + ".xml")).write_bytes(key.read_bytes())
+        with self.assertRaises(ValueError):
+            self.app.key_snapshot(self.core, self.folder)
 
     def test_probe_bootstrap_uses_only_hash_bound_public_env_and_private_tmpfs_without_copy(self):
         content = b"synthetic-public-dll; $(never-execute)"
@@ -389,18 +448,28 @@ class DockerApplicationTests(unittest.TestCase):
             dump = app.docker("exec", pg, "sh", "-c", "cat /backups/hfpos-*.dump")
             keys = app.docker("exec", pg, "sh", "-c", "tar -cf - -C /backups/restored-keys .")
             keys = synthetic_private_keyring_archive(keys, fixture.archive, old.tar_bytes)
+            worker = load(OPS / "hourly-backup/backup.py")
+            with tarfile.open(fileobj=io.BytesIO(keys), mode="r:") as keytar:
+                key_files = {m.name.removeprefix("./"): keytar.extractfile(m).read() for m in keytar if m.isfile()}
             values = old.fixture(dump)
-            for name in list(values):
-                if name.startswith("keyring/") and name.endswith(".tar"):
-                    values[name] = keys
-                    values[name + ".sha256"] = (hashlib.sha256(keys).hexdigest() + "  " + Path(name).name + "\n").encode()
-            values["metadata/internal-sha256.txt"] = "".join(hashlib.sha256(value).hexdigest() + "  " + name + "\n"
-                for name, value in values.items() if name != "metadata/internal-sha256.txt").encode()
+            db_files = {Path(n).name: data for n, data in values.items() if n.startswith("db/")}
             archive = fixture.folder / "actual-synthetic.tar"
-            archive.write_bytes(old.tar_bytes(values))
+            archive.write_bytes(worker.make_package(db_files, key_files,
+                {"config/synthetic.env": b"OFFLINE_CONFIG_SENTINEL=synthetic-only\n"}, b"-- no passwords", b"-- grants map", [], 1))
+            identity = fixture.folder / "synthetic-age-key"
+            subprocess.run(["age-keygen", "-o", str(identity)], check=True, capture_output=True, timeout=15)
+            recipient = subprocess.run(["age-keygen", "-y", str(identity)], check=True, capture_output=True, timeout=15).stdout.decode().strip()
+            cipher = fixture.folder / "actual-synthetic.age"
+            subprocess.run(["age", "-r", recipient, "-o", str(cipher), str(archive)], check=True, capture_output=True, timeout=15)
+            fixture.value["ciphertext_sha256"] = hashlib.sha256(cipher.read_bytes()).hexdigest()
             export = fixture.folder / "actual-export"
-            manifest = fixture.archive.filtered_export(archive, export, fixture.value["recovery_id"], fixture.value["ciphertext_sha256"])
+            offline = fixture.folder / "offline-only"
+            manifest = fixture.archive.decrypt_export(cipher, identity, fixture.folder, export,
+                fixture.value["recovery_id"], fixture.value["ciphertext_sha256"], offline_config_output=offline)
+            with tarfile.open(offline / "host-config.tar") as config:
+                self.assertEqual(b"OFFLINE_CONFIG_SENTINEL=synthetic-only\n", config.extractfile("config/synthetic.env").read())
             payload = old.tar_bytes({name: (export / name).read_bytes() for name in (*manifest["files"], "transfer.json")})
+            self.assertNotIn(b"OFFLINE_CONFIG_SENTINEL", payload)
             for path in reversed((fixture.h.RECOVERY, *fixture.h.RECOVERY.parents)):
                 if not path.exists():
                     path.mkdir(mode=0o700)
@@ -429,9 +498,36 @@ class DockerApplicationTests(unittest.TestCase):
             self.assertEqual(baseline, app.fingerprint(db))
             self.assertEqual(checkpoint, (target / "human-checkpoint.json").read_bytes())
             fixture.h.verify_completed(argparse.Namespace(recovery_id=fixture.value["recovery_id"]), fixture.ops)
-            # Missing historical evidence must be partial on the same actual image path.
+            # An absent SMTP is independent; the existing restored certificate must prove DP.
             app.sql(db, 'UPDATE public."CompanyEmailSettings" SET "SmtpPasswordProtected"=NULL;')
             (target / "application-checkpoint.json").unlink()  # Test-owned fixture ONLY, not operational retry.
+            with patch("builtins.input", side_effect=["HFPOS-SMOKE-ONLY", "VERIFICAR APP " + fixture.value["recovery_id"]]), \
+                    patch.object(app.getpass, "getpass", side_effect=responses), redirect_stdout(io.StringIO()) as output:
+                app.run_locked(argparse.Namespace(recovery_id=fixture.value["recovery_id"]), fixture.h, target,
+                    {"source_sha": fixture.value["source_sha"]}, source)
+            self.assertIn("APP_VERIFICATION_PASS", output.getvalue())
+            self.assertIn('"smtp":"NOT_PRESENT"', output.getvalue())
+            self.assertIn('"certificate":"PASS_EXISTING_CERTIFICATE"', output.getvalue())
+            # Both wrong discriminator and damaged stored bytes fail on the actual RC6 probe.
+            original_passwords = app.decode(app.sql(db, '''SELECT json_agg(json_build_array("Id",encode("EncryptedPassword",'hex')))
+                FROM public."CompanySriCertificates";'''))
+            self.assertTrue(original_passwords)
+            for wrong_application, corrupt in ((True, False), (False, True)):
+                (target / "application-checkpoint.json").unlink()
+                if corrupt:
+                    app.sql(db, 'UPDATE public."CompanySriCertificates" SET "EncryptedPassword"=decode(\'00\',\'hex\');')
+                with patch("builtins.input", side_effect=["SYNTHETIC-WRONG" if wrong_application else "HFPOS-SMOKE-ONLY",
+                        "VERIFICAR APP " + fixture.value["recovery_id"]]), patch.object(app.getpass, "getpass", side_effect=responses):
+                    with self.assertRaises(ValueError):
+                        app.run_locked(argparse.Namespace(recovery_id=fixture.value["recovery_id"]), fixture.h, target,
+                            {"source_sha": fixture.value["source_sha"]}, source)
+                for cert_id, encrypted in original_passwords:
+                    self.assertRegex(encrypted, r"^[a-f0-9]+$")
+                    app.sql(db, 'UPDATE public."CompanySriCertificates" SET "EncryptedPassword"=decode(\'' + encrypted +
+                        '\',\'hex\') WHERE "Id"=' + str(int(cert_id)) + ';')
+            # No protected evidence: partial, without seeding a substitute.
+            app.sql(db, 'DELETE FROM public."CompanySriCertificates";')
+            (target / "application-checkpoint.json").unlink()
             with patch("builtins.input", side_effect=["HFPOS-SMOKE-ONLY", "VERIFICAR APP " + fixture.value["recovery_id"]]), \
                     patch.object(app.getpass, "getpass", side_effect=responses), redirect_stdout(io.StringIO()) as output:
                 app.run_locked(argparse.Namespace(recovery_id=fixture.value["recovery_id"]), fixture.h, target,

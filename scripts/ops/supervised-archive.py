@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 
 spec = importlib.util.spec_from_file_location("supervised_ops", Path(__file__).with_name("supervised-operations.py"))
 ops = importlib.util.module_from_spec(spec)
@@ -22,6 +23,10 @@ spec.loader.exec_module(ops)
 MAX_TOTAL = 128 * 1024 * 1024
 MAX_FILE = 64 * 1024 * 1024
 MAX_MEMBERS = 128
+METADATA = {"metadata/release.txt", "metadata/capture.json", "metadata/roles.sql",
+            "metadata/schema-ownership-grants.sql"}
+PRIVATE_METADATA = {"metadata/containers.private.json"}
+FORMATS = {"internal-sha256.txt", "metadata/internal-sha256.txt", "metadata/format.json"}
 
 
 @contextmanager
@@ -80,8 +85,9 @@ def member_name(member, keyring=False):
         ops.require((member.isdir() and name in ("", ".")) or
                     re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_.-]{0,119}\.xml", name))
     else:
-        ops.require(re.fullmatch(r"(?:db|keyring|metadata|snapshot)(?:/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,119})?", name))
-        ops.require(member.isdir() == ("/" not in name))
+        ops.require(name == "internal-sha256.txt" or
+                    re.fullmatch(r"(?:db|keyring|metadata|snapshot)(?:/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,119})?", name))
+        ops.require(member.isdir() == (name in ("db", "keyring", "metadata", "snapshot")))
     ops.require(0 <= member.size <= (1024 * 1024 if keyring else MAX_FILE))
     return name
 
@@ -97,7 +103,14 @@ def validate_keyring(data):
             seen.add(name)
             if member.isfile():
                 files += 1
+        zero_tail(archive)
     ops.require(files > 0)
+
+
+def zero_tail(archive):
+    archive.fileobj.seek(archive.offset)
+    for chunk in iter(lambda: archive.fileobj.read(65536), b""):
+        ops.require(not chunk.strip(b"\0"))
 
 
 def parse_hashes(data):
@@ -111,7 +124,23 @@ def parse_hashes(data):
     return result
 
 
-def filtered_export(authenticated_tar, output, recovery_id, ciphertext_sha256):
+def validate_config(data):
+    seen, total = set(), 0
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
+        for member in archive:
+            name = member.name
+            ops.require(member.type == tarfile.REGTYPE and not member.pax_headers and not member.issparse())
+            ops.require(re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+", name))
+            ops.require(all(part not in (".", "..") for part in name.split("/")))
+            ops.require(name not in seen and len(seen) < 4096 and 0 <= member.size <= MAX_FILE)
+            seen.add(name)
+            total += member.size
+            ops.require(total <= MAX_FILE)
+        zero_tail(archive)
+    ops.require(seen)
+
+
+def filtered_export(authenticated_tar, output, recovery_id, ciphertext_sha256, offline_config_output=None):
     ops.require(ops.hex_value(recovery_id, 32) and ops.hex_value(ciphertext_sha256, 64))
     ops.require(authenticated_tar.stat().st_size <= MAX_TOTAL)
     ops.require(not output.exists())
@@ -133,7 +162,7 @@ def filtered_export(authenticated_tar, output, recovery_id, ciphertext_sha256):
             stream = archive.extractfile(member)
             digest = hashlib.sha256()
             chunks = []
-            keep = not name.startswith("snapshot/")
+            keep = name not in PRIVATE_METADATA
             while True:
                 chunk = stream.read(65536)
                 if not chunk:
@@ -144,25 +173,68 @@ def filtered_export(authenticated_tar, output, recovery_id, ciphertext_sha256):
             all_hashes[name] = digest.hexdigest()
             if keep:
                 selected[name] = b"".join(chunks)
-            if name == "metadata/internal-sha256.txt":
+            if name in ("metadata/internal-sha256.txt", "internal-sha256.txt"):
+                ops.require(hash_manifest is None)
                 hash_manifest = selected[name]
+        zero_tail(archive)
     ops.require(hash_manifest is not None)
     expected = parse_hashes(hash_manifest)
     # Exact coverage, not picking the first dump or trusting an arbitrary basename.
-    ops.require(set(expected) == set(all_hashes) - {"metadata/internal-sha256.txt"})
+    manifest_name = "internal-sha256.txt" if "internal-sha256.txt" in all_hashes else "metadata/internal-sha256.txt"
+    ops.require(set(expected) == set(all_hashes) - {manifest_name})
     ops.require(all(all_hashes[name] == value for name, value in expected.items()))
+    version = "legacy"
+    if "metadata/format.json" in selected:
+        format_value = ops.decode(selected["metadata/format.json"], 1024)
+        ops.require(format_value == {"format": "hfpos-auto", "version": 2} and type(format_value["version"]) is int)
+        ops.require(manifest_name == "metadata/internal-sha256.txt")
+        version = "auto-v2"
+    elif manifest_name == "internal-sha256.txt":
+        version = "auto-v1"
+    if version != "legacy":
+        ops.require(set(n for n in all_hashes if n.startswith("metadata/")) <= METADATA | PRIVATE_METADATA | FORMATS)
+        ops.require(set(n for n in all_hashes if n.startswith("snapshot/")) == {"snapshot/host-config.tar"})
+        ops.require(METADATA - {"metadata/release.txt"} <= set(all_hashes))
+        ops.require("metadata/containers.private.json" in all_hashes)
+        validate_config(selected["snapshot/host-config.tar"])
     dumps = [name for name in selected if name.startswith("db/") and name.endswith(".dump")]
     keyrings = [name for name in selected if name.startswith("keyring/") and name.endswith(".tar")]
     ops.require(len(dumps) == 1 and len(keyrings) == 1)
     dump, keyring = dumps[0], keyrings[0]
     ops.require(re.fullmatch(r"db/hfpos-[0-9]{8}T[0-9]{6}Z-[0-9]+\.dump", dump))
-    ops.require(re.fullmatch(r"keyring/keyring-[0-9]{8}T[0-9]{6}Z-[0-9]+\.tar", keyring))
+    ops.require(keyring == "keyring/keyring.tar" if version == "auto-v1" else
+                re.fullmatch(r"keyring/keyring-[0-9]{8}T[0-9]{6}Z-[0-9]+\.tar", keyring))
     ops.require(set(name for name in selected if name.startswith("db/")) == {dump, dump + ".sha256", dump + ".manifest"})
     ops.require(set(name for name in selected if name.startswith("keyring/")) == {keyring, keyring + ".sha256"})
     for name in (dump, keyring):
         ops.require(selected[name + ".sha256"].decode("ascii").strip() ==
                     all_hashes[name] + "  " + Path(name).name)
     validate_keyring(selected[keyring])
+    if offline_config_output is not None:
+        ops.require(version != "legacy" and not offline_config_output.exists() and offline_config_output != output)
+        # Separate private offline destination; never part of transfer.json or app environment.
+        private_create(offline_config_output, directory=True)
+        for name in ("snapshot/host-config.tar", "metadata/roles.sql", "metadata/schema-ownership-grants.sql"):
+            private_write(offline_config_output / Path(name).name, selected[name])
+        private_write(offline_config_output / "source.json", ops.canonical({"ciphertext_sha256": ciphertext_sha256,
+            "recovery_id": recovery_id, "format": version,
+            "files": {n: all_hashes[n] for n in all_hashes if n.startswith("snapshot/") or n in METADATA}}))
+    selected = {n: v for n, v in selected.items() if not n.startswith("snapshot/") and
+                (not n.startswith("metadata/") or n in METADATA | FORMATS)}
+    # Normalize only verified bytes; preserve the identity of the original ciphertext.
+    if version == "auto-v1":
+        canonical_key = "keyring/keyring-" + Path(dump).name[6:-5] + ".tar"
+        selected[canonical_key] = selected.pop(keyring)
+        selected.pop(keyring + ".sha256")
+        selected[canonical_key + ".sha256"] = (all_hashes[keyring] + "  " + Path(canonical_key).name + "\n").encode()
+        keyring = canonical_key
+    selected.pop(manifest_name)
+    selected.pop("metadata/format.json", None)
+    # Neither raw inspect Env nor executable roles/grants cross into the DB/app workspace.
+    for name in ("metadata/roles.sql", "metadata/schema-ownership-grants.sql"):
+        selected.pop(name, None)
+    selected["metadata/internal-sha256.txt"] = "".join(
+        hashlib.sha256(data).hexdigest() + "  " + name + "\n" for name, data in sorted(selected.items())).encode()
     private_create(output, directory=True)
     for name, content in selected.items():
         destination = output / name
@@ -170,12 +242,12 @@ def filtered_export(authenticated_tar, output, recovery_id, ciphertext_sha256):
             private_create(destination.parent, directory=True)
         private_write(destination, content)
     manifest = {"version": 1, "recovery_id": recovery_id, "ciphertext_sha256": ciphertext_sha256,
-                "files": {name: all_hashes[name] for name in selected}, "dump": dump, "keyring": keyring}
+                "files": {name: hashlib.sha256(data).hexdigest() for name, data in selected.items()}, "dump": dump, "keyring": keyring}
     private_write(output / "transfer.json", ops.canonical(manifest))
     return manifest
 
 
-def decrypt_export(ciphertext, identity, private_staging, output, recovery_id, expected_hash, age="age"):
+def decrypt_export(ciphertext, identity, private_staging, output, recovery_id, expected_hash, age="age", offline_config_output=None):
     ops.require(ops.hex_value(expected_hash, 64))
     if os.name == "nt":
         private_windows(ciphertext)
@@ -198,6 +270,9 @@ def decrypt_export(ciphertext, identity, private_staging, output, recovery_id, e
         private_create(authenticated)
         process = subprocess.Popen([age, "--decrypt", "--identity", str(identity), str(snapshot)],
                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        # A blocked pipe read must also be bounded, not only wait() after EOF.
+        watchdog = threading.Timer(120, process.kill)
+        watchdog.start()
         try:
             with authenticated.open("wb") as file:
                 total = 0
@@ -209,8 +284,9 @@ def decrypt_export(ciphertext, identity, private_staging, output, recovery_id, e
                     ops.require(total <= MAX_TOTAL)
                     file.write(chunk)
             ops.require(process.wait(timeout=15) == 0)
-            return filtered_export(authenticated, output, recovery_id, expected_hash)
+            return filtered_export(authenticated, output, recovery_id, expected_hash, offline_config_output)
         finally:
+            watchdog.cancel()
             if process.poll() is None:
                 process.kill()
             process.wait()
@@ -221,14 +297,18 @@ def main():
     parser = argparse.ArgumentParser()
     for name in ("ciphertext", "identity", "staging", "output", "recovery-id", "ciphertext-sha256"):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--offline-config-output")
     args = parser.parse_args()
     try:
         for path in (args.identity, args.staging):
             private_windows(path)
         output = Path(os.path.abspath(args.output))
         private_windows(output.parent)
+        offline = Path(os.path.abspath(args.offline_config_output)) if args.offline_config_output else None
+        if offline:
+            private_windows(offline.parent)
         decrypt_export(Path(args.ciphertext), Path(args.identity), Path(args.staging), output,
-                       args.recovery_id, args.ciphertext_sha256)
+                       args.recovery_id, args.ciphertext_sha256, offline_config_output=offline)
         print("FILTERED_EXPORT_PASS_LOCAL_ONLY")
         return 0
     except Exception:

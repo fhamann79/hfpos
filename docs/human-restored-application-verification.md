@@ -5,7 +5,7 @@ implementer. Preparacion y CI sinteticos NO autorizan arrancar una aplicacion re
 Se necesita una NUEVA autorizacion R4 humana, finita y expresa despues de review,
 CI exact-HEAD y aceptacion pre-merge. NO piloto activo ni DEV-532.**
 
-Esta guia continua el core YA restaurado, no repite backup, exportacion, transferencia
+Esta guia RC6 preparada continua un core YA restaurado compatible, no repite backup, exportacion, transferencia
 de datos, restore, custodia, USB ni retirada Windows. El coordinador conserva por
 separado los reportes del operador y la desviacion SCP. No se deducen resultados
 actuales del historico 09-Oct (entonces Empresas=0). No consultar produccion.
@@ -158,11 +158,16 @@ La preparacion del repositorio no es tal autorizacion. No ejecutar desde agentes
 
 Antes del arranque: lock exclusivo del workspace core; ownership/modes/code hash
 del bundle anterior; checkpoint `core-restored-app-blocked`; ID/labels/imagen PG
-fijos, Running, network none, sin puertos/binds/caps; imagen backend YA LOCAL por
-digest `5654a239...f40cbe1`, revision `99b92e0e...1c441d`, linux/amd64 y UID1654.
-No pull/deploy/tag/migracion. El backend RC no es binariamente main: cambia
-`System.Security.Cryptography.Xml` 8.0.4 -> 8.0.5, aunque el C# startup/auth/worker
-relevante no cambio. CI ejecuta el RC oficial, no asume compatibilidad por main.
+fijos, Running, network none, sin puertos/binds/caps; imagen backend YA LOCAL RC6 por
+digest `dc2d30192fc65b9c204a3e4a1d38c2535ca7a597029aaa8f3a714e826aaffcb7`,
+revision `52403ce0805ddd98ad04139c0a72419b2df90195`, version `v0.1.0-rc.6`,
+linux/amd64 y UID1654. Perfil cerrado en helper sellado, no flags de digest/revision
+arbitrarios ni fallback RC1. Fuente: [publicacion40561755312](https://github.com/fhamann79/hfpos/actions/runs/40561755312),
+tag anotado `2266b8361954772df465ec271ea7c8efa13b4489` al commit indicado, outputs
+`containerimage.digest` y labels. CI comprueba imagen oficial real; uso humano solo
+inspect read-only de la imagen YA LOCAL. No pull/deploy/tag/migracion. Ver
+[compatibilidad online/config offline](hourly-backup-recovery.md). No asumir que un
+dump antiguo vacio o de otro esquema adquiere evidencia RC6 por cambiar el helper.
 
 El rol lector nuevo es NOSUPERUSER/NOCREATEDB/NOCREATEROLE/NOREPLICATION/NOBYPASSRLS,
 NOINHERIT, sin membresias ni ownership; solo SELECT y default read-only. Se verifican
@@ -203,12 +208,16 @@ temporal que exige el startup RC. Bytes se verifican; autogeneracion DP desactiv
 en la consola. Tras el backend se exige mismo keyset/bytes, sin nuevos archivos.
 Se verifica luego que el original conserva bytes/inode/owner/mode. Sin canary nuevo.
 
-DP usa SOLO `CompanyEmailSettings.SmtpPasswordProtected` existente, incluso disabled,
-el purpose real leido del assembly RC `hfpos.company-email.smtp-password.v1` y el
-ApplicationName confirmado. Unprotect solo memoria, plaintext nunca publicado;
-wrong-purpose y wrong-application deben fallar. No abre/desprotege certificados.
-Si no hay SMTP persistido: `NOT_PRESENT`, no recovery DP completo. No garantiza
-borrado de strings/memoria/pagefile ni confidencialidad frente al mismo admin.
+DP lee de DB RESTAURADA `CompanySriCertificates.EncryptedCertificateBytes` y
+`EncryptedPassword` (CertificadoEncriptado/Password), bytes del purpose real
+`hfpos.sri.certificate.v1`; constante verificada desde assembly RC6. Desprotege
+en memoria con limites, cero de buffers byte[] en finally, wrong-purpose y
+wrong-application deben fallar. No importa PFX/private key, firma ni exporta.
+SMTP independiente: `CompanyEmailSettings.SmtpPasswordProtected` existente,
+purpose `hfpos.company-email.smtp-password.v1`. Ausencia SMTP => `smtp:NOT_PRESENT`,
+sin inventar correo ni PASS SMTP. `certificate:PASS_EXISTING_CERTIFICATE` acredita
+DP por bytes existentes; sin ambos tipos => protectedValue NOT_PRESENT y PARTIAL.
+No garantiza borrado de strings/memoria/pagefile ni confidencialidad frente a root.
 
 El backend child ejecuta `/app/Pos.Backend.Api.dll` REAL sin hooks/endpoints nuevos,
 Production con guards intactos, JWT sintetico aislado, bootstrap/demo/OTLP apagados,
@@ -226,7 +235,8 @@ incluidos jobs, leases, auditorias y datos historicos, sin imprimir filas/hashes
 
 Resultados:
 
-- `APP_VERIFICATION_PASS`: HTTP+DP existente presentes y verificaciones completas;
+- `APP_VERIFICATION_PASS`: platform+tenant+venta historica+DP existente (certificado
+  o SMTP) presentes y verificaciones completas; SMTP puede seguir NOT_PRESENT;
   no afirma equivalencia con produccion actual ni piloto activo.
 - `APP_VERIFICATION_PARTIAL_HUMAN_GATE`: evidencia ausente EMPTY/NOT_PRESENT. Mantener
   gate material; no sembrar datos/usuarios/canaries para fabricar PASS.
