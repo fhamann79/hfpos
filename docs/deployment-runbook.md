@@ -150,3 +150,12 @@ No es plantilla ejecutable para Production. La imagen test-only `pilot-proof`
 no se publica por el workflow de release.
 
 Para decisiones/gates del candidato y piloto, ver [DEV-531 readiness](release-pilot-readiness.md).
+
+## Exclusion de respaldo online DEV-531
+
+Antes de activar auto-v2, preparar el contrato de mantenimiento compartido descrito
+en [respaldo online](hourly-backup-recovery.md#exclusion-de-mantenimiento): conservar
+el inode de `/run/lock/hf-one-manual-backup.lock` root0600 y mantener flock exclusivo
+durante toda ventana humana de despliegue/migracion/corte de writers/restore que
+compita con backups. Comparar schema despues NO sustituye exclusion mutua. No es
+un framework global ni autorizacion R4; si el flujo no mantiene el lock, STOP.

@@ -190,3 +190,11 @@ separada, sin referencia/publicacion desde la API o las tres imagenes de release
 Su HTTP permite solo SOAP sintetico in-process; SMTP es un fake in-process. Los
 servicios restaurados no montan el volumen keyring original. Las claves, signing
 fixture y TLS son exclusivamente sinteticos, nunca certificados/secretos reales.
+
+## Compatibilidad de respaldo online DEV-531
+
+La preparacion auto-v2 y los adaptadores historico/auto-v1 estan documentados en
+[respaldo online y recuperacion compatible](hourly-backup-recovery.md).
+RPO una hora aprobado; RTO/retencion/avisos/periodicidad de ensayo aun pendientes.
+No repetir backup/restore humano anterior ni interpretar pruebas sinteticas como
+recuperacion real. Nuevo codigo R3 requiere gate pre-merge; ejecucion R4 separada.

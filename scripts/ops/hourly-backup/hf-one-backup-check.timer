@@ -1,0 +1,11 @@
+[Unit]
+Description=Check HF One backup age every ten minutes
+
+[Timer]
+OnCalendar=*-*-* *:00/10:00
+Persistent=true
+AccuracySec=1s
+Unit=hf-one-backup-check.service
+
+[Install]
+WantedBy=timers.target

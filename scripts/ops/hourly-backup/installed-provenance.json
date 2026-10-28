@@ -1,0 +1,14 @@
+{
+  "installer_bytes": 39947,
+  "installer_sha256": "e483b0d5d9e10e063c4e82747118ea08da0e1fcc2235836cf10213b09c749a0b",
+  "payload": {
+    "backup.py": "188824b320cde2f464bf0f8e89f4924d920baa2db63a31a0f4676af493e6bb29",
+    "postgres-backup.sh": "7ab165df036531b3a0cb6fee4ad0855c50d757628aa1217804c098aaa85e136c",
+    "verify-postgres-backup.sh": "4820dcd9e1574e7ef3ab9ce57115f6ee29f0b1cbce3394460b4e2168ac759199",
+    "hf-one-backup.service": "6658d8d9a3f67b04d49248fc39ffe165eae008b0c5c9259673d37393aac6cb9a",
+    "hf-one-backup.timer": "5b1363c1e7142f9fcb1a768bf25f783fcec6a8c72b6bc31ac073d8374da3f9c0",
+    "hf-one-backup-check.service": "c2845f3c25ed2414c5d13fe5f20433d763818782c044897c05776dff4ae39868",
+    "hf-one-backup-check.timer": "e2a8cb4cc311fa82b2b19850b539cc96eed206b2478226f95b1d3b6c0384ec2d"
+  },
+  "scope": "Local supplied installer only; no observation of current remote installation. Proposed auto-v2 sources differ."
+}

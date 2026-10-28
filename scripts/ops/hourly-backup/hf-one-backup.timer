@@ -1,0 +1,11 @@
+[Unit]
+Description=HF One backup every 30 minutes for approved one-hour RPO
+
+[Timer]
+OnCalendar=*-*-* *:00,30:00
+Persistent=true
+AccuracySec=1s
+Unit=hf-one-backup.service
+
+[Install]
+WantedBy=timers.target

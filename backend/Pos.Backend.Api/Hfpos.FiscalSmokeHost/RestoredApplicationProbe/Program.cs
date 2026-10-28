@@ -8,13 +8,15 @@ using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.WebUtilities;
 
 // Verification-only console. It never seeds, signs, submits, sends mail or exposes HTTP.
 internal static class Program
 {
     private sealed record Login(string Username, string Password);
+    private sealed record CertificatePayload(string Certificate, string Password);
     private sealed record Input(Dictionary<string, string> Keys, string ApplicationName,
-        string[] Payloads, Login? Platform, Login? Tenant, JsonElement? Business);
+        string[] Payloads, CertificatePayload[] Certificates, Login? Platform, Login? Tenant, JsonElement? Business);
 
     private static void Require(bool condition)
     {
@@ -34,15 +36,17 @@ internal static class Program
             Require(line is { Length: > 0 and <= 16777216 });
             var input = JsonSerializer.Deserialize<Input>(line!) ?? throw new InvalidOperationException("STOP");
             Require(input.Keys.Count is > 0 and <= 128
-                && input.Payloads.Length <= 128 && input.ApplicationName.Length is > 0 and <= 200);
+                && input.Payloads.Length <= 128 && input.Certificates.Length <= 128 && input.ApplicationName.Length is > 0 and <= 200);
             await NetworkProof(deadline.Token);
             Require(Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Assembly.GetExecutingAssembly().Location)))
                 .Equals(Environment.GetEnvironmentVariable("HFPOS_VERIFY_PROBE_SHA256"), StringComparison.OrdinalIgnoreCase));
+            var totalKeyBytes = 0;
             foreach (var (name, encoded) in input.Keys)
             {
                 Require(System.Text.RegularExpressions.Regex.IsMatch(name, @"^key-[a-zA-Z0-9-]+\.xml$"));
                 var bytes = Convert.FromBase64String(encoded);
-                Require(bytes.Length is > 0 and <= 65536);
+                totalKeyBytes += bytes.Length;
+                Require(bytes.Length is > 0 and <= 1048576 && totalKeyBytes <= 4 * 1024 * 1024);
                 using (var xml = XmlReader.Create(new MemoryStream(bytes), new XmlReaderSettings
                        { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null }))
                 {
@@ -62,17 +66,29 @@ internal static class Program
             var purpose = (string)assembly.GetType("Pos.Backend.Api.Core.Security.CompanyEmailProtectionPurposes", true)!
                 .GetField("SmtpPasswordV1", BindingFlags.Public | BindingFlags.Static)!.GetRawConstantValue()!;
             Require(purpose == "hfpos.company-email.smtp-password.v1");
+            var certificatePurpose = (string)assembly.GetType("Pos.Backend.Api.Core.Security.SriCertificateProtectionPurposes", true)!
+                .GetField("CertificateV1", BindingFlags.Public | BindingFlags.Static)!.GetRawConstantValue()!;
+            Require(certificatePurpose == "hfpos.sri.certificate.v1");
             var protection = DataProtectionProvider.Create(new DirectoryInfo("/keys"), b =>
                 b.SetApplicationName(input.ApplicationName).DisableAutomaticKeyGeneration());
+            var wrong = DataProtectionProvider.Create(new DirectoryInfo("/keys"), b =>
+                b.SetApplicationName(input.ApplicationName + ".verification-wrong").DisableAutomaticKeyGeneration());
             foreach (var payload in input.Payloads)
             {
                 Require(payload.Length is > 0 and <= 65536);
-                var plaintext = protection.CreateProtector(purpose).Unprotect(payload);
-                Require(!string.IsNullOrEmpty(plaintext));
-                MustNotDecrypt(protection.CreateProtector(purpose + ".verification-wrong"), payload);
-                var wrong = DataProtectionProvider.Create(new DirectoryInfo("/keys"), b =>
-                    b.SetApplicationName(input.ApplicationName + ".verification-wrong").DisableAutomaticKeyGeneration());
-                MustNotDecrypt(wrong.CreateProtector(purpose), payload);
+                var bytes = WebEncoders.Base64UrlDecode(payload);
+                try { VerifyProtected(protection, wrong, purpose, bytes, 65536); }
+                finally { CryptographicOperations.ZeroMemory(bytes); }
+            }
+            foreach (var certificate in input.Certificates)
+            {
+                Require(certificate.Certificate.Length is > 0 and <= 3000000 && certificate.Password.Length is > 0 and <= 90000);
+                var bytes = Convert.FromBase64String(certificate.Certificate);
+                try { VerifyProtected(protection, wrong, certificatePurpose, bytes, 2 * 1024 * 1024 + 65536); }
+                finally { CryptographicOperations.ZeroMemory(bytes); }
+                var password = Convert.FromBase64String(certificate.Password);
+                try { VerifyProtected(protection, wrong, certificatePurpose, password, 65536); }
+                finally { CryptographicOperations.ZeroMemory(password); }
             }
 
             var start = new ProcessStartInfo("dotnet", "/app/Pos.Backend.Api.dll")
@@ -100,7 +116,9 @@ internal static class Program
             Require(!backend.HasExited && keyHashes.SequenceEqual(KeyHashes()) && Directory.GetDirectories("/keys").Length == 0);
             Console.WriteLine(JsonSerializer.Serialize(new { network = "PASS_IPV4_IPV6", keyring = "PASS_BYTES",
                 backend = "PASS_HTTP", platform = platform.Status, tenant = tenant.Status, businessRead,
-                protectedValue = input.Payloads.Length == 0 ? "NOT_PRESENT" : "PASS_EXISTING_SMTP",
+                protectedValue = input.Certificates.Length > 0 ? "PASS_EXISTING_CERTIFICATE" : (input.Payloads.Length == 0 ? "NOT_PRESENT" : "PASS_EXISTING_SMTP"),
+                smtp = input.Payloads.Length == 0 ? "NOT_PRESENT" : "PASS_EXISTING_SMTP",
+                certificate = input.Certificates.Length == 0 ? "NOT_PRESENT" : "PASS_EXISTING_CERTIFICATE",
                 worker = "REGISTERED_DB_CLAIMS_DENIED", authWrites = "NONE_ALLOWED" }));
             return 0;
         }
@@ -173,11 +191,26 @@ internal static class Program
     private static string[] KeyHashes() => Directory.GetFiles("/keys").Order()
         .Select(path => Path.GetFileName(path) + ":" + Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))).ToArray();
 
-    private static void MustNotDecrypt(IDataProtector protector, string payload)
+    private static void VerifyProtected(IDataProtectionProvider provider, IDataProtectionProvider wrongApplication,
+        string purpose, byte[] payload, int limit)
     {
-        try { protector.Unprotect(payload); }
-        catch (CryptographicException) { return; }
-        throw new InvalidOperationException("STOP");
+        Require(payload.Length > 0 && payload.Length <= limit);
+        byte[]? plaintext = null;
+        try
+        {
+            plaintext = provider.CreateProtector(purpose).Unprotect(payload);
+            Require(plaintext.Length > 0 && plaintext.Length <= limit);
+        }
+        finally { if (plaintext is not null) CryptographicOperations.ZeroMemory(plaintext); }
+        // No PFX parsing, private-key import, signing, export or network service is needed.
+        foreach (var protector in new[] { provider.CreateProtector(purpose + ".verification-wrong"), wrongApplication.CreateProtector(purpose) })
+        {
+            byte[]? unexpected = null;
+            try { unexpected = protector.Unprotect(payload); }
+            catch (CryptographicException) { continue; }
+            finally { if (unexpected is not null) CryptographicOperations.ZeroMemory(unexpected); }
+            throw new InvalidOperationException("STOP");
+        }
     }
 
     private static async Task Discard(StreamReader reader)

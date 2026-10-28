@@ -16,8 +16,9 @@ import sys
 import warnings
 
 HERE = Path(__file__).resolve().parent
-IMAGE = "ghcr.io/fhamann79/hfpos-backend@sha256:5654a239a032076e72306e1d7057377eaddf30674872195a89068cae6f40cbe1"
-REVISION = "99b92e0e0f6f34e5dd3921016f787e73ad1c441d"
+IMAGE = "ghcr.io/fhamann79/hfpos-backend@sha256:dc2d30192fc65b9c204a3e4a1d38c2535ca7a597029aaa8f3a714e826aaffcb7"
+REVISION = "52403ce0805ddd98ad04139c0a72419b2df90195"
+RELEASE = "v0.1.0-rc.6"
 FILES = ("human-application-verification.py", "RestoredApplicationProbe.dll")
 SOURCE = "backend/Pos.Backend.Api/Hfpos.FiscalSmokeHost/RestoredApplicationProbe/"
 
@@ -118,6 +119,7 @@ def image_identity():
     item = decode(docker("image", "inspect", IMAGE))[0]
     require(item["Os"] == "linux" and item["Architecture"] == "amd64")
     require(IMAGE in item["RepoDigests"] and item["Config"]["Labels"]["org.opencontainers.image.revision"] == REVISION)
+    require(item["Config"]["Labels"]["org.opencontainers.image.version"] == RELEASE)
     require(item["Config"]["User"] == "1654:1654" and item["Config"]["Entrypoint"] == ["dotnet", "Pos.Backend.Api.dll"])
     require(not item["Config"].get("Volumes"))
     return item["Id"]
@@ -291,11 +293,13 @@ def execute_app(name, container_id, image_id, db_id, labels, env, body, before_s
 
 def key_snapshot(core, target):
     folder = core.root_path(target / "keyring-restored", mode=0o700)
-    result, identity = {}, {}
+    result, identity, total = {}, {}, 0
     for file in folder.iterdir():
         core.root_path(file, False, 0o600)
-        require(re.fullmatch(r"key-[a-zA-Z0-9-]+\.xml", file.name) and file.stat().st_size <= 65536)
+        require(re.fullmatch(r"key-[a-zA-Z0-9-]+\.xml", file.name) and file.stat().st_size <= 1024 * 1024)
         data = file.read_bytes()
+        total += len(data)
+        require(total <= 4 * 1024 * 1024)
         result[file.name] = base64.b64encode(data).decode("ascii")
         info = file.stat()
         identity[file.name] = (info.st_dev, info.st_ino, info.st_uid, stat.S_IMODE(info.st_mode), hashlib.sha256(data).hexdigest())
@@ -337,8 +341,13 @@ def run_locked(args, core, target, old_source, source):
         '(SELECT count(*) FROM public."Sales")+(SELECT count(*) FROM public."PurchaseReceipts")+(SELECT count(*) FROM public."CashSessions")+'
         '(SELECT count(*) FROM public."CreditNotes")+(SELECT count(*) FROM public."ProductStocks"));'))
     require(len(counts) == 4 and all(type(n) is int and n >= 0 for n in counts))
-    payloads = decode(sql(db, 'SELECT coalesce(json_agg("SmtpPasswordProtected"),\'[]\') FROM public."CompanyEmailSettings" WHERE "SmtpPasswordProtected" IS NOT NULL AND "SmtpPasswordProtected"<>\'\';'))
+    payloads = decode(sql(db, 'SELECT coalesce(json_agg("SmtpPasswordProtected"),\'[]\') FROM (SELECT "SmtpPasswordProtected" FROM public."CompanyEmailSettings" WHERE "SmtpPasswordProtected" IS NOT NULL AND "SmtpPasswordProtected"<>\'\' LIMIT 129) p;'))
     require(len(payloads) <= 128)
+    certificates = decode(sql(db, '''SELECT coalesce(json_agg(p),'[]') FROM (SELECT
+        encode("EncryptedCertificateBytes",'base64') AS "Certificate",
+        encode("EncryptedPassword",'base64') AS "Password"
+        FROM public."CompanySriCertificates" ORDER BY "Id" LIMIT 129) p;'''))
+    require(isinstance(certificates, list) and len(certificates) <= 128)
     application = input("DataProtection ApplicationName confirmado por operador (public default HFPOS; no importar env): ").strip()
     require(0 < len(application) <= 200 and all(32 <= ord(c) < 127 for c in application))
     credentials = {}
@@ -385,12 +394,16 @@ def run_locked(args, core, target, old_source, source):
         db_identity()
         verify_reader(db, role)
     # The console proves both network families before it launches the actual backend child.
-    body = canonical({"Keys": keys, "ApplicationName": application, "Payloads": payloads, "Business": business, **credentials})
+    body = canonical({"Keys": keys, "ApplicationName": application, "Payloads": payloads,
+                      "Certificates": certificates, "Business": business, **credentials})
+    require(len(body) <= 16 * 1024 * 1024)
     proof = execute_app(name, container_id, image_id, saved["container_id"], labels, env, body, before_start)
     require(proof.get("businessRead") in (("PASS_EXISTING_SALE", "PENDING_PERMISSION") if business else ("EMPTY",)))
     require(proof == {"network": "PASS_IPV4_IPV6", "keyring": "PASS_BYTES", "backend": "PASS_HTTP",
         "platform": "PASS_HTTP_LOGIN_ME" if counts[0] else "EMPTY", "tenant": "PASS_HTTP_LOGIN_ME" if counts[1] else "EMPTY",
-        "protectedValue": "PASS_EXISTING_SMTP" if payloads else "NOT_PRESENT", "worker": "REGISTERED_DB_CLAIMS_DENIED",
+        "protectedValue": "PASS_EXISTING_CERTIFICATE" if certificates else ("PASS_EXISTING_SMTP" if payloads else "NOT_PRESENT"),
+        "smtp": "PASS_EXISTING_SMTP" if payloads else "NOT_PRESENT",
+        "certificate": "PASS_EXISTING_CERTIFICATE" if certificates else "NOT_PRESENT", "worker": "REGISTERED_DB_CLAIMS_DENIED",
         "authWrites": "NONE_ALLOWED", "businessRead": proof["businessRead"]})
     db_identity()
     verify_reader(db, role)
@@ -399,7 +412,7 @@ def run_locked(args, core, target, old_source, source):
     # Success-only cleanup: the exact new stopped app and its new role, never DB/keyring/core artifacts.
     docker("rm", container_id)
     sql(db, "DROP OWNED BY " + role + ";DROP ROLE " + role + ";")
-    complete = bool(all(counts) and payloads and proof["businessRead"] == "PASS_EXISTING_SALE")
+    complete = bool(all(counts) and (payloads or certificates) and proof["businessRead"] == "PASS_EXISTING_SALE")
     evidence = {"stage": "verified" if complete else "partial-human-gate", "source": source, "image": IMAGE,
         "revision": REVISION, "proof": proof, "fingerprint": "ALL_TABLES_SEQUENCES_UNCHANGED", "core": "PRESERVED",
         "tenants": "PRESENT" if counts[2] else "EMPTY", "history": "PRESENT" if counts[3] else "EMPTY",
