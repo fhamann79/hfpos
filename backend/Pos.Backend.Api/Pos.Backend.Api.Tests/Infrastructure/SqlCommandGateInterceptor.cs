@@ -17,15 +17,15 @@ internal sealed class AsyncTestSignal
 internal sealed class SqlCommandGateInterceptor : DbCommandInterceptor
 {
     private readonly Func<string, bool> _matches;
-    private readonly Func<CancellationToken, Task>? _beforeExecution;
-    private readonly Action? _afterExecution;
+    private readonly Func<DbCommand, CancellationToken, Task>? _beforeExecution;
+    private readonly Action<DbCommand>? _afterExecution;
     private int _beforeMatched;
     private int _afterMatched;
 
     private SqlCommandGateInterceptor(
         Func<string, bool> matches,
-        Func<CancellationToken, Task>? beforeExecution,
-        Action? afterExecution)
+        Func<DbCommand, CancellationToken, Task>? beforeExecution,
+        Action<DbCommand>? afterExecution)
     {
         _matches = matches;
         _beforeExecution = beforeExecution;
@@ -34,13 +34,23 @@ internal sealed class SqlCommandGateInterceptor : DbCommandInterceptor
 
     public static SqlCommandGateInterceptor WaitBefore(
         Func<string, bool> matches,
-        AsyncTestSignal signal)
-        => new(matches, signal.WaitAsync, afterExecution: null);
+        AsyncTestSignal signal,
+        Action<DbCommand>? onReached = null)
+        => new(matches, async (command, cancellationToken) =>
+        {
+            onReached?.Invoke(command);
+            await signal.WaitAsync(cancellationToken);
+        }, afterExecution: null);
 
     public static SqlCommandGateInterceptor SignalAfter(
         Func<string, bool> matches,
-        AsyncTestSignal signal)
-        => new(matches, beforeExecution: null, signal.Set);
+        AsyncTestSignal signal,
+        Action<DbCommand>? onExecuted = null)
+        => new(matches, beforeExecution: null, command =>
+        {
+            onExecuted?.Invoke(command);
+            signal.Set();
+        });
 
     public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
         DbCommand command,
@@ -52,7 +62,7 @@ internal sealed class SqlCommandGateInterceptor : DbCommandInterceptor
             && _matches(command.CommandText)
             && Interlocked.Exchange(ref _beforeMatched, 1) == 0)
         {
-            await _beforeExecution(cancellationToken);
+            await _beforeExecution(command, cancellationToken);
         }
 
         return result;
@@ -64,7 +74,7 @@ internal sealed class SqlCommandGateInterceptor : DbCommandInterceptor
     {
         if (_beforeExecution is not null && _matches(command.CommandText)
             && Interlocked.Exchange(ref _beforeMatched, 1) == 0)
-            await _beforeExecution(cancellationToken);
+            await _beforeExecution(command, cancellationToken);
         return result;
     }
 
@@ -73,7 +83,7 @@ internal sealed class SqlCommandGateInterceptor : DbCommandInterceptor
     {
         if (_afterExecution is not null && _matches(command.CommandText)
             && Interlocked.Exchange(ref _afterMatched, 1) == 0)
-            _afterExecution();
+            _afterExecution(command);
         return ValueTask.FromResult(result);
     }
 
@@ -87,7 +97,7 @@ internal sealed class SqlCommandGateInterceptor : DbCommandInterceptor
             && _matches(command.CommandText)
             && Interlocked.Exchange(ref _afterMatched, 1) == 0)
         {
-            _afterExecution();
+            _afterExecution(command);
         }
 
         return ValueTask.FromResult(result);
