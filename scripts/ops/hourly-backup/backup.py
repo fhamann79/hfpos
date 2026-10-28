@@ -16,6 +16,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import threading
 import time
 import uuid
 
@@ -46,6 +47,14 @@ def unique(items):
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def file_digest(path):
+    result = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(65536), b""):
+            result.update(chunk)
+    return result.hexdigest()
 
 
 def canonical(value):
@@ -243,9 +252,44 @@ class Runner:
         except subprocess.TimeoutExpired:
             raise BackupError("TIMEOUT") from None
 
-
-def verify_pullback(ciphertext, pulled, manifest, pulled_manifest):
-    require(ciphertext == pulled and manifest == pulled_manifest, "REMOTE_HASH")
+    def download(self, args, output, expected_size, expected_hash, expected_bytes=None):
+        require(type(expected_size) is int and 0 <= expected_size <= MAX_TOTAL, "REMOTE_LIMIT")
+        require(expected_bytes is None or len(expected_bytes) == expected_size)
+        remaining = self.deadline - time.monotonic()
+        require(remaining > 0, "TIMEOUT")
+        process = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.DEVNULL, env=ENV)
+        def expire():
+            try:
+                process.kill()
+            except OSError:
+                pass
+        watchdog = threading.Timer(remaining, expire)
+        watchdog.start()
+        try:
+            total, checksum = 0, hashlib.sha256()
+            with output.open("xb") as file:
+                while True:
+                    # Read at most ONE byte beyond the known local object, never the remote whole.
+                    chunk = process.stdout.read(min(65536, expected_size + 1 - total))
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    require(total <= expected_size, "REMOTE_OVERSIZE")
+                    if expected_bytes is not None:
+                        require(chunk == expected_bytes[total - len(chunk):total], "REMOTE_HASH")
+                    checksum.update(chunk)
+                    file.write(chunk)
+            require(process.wait(timeout=max(1, self.deadline - time.monotonic())) == 0, "COMMAND_FAILED")
+            require(total == expected_size and checksum.hexdigest() == expected_hash, "REMOTE_HASH")
+        except subprocess.TimeoutExpired:
+            raise BackupError("TIMEOUT") from None
+        finally:
+            watchdog.cancel()
+            if process.poll() is None:
+                expire()
+            process.wait(timeout=5)
+            process.stdout.close()
 
 
 def status(state, now=None):
@@ -262,9 +306,25 @@ def status(state, now=None):
 
 
 def backup(c, runner=None):
-    runner = runner or Runner()
-    base, state = Path(c["base"]), Path(c["state"])
+    state = secure_path(c["state"], True, True)
     ident = uuid.uuid4().hex
+    try:
+        # Entry failures and a busy maintenance lock must invalidate the last attempt too.
+        atomic_json(state / "last-run.json", {"status": "running", "recovery_id": ident})
+        return backup_attempt(c, runner or Runner(), ident)
+    except Exception as error:
+        try:
+            attempt = json.loads((state / "last-run.json").read_bytes(), object_pairs_hook=unique)
+            if attempt.get("status") != "failed" or attempt.get("recovery_id") != ident:
+                atomic_json(state / "last-run.json", {"status": "failed", "recovery_id": ident,
+                    "reason": str(error) if isinstance(error, BackupError) else "ENTRY_OR_CAPTURE_FAILURE"})
+        except Exception:
+            raise BackupError("STATE_RECORD_FAILED") from None
+        raise
+
+
+def backup_attempt(c, runner, ident):
+    base, state = Path(c["base"]), Path(c["state"])
     with maintenance_lock():
         work = base / ident
         work.mkdir(mode=0o700)
@@ -283,12 +343,11 @@ def backup(c, runner=None):
             return run("docker", "exec", "-i", c["postgres"], "timeout", "--kill-after=5", "55", "sh", "-s", data=script.encode())
         def sql_canonical(data):
             return b"\n".join(line for line in data.splitlines() if not line.startswith((b"\\restrict ", b"\\unrestrict ")))
-        def r2(*args):
-            return run("rclone", "--config", c["rclone_config"], "--bind", c["bind_ip"], "--s3-no-head",
-                       "--contimeout", "20s", "--timeout", "60s", "--retries", "2", *args)
+        def r2_args(*args):
+            return ["rclone", "--config", c["rclone_config"], "--bind", c["bind_ip"], "--s3-no-head",
+                    "--contimeout", "20s", "--timeout", "60s", "--retries", "2", *args]
         failed = True
         try:
-            atomic_json(state / "last-run.json", {"status": "running", "recovery_id": ident})
             require(shutil.disk_usage(base).free >= max(1024**3, int(pg('psql -X -w -Atq -c "SELECT pg_database_size(current_database());"')) * 5 + 512 * 1024**2), "CAPACITY")
             containers = json.loads(run("docker", "inspect", *c["containers"]))
             original_containers = stable_containers(containers)
@@ -346,14 +405,15 @@ for dump in "$1/db/"*.dump; do sh "$1/verify-postgres-backup.sh" "$dump"; done
             run("age", "-R", str(public), "-o", str(cipher), str(package))
             require(0 < cipher.stat().st_size <= MAX_TOTAL, "CIPHERTEXT_LIMIT")
             manifest = {"format_version": 2, "recovery_id": ident, "snapshot_epoch": epoch,
-                        "ciphertext_sha256": digest(cipher.read_bytes()), "ciphertext_bytes": cipher.stat().st_size}
+                        "ciphertext_sha256": file_digest(cipher), "ciphertext_bytes": cipher.stat().st_size}
             atomic_json(work / "manifest.json", manifest)
             remote = c["remote"] + "/" + ident
             for name in ("recovery.age", "manifest.json"):
-                r2("copyto", str(work / name), remote + "/" + name)
-                r2("copyto", remote + "/" + name, str(staging / name))
-            verify_pullback(cipher.read_bytes(), (staging / "recovery.age").read_bytes(),
-                            (work / "manifest.json").read_bytes(), (staging / "manifest.json").read_bytes())
+                runner.run(r2_args("copyto", str(work / name), remote + "/" + name))
+                metadata = canonical(manifest) if name == "manifest.json" else None
+                runner.download(r2_args("cat", remote + "/" + name), staging / name,
+                    len(metadata) if metadata is not None else manifest["ciphertext_bytes"],
+                    digest(metadata) if metadata is not None else manifest["ciphertext_sha256"], metadata)
             # Do not claim success until sensitive NEW staging and PG stage are withdrawn.
             run("docker", "exec", c["postgres"], "sh", "-c", 'test -d "$1" && test ! -L "$1" && test "$(stat -c %u "$1")" = 0 && rm -rf -- "$1"', "sh", pg_stage, limit=15)
             pg_owned = False

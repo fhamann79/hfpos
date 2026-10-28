@@ -120,6 +120,54 @@ exportacion futura autorizada permite producir transfer y snapshot en el mismo
 descifrado; no se instruye repetir el descifrado del core ya restaurado. No hay
 restore automatico de config ni evidencia de restore real de config en este PR.
 
+### Custodia del Directorio Offline Nuevo
+
+<!-- OFFLINE_NEW_DIRECTORY_CUSTODY_BEGIN -->
+Responsable: Fernando o el operador humano expresamente designado, nunca agentes.
+Este directorio sensible queda FUERA del cleanup del wrapper Windows: el CLI no
+lo retira al terminar y un fallo/export parcial tambien puede dejar plaintext.
+No existe un helper generico de retirada offline ni se debe invocar el cleanup
+del wrapper sobre otra ruta. Mantener agentes/automatizaciones cerrados durante
+TODO el siguiente procedimiento, tanto en exito como en fallo/interrupcion:
+
+1. Antes del CLI, elegir UNA ruta absoluta NUEVA y unica dentro del parent local
+   privado aprobado. Registrar la ruta exacta y parent canonicos; comprobar que
+   no existen ni directorio ni reparse point en ese destino. Nunca adoptar un
+   preexistente. El destino y su parent no pueden ser originals, backup/ciphertext,
+   identity, USB/custodia, core restaurado, keyring, bundle de codigo o transfer,
+   ni contenerlos. No copiar secretos al registro; solo identidad de ruta.
+2. Al recuperar control del CLI, incluso tras error/export parcial, comprobar si
+   esa ruta fue creada. Registrar dispositivo/inode con `os.lstat`, SID propietario
+   y ruta/parent exactos, sin leer contenido. Contrastar atribucion a ESTA corrida,
+   ausencia de reparse/symlinks en TODOS los ancestros y ACL privada del mismo SID
+   (solo operador/SYSTEM). Si no se puede atribuir su creacion, STOP y contencion
+   humana, sin borrar ni reabrir agentes. Si no se creo, confirmar ausencia.
+3. Usar config solo offline si esa ventana lo autoriza. Si hace falta custodiarla,
+   preparar una copia CIFRADA NUEVA mediante el procedimiento humano aprobado,
+   verificar integridad/autenticacion y su destino protegido antes de retirar el
+   plaintext. No sustituir ni borrar originales custodiados. Si la custodia o su
+   verificacion no concluye, mantener agentes cerrados y resolver humanamente.
+4. Antes de retirar el directorio NUEVO, volver a comprobar misma ruta/parent,
+   dispositivo/inode/SID y ACL, no reparse/symlink, y TODOS sus miembros. Solo se
+   admite un subconjunto de `host-config.tar`, `roles.sql`,
+   `schema-ownership-grants.sql`, `source.json`, archivos regulares sin hardlinks,
+   sin subdirectorios ni otros miembros. Un parcial puede carecer de source.json;
+   no inventar autenticacion o custodia por ello. Identidad cambiada, miembro
+   ajeno, link o permiso dudoso => STOP, sin borrado recursivo y contencion humana.
+5. SOLO tras esas comprobaciones y custodia/retirada autorizadas, el humano puede
+   retirar esa ruta literal NUEVA con `Remove-Item -LiteralPath $OfflineExact -Recurse`.
+   `$OfflineExact` es el valor absoluto registrado y revalidado, no un glob, parent
+   calculado ni otra raiz. No `-Force`, comodines, limpieza del parent, originales,
+   backups historicos, USB, keyring o core. Si la retirada falla/parcial, no reabrir
+   agentes: revalidar identidad y resolver/contener en la misma ventana humana.
+6. Comprobar AUSENCIA del directorio exacto y de reparse point, conservacion de
+   originales/ciphertext/custodia y retirada de cualquier otra copia plaintext
+   NUEVA autorizada. Registrar solo estado `OFFLINE_NEW_DIRECTORY_REMOVED` o
+   `OFFLINE_NOT_CREATED`; antes de reabrir agentes se requiere uno de esos estados
+   o una decision humana explicita de contencion con aislamiento verificado.
+   Sin prueba de retirada/contencion no declarar cleanup PASS ni borrado forense.
+<!-- OFFLINE_NEW_DIRECTORY_CUSTODY_END -->
+
 Exito/fallo retiran SOLO staging NUEVO de corrida, parent/owner/inode/realpaths y
 arbol sin links comprobados, y stage PG generado. Identidad/limpieza no demostrable
 => FAIL/HUMAN_CONTAINMENT_REQUIRED, nunca borrado general/PASS. Preservar historicos,
@@ -127,6 +175,17 @@ ciphertext/manifiesto y ultimo exito. Diagnosticos enumerados, sin stderr/Env/SQ
 No borrado forense ni memoria cero global; root sigue siendo frontera humana.
 Sin purga automatica. Check systemd cada10min: ultimo intento fallido o snapshot>=1h
 no acredita RPO. Aviso externo/ack/escalacion sigue pendiente de decision.
+El intento se registra ANTES del lock/mkdir: fallo de entrada o conflicto de lock
+marca last-run failed, conserva last-success y hace fallar el check aun si la copia
+anterior tiene menos de una hora. Solo se retira staging cuya creacion/identidad
+fue comprobada; directorios de entrada vacios o ajenos no se adoptan ni eliminan.
+Si STATE confiable no permite registrar el intento/fallo, el worker sale1 y falla
+el servicio systemd; nunca informa exito ni sobrescribe last-success. El operador
+debe atender ese error, no inferir exito del ultimo registro historico.
+Pullback usa `rclone cat`: lectura streaming de como maximo longitud local esperada
+mas UN byte por objeto; aborta/mata el lector al exceder, verifica longitud/hash
+del ciphertext y bytes exactos del manifest, sin descargar objetos arbitrarios a
+disco ni cargarlos completos en memoria. Timeout sigue siendo defensa adicional.
 
 ## Evidencia y Gate
 
