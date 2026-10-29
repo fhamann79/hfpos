@@ -492,5 +492,8 @@ class WorkerTests(unittest.TestCase):
             self.assertTrue(old.exists())
 
 
+# Run the operational-policy regressions in the same Linux/Windows CI entry point.
+OperationsTests = load(ROOT / "scripts/ci/test_hourly_backup_operations.py").OperationsTests
+
 if __name__ == "__main__":
     unittest.main()

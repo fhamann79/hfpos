@@ -17,7 +17,7 @@ def prepare(source, destination, unitdir):
     backup.require(destination.is_absolute() and not destination.exists() and not destination.is_symlink())
     backup.secure_path(destination.parent, True)
     backup.secure_path(unitdir, True)
-    names = {"hourly-backup/" + n: source / n for n in ("backup.py", "installed-provenance.json")}
+    names = {"hourly-backup/" + n: source / n for n in ("backup.py", "operations.py", "installed-provenance.json")}
     names.update({n: source.parent / n for n in (*backup.HELPER_HASHES, "supervised-archive.py", "supervised-operations.py")})
     files = {n: backup.secure_path(p).read_bytes() for n, p in names.items()}
     units = {n: backup.secure_path(source / n).read_bytes() for n in UNITS}
