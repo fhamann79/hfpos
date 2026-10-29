@@ -2,7 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { PagedResult } from '../../../core/models/paged-result.model';
 import { environment } from '../../../../environments/environment';
-import { CreateProductRequest, Product, UpdateProductRequest } from '../models/product.model';
+import { CreateProductRequest, Product, ProductEditorSave, ProductEditorState, UpdateProductRequest } from '../models/product.model';
 
 export type ProductStatusFilter = 'active' | 'inactive' | 'all';
 
@@ -51,6 +51,16 @@ export class ProductService {
 
   getById(id: number) {
     return this.http.get<Product>(`${this.baseUrl}/${id}`);
+  }
+
+  editor(id: number) {
+    return this.http.get<ProductEditorState>(`${this.baseUrl}/editor/${id}`);
+  }
+
+  saveEditor(id: number | null, payload: ProductEditorSave) {
+    return id === null
+      ? this.http.post<ProductEditorState>(`${this.baseUrl}/editor`, payload)
+      : this.http.put<ProductEditorState>(`${this.baseUrl}/editor/${id}`, payload);
   }
 
   create(payload: CreateProductRequest) {

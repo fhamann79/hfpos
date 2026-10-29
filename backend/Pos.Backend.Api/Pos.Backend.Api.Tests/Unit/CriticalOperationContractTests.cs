@@ -44,6 +44,9 @@ public sealed class CriticalOperationContractTests
 
     [Theory]
     [InlineData(typeof(PurchaseReceiptsController), "Create", AppPermissions.PurchasesWrite)]
+    [InlineData(typeof(ProductEditorController), "Create", AppPermissions.CatalogProductsWrite)]
+    [InlineData(typeof(ProductEditorController), "Update", AppPermissions.CatalogProductsWrite)]
+    [InlineData(typeof(ProductEditorController), "Get", AppPermissions.CatalogProductsRead)]
     [InlineData(typeof(InventoryController), "RegisterEntry", AppPermissions.InventoryWrite)]
     [InlineData(typeof(InventoryController), "RegisterExit", AppPermissions.InventoryWrite)]
     [InlineData(typeof(InventoryController), "RegisterAdjustment", AppPermissions.InventoryWrite)]

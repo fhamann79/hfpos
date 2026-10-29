@@ -5,8 +5,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
-import { InputTextModule } from 'primeng/inputtext';
-import { SelectModule } from 'primeng/select';
 import { MessageModule } from 'primeng/message';
 import { AuthStore } from '../../../core/stores/auth.store';
 import { PermissionService } from '../../../core/services/permission.service';
@@ -14,10 +12,11 @@ import { PERMISSIONS } from '../../../core/constants/permissions';
 import { resolveHttpErrorMessage } from '../../../core/utils/http-error-normalizer';
 import { DeclareProductFiscalClassification, ProductFiscalState } from '../models/fiscal-profile.model';
 import { FiscalProfileService } from '../services/fiscal-profile.service';
+import { ProductFiscalFields, classificationComplete } from './product-fiscal-fields';
 
 @Component({
   selector: 'app-product-fiscal-dialog', standalone: true,
-  imports: [CommonModule, FormsModule, ButtonModule, DialogModule, InputTextModule, SelectModule, MessageModule],
+  imports: [CommonModule, FormsModule, ButtonModule, DialogModule, ProductFiscalFields, MessageModule],
   styleUrl: './fiscal-profile-panel.scss',
   template: `
     <p-dialog header="Clasificación fiscal del producto" [visible]="visible" (visibleChange)="close($event)"
@@ -32,23 +31,8 @@ import { FiscalProfileService } from '../services/fiscal-profile.service';
         @if (error) { <p-message severity="error" [text]="error" /> }
         @if (current === false) { <p-message severity="warn" text="Clasificación ausente o desactualizada. Confirma los hechos del producto antes de emitir." /> }
         <form #form="ngForm" (ngSubmit)="save()"><fieldset [disabled]="loading || saving">
-          <div class="profile-grid">
-            <label>Naturaleza<p-select name="kind" [options]="kinds" optionLabel="label" optionValue="value" [(ngModel)]="draft.kind" placeholder="Seleccionar" appendTo="body" required /></label>
-            <label>Actividad<p-select name="activity" [options]="activities" optionLabel="label" optionValue="value" [(ngModel)]="draft.activity" placeholder="Seleccionar" appendTo="body" required /></label>
-            <label class="wide">Fundamento implementado<p-select name="basis" [options]="bases" optionLabel="label" optionValue="value" [(ngModel)]="draft.taxBasis" placeholder="Seleccionar" appendTo="body" required /></label>
-            <label class="wide">Referencia normativa concreta<input pInputText name="legal" [(ngModel)]="draft.legalReference" maxlength="500" required /></label>
-            <label class="wide">Referencia documental del producto<input pInputText name="evidence" [(ngModel)]="draft.evidenceReference" maxlength="500" required /></label>
-            @if (draft.taxBasis === 1) {
-              <label class="wide">Procesamiento compatible<p-select name="processing" [options]="processing" optionLabel="label" optionValue="value" [(ngModel)]="draft.foodProcessing" placeholder="Seleccionar" appendTo="body" required /></label>
-            }
-            @if (draft.taxBasis === 3) {
-              <label class="wide">Material del listado oficial<p-select name="material" [options]="materials" optionLabel="label" optionValue="value" [(ngModel)]="draft.sriMaterialCode" placeholder="Seleccionar" appendTo="body" required /></label>
-            }
-          </div>
-          @if (draft.taxBasis === 1) { <label class="check"><input name="food" type="checkbox" [(ngModel)]="draft.naturalAgriculturalFoodConfirmed" /> Confirmo que es un alimento agrícola en estado natural, sin mezcla, preparación ni transformación incompatible (LRTI 55.1).</label> }
-          @if (draft.taxBasis === 3) { <label class="check"><input name="construction" type="checkbox" [(ngModel)]="draft.constructionMaterialConfirmed" /> Confirmo transferencia local y coincidencia exacta con las características del material de la resolución 24-13. No aplica a toda ferretería ni a contratos de construcción.</label> }
-          <label class="check"><input name="confirmed" type="checkbox" [(ngModel)]="draft.confirmed" /> Confirmo los hechos y su evidencia. La tarifa efectiva se resolverá según el perfil vigente de la empresa.</label>
-          <footer><p-button type="button" label="Cancelar" severity="secondary" [disabled]="saving" (onClick)="close(false)" /><p-button type="submit" label="Confirmar clasificación" icon="pi pi-check" [loading]="saving" [disabled]="form.invalid || !draft.confirmed || loading || !canSave()" /></footer>
+          <app-product-fiscal-fields [draft]="draft" />
+          <footer><p-button type="button" label="Cancelar" severity="secondary" [disabled]="saving" (onClick)="close(false)" /><p-button type="submit" label="Confirmar clasificación" icon="pi pi-check" [loading]="saving" [disabled]="!complete() || loading || !canSave()" /></footer>
         </fieldset></form>
       </section>
     </p-dialog>`,
@@ -66,15 +50,7 @@ export class ProductFiscalDialog implements OnChanges {
   loading = false; saving = false; error = ''; current: boolean | null = null;
   identity: ProductFiscalState | null = null;
   draft = this.empty();
-  readonly kinds = [{ label: 'Bien', value: 0 }, { label: 'Servicio', value: 1 }];
-  readonly activities = [{ label: 'Comercio elegible RIMPE', value: 0 }, { label: 'Servicio elegible RIMPE', value: 1 }, { label: 'Actividad excluida RIMPE', value: 2 }];
-  readonly bases = [{ label: 'Operación gravada ordinaria (15% nominal)', value: 0 }, { label: 'Alimento agrícola natural: LRTI 55.1 (0% nominal)', value: 1 }, { label: 'Material de construcción listado: resolución 24-13 (5% nominal)', value: 3 }];
-  readonly processing = [{label:'Ninguno',value:0},{label:'Refrigerado',value:1},{label:'Congelado',value:2},{label:'Cortado',value:4},{label:'Empacado',value:8},{label:'Combinación de estos procesos únicamente',value:15}];
-  readonly materials = [
-    ['F010101','Varilla AS42, medidas del listado'],['F010201','Arcilla'],['F010202','Arena'],['F010203','Cal'],['F010204','Caliza'],['F010205','Pétreos'],
-    ['F010301','Hormigón premezclado'],['F010401','Derivados del cemento'],['F010402','Residuos del cemento'],['F010501','Chatarra ferrosa'],['F010601','Morteros'],
-    ['F010701','Clinker'],['F010702','Puzolana'],['F010703','Yeso'],['F010801','Adoquines'],['F010802','Bloques'],['F010803','Ladrillos'],['F010804','Prefabricados de hormigón'],
-  ].map(([value,label]) => ({value,label:`${value} - ${label}`}));
+  complete() { return classificationComplete(this.draft); }
   private scope() { return `${this.auth.companyId()}:${this.auth.establishmentId()}:${this.auth.emissionPointId()}:${this.auth.token()}`; }
   canSave() { return this.permission.hasPermission(PERMISSIONS.fiscalSettingsWrite) && this.loadedScope === this.scope(); }
   ngOnChanges() {
