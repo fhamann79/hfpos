@@ -258,6 +258,35 @@ class Runner:
         except subprocess.TimeoutExpired:
             raise BackupError("TIMEOUT") from None
 
+    def read_bounded(self, args, maximum, limit=30):
+        """Read at most maximum+1 bytes from untrusted command output, then kill."""
+        require(type(maximum) is int and 0 < maximum <= MAX_TOTAL, "COMMAND_LIMIT")
+        remaining = min(self.deadline - time.monotonic(), limit)
+        require(remaining > 0, "TIMEOUT")
+        process = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.DEVNULL, env=ENV)
+        def expire():
+            try:
+                process.kill()
+            except OSError:
+                pass
+        watchdog = threading.Timer(remaining, expire)
+        watchdog.start()
+        try:
+            data = process.stdout.read(maximum + 1)
+            require(len(data) <= maximum, "COMMAND_LIMIT")
+            require(process.wait(timeout=max(1, min(remaining, self.deadline - time.monotonic()))) == 0,
+                    "COMMAND_FAILED")
+            return data
+        except subprocess.TimeoutExpired:
+            raise BackupError("TIMEOUT") from None
+        finally:
+            watchdog.cancel()
+            if process.poll() is None:
+                expire()
+            process.wait(timeout=5)
+            process.stdout.close()
+
     def download(self, args, output, expected_size, expected_hash, expected_bytes=None):
         require(type(expected_size) is int and 0 <= expected_size <= MAX_TOTAL, "REMOTE_LIMIT")
         require(expected_bytes is None or len(expected_bytes) == expected_size)

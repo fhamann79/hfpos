@@ -240,7 +240,9 @@ SOLO despues de una captura exitosa; el checker de 10min nunca borra copias.
   purgar; no se borran copias para ocultar un problema de capacidad.
 - Toma el MISMO lock de mantenimiento. Lista solamente el UUID remoto concreto,
   exige dos objetos exactos y autentica sus bytes mediante pull-back acotado antes
-  de crear el journal y antes de reanudar un parcial. Nunca `purge`, `delete` de
+  de crear el journal y antes de reanudar un parcial. El listing se lee en streaming
+  con limite 16KiB+1, deadline y retirada del proceso al exceder; nunca se captura
+  entero antes de comprobar el limite. Nunca `purge`, `delete` de
   prefijo, `rmdirs` ni borrado recursivo local. Remoto exclusivamente escrito por
   este worker bajo el protocolo de lock; R2/rclone no hacen una transaccion global
   con otro escritor externo. Si hay otro escritor o se cambia lifecycle/object
@@ -252,7 +254,9 @@ SOLO despues de una captura exitosa; el checker de 10min nunca borra copias.
   miembro nuevo detiene el conjunto. No se borra evidencia para fingir exito.
   Local solo unlink de los tres nombres y rmdir del UUID vacio. Journal completo
   pasa a `state/retention-history/AAAA-MM/`; no se aplica retencion a esta evidencia.
-- Maximo ocho conjuntos por ejecucion; limite de 8192 entradas locales y 256
+- Escaneo de metadatos acotados; hash completo solo del ultimo exito y de los
+  conjuntos seleccionados (incluidos journals a reanudar). Maximo ocho conjuntos
+  por ejecucion; limite de 8192 entradas locales y 256
   journals pendientes. Exceder limite => atencion humana/capacidad, sin borrar por
   globs. El mismo timeout de servicio limita backup+retencion, sin retrasar el
   checker. Si falta tiempo, los conjuntos restantes quedan para otro ciclo.
@@ -318,13 +322,21 @@ El RTO4h es una meta de recuperacion completa, no una medicion obtenida de estos
 checks. El coordinador coteja los criterios pendientes contra evidencias existentes
 antes de decidir cierre de #159/#133; no abre auditoria general ni activa DEV-532.
 
-## Evidencia y Gate
+## Evidencia Historica y Gate Ya Completado de PR #165
+
+**HISTORICO: no es un nuevo gate de esta extension.** Los contratos/limites,
+exclusion, separacion de configuracion y estados RC6 de PR #165 ya fueron
+aceptados e integrados, y la recuperacion real posterior fue reportada PASS en
+los enlaces anteriores. Se conserva este texto por su alcance original; no
+solicitar otra aceptacion de PR #165 ni repetir su ensayo. El unico pre-merge
+pendiente de este cambio es la retencion descrita en la seccion anterior.
+
 
 Runners Containers existentes: legacy/auto-v1/v2 negativos, age tardio/timeout,
 lock/cleanup/fallos con dobles sinteticos y E2E real dump PG + age + config/keyring
 offline + nuevo restore + RC6 exacto. Mocks no acreditan R2 ni recuperacion real.
 
-**VALIDACION HUMANA PRE-MERGE REQUERIDA**, tras CI y review: aceptar contratos,
+El gate historico exigia, tras CI y review: aceptar contratos,
 limites, exclusion compartida, separacion config/transfer e identidad/estados
 RC6 de [la guia app](human-restored-application-verification.md).
 Aceptar procedimiento no ejecuta R4. Futura ventana real requiere autorizacion

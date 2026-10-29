@@ -40,6 +40,10 @@ class Remote:
                 raise worker.BackupError("SYNTHETIC_LOST_RESPONSE")
             return b""
         raise AssertionError(args)
+    def read_bounded(self, args, maximum, limit=30):
+        raw = self.run(args, limit=limit)
+        worker.require(len(raw) <= maximum, "COMMAND_LIMIT")
+        return raw
     def download(self, args, output, size, checksum, expected_bytes=None):
         self.calls.append(args)
         data = self.objects[args[-1]]
@@ -146,12 +150,16 @@ class OperationsTests(unittest.TestCase):
                     m = json.loads((work / "manifest.json").read_bytes()); m["format_version"] = 1
                     worker.atomic_json(work / "manifest.json", m)
                 elif mutation == "hash":
-                    self.write(work / "recovery.age", b"corrupt")
+                    self.write(work / "recovery.age", b"x" * len(original["recovery.age"]))
                 elif mutation == "hardlink":
                     os.link(work / "recovery.age", self.root / "outside")
                 else:
                     (work / "recovery.age").unlink(); (work / "recovery.age").symlink_to(self.base / LATEST / "recovery.age")
-                self.assertEqual([], self.prune()["selected"])
+                if mutation == "hash":
+                    with self.assertRaisesRegex(worker.BackupError, "RETENTION_HASH"):
+                        self.prune()
+                else:
+                    self.assertEqual([], self.prune()["selected"])
                 self.assertTrue(work.exists())
                 if mutation == "hardlink": (self.root / "outside").unlink()
                 for p in work.iterdir(): p.unlink()
@@ -213,6 +221,43 @@ class OperationsTests(unittest.TestCase):
     def test_shared_maintenance_lock_excludes_retention(self):
         with worker.maintenance_lock(), self.assertRaisesRegex(worker.BackupError, "MAINTENANCE_BUSY"):
             self.prune(True)
+    def test_listing_output_is_bounded_before_capture_and_excess_reader_is_killed(self):
+        class Stream:
+            def __init__(self):
+                self.reads, self.closed = [], False
+            def read(self, size):
+                self.reads.append(size)
+                return b"x" * size  # Untrusted process could otherwise emit a gigabyte.
+            def close(self): self.closed = True
+        class Process:
+            def __init__(self):
+                self.stdout, self.killed = Stream(), False
+            def poll(self): return -9 if self.killed else None
+            def kill(self): self.killed = True
+            def wait(self, timeout): return -9 if self.killed else 0
+        process = Process()
+        with patch.object(worker.subprocess, "Popen", return_value=process), \
+                self.assertRaisesRegex(worker.BackupError, "COMMAND_LIMIT"):
+            worker.Runner().read_bounded(["synthetic-rclone", "lsjson"], 16384)
+        self.assertEqual([16385], process.stdout.reads)
+        self.assertTrue(process.killed and process.stdout.closed)
+    def test_large_expired_and_pending_backlog_hashes_only_latest_and_eight_selected(self):
+        pending = self.state / "retention-pending"
+        pending.mkdir(mode=0o700)
+        for i in range(40):
+            ident = format(i + 1, "032x")
+            self.add(ident, NOW - (40 + i) * 86400)
+            if i >= 20:
+                record = ops.local_record(worker, self.c, ident, NOW, full=False)
+                worker.atomic_json(pending / (ident + ".json"), record)
+        original_digest = worker.file_digest
+        with patch.object(worker, "file_digest", wraps=original_digest) as checksum:
+            result = self.prune()
+        self.assertEqual(41, result["eligible"])
+        self.assertEqual(8, len(result["selected"]))
+        hashed = [call.args[0].parent.name for call in checksum.call_args_list]
+        self.assertCountEqual([LATEST, *result["selected"]], hashed)
+        self.assertFalse(any("deletefile" in call for call in self.remote.calls))
     def test_batch_is_bounded(self):
         for i in range(12): self.add(format(i + 1, "032x"), NOW - (40 + i) * 86400)
         result = self.prune()

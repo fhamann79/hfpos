@@ -81,14 +81,14 @@ def manifest(w, value, ident, now, completed=False):
     return value
 
 
-def local_record(w, c, ident, now):
+def local_record(w, c, ident, now, full=True):
     work = w.secure_path(Path(c["base"]) / ident, True, True)
     w.require({p.name for p in work.iterdir()} == FILES, "RETENTION_MEMBERS")
     m = manifest(w, document(w, work / "manifest.json"), ident, now)
     verified = manifest(w, document(w, work / "INTEGRITY_OFFSITE_VERIFIED.json"), ident, now, True)
     w.require({k: v for k, v in verified.items() if k != "completed_utc"} == m, "RETENTION_EVIDENCE")
     cipher = w.secure_path(work / "recovery.age", private=True)
-    w.require(cipher.stat().st_size == m["ciphertext_bytes"] and w.file_digest(cipher) == m["ciphertext_sha256"], "RETENTION_HASH")
+    w.require(cipher.stat().st_size == m["ciphertext_bytes"] and (not full or w.file_digest(cipher) == m["ciphertext_sha256"]), "RETENTION_HASH")
     info = work.stat()
     return {"version": 1, "id": ident, "base": c["base"], "remote": c["remote"],
             "inode": [info.st_dev, info.st_ino], "manifest": m, "verified": verified}
@@ -102,7 +102,7 @@ def remote_args(c, *args):
 def validate_remote(w, c, record, runner, pending=False):
     """Every present object is reauthenticated, including after a partial deletion."""
     root = c["remote"] + "/" + record["id"]
-    raw = runner.run(remote_args(c, "lsjson", root, "--recursive"), limit=30)
+    raw = runner.read_bounded(remote_args(c, "lsjson", root, "--recursive"), 16384, limit=30)
     w.require(len(raw) <= 16384, "RETENTION_REMOTE_LIMIT")
     listing = json.loads(raw, object_pairs_hook=w.unique)
     w.require(isinstance(listing, list) and len(listing) <= 2, "RETENTION_REMOTE_MEMBERS")
@@ -122,7 +122,7 @@ def validate_remote(w, c, record, runner, pending=False):
     return set(objects)
 
 
-def validate_pending(w, c, record, now):
+def validate_pending(w, c, record, now, full=False):
     w.require(set(record) == {"version", "id", "base", "remote", "inode", "manifest", "verified"} and
               type(record["version"]) is int and record["version"] == 1 and ID.fullmatch(record["id"]) and record["base"] == c["base"] and
               record["remote"] == c["remote"] and isinstance(record["inode"], list) and len(record["inode"]) == 2 and
@@ -140,7 +140,7 @@ def validate_pending(w, c, record, now):
             w.secure_path(p, private=True)
             expected = m if p.name == "manifest.json" else verified
             if p.name == "recovery.age":
-                w.require(p.stat().st_size == m["ciphertext_bytes"] and w.file_digest(p) == m["ciphertext_sha256"], "RETENTION_HASH")
+                w.require(p.stat().st_size == m["ciphertext_bytes"] and (not full or w.file_digest(p) == m["ciphertext_sha256"]), "RETENTION_HASH")
             else:
                 w.require(document(w, p) == expected, "RETENTION_HASH")
     return work
@@ -193,7 +193,7 @@ def retention(w, c, apply=False, runner=None, now=None):
                 header = manifest(w, document(w, path / "manifest.json"), path.name, now)
                 if header["snapshot_epoch"] >= now - c["retention"]["days"] * 86400:
                     continue
-                record = local_record(w, c, path.name, now)
+                record = local_record(w, c, path.name, now, full=False)
             except (OSError, ValueError, KeyError, TypeError, w.BackupError):
                 skipped += 1
                 continue
@@ -207,6 +207,11 @@ def retention(w, c, apply=False, runner=None, now=None):
         for record, resume in selected:
             ident = record["id"]
             w.require(ident != protected and expired(record, now, c["retention"]["days"]), "RETENTION_PROTECTED")
+            # Full ciphertext reads happen only after selecting the bounded batch.
+            if resume:
+                validate_pending(w, c, record, now, full=True)
+            else:
+                w.require(local_record(w, c, ident, now) == record, "RETENTION_CHANGED")
             remote = validate_remote(w, c, record, runner, pending=resume)
             result["selected"].append(ident)
             if not apply:
@@ -220,7 +225,7 @@ def retention(w, c, apply=False, runner=None, now=None):
                 if name in remote:
                     runner.run(remote_args(c, "deletefile", c["remote"] + "/" + ident + "/" + name), limit=30)
             w.require(not validate_remote(w, c, record, runner, pending=True), "RETENTION_REMOTE_REMAINS")
-            work = validate_pending(w, c, record, now)
+            work = validate_pending(w, c, record, now, full=True)
             if work.exists():
                 for name in ("recovery.age", "manifest.json", "INTEGRITY_OFFSITE_VERIFIED.json"):
                     p = work / name
