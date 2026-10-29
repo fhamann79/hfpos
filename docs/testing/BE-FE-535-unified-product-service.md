@@ -32,7 +32,17 @@ Riesgo: **R3**. Estado: **PENDIENTE**, sin merge ni despliegue.
 - `npm run build`: correcto, incluidas tres comprobaciones de environments/bundle.
 - `npm audit --omit=dev --audit-level=high`: cero vulnerabilidades runtime. npm ci aviso de dependencias de desarrollo/deprecacion existentes; no se actualizan paquetes.
 - `git diff --check`: correcto.
-- Docker engine local no disponible. No se inicio infraestructura ni se ejecuto PostgreSQL local. La nueva suite `ProductEditorTests` compila y queda **pendiente de ejecucion en CI PostgreSQL**, no se presenta como pasada localmente.
+- Al congelar `7c62c3f5843603b53a6fbfb58ec15219b183f979`, Docker engine local no estaba disponible; aquella evidencia no incluia ejecucion PostgreSQL local. Ver correccion y ejecucion posterior abajo.
+
+## Correccion del fallo CI en PR167
+
+- CI `40935068268`, job `123663326446`, sobre `7c62c3f`: 847/848 PASS; fallo unico al completar el alta basica por `PRODUCT_EDITOR_STATE_CONFLICT`. Frontend y Containers `40935068155` verdes en ese SHA, no se presentan como CI del siguiente HEAD.
+- Causa real, no fixture: la huella usaba JSON de decimales con escala CLR. EF reload puede conservar la representacion anterior de un valor numericamente igual, mientras un contexto nuevo lee la escala PostgreSQL (`numeric(18,2)` / `numeric(18,4)`). POST y GET entregaban valores iguales pero JSON/huellas distintos sin ninguna escritura intermedia.
+- Correccion limitada a la huella: representacion decimal `G29` con `InvariantCulture`, sin redondear ni perder precision. Se conservan todos los campos, revisiones, procedencia de costo, comparacion optimista y locks. No se agregan reintentos ni se debilitan asserts/politicas de stock.
+- Reproduccion antes del fix: caso original y dos regresiones POST->GET (basico/completo) fallaron; estas ultimas fallaron especificamente al comparar las huellas, despues de comprobar igualdad numerica y diferencia JSON.
+- Tras el fix: `dotnet test backend/Pos.Backend.Api/Pos.Backend.Api.Tests/Pos.Backend.Api.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~ProductEditorTests" --disable-build-servers -p:UseSharedCompilation=false -v quiet -clp:ErrorsOnly --logger "console;verbosity=normal"`: **31/31 PASS**. Compila API/tests Release. Incluye cinco casos nuevos: escala POST/GET y siguiente PUT para basico/completo, mas rechazo de huella stale por cambios reales de precio (0.01), costo (0.0001) y minimo (0.0001). Tambien pasan stock, rollback, carreras, permisos/sesion y compra/cancelacion existentes.
+- Ejecucion aislada: `ASPNETCORE_ENVIRONMENT=Testing`, `SeedDemoData=false`, `HF_POS_TEST_CONNECTION_STRING` apunta exclusivamente a PostgreSQL 16 efimero propio, DB `hfpos_test_pr167_corrector`, puerto loopback dinamico. Sin UserSecrets, DB persistente/shared, datos reales, certificados ni SRI. No se modifican archivos de environment ni recursos del entorno del coordinador.
+- `git diff --check`: correcto. Sin cambios frontend, framework, contrato publico, modelo ni migraciones. El CI obligatorio y delta-review deben cubrir el nuevo HEAD publicado; esta evidencia local no los sustituye.
 
 ## Cobertura PostgreSQL para CI
 
@@ -42,14 +52,14 @@ Crear servicio y vender ticket/factura sin segunda edicion ni efecto fisico; gua
 
 **VALIDACION HUMANA PRE-MERGE REQUERIDA. Resultado PENDIENTE.** Usar solo entorno de validacion autorizado y datos sinteticos, nunca produccion/SRI/certificados reales.
 
-1. Crear servicio de copias: completar basicos, comprobar propuesta sin inventario, aportar declaracion/evidencia sintetica explicita, guardar completo una vez; vender ticket y preparar factura de prueba por flujo vigente. Verificar ausencia de stock ficticio y segunda edicion.
-2. Crear bien fisico; comprobar pendiente de existencias y comportamiento habitual tras stock de prueba autorizado.
-3. Guardar basico con codigos vacios, cambiar pestanas, completar Fiscal en el mismo ID. Verificar que Servicio con excepcion fisica de alta basica permite desmarcar inventario al completar sin otra operacion.
-4. Con dos sesiones sinteticas editar nombre/precio/costo/IVA. Forzar conflicto; comparar sin perder borrador, preservar cambio remoto por defecto, seleccionar explicitamente diferencias, reconfirmar fiscal y guardar. No debe haber sobreescritura silenciosa.
-5. Probar error de validacion, respuesta tardia, cierre/reapertura del mismo ID, cambio de contexto/token, doble clic y respuesta incierta. Reconciliar alta incierta mediante busqueda/seleccion sin POST repetido.
-6. Con catalog-write sin fiscal-write guardar basico y comprobar rechazo de declaracion via API; comprobar bloqueo al desactivar inventario con stock distinto de cero. Verificar desktop/mobile y legibilidad del comparador.
-7. Costo inicial 2, compra sintetica a 4, guardar solo Fiscal y cancelar compra: restaura 2. Repetir reafirmando/editando costo manualmente: conserva el costo manual explicitado.
+Una sola sesion de formulario, acotada por Fernando. El coordinador prepara el entorno sintetico y el acceso necesarios antes de la sesion.
+
+1. En Catalogo, abrir el alta e ingresar un servicio de prueba (por ejemplo, COPIA SINTETICA), categoria, precio y costo. Dejar codigo interno y codigo de barras vacios. Pulsar **Guardar basico**.
+2. Sin salir del mismo formulario ni crear otro registro, ir a **Fiscal**, elegir **Servicio** y completar/confirmar la declaracion con hechos y evidencia sinteticos proporcionados para la prueba. En **Inventario**, comprobar que queda sin control de inventario.
+3. Pulsar **Guardar completo**. Comprobar que se conserva el mismo registro y los datos ingresados, sin duplicados, stock ficticio ni otra pantalla para terminar el servicio; los pendientes deben ser claros y coherentes con lo guardado.
+
+No se pide repetir compras/cancelaciones, bienes/stock, permisos negativos, aislamiento, carreras/comparador, latencias, doble clic ni respuestas inciertas como pruebas humanas. Esos casos corresponden a las pruebas automatizadas PostgreSQL/UI y al CI obligatorio del HEAD final. La unica aceptacion humana pendiente es el recorrido de servicio anterior; no se inventa su resultado.
 
 ## Revision y entrega
 
-Los tres MAJOR comunicados por Linnaeus (recuperacion del conflicto, resincronizacion tras basico y procedencia del costo al guardar fiscal) fueron corregidos en lote con regresiones. Esto **no** equivale a revision aprobada ni a BLOCKER/MAJOR=0. Delta review del HEAD publicado, CI obligatorio exacto y aceptacion humana siguen pendientes y a cargo del coordinador. No cerrar issues ni hacer merge. Rollback de codigo: revertir el PR; no deshacer datos/historial generado mediante scripts ni asumir autorizacion de despliegue.
+Linnaeus cerro M1/M2/M3 sobre `7c62c3f5843603b53a6fbfb58ec15219b183f979` con BLOCKER=0 / MAJOR=0; la revision externa del mismo SHA no reporto findings. Esa evidencia se conserva para el alcance no modificado, pero no se afirma que cubra automaticamente esta correccion. Delta-review proporcional del cambio y su impacto, CI obligatorio del nuevo HEAD y aceptacion humana siguen pendientes y a cargo del coordinador. No cerrar issues ni hacer merge. Rollback de codigo: revertir el PR; no deshacer datos/historial generado mediante scripts ni asumir autorizacion de despliegue.

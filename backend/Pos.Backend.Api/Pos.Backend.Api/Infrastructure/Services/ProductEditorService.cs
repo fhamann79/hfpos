@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -154,8 +155,13 @@ public sealed class ProductEditorService(PosDbContext db, IOperationalContextAcc
     }
 
     private static string Token(Product p, ProductFiscalClassification? c) => Convert.ToHexString(SHA256.HashData(
-        JsonSerializer.SerializeToUtf8Bytes(new { Product = Map(p), p.CompanyId, p.FiscalRevision,
+        JsonSerializer.SerializeToUtf8Bytes(new { Product = new { p.Id, p.TracksInventory, p.CategoryId, p.Name,
+            p.Barcode, p.InternalCode, Price = DecimalToken(p.Price), Cost = DecimalToken(p.Cost),
+            MinimumStock = DecimalToken(p.MinimumStock), p.VatCategory, p.IsActive }, p.CompanyId, p.FiscalRevision,
             p.LastCostRevision, p.CurrentCostEventId, ClassificationRevision = c?.Revision ?? 0 })));
+
+    // Equal decimals must hash equally even when EF reload retains a different scale than a fresh PG read.
+    private static string DecimalToken(decimal value) => value.ToString("G29", CultureInfo.InvariantCulture);
 
     private static ProductDto Map(Product p) => new() { Id = p.Id, CategoryId = p.CategoryId, Name = p.Name,
         Barcode = p.Barcode, InternalCode = p.InternalCode, Price = p.Price, Cost = p.Cost,

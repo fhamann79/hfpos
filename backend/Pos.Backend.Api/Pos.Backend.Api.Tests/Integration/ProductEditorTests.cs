@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -135,6 +136,50 @@ public sealed class ProductEditorTests(PostgresDatabaseFixture database) : IAsyn
         Assert.Equal(saved.Product.Id, complete.Product.Id); Assert.True(complete.Product.TracksInventory);
         Assert.Equal(new[] { "INSUFFICIENT_STOCK" }, complete.SalePending);
         Assert.Equal(2, await completing.Products.CountAsync());
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Save_response_token_matches_fresh_snapshot_and_supports_followup_save(bool complete)
+    {
+        var t = await Tenant(); var request = await New(t, complete);
+        request.Price = 1m; request.Cost = 2m; request.MinimumStock = 0m;
+        ProductEditorStateDto saved;
+        await using (var create = database.CreateDbContext()) saved = await Editor(create, t).SaveAsync(null, request);
+        await using (var read = database.CreateDbContext())
+        {
+            var current = await Editor(read, t).GetAsync(saved.Product.Id);
+            Assert.Equal(saved.Product.Price, current.Product.Price);
+            Assert.Equal(saved.Product.Cost, current.Product.Cost);
+            Assert.Equal(saved.Product.MinimumStock, current.Product.MinimumStock);
+            // EF reload can retain equal CLR decimals with a different scale from a fresh PG read.
+            Assert.NotEqual(JsonSerializer.Serialize(saved.Product.Price), JsonSerializer.Serialize(current.Product.Price));
+            Assert.NotEqual(JsonSerializer.Serialize(saved.Product.Cost), JsonSerializer.Serialize(current.Product.Cost));
+            Assert.NotEqual(JsonSerializer.Serialize(saved.Product.MinimumStock), JsonSerializer.Serialize(current.Product.MinimumStock));
+            Assert.Equal(saved.StateToken, current.StateToken);
+        }
+        await using var update = database.CreateDbContext();
+        var result = await Editor(update, t).SaveAsync(saved.Product.Id, Edit(saved));
+        Assert.Equal(saved.StateToken, result.StateToken);
+        await using var verify = database.CreateDbContext();
+        Assert.Equal(result.StateToken, (await Editor(verify, t).GetAsync(saved.Product.Id)).StateToken);
+        Assert.Single(await verify.ProductCostEvents.Where(e => e.ProductId == saved.Product.Id).ToListAsync());
+    }
+
+    [Theory]
+    [InlineData("Price")] [InlineData("Cost")] [InlineData("MinimumStock")]
+    public async Task Decimal_value_changes_still_reject_previous_snapshot(string field)
+    {
+        var t = await Tenant(); var id = t.Products[0].Id; ProductEditorStateDto state;
+        await using (var read = database.CreateDbContext()) state = await Editor(read, t).GetAsync(id);
+        var changed = Edit(state);
+        if (field == "Price") changed.Price += .01m;
+        else if (field == "Cost") changed.Cost += .0001m;
+        else changed.MinimumStock += .0001m;
+        await using (var first = database.CreateDbContext()) await Editor(first, t).SaveAsync(id, changed);
+        await using var stale = database.CreateDbContext();
+        Assert.Equal("PRODUCT_EDITOR_STATE_CONFLICT", (await Assert.ThrowsAsync<OperationalContextException>(
+            () => Editor(stale, t).SaveAsync(id, Edit(state)))).ErrorCode);
     }
 
     [Theory]
