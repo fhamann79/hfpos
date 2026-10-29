@@ -1,4 +1,21 @@
 import { ProductVatCategory } from '../../../core/utils/vat-category';
+import { DeclareProductFiscalClassification, ProductFiscalClassification } from '../../fiscal-settings/models/fiscal-profile.model';
+
+export interface ProductEditorSave extends CreateProductRequest {
+  setManualCost: boolean;
+  expectedStateToken: string | null;
+  classification: DeclareProductFiscalClassification | null;
+}
+
+export interface ProductEditorState {
+  product: Product;
+  stateToken: string;
+  productRevision: number;
+  classificationRevision: number;
+  classification: ProductFiscalClassification | null;
+  canDisableInventory: boolean;
+  salePending: string[];
+}
 
 export interface Product {
   tracksInventory?: boolean;

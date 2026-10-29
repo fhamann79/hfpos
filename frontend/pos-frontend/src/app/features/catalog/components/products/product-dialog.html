@@ -1,160 +1,100 @@
-<p-dialog
-  [visible]="visible"
-  [modal]="true"
-  [closable]="true"
-  [draggable]="false"
-  [style]="{ width: '34rem', maxWidth: '95vw' }"
-  [header]="isEditMode ? 'Editar producto' : 'Nuevo producto'"
-  styleClass="catalog-dialog"
-  (onHide)="hide()"
->
-  <form class="dialog-form" [formGroup]="form" (ngSubmit)="save()">
-    <div class="form-grid">
-      <div class="field field-wide">
-        <label for="product-name">Nombre</label>
-        <input id="product-name" type="text" pInputText formControlName="name" />
-        @if (form.controls.name.touched && form.controls.name.invalid) {
-          <small class="p-error">El nombre es obligatorio.</small>
-        }
-      </div>
-
-      <div class="field field-wide">
-        <label for="product-category">Categoría</label>
-        <p-select
-          inputId="product-category"
-          [options]="categories()"
-          optionLabel="name"
-          optionValue="id"
-          placeholder="Selecciona una categoría"
-          formControlName="categoryId"
-        ></p-select>
-        @if (form.controls.categoryId.touched && form.controls.categoryId.invalid) {
-          <small class="p-error">La categoría es obligatoria.</small>
-        }
-      </div>
-    </div>
-
-    <section class="identity-card" aria-label="Identificación del producto">
-      <div class="identity-heading">
-        <span class="identity-icon">
-          <i class="pi pi-barcode"></i>
-        </span>
-        <div>
-          <h3>Identificación</h3>
-          <p>Códigos opcionales para venta, búsqueda e inventario.</p>
-        </div>
-      </div>
-
-      <div class="form-grid">
-        <div class="field">
-          <label for="product-barcode">Código de barras</label>
-          <input
-            id="product-barcode"
-            type="text"
-            pInputText
-            formControlName="barcode"
-            placeholder="Código de barras del fabricante"
-            autocomplete="off"
-          />
-          <small class="field-help">Comercial o del fabricante. Conserva ceros iniciales.</small>
-        </div>
-
-        <div class="field">
-          <label for="product-internal-code">Código interno</label>
-          <input
-            id="product-internal-code"
-            type="text"
-            pInputText
-            formControlName="internalCode"
-            placeholder="Código propio de la empresa"
-            autocomplete="off"
-          />
-          <small class="field-help">Propio para catálogo, productos genéricos o preparados.</small>
-        </div>
-      </div>
-    </section>
-
-    <div class="form-grid">
-      <div class="field">
-        <label for="product-price">Precio</label>
-        <p-inputnumber
-          inputId="product-price"
-          formControlName="price"
-          mode="currency"
-          currency="USD"
-          locale="en-US"
-          [min]="0"
-        ></p-inputnumber>
-        @if (form.controls.price.touched && form.controls.price.invalid) {
-          <small class="p-error">El precio debe ser mayor o igual a 0.</small>
-        }
-      </div>
-
-      <div class="field">
-        <label for="product-cost">Costo</label>
-        <p-inputnumber
-          inputId="product-cost"
-          formControlName="cost"
-          mode="currency"
-          currency="USD"
-          locale="en-US"
-          [min]="0"
-          [minFractionDigits]="2"
-          [maxFractionDigits]="4"
-        ></p-inputnumber>
-        @if (form.controls.cost.touched && form.controls.cost.invalid) {
-          <small class="p-error">El costo debe ser mayor o igual a 0.</small>
-        }
-        <small class="field-help">Costo referencial para valorizar inventario.</small>
-      </div>
-
-      <div class="field">
-        <label for="product-minimum-stock">Stock minimo</label>
-        <p-inputnumber
-          inputId="product-minimum-stock"
-          formControlName="minimumStock"
-          [min]="0"
-          [minFractionDigits]="0"
-          [maxFractionDigits]="4"
-        ></p-inputnumber>
-        @if (form.controls.minimumStock.touched && form.controls.minimumStock.invalid) {
-          <small class="p-error">El stock minimo debe ser mayor o igual a 0.</small>
-        }
-        <small class="field-help">Usa 0 para desactivar la alerta de stock bajo.</small>
-      </div>
-
-      <div class="field">
-        <label for="product-vat-category">Categoría IVA</label>
-        <p-select
-          inputId="product-vat-category"
-          [options]="vatCategoryOptions"
-          optionLabel="label"
-          optionValue="value"
-          formControlName="vatCategory"
-        ></p-select>
-        <small class="field-help">Clasificación fiscal usada al vender el producto.</small>
-      </div>
-    </div>
-
-    @if (isEditMode) {
-      <div class="field">
-        <label for="product-tracks-inventory">Controla inventario</label>
-        <label class="app-boolean-switch inventory-switch">
-          <input id="product-tracks-inventory" type="checkbox" formControlName="tracksInventory"
-            aria-label="Controla inventario" />
-          <span class="app-boolean-switch__track" aria-hidden="true">
-            <span class="app-boolean-switch__thumb"></span>
-          </span>
-          <span class="app-boolean-switch__state" aria-hidden="true">
-            {{ form.controls.tracksInventory.value ? 'Sí' : 'No' }}
-          </span>
-        </label>
-      </div>
-    }
-
+<p-dialog [visible]="visible" [modal]="true" [closable]="!saving" [closeOnEscape]="!saving" [draggable]="false"
+  [style]="{ width: '48rem', maxWidth: '95vw' }" [header]="isEditMode ? 'Producto o servicio' : 'Nuevo producto o servicio'"
+  styleClass="catalog-dialog" (onHide)="hide()">
+  @if (loading) { <p-message severity="info" text="Cargando datos actuales..." /> }
+  @if (error) { <p-message severity="error" [text]="error" /> }
+  @if (success) { <p-message severity="success" [text]="success" /> }
+  @if ((conflict || uncertain) && !scopeChanged) {
     <div class="dialog-actions">
-      <p-button label="Cancelar" severity="secondary" [outlined]="true" (onClick)="hide()"></p-button>
-      <p-button label="Guardar" icon="pi pi-check" type="submit"></p-button>
+      @if (isEditMode) { <p-button label="Comparar estado actual" icon="pi pi-sync" [loading]="comparisonLoading" (onClick)="reviewCurrent()" /> }
+      @else { <p-button label="Buscar alta en catalogo" icon="pi pi-search" [loading]="comparisonLoading" (onClick)="findUncertainCreation()" /> }
+    </div>
+    @for (candidate of candidates; track candidate.id) {
+      <p-button [label]="'#' + candidate.id + ' ' + candidate.name" icon="pi pi-eye" severity="secondary"
+        [disabled]="comparisonLoading" (onClick)="reviewCurrent(candidate.id)" />
+    }
+  }
+  @if (comparison; as latest) {
+    <section class="reconciliation" aria-label="Comparar con estado actual">
+      <strong>Registro actual #{{ latest.product.id }}</strong>
+      <div class="comparison-scroll"><table>
+        <thead><tr><th>Campo</th><th>Mi borrador</th><th>Actual</th></tr></thead>
+        <tbody>@for (row of reconciliation; track row.field) {
+          <tr><th scope="row">{{ row.label }}</th>
+            <td><label><input type="radio" [name]="'reconcile-' + row.field" [checked]="row.choice === 'draft'"
+              [disabled]="scopeChanged" (change)="row.choice = 'draft'" /> {{ row.draft }}</label></td>
+            <td><label><input type="radio" [name]="'reconcile-' + row.field" [checked]="row.choice === 'current'"
+              [disabled]="scopeChanged" (change)="row.choice = 'current'" /> {{ row.current }}</label></td>
+          </tr>
+        }</tbody>
+      </table></div>
+      <div class="fiscal-comparison">
+        <label><input type="radio" name="reconcile-fiscal" [checked]="fiscalChoice === 'draft'" [disabled]="scopeChanged" (change)="fiscalChoice = 'draft'" /> Conservar declaracion del borrador</label>
+        <p>{{ draft.legalReference || 'Sin referencia normativa' }} / {{ draft.evidenceReference || 'Sin evidencia' }}</p>
+        <label><input type="radio" name="reconcile-fiscal" [checked]="fiscalChoice === 'current'" [disabled]="scopeChanged" (change)="fiscalChoice = 'current'" /> Usar declaracion actual #{{ latest.classificationRevision }}</label>
+        <p>{{ latest.classification?.legalReference || 'Sin referencia normativa' }} / {{ latest.classification?.evidenceReference || 'Sin evidencia' }}</p>
+      </div>
+      <p-button label="Aplicar seleccion al borrador" icon="pi pi-check" [disabled]="scopeChanged || comparisonLoading" (onClick)="reconcile()" />
+    </section>
+  }
+  @if (reviewRequired) {
+    <p-message severity="warn" text="El producto cambio desde que se cargo la tabla. Se muestran los datos actuales." />
+    <label class="field-inline"><input type="checkbox" [checked]="reviewed" (change)="reviewed = !reviewed" /> Revise los datos actuales antes de guardar.</label>
+  }
+  <form class="dialog-form" [formGroup]="form" (ngSubmit)="save(false)">
+    <fieldset [disabled]="loading || saving || scopeChanged || conflict || uncertain"
+      [attr.inert]="loading || saving || scopeChanged || conflict || uncertain ? '' : null">
+      <p-tabs [(value)]="section">
+        <p-tablist><p-tab value="basic">Datos y precio</p-tab><p-tab value="fiscal">Fiscal</p-tab><p-tab value="inventory">Inventario</p-tab></p-tablist>
+        <p-tabpanels>
+          <p-tabpanel value="basic">
+            <div class="form-grid">
+              <div class="field field-wide"><label for="product-name">Nombre *</label><input id="product-name" pInputText formControlName="name" maxlength="150" />
+                @if (form.controls.name.touched && form.controls.name.invalid) { <small class="p-error">Nombre obligatorio, maximo 150 caracteres.</small> }
+              </div>
+              <div class="field"><label for="product-kind">Naturaleza fiscal</label><p-select inputId="product-kind" [options]="kinds" optionLabel="label" optionValue="value" formControlName="kind" placeholder="Pendiente" /></div>
+              <div class="field"><label for="product-category">Categoria *</label><p-select inputId="product-category" [options]="availableCategories()" optionLabel="name" optionValue="id" formControlName="categoryId" placeholder="Seleccionar" />
+                @if (form.controls.categoryId.touched && form.controls.categoryId.invalid) { <small class="p-error">Categoria obligatoria.</small> }
+              </div>
+              <div class="field"><label for="product-barcode">Codigo de barras</label><input id="product-barcode" pInputText formControlName="barcode" maxlength="100" autocomplete="off" /></div>
+              <div class="field"><label for="product-internal-code">Codigo interno</label><input id="product-internal-code" pInputText formControlName="internalCode" maxlength="100" autocomplete="off" /></div>
+              <div class="field"><label for="product-price">Precio *</label><p-inputnumber inputId="product-price" formControlName="price" mode="currency" currency="USD" locale="en-US" [min]="0" /></div>
+              <div class="field"><label for="product-cost">Costo *</label><p-inputnumber inputId="product-cost" formControlName="cost" mode="currency" currency="USD" locale="en-US" [min]="0" [minFractionDigits]="2" [maxFractionDigits]="4" /></div>
+            </div>
+          </p-tabpanel>
+          <p-tabpanel value="fiscal">
+            <div class="field"><label for="product-vat-category">Categoria IVA nominal *</label><p-select inputId="product-vat-category" [options]="vatCategoryOptions" optionLabel="label" optionValue="value" formControlName="vatCategory" /></div>
+            @if (canClassify()) {
+              <app-product-fiscal-fields [draft]="draft" [showKind]="false" />
+            } @else { <p-message severity="warn" text="La declaracion fiscal requiere permisos de lectura y escritura fiscal. Puedes guardar los datos basicos." /> }
+          </p-tabpanel>
+          <p-tabpanel value="inventory">
+            <div class="field">
+              <label for="product-tracks-inventory">Controla inventario</label>
+              <label class="app-boolean-switch inventory-switch">
+                <input id="product-tracks-inventory" type="checkbox" formControlName="tracksInventory" aria-label="Controla inventario" />
+                <span class="app-boolean-switch__track" aria-hidden="true"><span class="app-boolean-switch__thumb"></span></span>
+                <span class="app-boolean-switch__state" aria-hidden="true">{{ form.controls.tracksInventory.value ? 'Si' : 'No' }}</span>
+              </label>
+              @if (form.controls.kind.value === 1) { <p-message severity="info" text="Servicio: se propone sin inventario. Mantener inventario fisico es una excepcion explicita." /> }
+              @if (!form.controls.tracksInventory.value && !canDisableInventory()) { <p-message severity="warn" text="Sin inventario requiere declarar Servicio vigente antes de guardar." /> }
+            </div>
+            <div class="field"><label for="product-minimum-stock">Stock minimo *</label><p-inputnumber inputId="product-minimum-stock" formControlName="minimumStock" [min]="0" [minFractionDigits]="0" [maxFractionDigits]="4" /></div>
+          </p-tabpanel>
+        </p-tabpanels>
+      </p-tabs>
+    </fieldset>
+    <section class="operation-state" aria-label="Pendientes operativos" aria-live="polite">
+      <strong>Pendientes para vender y facturar</strong>
+      @if (!isEditMode || form.dirty) { <p>Estado del borrador pendiente de validacion al guardar.</p> }
+      @else if (pending.length) { <ul>@for (code of pending; track code) { <li>{{ pendingLabel(code) }}</li> }</ul> }
+      @else { <p>Sin pendientes de catalogo detectados.</p> }
+      <small>Ticket y factura usan validacion fiscal. Caja, cantidad, comprador y requisitos de emision se verifican al cobrar.</small>
+    </section>
+    <div class="dialog-actions">
+      <p-button [label]="success ? 'Cerrar' : 'Cancelar'" severity="secondary" [outlined]="true" [disabled]="saving" (onClick)="hide()" />
+      <p-button label="Guardar basico" icon="pi pi-save" type="submit" [disabled]="!canSave()" [loading]="saving" />
+      @if (canClassify()) { <p-button label="Guardar completo" icon="pi pi-check" [disabled]="!canSave()" (onClick)="save(true)" /> }
     </div>
   </form>
 </p-dialog>
