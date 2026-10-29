@@ -1,8 +1,13 @@
 # DEV-531: Respaldo Online y Recuperacion Compatible
 
 Preparacion R3, no instalacion ni validacion real. Refs #159/#133. NO MERGE por
-implementer. RPO **una hora** ya aprobado. RTO, retencion/capacidad, avisos externos,
-responsable y periodicidad de ensayo siguen pendientes; no asumir 4h ni 7/4/3.
+implementer. RPO **una hora** ya aprobado. RTO **4 horas como objetivo** y retencion
+**30 dias** aprobados el 29-Oct-2026 en
+[#159](https://github.com/fhamann79/hfpos/issues/159#issuecomment-6498542802).
+Por instruccion posterior de Fernando, **correo diferido**: no dispone de servicio
+SMTP y decide continuar con avisos locales de systemd. No se implementa correo,
+configuracion SMTP ni otro canal externo; no presentar avisos externos como PASS.
+El RTO completo no esta medido. No se introduce la propuesta historica 7/4/3.
 DEV-531 sigue abierto; DEV-532/535 no activos.
 
 ## Procedencia
@@ -173,8 +178,11 @@ arbol sin links comprobados, y stage PG generado. Identidad/limpieza no demostra
 => FAIL/HUMAN_CONTAINMENT_REQUIRED, nunca borrado general/PASS. Preservar historicos,
 ciphertext/manifiesto y ultimo exito. Diagnosticos enumerados, sin stderr/Env/SQL.
 No borrado forense ni memoria cero global; root sigue siendo frontera humana.
-Sin purga automatica. Check systemd cada10min: ultimo intento fallido o snapshot>=1h
-no acredita RPO. Aviso externo/ack/escalacion sigue pendiente de decision.
+La configuracion anterior conserva su comportamiento sin purga. La extension
+opcional siguiente agrega retencion; no queda activada por merge. Check systemd
+cada10min: ultimo intento fallido o snapshot>=1h no acredita RPO. Se conservan
+avisos locales de systemd; Fernando difirio expresamente el correo por falta de
+SMTP. No se inventa una ruta externa de escalacion ni aviso fuera del servidor.
 El intento se registra ANTES del lock/mkdir: fallo de entrada o conflicto de lock
 marca last-run failed, conserva last-success y hace fallar el check aun si la copia
 anterior tiene menos de una hora. Solo se retira staging cuya creacion/identidad
@@ -187,13 +195,148 @@ mas UN byte por objeto; aborta/mata el lector al exceder, verifica longitud/hash
 del ciphertext y bytes exactos del manifest, sin descargar objetos arbitrarios a
 disco ni cargarlos completos en memoria. Timeout sigue siendo defensa adicional.
 
-## Evidencia y Gate
+
+## Retencion — Extension Acotada de #159
+
+Riesgo R3: borrado privilegiado de copias propias. Correo fuera de este cambio.
+No cambia DB, ventas, impuestos, SRI, keyring ni formato del paquete. La evidencia
+humana de recuperacion RC6 y del primer ciclo programado auto-v2 se conserva en
+[#133](https://github.com/fhamann79/hfpos/issues/133#issuecomment-6479950108) y
+[#159](https://github.com/fhamann79/hfpos/issues/159#issuecomment-6481374533).
+No repetir restore por esta extension. **No declarar DEV-531 cerrado por merge.**
+
+La configuracion version2 anterior sigue admitida sin cambios. El operador puede
+anadir SOLO esta clave opcional:
+
+```json
+{
+  "retention": {"days": 30, "apply": false}
+}
+```
+
+El primer valor `apply` es **false**: despues del backup se comprueba y muestra la
+seleccion, sin borrar. `--retention-preview` hace la misma seleccion/verificacion
+sin captura nueva ni cambio del historial. Hace lecturas R2 y temporales cifrados
+propios retirados al salir; no descifra nada. `--retention-apply` exige ademas que
+`retention.apply` sea true. Solo el humano activa ese valor despues de revisar la
+seleccion y el alcance local/remoto. Con true, el backup normal aplica retencion
+SOLO despues de una captura exitosa; el checker de 10min nunca borra copias.
+
+### Seleccion y Fallos Parciales
+
+- Base auto-v2 dedicada, root0700, igual a la configuracion aprobada. Nunca adoptar
+  el directorio automatico auto-v1, sus conjuntos, respaldos predeploy/primera
+  factura, restauraciones, otro bucket/prefijo ni originales offline. La retencion
+  puede dejar copias durante mas de 30 dias ante fallo o ambiguedad: 30 dias es el
+  umbral aprobado, no una promesa de borrar a un segundo exacto.
+- Solo directorios UUIDhex32 con exactamente `recovery.age`, `manifest.json` y
+  `INTEGRITY_OFFSITE_VERIFIED.json`, regulares root0600 y sin hardlinks/symlinks.
+  Metadatos version2 concordantes, tamanos/hash del ciphertext comprobados y fechas
+  de snapshot Y verificacion offsite anteriores a 30 dias completos. Un miembro adicional (por ejemplo un marcador
+  humano `PRESERVE`) excluye el conjunto. Formatos viejos, ambiguos o ajenos se
+  preservan y cuentan como `preserved_unknown`; requieren criterio humano aparte.
+- Exige un ultimo exito fresco coherente con su conjunto local completo. El
+  ultimo exito nunca se selecciona, aun si venciera. Una averia de backup impide
+  purgar; no se borran copias para ocultar un problema de capacidad.
+- Toma el MISMO lock de mantenimiento. Lista solamente el UUID remoto concreto,
+  exige dos objetos exactos y autentica sus bytes mediante pull-back acotado antes
+  de crear el journal y antes de reanudar un parcial. El listing se lee en streaming
+  con limite 16KiB+1, deadline y retirada del proceso al exceder; nunca se captura
+  entero antes de comprobar el limite. Nunca `purge`, `delete` de
+  prefijo, `rmdirs` ni borrado recursivo local. Remoto exclusivamente escrito por
+  este worker bajo el protocolo de lock; R2/rclone no hacen una transaccion global
+  con otro escritor externo. Si hay otro escritor o se cambia lifecycle/object
+  lock del bucket, mantener apply=false y reconciliar antes de habilitarlo.
+- Antes del primer `deletefile` literal conserva un journal root0600 en
+  `state/retention-pending/<id>.json`, ligado a base, remoto, inode y metadata.
+  Cada reintento solo acepta objetos/archivos restantes autenticados; una respuesta
+  de delete perdida permite continuar sin adoptar nuevos bytes. Un cambio o
+  miembro nuevo detiene el conjunto. No se borra evidencia para fingir exito.
+  Local solo unlink de los tres nombres y rmdir del UUID vacio. Journal completo
+  pasa a `state/retention-history/AAAA-MM/`; no se aplica retencion a esta evidencia.
+- Escaneo de metadatos acotados; hash completo solo del ultimo exito y de los
+  conjuntos seleccionados (incluidos journals a reanudar). Maximo ocho conjuntos
+  por ejecucion; limite de 8192 entradas locales y 256
+  journals pendientes. Exceder limite => atencion humana/capacidad, sin borrar por
+  globs. El mismo timeout de servicio limita backup+retencion, sin retrasar el
+  checker. Si falta tiempo, los conjuntos restantes quedan para otro ciclo.
+- Antes de aplicar registra `last-retention.json` running; si un timeout/muerte
+  lo deja asi durante 20min, el checker alerta RETENTION_OVERRUN. Un fallo
+  capturado registra failed y el checker alerta; no altera
+  `last-success.json` ni convierte una captura sana en un falso fallo de captura.
+  La siguiente retencion exitosa retira ese estado. Observar el resultado propio
+  de mantenimiento en systemd. `--status` sigue siendo consulta sin efectos y
+  ahora incluye failed/overrun del mantenimiento, sin cambiar el ultimo respaldo
+  verificado. El checker existente conserva `--status`, sin nuevo canal externo.
+
+### Supervision Local
+
+El servicio checker conserva `--status` cada10min. Este comando no envia mensajes,
+no inicia respaldos ni borra copias. Registra alerta local y salida1 si el ultimo
+intento de backup fallo, el snapshot tiene edad >=1h, o retencion esta failed o
+running fuera de 20min. Durante retencion running dentro de esa ventana con
+backup fresco se mantiene el estado sano; no se confunde un mantenimiento en
+curso con un fallo. La misma ventana y deadline abarcan backup+retencion.
+
+Fernando es el responsable inicial. **No hay aviso fuera del VPS**: si nadie
+consulta systemd o el servidor cae, esta supervision local no lo notifica por
+correo ni constituye un monitor externo independiente. El correo fue diferido
+expresamente por Fernando, no esta bloqueado por una tarea SMTP pendiente ni se
+incluye en este PR. El cierre acotado debe registrar esa limitacion aceptada,
+sin afirmar cumplido el criterio historico de notificaciones externas de #159.
+
+### Entrega y Validacion Humana Minima
+
+**VALIDACION HUMANA PRE-MERGE REQUERIDA** por AGENTS.md: aceptar esta seleccion
+restrictiva, preservacion de historicos/ultimo exito, recuperacion de parciales y
+limitacion de avisos exclusivamente locales. El gate consiste en revisar el procedimiento/diff y la
+seleccion sintetica probada, **sin ejecutar R4 ni borrar reales antes del merge**.
+La aprobacion de la politica ya esta registrada; no solicitarla de nuevo.
+
+Tras CI y review, preparar una sola ventana humana acotada, con rollback a los
+bytes/config/units actuales. Copiar codigo revisado a un destino root privado
+NUEVO, conservar `source-hashes.json`, y reconciliar el instalador/units existentes
+mediante snapshot; no sobrescribir ciegamente la instalacion en uso. El instalador
+prepara tambien `operations.py`. Pausar solo timers no detiene oneshots activos:
+esperar su fin y conservar ultimo exito/RPO, como en el relevo anterior. No tocar
+web/backend/PG, las fuentes de capture, los antiguos respaldos ni sus historicos.
+
+Pasos de aceptacion operacional, una vez instalado/configurado humanamente:
+
+1. Con apply=false, ejecutar el worker nuevo con `--retention-preview`. Revisar
+   `selected`, `preserved_unknown` y base/prefijo exactos. Si no hay vencidos,
+   selected=[] es correcto; no inventar copias reales antiguas ni esperar30dias
+   para repetir una prueba que ya tiene regresiones sinteticas.
+2. Solo si la seleccion y las exclusiones coinciden, el humano cambia apply=true
+   y activa las units revisadas. Observar UN ciclo programado y su checker local;
+   no emitir ventas ni restaurar/descifrar otra vez para comprobar mantenimiento.
+3. Ante error de seleccion, deshabilitar apply sin borrar journals/evidencia,
+   conservando respaldo operativo y avisos locales. Si rollback de codigo,
+   conservar estado/copias y
+   restaurar las units/config previas sin reiniciar HF One. No confundir rollback
+   del worker con restauracion de DB ni garantizar recuperar copias ya vencidas
+   y retiradas bajo politica aprobada.
+
+La retencion no queda acreditada como activa hasta esa evidencia humana.
+El RTO4h es una meta de recuperacion completa, no una medicion obtenida de estos
+checks. El coordinador coteja los criterios pendientes contra evidencias existentes
+antes de decidir cierre de #159/#133; no abre auditoria general ni activa DEV-532.
+
+## Evidencia Historica y Gate Ya Completado de PR #165
+
+**HISTORICO: no es un nuevo gate de esta extension.** Los contratos/limites,
+exclusion, separacion de configuracion y estados RC6 de PR #165 ya fueron
+aceptados e integrados, y la recuperacion real posterior fue reportada PASS en
+los enlaces anteriores. Se conserva este texto por su alcance original; no
+solicitar otra aceptacion de PR #165 ni repetir su ensayo. El unico pre-merge
+pendiente de este cambio es la retencion descrita en la seccion anterior.
+
 
 Runners Containers existentes: legacy/auto-v1/v2 negativos, age tardio/timeout,
 lock/cleanup/fallos con dobles sinteticos y E2E real dump PG + age + config/keyring
 offline + nuevo restore + RC6 exacto. Mocks no acreditan R2 ni recuperacion real.
 
-**VALIDACION HUMANA PRE-MERGE REQUERIDA**, tras CI y review: aceptar contratos,
+El gate historico exigia, tras CI y review: aceptar contratos,
 limites, exclusion compartida, separacion config/transfer e identidad/estados
 RC6 de [la guia app](human-restored-application-verification.md).
 Aceptar procedimiento no ejecuta R4. Futura ventana real requiere autorizacion

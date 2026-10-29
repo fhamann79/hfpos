@@ -18,6 +18,7 @@ import sys
 import tarfile
 import threading
 import time
+from types import SimpleNamespace
 import uuid
 
 HERE = Path(__file__).resolve().parent
@@ -82,8 +83,13 @@ def load_config(path):
     data = secure_path(path, private=True).read_bytes()
     require(0 < len(data) <= 16384)
     c = json.loads(data, object_pairs_hook=unique)
-    require(set(c) == {"version", "base", "state", "keys", "sources", "recipient", "rclone_config",
-                       "bind_ip", "remote", "postgres", "containers", "maintenance_lock"})
+    required = {"version", "base", "state", "keys", "sources", "recipient", "rclone_config",
+                "bind_ip", "remote", "postgres", "containers", "maintenance_lock"}
+    require(required <= set(c) <= required | {"retention"})
+    if "retention" in c:
+        require(isinstance(c["retention"], dict) and set(c["retention"]) == {"days", "apply"} and
+                type(c["retention"]["days"]) is int and c["retention"]["days"] == 30 and
+                type(c["retention"]["apply"]) is bool, "RETENTION_CONFIG")
     require(type(c["version"]) is int and c["version"] == 2)
     require(c["maintenance_lock"] == str(LOCK), "LOCK_PROTOCOL")
     require(ipaddress.ip_address(c["bind_ip"]).is_global, "BIND_IP")
@@ -252,6 +258,35 @@ class Runner:
         except subprocess.TimeoutExpired:
             raise BackupError("TIMEOUT") from None
 
+    def read_bounded(self, args, maximum, limit=30):
+        """Read at most maximum+1 bytes from untrusted command output, then kill."""
+        require(type(maximum) is int and 0 < maximum <= MAX_TOTAL, "COMMAND_LIMIT")
+        remaining = min(self.deadline - time.monotonic(), limit)
+        require(remaining > 0, "TIMEOUT")
+        process = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.DEVNULL, env=ENV)
+        def expire():
+            try:
+                process.kill()
+            except OSError:
+                pass
+        watchdog = threading.Timer(remaining, expire)
+        watchdog.start()
+        try:
+            data = process.stdout.read(maximum + 1)
+            require(len(data) <= maximum, "COMMAND_LIMIT")
+            require(process.wait(timeout=max(1, min(remaining, self.deadline - time.monotonic()))) == 0,
+                    "COMMAND_FAILED")
+            return data
+        except subprocess.TimeoutExpired:
+            raise BackupError("TIMEOUT") from None
+        finally:
+            watchdog.cancel()
+            if process.poll() is None:
+                expire()
+            process.wait(timeout=5)
+            process.stdout.close()
+
     def download(self, args, output, expected_size, expected_hash, expected_bytes=None):
         require(type(expected_size) is int and 0 <= expected_size <= MAX_TOTAL, "REMOTE_LIMIT")
         require(expected_bytes is None or len(expected_bytes) == expected_size)
@@ -292,15 +327,25 @@ class Runner:
             process.stdout.close()
 
 
-def status(state, now=None):
+def status(state, now=None, include_retention=True):
     try:
         success = json.loads((state / "last-success.json").read_bytes(), object_pairs_hook=unique)
         attempt = json.loads((state / "last-run.json").read_bytes(), object_pairs_hook=unique)
         age = (time.time() if now is None else now) - success["snapshot_epoch"]
         require(0 <= age < 3600 and attempt["status"] == "success", "STALE_OR_FAILED")
+        retention = state / "last-retention.json"
+        if include_retention and (retention.exists() or retention.is_symlink()):
+            result = json.loads(secure_path(retention, private=True).read_bytes(), object_pairs_hook=unique)
+            if result["status"] == "running":
+                started = result["started_epoch"]
+                require(type(started) in (int, float), "RETENTION_STATE")
+                elapsed = (time.time() if now is None else now) - started
+                require(0 <= elapsed < 1200, "RETENTION_OVERRUN")
+            else:
+                require(result["status"] == "success", "RETENTION_FAILED")
         print("BACKUP_VERIFIED_UNDER_ONE_HOUR")
         return 0
-    except (OSError, ValueError, KeyError, BackupError):
+    except (OSError, ValueError, KeyError, TypeError, BackupError):
         print("BACKUP_ALERT_HUMAN_ACTION_REQUIRED")
         return 1
 
@@ -439,20 +484,41 @@ for dump in "$1/db/"*.dump; do sh "$1/verify-postgres-backup.sh" "$dump"; done
                 atomic_json(state / "last-run.json", {"status": "failed", "recovery_id": ident,
                                                       "staging": "REMOVED" if cleanup_ok else "HUMAN_CONTAINMENT_REQUIRED"})
             require(cleanup_ok, "CLEANUP_HUMAN_REQUIRED")
-    return status(state)
+    return status(state, include_retention=False)
+
+
+def operations():
+    path = secure_path(HERE / "operations.py")
+    spec = importlib.util.spec_from_file_location("backup_operations", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module, SimpleNamespace(**globals())
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
-    parser.add_argument("--status", action="store_true")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--status", action="store_true")
+    action.add_argument("--retention-preview", action="store_true")
+    action.add_argument("--retention-apply", action="store_true")
     args = parser.parse_args()
     c = None
     try:
         require(os.name == "posix" and os.geteuid() == 0, "ROOT_REQUIRED")
         os.umask(0o077)
         c = load_config(args.config)
-        return status(Path(c["state"])) if args.status else backup(c)
+        if args.status:
+            return status(Path(c["state"]))  # Read-only, including local retention failure/overrun.
+        if args.retention_preview or args.retention_apply:
+            ops, worker = operations()
+            return ops.maintain(worker, c, apply=args.retention_apply)
+        runner = Runner()
+        result = backup(c, runner)
+        if "retention" in c:
+            ops, worker = operations()
+            result = max(result, ops.maintain(worker, c, apply=c["retention"]["apply"], runner=runner))
+        return result
     except Exception as error:
         if c is not None and isinstance(error, BackupError) and str(error) == "MAINTENANCE_BUSY":
             try:
