@@ -104,6 +104,7 @@ export class ProductDialog implements OnChanges {
   get isEditMode() { return this.activeId !== null; }
   canClassify() { return this.permission.hasPermission(PERMISSIONS.fiscalSettingsWrite)
     && this.permission.hasPermission(PERMISSIONS.fiscalSettingsRead); }
+  canSaveComplete() { return this.canClassify() || this.canReuseClassification(); }
   canSave() { return !this.loading && !this.saving && !this.uncertain && !this.conflict && !this.scopeChanged
     && !this.comparisonLoading && !this.comparison
     && this.visible && this.loadedScope === this.scope()
@@ -114,7 +115,7 @@ export class ProductDialog implements OnChanges {
   fiscalChanged() { this.draft.confirmed = false; }
   canReuseClassification() {
     const persisted = this.state?.classification;
-    return !!persisted?.isCurrent && persisted.confirmed
+    return this.permission.hasPermission(PERMISSIONS.fiscalSettingsRead) && !!persisted?.isCurrent && persisted.confirmed
       && this.fiscalIdentityKey() === this.fiscalIdentityKey(this.state!.product)
       && this.classificationKey(this.classificationPayload()) === this.classificationKey(persisted);
   }
@@ -190,7 +191,7 @@ export class ProductDialog implements OnChanges {
       this.error = 'Revisa los datos basicos obligatorios.';
       return;
     }
-    if (complete && (!this.canClassify() || !this.classificationValid())) {
+    if (complete && (!this.canSaveComplete() || !this.classificationValid())) {
       this.error = 'Completa y confirma la declaracion fiscal con referencias del producto.';
       return;
     }

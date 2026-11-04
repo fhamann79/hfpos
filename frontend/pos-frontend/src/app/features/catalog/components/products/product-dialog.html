@@ -64,8 +64,8 @@
           </p-tabpanel>
           <p-tabpanel value="fiscal">
             <div class="field"><label for="product-vat-category">Categoria IVA nominal *</label><p-select inputId="product-vat-category" [options]="vatCategoryOptions" optionLabel="label" optionValue="value" formControlName="vatCategory" /></div>
+            @if (canReuseClassification()) { <p-message severity="info" text="Declaracion confirmada vigente. Se conserva sin nueva confirmacion mientras no cambien sus dependencias fiscales." /> }
             @if (canClassify()) {
-              @if (canReuseClassification()) { <p-message severity="info" text="Declaracion confirmada vigente. Se conserva sin nueva confirmacion mientras no cambien sus dependencias fiscales." /> }
               <app-product-fiscal-fields [draft]="draft" [showKind]="false" (fiscalChange)="fiscalChanged()" />
             } @else { <p-message severity="warn" text="La declaracion fiscal requiere permisos de lectura y escritura fiscal. Puedes guardar los datos basicos." /> }
           </p-tabpanel>
@@ -95,7 +95,7 @@
     <div class="dialog-actions">
       <p-button [label]="success ? 'Cerrar' : 'Cancelar'" severity="secondary" [outlined]="true" [disabled]="saving" (onClick)="hide()" />
       <p-button label="Guardar basico" icon="pi pi-save" type="submit" [disabled]="!canSave()" [loading]="saving" />
-      @if (canClassify()) { <p-button label="Guardar completo" icon="pi pi-check" [disabled]="!canSave()" (onClick)="save(true)" /> }
+      @if (canSaveComplete()) { <p-button label="Guardar completo" icon="pi pi-check" [disabled]="!canSave()" (onClick)="save(true)" /> }
     </div>
   </form>
 </p-dialog>

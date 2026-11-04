@@ -177,9 +177,52 @@ describe('Unified product editor', () => {
     expect(fixture.nativeElement.textContent).toContain('Estado del borrador pendiente');
   });
 
-  it('does not reuse a declaration to bypass revoked catalog or fiscal permissions or a tenant change', () => {
-    const dialog = open(item); load(dialog); expect(dialog.canReuseClassification()).toBe(true);
+  it.each(['noop', 'price', 'cost', 'minimumStock', 'categoryId'] as const)(
+    'allows %s complete reuse with catalog write and fiscal read but no fiscal write', field => {
+      permission.mockImplementation(code => code !== PERMISSIONS.fiscalSettingsWrite);
+      const dialog = open(item); load(dialog);
+      expect(dialog.canClassify()).toBe(false); expect(dialog.form.controls.kind.disabled).toBe(true);
+      if (field !== 'noop') dialog.form.controls[field].setValue(field === 'categoryId' ? 8 : 12);
+      expect(dialog.canSaveComplete()).toBe(true); expect(dialog.draft.confirmed).toBe(false);
+      dialog.save(true); const request = http.expectOne(r => r.method === 'PUT');
+      expect(request.request.body.classification).toBeNull();
+      expect(request.request.body.expectedStateToken).toBe('STATE-1'); request.flush(state());
+      expect(dialog.draft.confirmed).toBe(false);
+    });
+
+  it('renders and executes complete reuse without fiscal write or a confirmation checkbox', () => {
     permission.mockImplementation(code => code !== PERMISSIONS.fiscalSettingsWrite);
+    const fixture = TestBed.createComponent(ProductDialog);
+    fixture.componentRef.setInput('visible', true); fixture.componentRef.setInput('product', item); fixture.detectChanges();
+    load(fixture.componentInstance); fixture.componentInstance.section = 'fiscal'; fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Declaracion confirmada vigente');
+    expect(fixture.nativeElement.querySelector('app-product-fiscal-fields')).toBeNull();
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
+      .find(element => element.textContent?.includes('Guardar completo'));
+    expect(button).toBeDefined(); expect(button!.disabled).toBe(false); button!.click();
+    const request = http.expectOne(r => r.method === 'PUT');
+    expect(request.request.body.classification).toBeNull(); request.flush(state());
+  });
+
+  it.each(['name', 'barcode', 'internalCode', 'vatCategory', 'kind', 'activity', 'taxBasis', 'legalReference', 'evidenceReference'] as const)(
+    'blocks complete save of changed %s without fiscal write even with a confirmed draft', field => {
+      permission.mockImplementation(code => code !== PERMISSIONS.fiscalSettingsWrite);
+      const dialog = open(item); load(dialog);
+      if (field === 'vatCategory') dialog.form.controls.vatCategory.setValue(ProductVatCategory.Vat0);
+      else if (field === 'kind') dialog.form.controls.kind.setValue(0);
+      else if (field === 'name' || field === 'barcode' || field === 'internalCode')
+        dialog.form.controls[field].setValue('Changed synthetic identity');
+      else if (field === 'activity' || field === 'taxBasis') fiscalFields(dialog).update(field, 1 - (dialog.draft[field] ?? 0));
+      else fiscalFields(dialog).update(field, 'New synthetic reference');
+      dialog.draft.confirmed = true;
+      expect(dialog.canReuseClassification()).toBe(false); expect(dialog.canSaveComplete()).toBe(false);
+      dialog.save(true); http.expectNone(r => r.method === 'PUT');
+    });
+
+  it('does not reuse a declaration to bypass revoked fiscal read, catalog write or a tenant change', () => {
+    const dialog = open(item); load(dialog); expect(dialog.canReuseClassification()).toBe(true);
+    permission.mockImplementation(code => code !== PERMISSIONS.fiscalSettingsRead);
+    expect(dialog.canReuseClassification()).toBe(false);
     dialog.save(true); http.expectNone(r => r.method === 'PUT');
     permission.mockImplementation(code => code !== PERMISSIONS.catalogProductsWrite);
     dialog.save(true); dialog.save(); http.expectNone(r => r.method === 'PUT');
