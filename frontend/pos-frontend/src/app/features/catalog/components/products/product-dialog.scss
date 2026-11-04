@@ -4,6 +4,20 @@
   gap: 1rem;
 }
 
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.operation-state { border-top: 1px solid var(--app-border); padding-top: 1rem; font-size: .875rem; }
+.operation-state p { margin: .5rem 0; }
+.operation-state small { color: var(--app-text-muted); }
+app-product-fiscal-fields { margin-top: 1rem; }
+.reconciliation { display: grid; gap: .75rem; padding: 1rem 0; }
+.comparison-scroll { overflow-x: auto; }
+.reconciliation table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+.reconciliation th, .reconciliation td { padding: .5rem; text-align: left; border-bottom: 1px solid var(--app-border); overflow-wrap: anywhere; }
+.reconciliation td { min-width: 8rem; }
+.reconciliation label { display: flex; align-items: flex-start; gap: .4rem; }
+.reconciliation input { flex: 0 0 auto; margin-top: .2rem; }
+.fiscal-comparison p { overflow-wrap: anywhere; margin: .4rem 0 .75rem; font-size: .875rem; }
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -83,6 +97,7 @@
   justify-content: flex-end;
   gap: 0.75rem;
   margin-top: 0.5rem;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 42rem) {

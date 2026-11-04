@@ -116,23 +116,7 @@ public sealed class FiscalProfileService(PosDbContext db, IOperationalContextAcc
             .OrderByDescending(p => p.Revision).FirstOrDefaultAsync();
         if ((latest?.Revision ?? 0) != dto.ExpectedRevision)
             throw new InvalidOperationException("PRODUCT_FISCAL_REVISION_CONFLICT");
-        if (!dto.Confirmed || dto.Kind is null || dto.Activity is null || dto.TaxBasis is null
-            || !Enum.IsDefined(dto.Kind.Value) || !Enum.IsDefined(dto.Activity.Value) || !Enum.IsDefined(dto.TaxBasis.Value)
-            || !ValidReference(dto.LegalReference) || !ValidReference(dto.EvidenceReference))
-            throw new InvalidOperationException("PRODUCT_FISCAL_CLASSIFICATION_INVALID");
-        var classification = new ProductFiscalClassification
-        {
-            CompanyId = context.CompanyId, ProductId = productId, Revision = checked(dto.ExpectedRevision + 1),
-            ProductFiscalRevision = product.FiscalRevision,
-            DeclaredVatCategory = product.VatCategory, Kind = dto.Kind.Value, Activity = dto.Activity.Value,
-            TaxBasis = dto.TaxBasis.Value, LegalReference = dto.LegalReference.Trim(),
-            EvidenceReference = dto.EvidenceReference.Trim(), SriMaterialCode = dto.SriMaterialCode?.Trim(),
-            NaturalAgriculturalFoodConfirmed = dto.NaturalAgriculturalFoodConfirmed,
-            FoodProcessing = dto.FoodProcessing, ConstructionMaterialConfirmed = dto.ConstructionMaterialConfirmed,
-            DeclaredByUserId = context.UserId, DeclaredAt = clock.UtcNow, Confirmed = true
-        };
-        FiscalTaxResolver.ValidateClassification(product, classification);
-        ProductInventoryPolicy.ValidateClassification(product, classification);
+        var classification = ProductFiscalDeclaration.Create(product, dto, context.UserId, clock.UtcNow);
         db.ProductFiscalClassifications.Add(classification);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
@@ -169,8 +153,5 @@ public sealed class FiscalProfileService(PosDbContext db, IOperationalContextAcc
             successor is not null && (p.EffectiveUntil is null || successor < p.EffectiveUntil) ? successor : p.EffectiveUntil,
             p.EvidenceReference, p.Reason, p.DeclaredByUserId, p.DeclaredAt, p.Confirmed, p.RimpeEligibilityConfirmed);
     private static ProductFiscalClassificationDto Map(ProductFiscalClassification c, Product p)
-        => new(c.Revision, c.DeclaredVatCategory, c.Kind, c.Activity, c.TaxBasis, c.LegalReference, c.EvidenceReference,
-            c.SriMaterialCode, c.DeclaredByUserId, c.DeclaredAt, c.Confirmed,
-            c.DeclaredVatCategory == p.VatCategory && c.ProductFiscalRevision == p.FiscalRevision,
-            c.NaturalAgriculturalFoodConfirmed, c.FoodProcessing, c.ConstructionMaterialConfirmed);
+        => ProductFiscalDeclaration.Map(c, p);
 }

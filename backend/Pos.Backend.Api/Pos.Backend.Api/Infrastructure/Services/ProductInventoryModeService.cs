@@ -9,12 +9,12 @@ public static class ProductInventoryModeService
 {
     // Caller holds the existing Company exclusive administration lock.
     public static async Task ApplyAsync(PosDbContext db, Product product, bool? requested,
-        long? expectedClassificationRevision)
+        long? expectedClassificationRevision, ProductFiscalClassification? stagedClassification = null)
     {
         var next = requested ?? product.TracksInventory;
         if (!next && product.TracksInventory)
         {
-            var classification = await db.ProductFiscalClassifications.AsNoTracking()
+            var classification = stagedClassification ?? await db.ProductFiscalClassifications.AsNoTracking()
                 .Where(c => c.CompanyId == product.CompanyId && c.ProductId == product.Id)
                 .OrderByDescending(c => c.Revision).FirstOrDefaultAsync();
             if (classification is null || expectedClassificationRevision != classification.Revision)

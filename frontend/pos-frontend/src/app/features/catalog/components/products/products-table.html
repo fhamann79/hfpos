@@ -103,7 +103,7 @@
         @if (canWrite || canClassify) {
           <td>
             <div class="actions">
-              @if (canClassify) { <p-button icon="pi pi-shield" label="Fiscal" [text]="true" (onClick)="fiscalProduct = product" /> }
+              @if (canClassify && !canWrite) { <p-button icon="pi pi-shield" label="Fiscal" [text]="true" (onClick)="fiscalProduct = product" /> }
               @if (canWrite) {
               <p-button icon="pi pi-pencil" [rounded]="true" [text]="true" (onClick)="openEditDialog(product)"></p-button>
               <p-button
@@ -141,6 +141,6 @@
     [visible]="dialogVisible"
     [product]="selectedProduct"
     (visibleChange)="onDialogVisibleChange($event)"
-    (submitForm)="submitDialog($event)"
+    (saved)="onProductSaved()"
   ></app-product-dialog>
 }

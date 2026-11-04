@@ -17,10 +17,11 @@ import { Category } from '../../models/category.model';
 import { Product } from '../../models/product.model';
 import { CategoryService } from '../../services/category.service';
 import { ProductPageQuery, ProductService, ProductStatusFilter } from '../../services/product.service';
-import { ProductDialog, ProductDialogSubmit } from './product-dialog';
+import { ProductDialog } from './product-dialog';
 import { ProductFiscalDialog } from '../../../fiscal-settings/components/product-fiscal-dialog';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
+import { AuthStore } from '../../../../core/stores/auth.store';
 
 @Component({
   selector: 'app-products-table',
@@ -53,7 +54,9 @@ export class ProductsTable implements OnInit {
   private readonly categoryService = inject(CategoryService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly auth = inject(AuthStore);
   private loadRequestId = 0;
+  private scope() { return [this.auth.companyId(), this.auth.establishmentId(), this.auth.emissionPointId(), this.auth.token()].join(':'); }
 
   readonly products = signal<Product[]>([]);
   readonly categories = signal<Category[]>([]);
@@ -91,6 +94,7 @@ export class ProductsTable implements OnInit {
 
   loadProducts(page = this.currentPage(), pageSize = this.rows): void {
     const requestId = ++this.loadRequestId;
+    const scope = this.scope();
     this.loading.set(true);
     this.errorMessage.set('');
 
@@ -106,7 +110,7 @@ export class ProductsTable implements OnInit {
       })
       .subscribe({
         next: (result) => {
-          if (requestId !== this.loadRequestId) return;
+          if (requestId !== this.loadRequestId || scope !== this.scope()) return;
 
           if (result.totalPages > 0 && result.page > result.totalPages) {
             this.loadProducts(result.totalPages, result.pageSize);
@@ -122,7 +126,7 @@ export class ProductsTable implements OnInit {
           this.loading.set(false);
         },
         error: (error: HttpErrorResponse) => {
-          if (requestId !== this.loadRequestId) return;
+          if (requestId !== this.loadRequestId || scope !== this.scope()) return;
           this.loading.set(false);
           this.errorMessage.set(resolveHttpErrorMessage(error, 'No se pudieron cargar los productos.'));
         },
@@ -156,9 +160,10 @@ export class ProductsTable implements OnInit {
   }
 
   loadCategories(): void {
+    const scope = this.scope();
     this.categoryService.getAll().subscribe({
-      next: (categories) => this.categories.set(categories),
-      error: () => this.categories.set([]),
+      next: (categories) => { if (scope === this.scope()) this.categories.set(categories); },
+      error: () => { if (scope === this.scope()) this.categories.set([]); },
     });
   }
 
@@ -187,34 +192,8 @@ export class ProductsTable implements OnInit {
     if (!visible) this.selectedProduct = null;
   }
 
-  submitDialog(event: ProductDialogSubmit): void {
-    if (!this.canWrite) return;
-
-    if (event.mode === 'create') {
-      this.productService.create(event.payload).subscribe({
-        next: () => {
-          this.messageService.add({ severity: 'success', summary: 'Éxito', detail: 'Creado' });
-          this.dialogVisible = false;
-          this.loadCategories();
-          this.applyFilters();
-        },
-        error: (error: HttpErrorResponse) => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
-        },
-      });
-      return;
-    }
-
-    this.productService.update(event.id, event.payload).subscribe({
-      next: () => {
-        this.messageService.add({ severity: 'success', summary: 'Éxito', detail: 'Actualizado' });
-        this.dialogVisible = false;
-        this.loadCatalogData();
-      },
-      error: (error: HttpErrorResponse) => {
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: resolveHttpErrorMessage(error) });
-      },
-    });
+  onProductSaved(): void {
+    this.loadCatalogData();
   }
 
   confirmLifecycle(product: Product): void {

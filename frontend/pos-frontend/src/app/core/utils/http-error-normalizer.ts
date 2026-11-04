@@ -37,6 +37,8 @@ const BUSINESS_ERROR_MESSAGES: Record<string, string> = {
   SALE_INVOICE_PENDING_AUTHORIZATION_NOT_VOIDABLE: 'Esta factura está pendiente de autorización SRI. Consulta el estado antes de intentar anularla.',
   SALE_INVOICE_SRI_IN_PROGRESS_NOT_VOIDABLE: 'Esta factura ya tiene proceso SRI iniciado. No se puede anular localmente hasta tener un estado final.',
   PRODUCT_NOT_FOUND: 'El producto no existe.',
+  PRODUCT_EDITOR_STATE_CONFLICT: 'El producto cambio. Revisa los datos actuales antes de guardar.',
+  PRODUCT_IDENTIFICATION_INVALID: 'Revisa la longitud del nombre y los codigos del producto.',
   INVALID_QUANTITY: 'La cantidad ingresada no es válida.',
   INVALID_UNIT_PRICE: 'El precio unitario ingresado no es válido.',
   INVALID_LINE_DISCOUNT: 'El descuento de línea no es válido.',

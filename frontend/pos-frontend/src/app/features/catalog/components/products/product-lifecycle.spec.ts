@@ -7,31 +7,33 @@ import { of } from 'rxjs';
 import { vi } from 'vitest';
 import { ProductService } from '../../services/product.service';
 import { ProductsTable } from './products-table';
-import { ProductDialog, ProductDialogSubmit } from './product-dialog';
+import { ProductDialog } from './product-dialog';
+import { SimpleChange } from '@angular/core';
 import { DEFAULT_VAT_CATEGORY } from '../../../../core/utils/vat-category';
 import { CategoryService } from '../../services/category.service';
-import { FiscalProfileService } from '../../../fiscal-settings/services/fiscal-profile.service';
+import { PermissionService } from '../../../../core/services/permission.service';
 
 describe('Product lifecycle', () => {
   const item = { id: 1, categoryId: 1, name: 'Producto histórico', price: 10, cost: 4, minimumStock: 3, vatCategory: DEFAULT_VAT_CATEGORY, isActive: true };
   const page = (items = [item]) => ({ items, page: 1, pageSize: 10, totalItems: items.length, totalPages: items.length ? 1 : 0 });
 
   beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     TestBed.configureTestingModule({
       imports: [ProductsTable, ProductDialog],
       providers: [provideHttpClient(), provideHttpClientTesting(), providePrimeNG({ unstyled: true }),
-        ConfirmationService, MessageService],
+        ConfirmationService, MessageService, { provide: PermissionService, useValue: { hasPermission: () => true } }],
     });
     vi.spyOn(TestBed.inject(CategoryService), 'getAll').mockReturnValue(of([{ id: 1, name: 'Categoría', isActive: true }]));
-    vi.spyOn(TestBed.inject(FiscalProfileService), 'product').mockReturnValue(of({
-      productRevision: 0, name: item.name, internalCode: null, barcode: null,
-      vatCategory: item.vatCategory, classification: null,
-    }));
+    vi.spyOn(TestBed.inject(ProductService), 'editor').mockReturnValue(of({ product: item,
+      stateToken: 'SYNTHETIC', productRevision: 0, classificationRevision: 0,
+      classification: null, canDisableInventory: false, salePending: [] }));
   });
 
   afterEach(() => {
     TestBed.inject(HttpTestingController).verify();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('renders Desactivar for active records and Activar for inactive records, without delete', async () => {
@@ -79,20 +81,14 @@ describe('Product lifecycle', () => {
   it('keeps activation out of the edit form and emitted HTTP payload', () => {
     const dialog = TestBed.runInInjectionContext(() => new ProductDialog());
     dialog.product = item;
-
-    dialog.form.patchValue({ ...item });
-    const events: ProductDialogSubmit[] = [];
-    dialog.submitForm.subscribe((event) => events.push(event));
+    dialog.visible = true;
+    dialog.ngOnChanges({ visible: new SimpleChange(false, true, true) });
     dialog.save();
-    expect(events).toHaveLength(1);
-    expect(events[0].mode).toBe('edit');
-    expect(events[0].payload).not.toHaveProperty('isActive');
     expect(dialog.form.controls).not.toHaveProperty('isActive');
-    const payload = { ...item };
-    TestBed.inject(ProductService).update(item.id, payload).subscribe();
     const request = TestBed.inject(HttpTestingController).expectOne((req) => req.method === 'PUT');
     expect(request.request.body).not.toHaveProperty('isActive');
-    request.flush(null);
+    request.flush({ product: item, stateToken: 'SYNTHETIC-2', productRevision: 0, classificationRevision: 0,
+      classification: null, canDisableInventory: false, salePending: [] });
   });
 
   it('keeps only the inactive product current category alongside active categories', () => {
@@ -101,14 +97,16 @@ describe('Product lifecycle', () => {
       { id: 2, name: 'Otra inactiva', isActive: false },
       { id: 3, name: 'Activa', isActive: true },
     ]));
+    vi.mocked(TestBed.inject(ProductService).editor).mockReturnValue(of({ product: { ...item, isActive: false },
+      stateToken: 'SYNTHETIC', productRevision: 0, classificationRevision: 0,
+      classification: null, canDisableInventory: false, salePending: [] }));
     const fixture = TestBed.createComponent(ProductDialog);
     fixture.componentRef.setInput('product', { ...item, isActive: false });
     fixture.componentRef.setInput('visible', true);
     fixture.detectChanges();
-    expect(fixture.componentInstance.categories().map((category) => category.id)).toEqual([1, 3]);
+    expect(fixture.componentInstance.availableCategories().map((category) => category.id)).toEqual([1, 3]);
     expect(fixture.componentInstance.form.controls.categoryId.value).toBe(1);
-    expect(TestBed.inject(FiscalProfileService).product).toHaveBeenCalledWith(item.id);
-    expect(fixture.componentInstance.inventoryClassification()).toBeNull();
+    expect(TestBed.inject(ProductService).editor).toHaveBeenCalledWith(item.id);
   });
 
   it('reports a failed lifecycle change and preserves the loaded records', () => {
