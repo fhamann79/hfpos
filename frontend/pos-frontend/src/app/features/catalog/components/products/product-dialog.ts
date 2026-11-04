@@ -41,6 +41,7 @@ export class ProductDialog implements OnChanges {
   private loadedScope = '';
   private activeId: number | null = null;
   private state: ProductEditorState | null = null;
+  private fiscalIdentity = '';
   @Input({ required: true }) visible = false;
   @Input() product: Product | null = null;
   @Output() visibleChange = new EventEmitter<boolean>();
@@ -75,11 +76,17 @@ export class ProductDialog implements OnChanges {
 
   constructor() {
     this.form.controls.kind.valueChanges.pipe(takeUntilDestroyed()).subscribe(kind => {
+      if (this.draft.kind === kind) return;
       this.draft.kind = kind;
       this.draft.confirmed = false;
       if (kind === 1) this.form.controls.tracksInventory.setValue(false);
       else if (kind === 0) this.form.controls.tracksInventory.setValue(true);
       this.syncInventoryControl();
+    });
+    this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
+      const identity = this.fiscalIdentityKey();
+      if (identity !== this.fiscalIdentity) this.fiscalChanged();
+      this.fiscalIdentity = identity;
     });
     this.form.controls.tracksInventory.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.syncInventoryControl());
     // Invalidate all callbacks on session/context changes, including a reopen of the same ID.
@@ -103,7 +110,27 @@ export class ProductDialog implements OnChanges {
     && this.permission.hasPermission(PERMISSIONS.catalogProductsWrite)
     && (!this.reviewRequired || this.reviewed); }
   canDisableInventory() { return this.state?.canDisableInventory || (this.canClassify() && this.form.controls.kind.value === 1); }
-  classificationValid() { return classificationComplete(this.classificationPayload()); }
+  classificationValid() { return this.canReuseClassification() || classificationComplete(this.classificationPayload()); }
+  fiscalChanged() { this.draft.confirmed = false; }
+  canReuseClassification() {
+    const persisted = this.state?.classification;
+    return !!persisted?.isCurrent && persisted.confirmed
+      && this.fiscalIdentityKey() === this.fiscalIdentityKey(this.state!.product)
+      && this.classificationKey(this.classificationPayload()) === this.classificationKey(persisted);
+  }
+  hasDraftChanges() {
+    return !this.state || !this.sameProduct(this.state.product, { ...this.state.product, ...this.form.getRawValue() })
+      || this.classificationKey(this.classificationPayload()) !== this.classificationKey(this.state.classification)
+      || this.draft.confirmed;
+  }
+  private fiscalIdentityKey(p: Pick<Product, 'name' | 'barcode' | 'internalCode' | 'vatCategory'> = this.form.getRawValue()) {
+    return JSON.stringify([p.name.trim(), p.barcode?.trim() || null, p.internalCode?.trim() || null, normalizeVatCategory(p.vatCategory)]);
+  }
+  private classificationKey(d: Partial<ReturnType<typeof emptyProductClassification>> | null) {
+    d ??= emptyProductClassification();
+    return JSON.stringify([d.kind, d.activity, d.taxBasis, d.legalReference?.trim(), d.evidenceReference?.trim(),
+      d.taxBasis === 3 ? d.sriMaterialCode : null, d.naturalAgriculturalFoodConfirmed, d.foodProcessing, d.constructionMaterialConfirmed]);
+  }
   private scope() { return [this.auth.companyId(), this.auth.establishmentId(), this.auth.emissionPointId(), this.auth.token()].join(':'); }
   private current(generation: number, scope: string) { return this.visible && generation === this.generation && scope === this.scope(); }
 
@@ -120,6 +147,7 @@ export class ProductDialog implements OnChanges {
     this.comparison = null; this.comparisonLoading = false; this.reconciliation = []; this.candidates = [];
     this.form.reset({ name: '', tracksInventory: true, kind: null, categoryId: 0, barcode: '', internalCode: '',
       price: 0, cost: 0, minimumStock: 3, vatCategory: DEFAULT_VAT_CATEGORY });
+    this.fiscalIdentity = this.fiscalIdentityKey();
     if (this.canClassify()) this.form.controls.kind.enable({ emitEvent: false });
     else this.form.controls.kind.disable({ emitEvent: false });
     this.syncInventoryControl();
@@ -157,9 +185,13 @@ export class ProductDialog implements OnChanges {
 
   save(complete = false): void {
     if (!this.canSave()) return;
-    if (this.form.invalid || (complete && (!this.canClassify() || !this.classificationValid()))) {
+    if (this.form.invalid) {
       this.form.markAllAsTouched();
-      this.error = complete ? 'Completa y confirma la declaracion fiscal con referencias del producto.' : 'Revisa los datos basicos obligatorios.';
+      this.error = 'Revisa los datos basicos obligatorios.';
+      return;
+    }
+    if (complete && (!this.canClassify() || !this.classificationValid())) {
+      this.error = 'Completa y confirma la declaracion fiscal con referencias del producto.';
       return;
     }
     if (!this.form.controls.tracksInventory.value && !complete && !this.state?.canDisableInventory
@@ -174,7 +206,7 @@ export class ProductDialog implements OnChanges {
       setManualCost: this.form.controls.cost.dirty,
       tracksInventory: values.tracksInventory, barcode: values.barcode.trim() || null,
       internalCode: values.internalCode.trim() || null, expectedStateToken: this.state?.stateToken ?? null,
-      classification: complete ? this.classificationPayload() : null };
+      classification: complete && !this.canReuseClassification() ? this.classificationPayload() : null };
     this.saving = true; this.error = ''; this.success = '';
     this.service.saveEditor(this.activeId, payload).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: state => {
@@ -182,7 +214,7 @@ export class ProductDialog implements OnChanges {
         const draft = this.draft; const kind = this.form.controls.kind.value;
         this.saving = false; this.acceptState(state); this.reviewRequired = false;
         if (!complete) {
-          this.draft = { ...draft, confirmed: false };
+          this.draft = draft;
           this.form.controls.kind.setValue(kind, { emitEvent: false });
           this.syncInventoryControl();
         }
@@ -244,6 +276,7 @@ export class ProductDialog implements OnChanges {
     this.acceptState(latest);
     if (keepFiscal) this.draft = { ...fiscal, confirmed: false };
     this.form.setValue({ ...merged, kind: keepFiscal ? draft.kind : latest.classification?.kind ?? null }, { emitEvent: false });
+    this.fiscalIdentity = this.fiscalIdentityKey();
     if (manualCost && this.reconciliation.find(row => row.field === 'cost')?.choice === 'draft')
       this.form.controls.cost.markAsDirty();
     this.syncInventoryControl(); this.form.markAsDirty();
@@ -292,6 +325,7 @@ export class ProductDialog implements OnChanges {
     // A historic declaration is never a new human confirmation.
     this.draft = state.classification ? { ...state.classification, expectedRevision: state.classificationRevision,
       expectedProductRevision: state.productRevision, confirmed: false } : emptyProductClassification();
+    this.fiscalIdentity = this.fiscalIdentityKey();
     this.form.markAsPristine();
     this.syncInventoryControl();
   }
@@ -307,9 +341,9 @@ export class ProductDialog implements OnChanges {
   }
 
   private sameProduct(a: Product, b: Product) {
-    return a.name === b.name && a.categoryId === b.categoryId && a.price === b.price && a.cost === b.cost
-      && a.minimumStock === b.minimumStock && a.vatCategory === b.vatCategory && a.isActive === b.isActive
-      && (a.barcode ?? null) === (b.barcode ?? null) && (a.internalCode ?? null) === (b.internalCode ?? null)
+    return this.fiscalIdentityKey(a) === this.fiscalIdentityKey(b)
+      && a.categoryId === b.categoryId && a.price === b.price && a.cost === b.cost
+      && a.minimumStock === b.minimumStock && a.isActive === b.isActive
       && (a.tracksInventory !== false) === (b.tracksInventory !== false);
   }
 }

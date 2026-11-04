@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
@@ -27,26 +27,34 @@ export function classificationComplete(d: DeclareProductFiscalClassification): b
     @media(max-width:42rem) { .fields { grid-template-columns: 1fr; } }`],
   template: `
     <div class="fields">
-      @if (showKind) { <label>Naturaleza<p-select [options]="kinds" optionLabel="label" optionValue="value" [(ngModel)]="draft.kind" [ngModelOptions]="standalone" placeholder="Seleccionar" appendTo="body" /></label> }
-      <label>Actividad<p-select [options]="activities" optionLabel="label" optionValue="value" [(ngModel)]="draft.activity" [ngModelOptions]="standalone" placeholder="Seleccionar" appendTo="body" /></label>
-      <label class="wide">Fundamento implementado<p-select [options]="bases" optionLabel="label" optionValue="value" [(ngModel)]="draft.taxBasis" [ngModelOptions]="standalone" placeholder="Seleccionar" appendTo="body" /></label>
-      <label class="wide">Referencia normativa concreta<input pInputText [(ngModel)]="draft.legalReference" [ngModelOptions]="standalone" maxlength="500" /></label>
-      <label class="wide">Referencia documental del producto<input pInputText [(ngModel)]="draft.evidenceReference" [ngModelOptions]="standalone" maxlength="500" /></label>
+      @if (showKind) { <label>Naturaleza<p-select [options]="kinds" optionLabel="label" optionValue="value" [ngModel]="draft.kind" (ngModelChange)="update('kind', $event)" [ngModelOptions]="standalone" placeholder="Seleccionar" appendTo="body" /></label> }
+      <label>Actividad<p-select [options]="activities" optionLabel="label" optionValue="value" [ngModel]="draft.activity" (ngModelChange)="update('activity', $event)" [ngModelOptions]="standalone" placeholder="Seleccionar" appendTo="body" /></label>
+      <label class="wide">Fundamento implementado<p-select [options]="bases" optionLabel="label" optionValue="value" [ngModel]="draft.taxBasis" (ngModelChange)="update('taxBasis', $event)" [ngModelOptions]="standalone" placeholder="Seleccionar" appendTo="body" /></label>
+      <label class="wide">Referencia normativa concreta<input pInputText [ngModel]="draft.legalReference" (ngModelChange)="update('legalReference', $event)" [ngModelOptions]="standalone" maxlength="500" /></label>
+      <label class="wide">Referencia documental del producto<input pInputText [ngModel]="draft.evidenceReference" (ngModelChange)="update('evidenceReference', $event)" [ngModelOptions]="standalone" maxlength="500" /></label>
       @if (draft.taxBasis === 1) {
-        <label class="wide">Procesamiento compatible<p-select [options]="processing" optionLabel="label" optionValue="value" [(ngModel)]="draft.foodProcessing" [ngModelOptions]="standalone" placeholder="Seleccionar" appendTo="body" /></label>
+        <label class="wide">Procesamiento compatible<p-select [options]="processing" optionLabel="label" optionValue="value" [ngModel]="draft.foodProcessing" (ngModelChange)="update('foodProcessing', $event)" [ngModelOptions]="standalone" placeholder="Seleccionar" appendTo="body" /></label>
       }
       @if (draft.taxBasis === 3) {
-        <label class="wide">Material del listado oficial<p-select [options]="materials" optionLabel="label" optionValue="value" [(ngModel)]="draft.sriMaterialCode" [ngModelOptions]="standalone" placeholder="Seleccionar" appendTo="body" /></label>
+        <label class="wide">Material del listado oficial<p-select [options]="materials" optionLabel="label" optionValue="value" [ngModel]="draft.sriMaterialCode" (ngModelChange)="update('sriMaterialCode', $event)" [ngModelOptions]="standalone" placeholder="Seleccionar" appendTo="body" /></label>
       }
     </div>
-    @if (draft.taxBasis === 1) { <label class="check"><input type="checkbox" [(ngModel)]="draft.naturalAgriculturalFoodConfirmed" [ngModelOptions]="standalone" /> Confirmo alimento agricola natural, sin mezcla, preparacion ni transformacion incompatible (LRTI 55.1).</label> }
-    @if (draft.taxBasis === 3) { <label class="check"><input type="checkbox" [(ngModel)]="draft.constructionMaterialConfirmed" [ngModelOptions]="standalone" /> Confirmo transferencia local y coincidencia exacta con el material de la resolucion 24-13; no toda ferreteria ni contratos de construccion.</label> }
+    @if (draft.taxBasis === 1) { <label class="check"><input type="checkbox" [ngModel]="draft.naturalAgriculturalFoodConfirmed" (ngModelChange)="update('naturalAgriculturalFoodConfirmed', $event)" [ngModelOptions]="standalone" /> Confirmo alimento agricola natural, sin mezcla, preparacion ni transformacion incompatible (LRTI 55.1).</label> }
+    @if (draft.taxBasis === 3) { <label class="check"><input type="checkbox" [ngModel]="draft.constructionMaterialConfirmed" (ngModelChange)="update('constructionMaterialConfirmed', $event)" [ngModelOptions]="standalone" /> Confirmo transferencia local y coincidencia exacta con el material de la resolucion 24-13; no toda ferreteria ni contratos de construccion.</label> }
     <label class="check"><input type="checkbox" [(ngModel)]="draft.confirmed" [ngModelOptions]="standalone" /> Confirmo los hechos y su evidencia. La tarifa efectiva depende del perfil vigente de la empresa.</label>
   `,
 })
 export class ProductFiscalFields {
   @Input() showKind = true;
   @Input({ required: true }) draft = emptyProductClassification();
+  @Output() fiscalChange = new EventEmitter<void>();
+  update<K extends keyof DeclareProductFiscalClassification>(field: K, value: DeclareProductFiscalClassification[K]) {
+    const previous = this.draft[field];
+    if (previous === value) return;
+    this.draft[field] = value;
+    if (typeof previous === 'string' && typeof value === 'string' && previous.trim() === value.trim()) return;
+    this.fiscalChange.emit();
+  }
   readonly standalone = { standalone: true };
   readonly kinds = [{ label: 'Bien', value: 0 }, { label: 'Servicio', value: 1 }];
   readonly activities = [{ label: 'Comercio elegible RIMPE', value: 0 }, { label: 'Servicio elegible RIMPE', value: 1 }, { label: 'Actividad excluida RIMPE', value: 2 }];

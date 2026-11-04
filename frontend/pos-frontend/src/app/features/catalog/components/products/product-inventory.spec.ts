@@ -12,6 +12,8 @@ import { ProductVatCategory } from '../../../../core/utils/vat-category';
 import { AuthStore } from '../../../../core/stores/auth.store';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
+import { ProductFiscalFields } from '../../../fiscal-settings/components/product-fiscal-fields';
+import { DeclareProductFiscalClassification } from '../../../fiscal-settings/models/fiscal-profile.model';
 
 describe('Unified product editor', () => {
   const item: Product = { id: 71, name: 'Synthetic service', categoryId: 7, price: 10, cost: 0,
@@ -61,6 +63,130 @@ describe('Unified product editor', () => {
     dialog.visible = true; dialog.ngOnChanges({ visible: new SimpleChange(false, true, false) });
   }
 
+  function fiscalFields(dialog: ProductDialog) {
+    const fields = new ProductFiscalFields(); fields.draft = dialog.draft;
+    fields.fiscalChange.subscribe(() => dialog.fiscalChanged());
+    return fields;
+  }
+
+  it.each([false, true])('shows authoritative pending state on open and save without codes, absent classification: %s', absent => {
+    const product = { ...item, barcode: null, internalCode: null };
+    const current = { ...state(product), salePending: ['INSUFFICIENT_STOCK'] };
+    if (absent) { current.classification = null; current.classificationRevision = 0; }
+    const dialog = open(product); load(dialog, current);
+    expect(dialog.hasDraftChanges()).toBe(false); expect(dialog.pending).toEqual(current.salePending);
+    dialog.save(!absent); const request = http.expectOne(r => r.method === 'PUT');
+    expect(request.request.body.classification).toBeNull();
+    expect(request.request.body.barcode).toBeNull(); expect(request.request.body.internalCode).toBeNull();
+    request.flush(current); expect(dialog.hasDraftChanges()).toBe(false);
+    reopen(dialog); load(dialog, current); expect(dialog.hasDraftChanges()).toBe(false);
+  });
+
+  it.each(['noop', 'price', 'cost', 'minimumStock', 'categoryId'] as const)(
+    'reuses the current persisted declaration after reopen and %s without a new classification', field => {
+      const dialog = open(item); load(dialog); reopen(dialog); load(dialog);
+      if (field !== 'noop') dialog.form.controls[field].setValue(field === 'categoryId' ? 8 : 12);
+      expect(dialog.draft.confirmed).toBe(false);
+      expect(dialog.canReuseClassification()).toBe(true); expect(dialog.classificationValid()).toBe(true);
+      dialog.save(true);
+      const request = http.expectOne(r => r.method === 'PUT');
+      expect(request.request.body.classification).toBeNull();
+      expect(request.request.body.expectedStateToken).toBe('STATE-1'); request.flush(state());
+      expect(dialog.draft.confirmed).toBe(false);
+    });
+
+  it.each(['vatCategory', 'name', 'barcode', 'internalCode', 'kind'] as const)(
+    'requires new confirmation after a real %s dependency change, but not a no-op', field => {
+      const dialog = open(item); load(dialog); confirmService(dialog);
+      const control = dialog.form.controls[field];
+      if (field === 'vatCategory') dialog.form.controls.vatCategory.setValue(ProductVatCategory.Vat0);
+      else if (field === 'kind') dialog.form.controls.kind.setValue(0);
+      else dialog.form.controls[field].setValue('Changed synthetic identity');
+      expect(dialog.draft.confirmed).toBe(false); expect(dialog.canReuseClassification()).toBe(false);
+      dialog.save(true); http.expectNone(r => r.method === 'PUT');
+      expect(dialog.error).toContain('Completa y confirma');
+      dialog.draft.confirmed = true;
+      if (field === 'vatCategory') dialog.form.controls.vatCategory.setValue(dialog.form.controls.vatCategory.value);
+      else if (field === 'kind') dialog.form.controls.kind.setValue(dialog.form.controls.kind.value);
+      else dialog.form.controls[field].setValue(dialog.form.controls[field].value);
+      expect(control.value).not.toBeNull(); expect(dialog.draft.confirmed).toBe(true);
+      dialog.save(true); const request = http.expectOne(r => r.method === 'PUT');
+      expect(request.request.body.classification.confirmed).toBe(true); request.flush(state());
+    });
+
+  it.each([
+    ['activity', 2], ['taxBasis', 1], ['legalReference', 'Changed law'], ['evidenceReference', 'Changed evidence'],
+    ['naturalAgriculturalFoodConfirmed', true], ['foodProcessing', 0], ['constructionMaterialConfirmed', true],
+    ['sriMaterialCode', 'F010201'],
+  ] as [keyof DeclareProductFiscalClassification, string | number | boolean][])(
+    'resets only a real fiscal field change: %s', (field, value) => {
+      const dialog = open(item); load(dialog); confirmService(dialog);
+      if (field === 'sriMaterialCode') dialog.draft.taxBasis = 3;
+      const fields = fiscalFields(dialog);
+      fields.update(field, dialog.draft[field]); expect(dialog.draft.confirmed).toBe(true);
+      fields.update(field, value); expect(dialog.draft.confirmed).toBe(false);
+      expect(dialog.canReuseClassification()).toBe(false);
+    });
+
+  it.each(['stale', 'unconfirmed', 'missing'] as const)('cannot reuse a %s persisted classification', condition => {
+    const dialog = open(item); const loaded = state();
+    if (condition === 'missing') loaded.classification = null;
+    else if (condition === 'stale') loaded.classification!.isCurrent = false;
+    else loaded.classification!.confirmed = false;
+    load(dialog, loaded); expect(dialog.canReuseClassification()).toBe(false);
+    dialog.save(true); http.expectNone(r => r.method === 'PUT');
+    expect(dialog.draft.confirmed).toBe(false);
+  });
+
+  it('preserves new confirmation through tabs, unrelated local validation and API errors', () => {
+    const dialog = open(item); load(dialog);
+    fiscalFields(dialog).update('evidenceReference', 'New synthetic evidence'); dialog.draft.confirmed = true;
+    dialog.section = 'fiscal'; dialog.section = 'inventory'; dialog.section = 'basic';
+    dialog.form.controls.price.setValue(-1); dialog.save(true);
+    expect(dialog.error).toBe('Revisa los datos basicos obligatorios.');
+    expect(dialog.draft.confirmed).toBe(true); http.expectNone(r => r.method === 'PUT');
+    dialog.form.controls.price.setValue(12); dialog.save(true);
+    http.expectOne(r => r.method === 'PUT').flush({ error: 'CATEGORY_INACTIVE' }, { status: 409, statusText: 'Conflict' });
+    expect(dialog.draft.confirmed).toBe(true); dialog.save(true);
+    const request = http.expectOne(r => r.method === 'PUT');
+    expect(request.request.body.classification.evidenceReference).toBe('New synthetic evidence'); request.flush(state());
+  });
+
+  it('does not discard an explicitly confirmed fiscal draft on a basic save', () => {
+    const dialog = open(item); load(dialog);
+    fiscalFields(dialog).update('evidenceReference', 'New synthetic evidence'); dialog.draft.confirmed = true;
+    dialog.save(); const basic = http.expectOne(r => r.method === 'PUT');
+    expect(basic.request.body.classification).toBeNull(); basic.flush(state());
+    expect(dialog.draft.confirmed).toBe(true); dialog.save(true);
+    const complete = http.expectOne(r => r.method === 'PUT');
+    expect(complete.request.body.classification.confirmed).toBe(true); complete.flush(state());
+  });
+
+  it('renders persisted status without falsely checking a new confirmation and distinguishes draft pending state', () => {
+    const fixture = TestBed.createComponent(ProductDialog);
+    fixture.componentRef.setInput('visible', true); fixture.componentRef.setInput('product', item); fixture.detectChanges();
+    const dialog = fixture.componentInstance; load(dialog); dialog.section = 'fiscal'; fixture.detectChanges();
+    const checkbox = fixture.nativeElement.querySelector('app-product-fiscal-fields input[type=checkbox]') as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    expect(fixture.nativeElement.textContent).toContain('Declaracion confirmada vigente');
+    expect(fixture.nativeElement.textContent).toContain('Sin pendientes de catalogo detectados');
+    const evidence = fixture.nativeElement.querySelectorAll('app-product-fiscal-fields input:not([type=checkbox])')[1] as HTMLInputElement;
+    evidence.value = 'New synthetic evidence'; evidence.dispatchEvent(new Event('input')); fixture.detectChanges();
+    expect(dialog.canReuseClassification()).toBe(false);
+    expect(fixture.nativeElement.textContent).not.toContain('Sin pendientes de catalogo detectados');
+    expect(fixture.nativeElement.textContent).toContain('Estado del borrador pendiente');
+  });
+
+  it('does not reuse a declaration to bypass revoked catalog or fiscal permissions or a tenant change', () => {
+    const dialog = open(item); load(dialog); expect(dialog.canReuseClassification()).toBe(true);
+    permission.mockImplementation(code => code !== PERMISSIONS.fiscalSettingsWrite);
+    dialog.save(true); http.expectNone(r => r.method === 'PUT');
+    permission.mockImplementation(code => code !== PERMISSIONS.catalogProductsWrite);
+    dialog.save(true); dialog.save(); http.expectNone(r => r.method === 'PUT');
+    permission.mockReturnValue(true); companyId.set(2);
+    dialog.save(true); dialog.save(); http.expectNone(r => r.method === 'PUT');
+  });
+
   it('starts with inventory, proposes service without inventory explicitly and never fabricates facts', () => {
     const dialog = open(); basics(dialog);
     expect(dialog.form.controls.tracksInventory.value).toBe(true);
@@ -105,7 +231,7 @@ describe('Unified product editor', () => {
     expect(dialog.form.controls.name.value).toBe('Current identity'); expect(dialog.form.controls.price.value).toBe(20);
     expect(dialog.reviewRequired).toBe(true);
     dialog.save(); http.expectNone(r => r.method === 'PUT');
-    dialog.reviewed = true; confirmService(dialog); dialog.save(true);
+    dialog.reviewed = true; confirmService(dialog); dialog.draft.evidenceReference = 'New synthetic evidence'; dialog.save(true);
     const request = http.expectOne(r => r.method === 'PUT');
     expect(request.request.body).toEqual(expect.objectContaining({ name: 'Current identity', price: 20, expectedStateToken: 'CURRENT',
       classification: expect.objectContaining({ expectedRevision: 4, expectedProductRevision: 9 }) }));
@@ -113,8 +239,8 @@ describe('Unified product editor', () => {
   });
 
   it('keeps drafts after known validation error and blocks stale revision retry until human reconciliation', () => {
-    const dialog = open(item); load(dialog); confirmService(dialog);
-    dialog.form.controls.name.setValue('My unsaved name'); dialog.save(true);
+    const dialog = open(item); load(dialog);
+    dialog.form.controls.name.setValue('My unsaved name'); confirmService(dialog); dialog.save(true);
     http.expectOne(r => r.method === 'PUT').flush({ error: 'CATEGORY_INACTIVE' }, { status: 409, statusText: 'Conflict' });
     expect(dialog.form.controls.name.value).toBe('My unsaved name'); expect(dialog.draft.confirmed).toBe(true);
     expect(dialog.canSave()).toBe(true);
@@ -159,8 +285,8 @@ describe('Unified product editor', () => {
   });
 
   it('reconciles stale state without losing the draft or silently overwriting concurrent price/cost changes', () => {
-    const dialog = open(item); load(dialog); confirmService(dialog);
-    dialog.form.controls.name.setValue('My local rename'); dialog.form.controls.price.setValue(12);
+    const dialog = open(item); load(dialog);
+    dialog.form.controls.name.setValue('My local rename'); dialog.form.controls.price.setValue(12); confirmService(dialog);
     dialog.save(true); http.expectOne(r => r.method === 'PUT').flush({ error: 'PRODUCT_EDITOR_STATE_CONFLICT' }, { status: 409, statusText: 'Conflict' });
     dialog.reviewCurrent();
     const current = { ...state({ ...item, price: 20, cost: 7 }), stateToken: 'CURRENT-2', productRevision: 3, classificationRevision: 5 };

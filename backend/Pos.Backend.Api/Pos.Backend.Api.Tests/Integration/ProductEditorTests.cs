@@ -361,6 +361,9 @@ public sealed class ProductEditorTests(PostgresDatabaseFixture database) : IAsyn
         await using var db = database.CreateDbContext(); var state = await Editor(db, t).GetAsync(id);
         var result = await Editor(db, t).SaveAsync(id, Edit(state));
         Assert.Equal(state.StateToken, result.StateToken); Assert.Single(await db.ProductCostEvents.ToListAsync());
+        Assert.Equal(state.Classification, result.Classification);
+        Assert.Equal(state.ClassificationRevision, result.ClassificationRevision);
+        Assert.Single(await db.ProductFiscalClassifications.Where(c => c.ProductId == id).ToListAsync());
     }
 
     [Theory]

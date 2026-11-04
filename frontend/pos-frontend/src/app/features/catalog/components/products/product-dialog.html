@@ -65,7 +65,8 @@
           <p-tabpanel value="fiscal">
             <div class="field"><label for="product-vat-category">Categoria IVA nominal *</label><p-select inputId="product-vat-category" [options]="vatCategoryOptions" optionLabel="label" optionValue="value" formControlName="vatCategory" /></div>
             @if (canClassify()) {
-              <app-product-fiscal-fields [draft]="draft" [showKind]="false" />
+              @if (canReuseClassification()) { <p-message severity="info" text="Declaracion confirmada vigente. Se conserva sin nueva confirmacion mientras no cambien sus dependencias fiscales." /> }
+              <app-product-fiscal-fields [draft]="draft" [showKind]="false" (fiscalChange)="fiscalChanged()" />
             } @else { <p-message severity="warn" text="La declaracion fiscal requiere permisos de lectura y escritura fiscal. Puedes guardar los datos basicos." /> }
           </p-tabpanel>
           <p-tabpanel value="inventory">
@@ -86,7 +87,7 @@
     </fieldset>
     <section class="operation-state" aria-label="Pendientes operativos" aria-live="polite">
       <strong>Pendientes para vender y facturar</strong>
-      @if (!isEditMode || form.dirty) { <p>Estado del borrador pendiente de validacion al guardar.</p> }
+      @if (hasDraftChanges()) { <p>Estado del borrador pendiente de validacion al guardar.</p> }
       @else if (pending.length) { <ul>@for (code of pending; track code) { <li>{{ pendingLabel(code) }}</li> }</ul> }
       @else { <p>Sin pendientes de catalogo detectados.</p> }
       <small>Ticket y factura usan validacion fiscal. Caja, cantidad, comprador y requisitos de emision se verifican al cobrar.</small>
