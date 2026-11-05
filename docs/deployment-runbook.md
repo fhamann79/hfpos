@@ -22,7 +22,9 @@ No inicia schema/roles app; preflight R4 separa admin, migrator y runtime no-sup
 Imágenes: backend, web, migrations. Bases fijadas por digest verificado; actualizar
 estos pins mediante un ticket/revision, no asumir que un pin permanece seguro.
 Node 24 compila Angular 21 con `npm ci`; runtime nginx unprivileged, no `ng serve`.
-.NET SDK solo en build/migrations; backend runtime ASP.NET 8, sin herramientas EF.
+.NET SDK solo en build/migrations; backend runtime ASP.NET, sin herramientas EF.
+RC6 conserva ASP.NET 8; ver [transicion a .NET 10](dev-532-dotnet10-lts.md)
+para el candidato posterior a RC6. No intercambiar sus imagenes ni pines.
 Imagen de migracion incluye fuentes necesarias pero no User Secrets, certificados,
 dumps ni claves. `.dockerignore` excluye artefactos locales y el directorio no
 versionado `frontend/pos-frontend/backend/`.

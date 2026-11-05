@@ -44,10 +44,10 @@ jobs:
       - uses: docker/setup-buildx-action@v3
         with:
           driver: docker
-      - name: RC6 actual cryptographic tests on Debian Bookworm with runtime network disabled
+      - name: .NET 10 cryptographic tests on Ubuntu Noble with runtime network disabled
         run: |
-          docker build -f backend/Pos.Backend.Api/Dockerfile.fiscal-signing-tests -t hfpos-rc6-crypto:${{ github.sha }} .
-          docker run --rm --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m hfpos-rc6-crypto:${{ github.sha }}
+          docker build -f backend/Pos.Backend.Api/Dockerfile.fiscal-signing-tests -t hfpos-dotnet10-crypto:${{ github.sha }} .
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m hfpos-dotnet10-crypto:${{ github.sha }}
       - name: Supervised signed receiver and isolated PostgreSQL/keyring E2E (synthetic only)
         env:
           HFPOS_SUPERVISED_DOCKER_TESTS: 'YES'
@@ -63,8 +63,13 @@ jobs:
       - name: Build three images, smoke TLS/proxy and rehearse recovery
         shell: pwsh
         run: ./scripts/ops/start-deployment-smoke.ps1
-      - name: Build framework-only public restored application probe
+      # The probe targets net8.0; the pinned RC6 image supplies its runtime.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.403
+      - name: Build framework-only public restored application probe (net8.0)
         run: |
+          dotnet --version
           dotnet publish backend/Pos.Backend.Api/Hfpos.FiscalSmokeHost/RestoredApplicationProbe/RestoredApplicationProbe.csproj -c Release -o "$RUNNER_TEMP/dev531-probe" /p:UseAppHost=false
           git rev-parse HEAD > "$RUNNER_TEMP/dev531-probe/source-sha.txt"
           sha256sum "$RUNNER_TEMP/dev531-probe/RestoredApplicationProbe.dll" > "$RUNNER_TEMP/dev531-probe/probe-sha256.txt"
