@@ -1,8 +1,8 @@
-FROM mcr.microsoft.com/dotnet/sdk:8.0-bookworm-slim@sha256:78235e09001f52b6592c458ac010775ebac6725422e80cd0c1650590f67b2743
+FROM mcr.microsoft.com/dotnet/sdk:10.0.403-noble@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b
 WORKDIR /app
 ENV NUGET_PACKAGES=/opt/nuget
 COPY backend/Pos.Backend.Api/Pos.Backend.Api/Pos.Backend.Api.csproj ./
-RUN dotnet restore Pos.Backend.Api.csproj && dotnet tool install dotnet-ef --tool-path /opt/ef --version 8.0.4
+RUN dotnet restore Pos.Backend.Api.csproj && dotnet tool install dotnet-ef --tool-path /opt/ef --version 10.0.14
 COPY backend/Pos.Backend.Api/Pos.Backend.Api/ ./
 RUN dotnet build -c Release --no-restore && mkdir /keys && chown 1654:1654 /keys
 COPY scripts/ops/apply-migrations.sh /app/apply-migrations.sh

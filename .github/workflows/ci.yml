@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   backend:
+    # Historical required-check identifier; keep the display name stable.
     name: Backend (.NET 8 + PostgreSQL)
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -63,10 +64,10 @@ jobs:
           HFPOS_CHANGED_FILES: ${{ runner.temp }}/hfpos-changed-files.txt
         run: python3 scripts/ci/validate_pr_governance.py
 
-      - name: Setup .NET 8
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.403
 
       - name: Restore and audit backend dependencies
         run: dotnet restore backend/Pos.Backend.Api/Pos.Backend.Api.sln
@@ -96,7 +97,7 @@ jobs:
           dotnet run --project backend/Pos.Backend.Api/Hfpos.FiscalSmokeHost --configuration Release --no-build -- --initialize --verify
 
       - name: Install EF CLI
-        run: dotnet tool install --global dotnet-ef --version 8.0.4
+        run: dotnet tool install --global dotnet-ef --version 10.0.14
 
       # Separate disposable DB; no fiscal/signing fixture or SMTP delivery.
       - name: Verify synthetic assisted recovery host
@@ -143,7 +144,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.403
       - name: Build test-only host
         run: dotnet build backend/Pos.Backend.Api/Hfpos.FiscalSmokeHost --configuration Release
       - name: Verify HTTPS listener without database or trust changes

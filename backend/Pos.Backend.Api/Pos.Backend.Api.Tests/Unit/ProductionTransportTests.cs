@@ -29,7 +29,8 @@ public sealed class ProductionTransportTests
     [InlineData("SeedDemoData", "true")]
     [InlineData("AllowedHosts", "*")]
     [InlineData("ForwardedHeaders_Enabled", "true")]
-    public void Real_program_rejects_invalid_production_before_database_use(string key, string value)
+    [InlineData("Cors:AllowedOrigins:0", null)]
+    public void Real_program_rejects_invalid_production_before_database_use(string key, string? value)
     {
         using var factory = new ProductionSecurityApiFactory(new() { [key] = value });
         Assert.Throws<OptionsValidationException>(() => factory.Client());
@@ -42,7 +43,8 @@ public sealed class ProductionTransportTests
     [InlineData(null, "https://other.test", false)]
     public async Task Cors_returns_headers_only_for_explicit_allowed_origins(string? allowed, string origin, bool accepted)
     {
-        using var factory = new ProductionSecurityApiFactory(new() { ["Cors:AllowedOrigins:0"] = allowed });
+        using var factory = new ProductionSecurityApiFactory(
+            allowed is null ? null : new() { ["Cors:AllowedOrigins:0"] = allowed });
         using var client = factory.Client();
         using var request = new HttpRequestMessage(HttpMethod.Options, "/api/Auth/login");
         request.Headers.Add("Origin", origin); request.Headers.Add("Access-Control-Request-Method", "POST");
