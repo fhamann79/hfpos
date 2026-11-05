@@ -424,7 +424,10 @@ class DockerApplicationTests(unittest.TestCase):
             ("emit", app.IMAGE, "", b"RC6 KEYRING WRITE PASS"),
             ("read", candidate, ",readonly", b"CANDIDATE KEYRING READ PASS"),
         ):
+            # Data Protection stages key XML in /tmp only when emitting keys.
+            temp_mount = ("--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=1m,mode=1777") if mode == "emit" else ()
             result = app.docker("run", "--rm", "--pull=never", "--network", "none", "--read-only",
+                *temp_mount,
                 "--user", "1654:1654", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
                 "--log-driver", "none", "--mount", f"type=bind,source={dll},target=/KeyringCompatibility.dll,readonly",
                 "--mount", f"type=bind,source={data},target=/fixture{access}", "--workdir", "/fixture",
