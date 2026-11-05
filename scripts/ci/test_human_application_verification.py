@@ -410,6 +410,31 @@ class ApplicationTests(unittest.TestCase):
 
 @unittest.skipUnless(os.name == "posix" and os.environ.get("HFPOS_APPLICATION_DOCKER_TESTS") == "YES", "CI-only actual-image E2E")
 class DockerApplicationTests(unittest.TestCase):
+    def assert_rc6_keyring_readable_by_candidate(self, app, folder, project):
+        # Mount only this synthetic fixture, never a database or application keyring.
+        data = folder / "dev532-keyring"
+        data.mkdir(mode=0o700)
+        os.chown(data, 1654, 1654)
+        dll = folder / "KeyringCompatibility.dll"
+        dll.write_bytes(Path(os.environ["HFPOS_KEYRING_COMPAT_DLL"]).read_bytes())
+        dll.chmod(0o444)
+        candidate = app.docker("image", "inspect", "--format", "{{.Id}}", f"{project}/backend:smoke").decode().strip()
+        self.assertRegex(candidate, r"^sha256:[a-f0-9]{64}$")
+        for mode, image, access, expected in (
+            ("emit", app.IMAGE, "", b"RC6 KEYRING WRITE PASS"),
+            ("read", candidate, ",readonly", b"CANDIDATE KEYRING READ PASS"),
+        ):
+            result = app.docker("run", "--rm", "--pull=never", "--network", "none", "--read-only",
+                "--user", "1654:1654", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+                "--log-driver", "none", "--mount", f"type=bind,source={dll},target=/KeyringCompatibility.dll,readonly",
+                "--mount", f"type=bind,source={data},target=/fixture{access}", "--workdir", "/fixture",
+                "--entrypoint", "dotnet", image,
+                "exec", "--runtimeconfig", "/app/Pos.Backend.Api.runtimeconfig.json", "/KeyringCompatibility.dll", mode,
+                check=False)
+            self.assertEqual(0, result.returncode, result.stderr.decode(errors="replace"))
+            self.assertEqual(expected, result.stdout.strip())
+        print("RC6 -> candidate Data Protection PASS (synthetic keyring/payload, no database)")
+
     def test_actual_rc_backend_with_restored_database_keyring_and_queued_job(self):
         self.assertEqual("true", os.environ.get("GITHUB_ACTIONS"))
         self.assertEqual("github-hosted", os.environ.get("RUNNER_ENVIRONMENT"))
@@ -442,6 +467,7 @@ class DockerApplicationTests(unittest.TestCase):
             self.assertEqual(b"BOOTSTRAP_TOOLS_PASS", tools)
             suffix = hashlib.sha256(str(ROOT).lower().encode()).hexdigest()[:12]
             project = "hfpos-dev531-" + suffix
+            self.assert_rc6_keyring_readable_by_candidate(app, fixture.folder, project)
             pg = app.docker("ps", "--filter", "label=com.docker.compose.project=" + project,
                             "--filter", "label=com.docker.compose.service=postgres", "--format", "{{.ID}}").decode().strip()
             self.assertRegex(pg, r"^[a-f0-9]{12,64}$")

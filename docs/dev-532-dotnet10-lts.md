@@ -30,6 +30,10 @@ Los manifiestos MCR fijados en Dockerfiles incluyen linux/amd64 y linux/arm64.
 Se mantienen UID/GID 1654:1654, /keys, HTTP 8080 y el healthcheck existente.
 Noble cambia bibliotecas nativas y CA del sistema: verificar firma XAdES,
 TLS/proxy y trust sintetico sin instalar raices en la imagen de produccion.
+El [binder de .NET 10](https://learn.microsoft.com/en-us/dotnet/core/compatibility/extensions/10.0/configuration-null-values-preserved)
+conserva null explicitos. La prueba de CORS sin origen configurado usa la lista
+vacia de produccion, y prueba por separado el rechazo de un origen null.
+No cambia la politica CORS.
 
 El probe no referencia la API del repositorio: se compila contra referencias
 net8.0. Localmente se verifico con el SDK aislado 10.0.403; Containers instala
@@ -38,9 +42,13 @@ El helper ejecuta solo su DLL sellada con el runtimeconfig
 de la API en la imagen RC6 exacta. No se usa roll-forward, ni se repinan RC6,
 su identidad o el helper. El E2E existente prueba RC6 sobre una restauracion
 sintetica originada por el smoke del candidato: HTTP, keyring, worker en solo
-lectura y ausencia de payload. Eso cubre candidato -> RC6, no RC6 -> candidato.
-No es un verificador general para .NET 10; una futura recuperacion operativa
-del candidato requiere su propia evidencia.
+lectura y ausencia de payload. Ese ensayo de restauracion cubre candidato ->
+RC6. Para la direccion RC6 -> candidato, Containers tambien ejecuta una prueba
+focal de Data Protection: el runtime 8 del digest RC6 emite un payload y keyring
+sinteticos y el runtime 10 del candidato lo descifra con el mismo ApplicationName
+y purpose, sin red ni base de datos y con el keyring de solo lectura en el lector.
+Esto no prueba un restore completo de DB RC6 -> candidato. Una futura
+recuperacion operativa del candidato requiere su propia evidencia.
 
 ## EF y PostgreSQL
 
@@ -74,15 +82,11 @@ base EF 8. No se aplico SQL ni se genero una migracion.
    con PostgreSQL 16 y material sintetico. Registrar SHA, digests de backend,
    web y migrations, SBOM/provenance, configuracion no secreta, historial EF y
    copia coherente de base, keyring y configuracion RC6. Verificar su restore.
-2. Recorrido humano R3 pre-merge: en el entorno aislado, verificar readiness
-   y proxy TLS; probar login, revocacion y rechazo cross-tenant; repetir una
-   compra y una venta con caja y comprobar stock, totales e idempotencia;
-   verificar firma, XML/PDF y emision solo simulada; probar recuperacion TLS
-   y confirmar el E2E contra el digest RC6. Probar tambien la direccion no
-   cubierta por CI: generar un payload sintetico y keyring con RC6, restaurar
-   la copia coherente en el entorno aislado y verificar que el candidato
-   descifra ese payload con el mismo discriminador. Bloquea la aceptacion y
-   cualquier rollout mientras no se demuestre. Aceptacion de Fernando: pendiente.
+2. Recorrido humano R3 pre-merge, tras CI verde: en el entorno aislado, iniciar
+   sesion, registrar una compra y una venta con caja, comprobar stock y totales,
+   y abrir el XML/PDF de la emision simulada. Aceptacion de Fernando: pendiente.
+   El equipo valida TLS, aislamiento, idempotencia y compatibilidad del keyring
+   en CI; Fernando no tiene que generar ni restaurar claves.
 3. Para un futuro cambio real, un operador humano debe obtener autorizacion
    R4 separada, acordar ventana y quiescer escrituras/worker. Comparar
    `__EFMigrationsHistory` y readiness previa: este ticket no requiere DDL

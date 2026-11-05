@@ -74,11 +74,14 @@ jobs:
           git rev-parse HEAD > "$RUNNER_TEMP/dev531-probe/source-sha.txt"
           sha256sum "$RUNNER_TEMP/dev531-probe/RestoredApplicationProbe.dll" > "$RUNNER_TEMP/dev531-probe/probe-sha256.txt"
           python3 -I -B scripts/ops/human-application-verification.py seal --source-sha "$(git rev-parse HEAD)" --probe-dll "$RUNNER_TEMP/dev531-probe/RestoredApplicationProbe.dll" --output "$RUNNER_TEMP/dev531-app-code"
+      - name: Build CI-only cross-runtime keyring fixture
+        run: dotnet publish scripts/ci/KeyringCompatibility -c Release -o "$RUNNER_TEMP/dev532-keyring" /p:UseAppHost=false
       - name: Actual deployed RC HTTP, restored DB/keyring, read-only queued worker and absent payload E2E
         env:
           HFPOS_APPLICATION_DOCKER_TESTS: 'YES'
           HFPOS_APPLICATION_PROBE_DLL: ${{ runner.temp }}/dev531-probe/RestoredApplicationProbe.dll
-        run: sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,HFPOS_APPLICATION_DOCKER_TESTS,HFPOS_APPLICATION_PROBE_DLL python3 -B scripts/ci/test_human_application_verification.py -v
+          HFPOS_KEYRING_COMPAT_DLL: ${{ runner.temp }}/dev532-keyring/KeyringCompatibility.dll
+        run: sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,HFPOS_APPLICATION_DOCKER_TESTS,HFPOS_APPLICATION_PROBE_DLL,HFPOS_KEYRING_COMPAT_DLL python3 -B scripts/ci/test_human_application_verification.py -v
       - uses: actions/upload-artifact@v4
         with:
           name: dev531-public-application-probe
