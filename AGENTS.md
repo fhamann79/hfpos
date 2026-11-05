@@ -23,7 +23,7 @@ Every change follows this order:
 6. **PR**: provide evidence using the repository PR template. Implementers do not merge.
 7. **Independent review**: a reviewer that did not author the implementation inspects the diff, architecture, tenant isolation, concurrency, SQL/data behavior, security and tests as applicable.
 8. **CI**: all required automated checks must be green.
-9. **Human gate**: complete merge-blocking human validation; explicitly schedule eligible consolidated cycle validation under section 4.
+9. **Human gate**: complete any required human acceptance of demonstrated evidence and any hands-on human smoke explicitly required by section 4; explicitly schedule eligible consolidated cycle validation.
 10. **Conditional merge**: the coordinator may merge an approved ticket only after every condition below is evidenced; otherwise stop at the applicable human gate.
 11. **Post-merge**: verify GitHub merge and new `main` SHA/CI, reconcile remaining group PRs and validate their effective diffs proportionally on exact new HEADs. Continue the integration loop automatically; no `MERGEADO` prompt is needed.
 12. **Cycle closure**: verify final `main` and integration, obtain required cycle acceptance, clean only obsolete resources that no remaining front needs, then return to DISCOVER and propose the next group. Do not start it without approval.
@@ -32,7 +32,7 @@ A green CI run is necessary but never sufficient to merge. Authority comes from 
 
 When acting as orchestrator, Codex owns discovery, proposal, internal ticket prompts/delegation, dependency and collision analysis, validation, independent review, CI and the entire merge loop. Fernando approves **what**; Codex coordinates **how**, without asking Fernando to copy prompts between agents. The coordinator is not the default feature implementer or a silent additional writer; an approved operating-policy update may be authored by the coordinator itself.
 
-Human gates are scope approval, ambiguous functional/material decisions, required pre-merge or cycle validation, and separately authorized R4 operations. Do not ask for ceremonial merges when conditional authority applies. Stop only the affected front on a material conflict; independent fronts may continue. Report unrelated findings for later prioritization, not opportunistic fixes or unapproved tickets.
+Human gates are scope approval, ambiguous functional/material decisions, required acceptance of pre-merge or cycle evidence (including hands-on smoke only when section 4 requires it), and separately authorized R4 operations. Do not ask for ceremonial merges when conditional authority applies. Stop only the affected front on a material conflict; independent fronts may continue. Report unrelated findings for later prioritization, not opportunistic fixes or unapproved tickets.
 
 ### Conditional merge gate
 
@@ -45,7 +45,7 @@ The coordinator, never the implementer acting as its own reviewer, may execute a
 - It is not R4 and uses no real business data, production infrastructure operations, secrets, certificates or real SRI. A code merge is not deployment authorization.
 - Immediately before merge, recheck HEAD/base and gates. Bind the merge request to the verified HEAD and honor GitHub required checks/rules (including merge-queue checks when configured). Never bypass protections, use an admin override or arm unattended auto-merge before gates are complete. If safe execution cannot be demonstrated, stop.
 
-For critical semantics or material doubt, say **VALIDACION HUMANA PRE-MERGE REQUERIDA**, give concrete steps and wait for **VALIDADO OK**. Then recheck all remaining conditions; that reply alone is not sufficient. Explicit human restrictions such as `NO MERGE` always take precedence. R4 remains human-controlled, never autonomous.
+For actual changes to critical semantics or material doubt, say **VALIDACION HUMANA PRE-MERGE REQUERIDA**, give concrete steps and wait for **VALIDADO OK**. For eligible evidence-based technical-platform exceptions under section 4, request explicit human acceptance of the agent's report instead of Fernando executing the smoke. Then recheck all remaining conditions; that reply alone is not sufficient. Explicit human restrictions such as `NO MERGE` always take precedence. R4 remains human-controlled, never autonomous.
 
 ## 3. Parallel agents and worktrees
 
@@ -73,7 +73,7 @@ Validation follows real risk and the effective diff: maximize safety per unit of
 - Frontend-only: relevant frontend tests, build, runtime audit when applicable and CI. No local backend/PostgreSQL/EF/recovery unless a real dependency or interaction justifies it.
 - Backend read-only/reporting/export: pertinent backend tests and CI; no full frontend suite unless a shared contract/interaction changes.
 - PostgreSQL, EF/model/migrations, concurrency and Containers/recovery are required when the effective persistence, integration or operational risk warrants them, not by ceremony. Automatically required CI is never waived.
-- Critical money/transactions, mutable stock, locking/idempotency, auth/RBAC/session, tenancy, migrations/data repair, SRI lifecycle and privileged operations retain deep proportional validation and pre-merge human barriers.
+- Actual changes to critical money/transactions, mutable stock, locking/idempotency, auth/RBAC/session, tenancy, migrations/data repair, SRI lifecycle and privileged operations retain deep proportional validation and pre-merge human barriers. A platform/toolchain upgrade that touches their runtime without changing their business semantics follows the evidence-based exception below only if its strict conditions are met.
 - Keep conservative path-derived R3 and required human validation, but justify read-only/output/UX fast paths from the effective diff; a path alone does not mandate a full transactional audit. See the timing rules below.
 - Batch BLOCKER/MAJOR corrections. Review a focused correction's delta plus integration impact; do not restart an already demonstrated full functional review or review the review without new material risk.
 
@@ -114,14 +114,15 @@ Minimum validation:
 - concurrency/idempotency tests when applicable;
 - migration/model verification when applicable;
 - independent architecture/security/data review;
-- human validation with timing determined by the rules below; critical semantics require it before merge.
+- human acceptance of evidence with timing determined by the rules below; changes to critical semantics require hands-on human smoke before merge unless independently demonstrated to need no human interaction under an explicitly approved, integrated policy.
 
 ### Human validation timing
 
-- **Merge-blocking**: validate before merge when changes actually affect critical semantics: money/transactions, stock/purchase/sale/cash mutations, concurrency/locking/idempotency, auth/RBAC/session, tenant isolation, migrations/data repair, SRI lifecycle or privileged operations. Consolidation must not defer this safety barrier.
+- **Merge-blocking**: require hands-on human smoke before merge when the effective change actually alters critical semantics: money/transactions, stock/purchase/sale/cash mutations, concurrency/locking/idempotency, auth/RBAC/session, tenant isolation, migrations/data repair, SRI lifecycle or privileged operations. Consolidation must not defer this safety barrier.
 - **Consolidated cycle validation**: compatible UX, read-only queries, pagination, search, reporting/export and non-destructive interactions may share one smoke, including after the individual merges, only when technical tests, independent review and exact-HEAD CI are sufficient. The coordinator and independent reviewer must explicitly justify in the PR why no merge-blocking human barrier remains, list scope/steps and record Fernando's pending cycle acceptance. The category alone is not an exemption; security or critical semantics still use pre-merge validation.
 - Keep the declared/path-derived risk unchanged. A conservative R3 caused by paths may use consolidated smoke only if the effective diff changes no critical semantics and the above justification is evidenced. R3 still declares human validation required; it does not become R2 to avoid checks.
-- If there is material doubt, use pre-merge validation. A controlled temporary integration of compatible HEADs may support one consolidated **pre-merge** smoke; it is not a merge to `main` or authorization for R4.
+- **Evidence-based technical-platform exception (R3)**: for a runtime/SDK/framework/provider/container migration that makes **no deliberate business, API, database schema/migration, auth-policy or SRI-lifecycle changes**, the coordinator may replace Fernando's hands-on pre-merge smoke with an **agent-executed synthetic end-to-end laboratory run** plus Fernando's explicit acceptance of its report. Requirements: isolate disposable PostgreSQL and fake fiscal endpoints, cover representative login, purchase, sale/cash, stock/totals and simulated XML/PDF as relevant, preserve all original automated CI/Containers/governance checks on the exact HEAD, obtain independent B0/M0 review including coverage limitations, and document residual risks. Fernando must not be asked to repeat the walkthrough; his acceptance is a decision, not a claim that he personally ran the tests. No exception if material runtime behavioral regressions or coverage gaps remain, or if the effective diff changes critical semantics; then require human pre-merge smoke. This does **not** authorize merging PRs marked `NO MERGE`, nor any R4 operation. The R3 PR template's `Validación manual: Requerida: SI` continues to mean **human evidence-acceptance gate**; report explicitly that the physical smoke is agent-executed, not human-executed.
+- If there is material doubt, use hands-on pre-merge validation. A controlled temporary integration of compatible HEADs may support one consolidated **pre-merge** smoke; it is not a merge to `main` or authorization for R4.
 
 ### R4 — real-world destructive or privileged operation
 
