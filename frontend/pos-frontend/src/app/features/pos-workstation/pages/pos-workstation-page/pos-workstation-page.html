@@ -68,7 +68,7 @@
         <p-button label="Siguiente cliente" icon="pi pi-arrow-right" (onClick)="nextCustomer()" />
       </section>
     }
-    <div class="workstation-shell">
+    <div class="workstation-shell" [class.workstation-shell--pending]="!!pendingCheckout()">
       @if (canSell) {
         <main class="sale-flow">
           <section class="customer-context">

@@ -525,8 +525,10 @@ describe('POS cart visibility and keyboard focus', () => {
   });
 
   it('keeps a single persistent recovery notice when its displayed reason changes', () => {
+    expect(host.querySelector('.workstation-shell--pending')).toBeNull();
     page.pendingCheckout.set({ requestId: 'SYNTHETIC-PENDING', items: [] });
     fixture.detectChanges();
+    expect(host.querySelector('.workstation-shell--pending')).not.toBeNull();
     expect(host.textContent?.match(/Cobro pendiente de recuperar/g)).toHaveLength(1);
     expect(host.textContent).toContain('El resultado no está confirmado');
     page.checkoutPendingMessage.set('Conflicto de intención. Verifica la venta antes de volver a cobrar.');
@@ -535,5 +537,8 @@ describe('POS cart visibility and keyboard focus', () => {
     expect(host.textContent).toContain('Conflicto de intención');
     expect(host.textContent).not.toContain('El resultado no está confirmado');
     expect(Array.from(host.querySelectorAll('button')).filter(button => button.textContent?.includes('Recuperar cobro'))).toHaveLength(1);
+    page.pendingCheckout.set(null);
+    fixture.detectChanges();
+    expect(host.querySelector('.workstation-shell--pending')).toBeNull();
   });
 });

@@ -57,6 +57,10 @@
   align-items: start;
 }
 
+.workstation-shell--pending {
+  --pos-cart-banner-reserve: 5rem;
+}
+
 .cash-context,
 .fiscal-status {
   grid-column: 1 / -1;

@@ -54,7 +54,7 @@ h2 {
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 0.3rem;
-  max-block-size: clamp(9rem, 100dvh - 30rem, 26rem);
+  max-block-size: clamp(9rem, 100dvh - 30rem - var(--pos-cart-banner-reserve, 0rem), 26rem);
   overflow: auto;
   scrollbar-gutter: stable;
   padding-inline-end: 0.2rem;
