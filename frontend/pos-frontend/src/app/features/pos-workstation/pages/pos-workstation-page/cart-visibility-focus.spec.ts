@@ -388,6 +388,33 @@ describe('POS cart visibility and keyboard focus', () => {
     expect(confirm).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    { first: 'F4', second: 'F2', input: 'input[aria-label="Buscar cliente"]' },
+    { first: 'F2', second: 'F4', input: '.quick-search-input' },
+  ])('keeps $first active when $second or F8 is pressed, then restores scanner focus', async ({ first, second, input }) => {
+    key(search, first);
+    fixture.detectChanges();
+    const active = host.querySelector<HTMLInputElement>(input)!;
+    await vi.waitFor(() => expect(document.activeElement).toBe(active));
+
+    key(active, second);
+    key(active, 'F8');
+    fixture.detectChanges();
+    expect(page.quickSearchVisible()).toBe(first === 'F2');
+    expect(page.customerSelectorVisible()).toBe(first === 'F4');
+    expect(page.recentSalesVisible()).toBe(false);
+    expect(host.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(host.querySelector<HTMLButtonElement>(`button[aria-keyshortcuts="${second}"]`)?.disabled).toBe(true);
+    expect(document.activeElement).toBe(active);
+
+    key(active, 'Escape');
+    fixture.detectChanges();
+    await vi.waitFor(() => expect(document.activeElement).toBe(search));
+    expect(page.quickSearchVisible()).toBe(false);
+    expect(page.customerSelectorVisible()).toBe(false);
+    expect(host.querySelector<HTMLButtonElement>(`button[aria-keyshortcuts="${second}"]`)?.disabled).toBe(false);
+  });
+
   it('routes the first F4 Escape back to customer lookup and the second back to the scanner', async () => {
     key(search, 'F4');
     fixture.detectChanges();

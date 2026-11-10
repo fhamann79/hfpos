@@ -154,7 +154,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly selectedPaymentMethod = signal<SalePaymentMethod>(SalePaymentMethod.Cash);
   readonly notes = signal('');
   readonly checkoutVisible = signal(false);
-  readonly saleLookupBlocked = computed(() => this.checkoutLocked() || this.checkoutVisible());
+  readonly workstationModalActive = computed(() => this.hasCartKeyboardModal(null));
+  readonly saleLookupBlocked = computed(() => this.checkoutLocked() || this.workstationModalActive());
   readonly customerSelectorVisible = signal(false);
   readonly quickSearchVisible = signal(false);
   readonly recentSalesVisible = signal(false);
@@ -631,7 +632,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   openRecentSales(): void {
-    if (this.canReadReports && !this.checkoutVisible()) this.recentSalesVisible.set(true);
+    if (this.canReadReports && !this.workstationModalActive()) this.recentSalesVisible.set(true);
   }
 
   openCustomerSelector(): void {

@@ -32,7 +32,7 @@
         }
         @if (canReadReports) {
           <p-button label="Ventas recientes" icon="pi pi-receipt" size="small" severity="secondary" [outlined]="true"
-            [disabled]="checkoutVisible()" (onClick)="openRecentSales()" />
+            [disabled]="workstationModalActive()" (onClick)="openRecentSales()" />
         }
       </div>
     }
@@ -148,7 +148,8 @@
 
       @if (!canSell && canReadReports) {
         <div class="reports-only">
-          <p-button label="Abrir ventas recientes" icon="pi pi-receipt" (onClick)="openRecentSales()"></p-button>
+          <p-button label="Abrir ventas recientes" icon="pi pi-receipt"
+            [disabled]="workstationModalActive()" (onClick)="openRecentSales()" />
         </div>
       }
     </div>
