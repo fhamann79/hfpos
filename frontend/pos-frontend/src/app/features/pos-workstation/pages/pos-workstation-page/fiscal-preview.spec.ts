@@ -81,7 +81,7 @@ describe('Authoritative fiscal preview', () => {
   });
 
   it('renders effective line tax, allocated discount and total without nominal fallback', () => {
-    const p = page(); const cart = new CartWorkstation(); const item = p.cart()[0];
+    const p = page(); const cart = TestBed.runInInjectionContext(() => new CartWorkstation()); const item = p.cart()[0];
     cart.items = [item]; expect(cart.lineTotal(item)).toBeNull(); expect(cart.vatLabel(item)).toBe('IVA pendiente');
     cart.fiscalPreview = { ...result(), items: [{productId:7,quantity:1,unitPrice:10,discountAmount:1,
       vatCategory:ProductVatCategory.Vat0,vatRate:0,taxableSubtotal:9,taxAmount:0,lineTotal:9}] };
