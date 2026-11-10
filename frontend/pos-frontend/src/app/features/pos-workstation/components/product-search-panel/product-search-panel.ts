@@ -84,7 +84,7 @@ export class ProductSearchPanel implements AfterViewInit, OnDestroy {
   }
 
   onSearchKeydown(event: KeyboardEvent): void {
-    if (event.key !== 'Enter' || event.altKey || event.isComposing) {
+    if (event.key !== 'Enter') {
       return;
     }
 

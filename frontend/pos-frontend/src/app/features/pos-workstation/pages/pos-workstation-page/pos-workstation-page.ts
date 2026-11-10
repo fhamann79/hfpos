@@ -3262,7 +3262,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
     const key = event.key;
     if (event.altKey) {
-      if (key === 'Enter' && !event.repeat && !event.shiftKey && !this.checkoutLocked()) {
+      if (key.toLowerCase() === 'q' && !event.repeat && !event.shiftKey && !this.checkoutLocked()) {
         this.toggleCartQuantityFocus(event, target);
       }
       return;

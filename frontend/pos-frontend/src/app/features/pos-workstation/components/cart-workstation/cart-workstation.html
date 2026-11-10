@@ -41,7 +41,7 @@
                 data-cart-quantity
                 inputId="qty-{{ item.productId }}"
                 ariaLabel="Cantidad de {{ item.productName }}"
-                [pt]="{ pcInputText: { root: { 'aria-keyshortcuts': 'Alt+Enter' } } }"
+                [pt]="{ pcInputText: { root: { 'aria-keyshortcuts': 'Alt+Q' } } }"
                 [ngModel]="item.quantity"
                 (ngModelChange)="updateQuantity.emit({ productId: item.productId, quantity: $event ?? 0 })"
                 [min]="1"

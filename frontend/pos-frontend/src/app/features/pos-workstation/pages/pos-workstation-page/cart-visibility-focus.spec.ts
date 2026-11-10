@@ -61,13 +61,29 @@ describe('POS cart visibility and keyboard focus', () => {
     fixture.detectChanges();
     await new Promise<void>((resolve) => setTimeout(resolve, 0)); // Existing initial search focus.
     host = fixture.nativeElement;
-    search = host.querySelector<HTMLInputElement>('input[aria-keyshortcuts="Alt+Enter"]')!;
+    search = host.querySelector<HTMLInputElement>('input[aria-keyshortcuts="Alt+Q"]')!;
   });
 
   function key(target: HTMLElement, name: string, options: KeyboardEventInit = {}): KeyboardEvent {
     const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...options });
     target.dispatchEvent(event);
     return event;
+  }
+
+  function quantityShortcut(target: HTMLElement): KeyboardEvent {
+    return key(target, 'q', { altKey: true, code: 'KeyQ' });
+  }
+
+  async function finishPreview(items: number): Promise<void> {
+    await vi.waitFor(() => expect(previewSale.mock.lastCall?.[0].items).toHaveLength(items));
+    preview.next({
+      fingerprint: 'SYNTHETIC', total: 4, fiscalDate: '2026-11-10', profileRevision: 1,
+      grossSubtotal: 4, discountAmount: 0, subtotal: 4, taxAmount: 0,
+      vat15Subtotal: 0, vat5Subtotal: 0, vat0Subtotal: 4, vatExemptSubtotal: 0,
+      vatNotSubjectSubtotal: 0, items: [],
+    });
+    fixture.detectChanges();
+    expect(page.fiscalPreviewCurrent()).toBe(true);
   }
 
   function renderCart() {
@@ -135,17 +151,17 @@ describe('POS cart visibility and keyboard focus', () => {
     await fixture.whenStable();
     list.scrollTop = 0;
     search.focus();
-    expect(key(search, 'Enter', { altKey: true }).defaultPrevented).toBe(true);
+    expect(quantityShortcut(search).defaultPrevented).toBe(true);
     const quantity = host.querySelector<HTMLInputElement>('#qty-2')!;
     expect(document.activeElement).toBe(quantity);
-    expect(quantity.getAttribute('aria-keyshortcuts')).toBe('Alt+Enter');
+    expect(quantity.getAttribute('aria-keyshortcuts')).toBe('Alt+Q');
     expect(list.scrollTop).toBe(60);
     expect(key(quantity, 'ArrowDown').defaultPrevented).toBe(true); // PrimeNG, not cart navigation.
     expect(page.activeCartProductId()).toBe(2);
 
     quantity.value = '4';
     quantity.dispatchEvent(new Event('input', { bubbles: true }));
-    expect(key(quantity, 'Enter', { altKey: true }).defaultPrevented).toBe(true);
+    expect(quantityShortcut(quantity).defaultPrevented).toBe(true);
     expect(document.activeElement).toBe(search);
     expect(page.cart().find(item => item.productId === 2)?.quantity).toBe(4);
     expect(key(search, '+').defaultPrevented).toBe(true);
@@ -161,7 +177,7 @@ describe('POS cart visibility and keyboard focus', () => {
     search.dispatchEvent(new Event('input', { bubbles: true }));
     fixture.detectChanges();
     expect(key(search, 'ArrowDown').defaultPrevented).toBe(false);
-    expect(key(search, 'Enter', { altKey: true }).defaultPrevented).toBe(false);
+    expect(quantityShortcut(search).defaultPrevented).toBe(false);
     await vi.waitFor(() => expect(searchProducts).toHaveBeenCalledWith('SYN-3', 30));
 
     const price = host.querySelector<HTMLInputElement>('#price-1')!;
@@ -171,18 +187,10 @@ describe('POS cart visibility and keyboard focus', () => {
     expect(page.cart().map(item => item.productId)).toEqual([1, 3]);
     expect(list.scrollTop).toBe(0);
     expect(document.activeElement).toBe(price);
-    expect(key(price, 'Enter', { altKey: true }).defaultPrevented).toBe(false);
+    expect(quantityShortcut(price).defaultPrevented).toBe(false);
 
     search.focus();
-    await vi.waitFor(() => expect(previewSale.mock.lastCall?.[0].items).toHaveLength(2));
-    preview.next({
-      fingerprint: 'SYNTHETIC', total: 4, fiscalDate: '2026-11-10', profileRevision: 1,
-      grossSubtotal: 4, discountAmount: 0, subtotal: 4, taxAmount: 0,
-      vat15Subtotal: 0, vat5Subtotal: 0, vat0Subtotal: 4, vatExemptSubtotal: 0,
-      vatNotSubjectSubtotal: 0, items: [],
-    });
-    fixture.detectChanges();
-    expect(page.fiscalPreviewCurrent()).toBe(true);
+    await finishPreview(2);
     expect(list.scrollTop).toBe(0);
     expect(document.activeElement).toBe(search);
   });
@@ -200,10 +208,10 @@ describe('POS cart visibility and keyboard focus', () => {
     page.receiptVisible.set(true);
     search.focus();
     expect(key(search, 'ArrowDown').defaultPrevented).toBe(false);
-    expect(key(search, 'Enter', { altKey: true }).defaultPrevented).toBe(false);
+    expect(quantityShortcut(search).defaultPrevented).toBe(false);
     page.receiptVisible.set(false);
     page.checkoutLoading.set(true);
-    expect(key(search, 'Enter', { altKey: true }).defaultPrevented).toBe(false);
+    expect(quantityShortcut(search).defaultPrevented).toBe(false);
     expect(document.activeElement).toBe(search);
     page.checkoutLoading.set(false);
     page.searchTerm.set('Synthetic');
@@ -212,5 +220,38 @@ describe('POS cart visibility and keyboard focus', () => {
     expect(key(search, 'Enter').defaultPrevented).toBe(true);
     expect(page.cart().map(item => item.productId)).toEqual([1, 2]);
     expect(document.activeElement).toBe(search);
+  });
+
+  it('does not confirm checkout from its cash input with the quantity shortcut; plain Enter still confirms', async () => {
+    renderCart();
+    await finishPreview(1);
+    const confirm = vi.spyOn(page, 'confirmCheckout').mockImplementation(() => undefined);
+    page.checkoutVisible.set(true);
+    fixture.detectChanges();
+    const cash = document.querySelector<HTMLInputElement>('#checkout-cash-received')!;
+    cash.focus();
+    expect(quantityShortcut(cash).defaultPrevented).toBe(false);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(cash);
+    expect(page.checkoutVisible()).toBe(true);
+    expect(key(cash, 'Enter').defaultPrevented).toBe(true);
+    expect(confirm).toHaveBeenCalledOnce();
+  });
+
+  it('does not pick or close a real F2 search with the quantity shortcut; plain Enter still picks', () => {
+    renderCart();
+    expect(key(search, 'F2').defaultPrevented).toBe(true);
+    fixture.detectChanges();
+    lookup.next([product(2)]);
+    fixture.detectChanges();
+    const quickSearch = document.querySelector<HTMLInputElement>('.quick-search-input')!;
+    quickSearch.focus();
+    expect(quantityShortcut(quickSearch).defaultPrevented).toBe(false);
+    expect(page.cart().map(item => item.productId)).toEqual([1]);
+    expect(page.quickSearchVisible()).toBe(true);
+    expect(document.activeElement).toBe(quickSearch);
+    expect(key(quickSearch, 'Enter').defaultPrevented).toBe(true);
+    expect(page.cart().map(item => item.productId)).toEqual([1, 2]);
+    expect(page.quickSearchVisible()).toBe(false);
   });
 });
