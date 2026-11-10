@@ -792,6 +792,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       return;
     }
     try {
+      this.checkoutPendingMessage.set('El resultado no está confirmado. Recupera el mismo cobro, sin crear otra venta.');
       this.pendingCheckoutScope = this.checkoutScope();
       this.pendingIntent = this.intentService.save(this.checkoutActor(), this.pendingCheckoutScope, payload, {
         cart: this.cart(), customer: this.selectedCustomer(), discountAmount: this.saleDiscountAmount(),

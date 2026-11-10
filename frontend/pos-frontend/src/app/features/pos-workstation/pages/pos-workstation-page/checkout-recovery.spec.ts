@@ -183,6 +183,34 @@ describe('Checkout recovery', () => {
     }
   });
 
+  it('keeps the current warning during retry but resets it before publishing a new intent', () => {
+    const p = page();
+    p.confirmCheckout();
+    const first = sent();
+    response.error(new HttpErrorResponse({ status: 409, error: { error: 'REQUEST_CONFLICT' } }));
+    const conflictMessage = p.checkoutPendingMessage();
+    const storage = JSON.stringify(sessionStorage);
+    expect(conflictMessage).toContain('Conflicto de intención');
+
+    response = new Subject<Sale>();
+    api.createSale.mockReturnValue(response);
+    p.confirmCheckout();
+    expect(sent()).toBe(first);
+    expect(p.checkoutPendingMessage()).toBe(conflictMessage);
+    expect(JSON.stringify(sessionStorage)).toBe(storage);
+
+    response.error(new HttpErrorResponse({ status: 400, error: { error: 'SALE_NOTES_TOO_LONG' } }));
+    expect(p.pendingCheckout()).toBeNull();
+    expect(p.checkoutPendingMessage()).toBe(conflictMessage);
+    response = new Subject<Sale>();
+    api.createSale.mockReturnValue(response);
+    p.confirmCheckout();
+    expect(sent().requestId).not.toBe(first.requestId);
+    expect(p.pendingCheckout()).toBe(sent());
+    expect(p.checkoutPendingMessage()).toBe('El resultado no está confirmado. Recupera el mismo cobro, sin crear otra venta.');
+    p.ngOnDestroy();
+  });
+
   it('restores an empty fresh page draft before releasing a definitive stock rejection', () => {
     const stockRefresh = new Subject<PosProduct[]>();
     catalog.refreshCartProducts.mockReturnValueOnce(stockRefresh);
