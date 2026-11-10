@@ -2,11 +2,16 @@
   header="Confirmar venta"
   [visible]="visible"
   [modal]="true"
-  [closable]="!loading" [closeOnEscape]="!loading"
-  [style]="{ width: '30rem', maxWidth: '96vw' }"
+  [closable]="!loading"
+  [closeOnEscape]="false"
+  closeAriaLabel="Cerrar cobro"
+  [style]="{ width: '30rem', maxWidth: '96vw', maxHeight: '90dvh' }"
+  [contentStyle]="{ minHeight: '0', overflowY: 'auto' }"
   (visibleChange)="visibleChange.emit($event)"
+  (onHide)="hidden.emit()"
+  (keydown)="onKeydown($event)"
 >
-  <div class="confirm-content" (keydown)="onKeydown($event)" tabindex="0">
+  <div class="confirm-content" tabindex="0">
     <p><strong>Items:</strong> {{ itemCount }}</p>
 
     <section class="document-choice">
@@ -65,10 +70,15 @@
       <strong>Total: {{ total | currency: 'USD' }}</strong>
     </div>
     <p><strong>Notas:</strong> {{ notes || 'Sin notas' }}</p>
-    <p class="hint">Presiona Enter para confirmar o Escape para cancelar.</p>
-
     @if (!fiscalReady) { <p role="alert">{{ fiscalError || 'Calculando impuestos en el servidor...' }}</p> }
-    <p-button label="Confirmar (F12)" icon="pi pi-check" [loading]="loading" [disabled]="loading || !fiscalReady"
-      [pt]="{ root: { 'aria-keyshortcuts': 'F12' } }" (onClick)="confirm.emit()"></p-button>
   </div>
+
+  <ng-template #footer>
+    <div class="checkout-actions">
+      <p-button label="Cancelar" severity="secondary" [outlined]="true" [disabled]="loading"
+        [pt]="{ root: { 'aria-keyshortcuts': 'Escape' } }" (onClick)="dismiss()" />
+      <p-button label="Confirmar (F12)" icon="pi pi-check" [loading]="loading" [disabled]="loading || !fiscalReady"
+        [pt]="{ root: { 'aria-keyshortcuts': 'F12' } }" (onClick)="confirm.emit()" />
+    </div>
+  </ng-template>
 </p-dialog>

@@ -113,6 +113,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   private pendingIntent: CheckoutIntent | null = null;
   private cartStockGeneration = 0;
   private checkoutGeneration = 0;
+  private restoreSearchAfterCheckoutDismiss = false;
   readonly pendingCheckout = signal<CheckoutRequest | null>(null);
   readonly checkoutRecoveryError = signal('');
   readonly cashReceived = signal<number | null>(null);
@@ -153,6 +154,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly selectedPaymentMethod = signal<SalePaymentMethod>(SalePaymentMethod.Cash);
   readonly notes = signal('');
   readonly checkoutVisible = signal(false);
+  readonly saleLookupBlocked = computed(() => this.checkoutLocked() || this.checkoutVisible());
   readonly customerSelectorVisible = signal(false);
   readonly quickSearchVisible = signal(false);
   readonly recentSalesVisible = signal(false);
@@ -337,30 +339,27 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
     this.subscriptions.push(
       this.keyboard.watch(['F2']).subscribe(() => {
-        if (this.canSell && !this.checkoutLocked()) {
-          this.quickSearchVisible.set(true);
-        }
+        this.openQuickSearch();
       }),
       this.keyboard.watch(['F9']).subscribe(() => {
         this.openCheckoutDialog();
       }),
       this.keyboard.watch(['F8']).subscribe(() => {
-        if (this.canReadReports) {
-          this.recentSalesVisible.set(true);
-        }
+        this.openRecentSales();
       }),
       this.keyboard.watch(['F4']).subscribe(() => {
-        if (this.canSell && !this.checkoutLocked()) {
-          this.customerSelectorVisible.set(true);
-        }
+        this.openCustomerSelector();
       }),
-      this.keyboard.watch(['F12']).subscribe(() => {
+      this.keyboard.watch(['F12']).subscribe((event) => {
+        const target = event.target instanceof HTMLElement ? event.target : null;
         if (this.checkoutVisible()) {
-          this.confirmCheckout();
+          if (target?.closest('app-checkout-confirm-dialog [role="dialog"]')) {
+            this.confirmCheckout();
+          }
           return;
         }
 
-        this.openCheckoutDialog();
+        if (!this.hasCartKeyboardModal(target)) this.openCheckoutDialog();
       }),
       this.keyboard.watch(['Escape']).subscribe(() => {
         this.closeContextualDialog();
@@ -627,8 +626,16 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
   }
 
+  openQuickSearch(): void {
+    if (this.canSell && !this.saleLookupBlocked()) this.quickSearchVisible.set(true);
+  }
+
+  openRecentSales(): void {
+    if (this.canReadReports && !this.checkoutVisible()) this.recentSalesVisible.set(true);
+  }
+
   openCustomerSelector(): void {
-    if (!this.canSell || this.checkoutLocked()) {
+    if (!this.canSell || this.saleLookupBlocked()) {
       return;
     }
 
@@ -657,6 +664,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   openCheckoutDialog(): void {
+    if (this.hasCartKeyboardModal(null)) return;
     if (this.pendingCheckout()) { this.confirmCheckout(); return; }
     if (this.checkoutLocked()) return;
     if (!this.fiscalPreviewCurrent() || this.fiscalPreviewLoading()) {
@@ -693,6 +701,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
 
     this.cashReceived.set(this.total());
+    this.restoreSearchAfterCheckoutDismiss = false;
     this.checkoutVisible.set(true);
   }
 
@@ -870,7 +879,17 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   setCheckoutVisible(visible: boolean): void {
-    if (!this.checkoutLoading()) this.checkoutVisible.set(visible);
+    if (this.checkoutLoading() || visible === this.checkoutVisible()) return;
+    this.restoreSearchAfterCheckoutDismiss = !visible;
+    this.checkoutVisible.set(visible);
+  }
+
+  onCheckoutHidden(): void {
+    const restoreSearch = this.restoreSearchAfterCheckoutDismiss;
+    this.restoreSearchAfterCheckoutDismiss = false;
+    if (restoreSearch && !this.destroyed && !this.checkoutLocked() && !this.hasCartKeyboardModal(null)) {
+      this.productSearchPanel?.focusSearchInputNow();
+    }
   }
 
   updateNotes(notes: string): void { if (!this.checkoutLocked()) this.notes.set(notes); }
@@ -3613,8 +3632,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
 
     if (this.checkoutVisible()) {
-      this.checkoutVisible.set(false);
-      this.focusMainSearch();
+      this.setCheckoutVisible(false);
       return;
     }
 

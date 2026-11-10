@@ -42,6 +42,7 @@ export class CheckoutConfirmDialog {
   @Input() paymentMethod: SalePaymentMethod = SalePaymentMethod.Cash;
 
   @Output() visibleChange = new EventEmitter<boolean>();
+  @Output() hidden = new EventEmitter<void>();
   @Output() documentTypeChange = new EventEmitter<SaleDocumentType>();
   @Output() paymentMethodChange = new EventEmitter<SalePaymentMethod>();
   @Output() confirm = new EventEmitter<void>();
@@ -58,16 +59,23 @@ export class CheckoutConfirmDialog {
     return salePaymentMethodLabel(method);
   }
 
+  dismiss(): void {
+    if (!this.loading) this.visibleChange.emit(false);
+  }
+
   onKeydown(event: KeyboardEvent): void {
-    if (event.repeat || this.loading) { event.preventDefault(); return; }
     if (event.key === 'Escape') {
-      this.visibleChange.emit(false);
+      // The POS also watches Escape globally; a key inside checkout belongs to this dialog.
+      event.stopPropagation();
       event.preventDefault();
+      if (!event.repeat) this.dismiss();
       return;
     }
 
+    if (event.key !== 'Enter') return;
+    if (event.repeat || this.loading) { event.preventDefault(); return; }
     const target = event.target as HTMLElement | null;
-    if (event.key === 'Enter' && !target?.closest('p-select, button, textarea') && !this.loading && this.fiscalReady) {
+    if (!target?.closest('p-select, button, textarea') && this.fiscalReady) {
       this.confirm.emit();
       event.preventDefault();
     }

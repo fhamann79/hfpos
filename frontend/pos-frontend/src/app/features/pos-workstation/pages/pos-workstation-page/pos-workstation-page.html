@@ -24,15 +24,15 @@
       <div class="header-actions">
         @if (canSell) {
           <p-button label="Buscar (F2)" icon="pi pi-search" size="small" severity="secondary" [outlined]="true"
-            [disabled]="checkoutLocked()" [pt]="{ root: { 'aria-keyshortcuts': 'F2' } }"
-            (onClick)="quickSearchVisible.set(true)" />
+            [disabled]="saleLookupBlocked()" [pt]="{ root: { 'aria-keyshortcuts': 'F2' } }"
+            (onClick)="openQuickSearch()" />
           <p-button label="Cliente (F4)" icon="pi pi-user" size="small" severity="secondary" [outlined]="true"
-            [disabled]="checkoutLocked()" [pt]="{ root: { 'aria-keyshortcuts': 'F4' } }"
+            [disabled]="saleLookupBlocked()" [pt]="{ root: { 'aria-keyshortcuts': 'F4' } }"
             (onClick)="openCustomerSelector()" />
         }
         @if (canReadReports) {
           <p-button label="Ventas recientes" icon="pi pi-receipt" size="small" severity="secondary" [outlined]="true"
-            (onClick)="recentSalesVisible.set(true)" />
+            [disabled]="checkoutVisible()" (onClick)="openRecentSales()" />
         }
       </div>
     }
@@ -148,7 +148,7 @@
 
       @if (!canSell && canReadReports) {
         <div class="reports-only">
-          <p-button label="Abrir ventas recientes" icon="pi pi-receipt" (onClick)="recentSalesVisible.set(true)"></p-button>
+          <p-button label="Abrir ventas recientes" icon="pi pi-receipt" (onClick)="openRecentSales()"></p-button>
         </div>
       }
     </div>
@@ -209,6 +209,7 @@
     [cashReceived]="cashReceived()"
     (cashReceivedChange)="updateCashReceived($event)"
     (visibleChange)="setCheckoutVisible($event)"
+    (hidden)="onCheckoutHidden()"
     (documentTypeChange)="updateDocumentType($event)"
     (paymentMethodChange)="updatePaymentMethod($event)"
     (confirm)="confirmCheckout()"
