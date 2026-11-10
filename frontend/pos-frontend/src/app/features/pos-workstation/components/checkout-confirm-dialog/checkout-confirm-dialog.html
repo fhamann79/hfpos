@@ -68,6 +68,7 @@
     <p class="hint">Presiona Enter para confirmar o Escape para cancelar.</p>
 
     @if (!fiscalReady) { <p role="alert">{{ fiscalError || 'Calculando impuestos en el servidor...' }}</p> }
-    <p-button label="Confirmar" icon="pi pi-check" [loading]="loading" [disabled]="loading || !fiscalReady" (onClick)="confirm.emit()"></p-button>
+    <p-button label="Confirmar (F12)" icon="pi pi-check" [loading]="loading" [disabled]="loading || !fiscalReady"
+      [pt]="{ root: { 'aria-keyshortcuts': 'F12' } }" (onClick)="confirm.emit()"></p-button>
   </div>
 </p-dialog>

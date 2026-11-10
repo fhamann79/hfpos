@@ -1,9 +1,6 @@
 <section class="panel">
   <header class="panel__header">
-    <div>
-      <span class="panel-kicker">Entrada rápida</span>
-      <h2>Escanear o buscar producto</h2>
-    </div>
+    <h2>Escanear o buscar producto</h2>
     <div class="search-row">
       <i class="pi pi-search"></i>
       <input
@@ -17,14 +14,6 @@
         aria-label="Escanear o buscar producto"
         aria-keyshortcuts="Alt+Q"
       />
-      <p-button
-        label="Búsqueda rápida (F2)"
-        icon="pi pi-bolt"
-        severity="secondary"
-        [outlined]="true"
-        [disabled]="!canSell"
-        (onClick)="openQuickSearch()"
-      ></p-button>
     </div>
   </header>
 
@@ -40,9 +29,8 @@
     <div class="state">Buscando productos...</div>
   } @else if (!hasSearchTerm) {
     <div class="scan-empty">
-      <div class="scan-empty__icon"><i class="pi pi-barcode"></i></div>
-      <strong>Escanea un producto o escribe para buscar</strong>
-      <span>Usa código de barras, código interno o nombre. F2 abre la búsqueda rápida.</span>
+      <i class="pi pi-barcode" aria-hidden="true"></i>
+      <span>Sin búsqueda activa</span>
     </div>
   } @else if (!results.length) {
     <div class="state">No hay coincidencias para esta búsqueda.</div>
@@ -73,7 +61,7 @@
           } @else if (product.tracksInventory !== false && product.stock <= 0) {
             <span class="stock-empty">Sin stock</span>
           } @else {
-            <p-button label="Agregar" icon="pi pi-plus" [disabled]="!canSell" (onClick)="add(product)"></p-button>
+            <p-button label="Agregar" icon="pi pi-plus" size="small" [disabled]="!canSell" (onClick)="add(product)"></p-button>
           }
         </li>
       }

@@ -48,7 +48,9 @@ describe('POS cart visibility and keyboard focus', () => {
         } },
         { provide: CheckoutIntentService, useValue: { load: () => null } },
         { provide: PosProductCatalogService, useValue: { searchProducts } },
-        { provide: PosWorkstationService, useValue: { previewSale } },
+        { provide: PosWorkstationService, useValue: {
+          previewSale, resolveBusinessError: () => 'Perfil fiscal pendiente',
+        } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
@@ -105,6 +107,28 @@ describe('POS cart visibility and keyboard focus', () => {
   afterEach(() => {
     fixture.destroy();
     vi.restoreAllMocks();
+  });
+
+  it('keeps closed cash visible and presents one recoverable fiscal status for the whole cart', async () => {
+    page.addProduct(product(1));
+    page.addProduct(product(2));
+    fixture.detectChanges();
+    expect(host.querySelector('.cash-context--blocked')?.textContent).toContain('Debes abrir caja');
+    expect(host.querySelector<HTMLButtonElement>('button[aria-keyshortcuts="F9"]')?.disabled).toBe(true);
+    expect(host.querySelector('.pos-page__header button[aria-keyshortcuts="F2"]')).not.toBeNull();
+    expect(host.querySelector('.pos-page__header button[aria-keyshortcuts="F4"]')).not.toBeNull();
+    expect(host.querySelectorAll('.summary .fiscal-status')).toHaveLength(1);
+    expect(host.querySelector('.fiscal-status')?.textContent).toContain('Calculando impuestos');
+    expect(host.querySelector('.cart-list')?.textContent).not.toMatch(/pendiente/i);
+
+    await vi.waitFor(() => expect(previewSale.mock.lastCall?.[0].items).toHaveLength(2));
+    preview.error(new Error('Synthetic fiscal error'));
+    fixture.detectChanges();
+    expect(host.querySelectorAll('.summary .fiscal-status')).toHaveLength(1);
+    expect(host.querySelector('.fiscal-status')?.textContent).toContain('Perfil fiscal pendiente');
+    const retry = vi.spyOn(page, 'refreshFiscalPreview');
+    host.querySelector<HTMLButtonElement>('.fiscal-status button')!.click();
+    expect(retry).toHaveBeenCalledOnce();
   });
 
   it('reveals new and repeated lines locally, and follows arrows without moving search focus', () => {

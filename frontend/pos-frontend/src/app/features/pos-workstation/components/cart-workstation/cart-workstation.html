@@ -1,9 +1,6 @@
 <section class="panel">
   <header class="cart-header">
-    <div>
-      <span class="cart-kicker">Venta activa</span>
-      <h2>Carrito</h2>
-    </div>
+    <h2>Carrito</h2>
     <span class="item-count">{{ items.length }} {{ items.length === 1 ? 'línea' : 'líneas' }}</span>
   </header>
 
@@ -16,6 +13,7 @@
   } @else {
     <div #cartList class="cart-list">
       @for (item of items; track item.productId) {
+        @let effective = effectiveLine(item);
         <div
           class="cart-row"
           [attr.data-cart-product-id]="item.productId"
@@ -29,14 +27,19 @@
                 <span class="active-badge">Línea activa</span>
               }
             </div>
-            @if (inventoryAvailable) {
-              <small>{{ vatLabel(item) }} · {{ item.product.tracksInventory === false ? 'Sin inventario' : 'Disponible: ' + item.stock }}</small>
-            }
+            <div class="line-meta">
+              @if (inventoryAvailable) {
+                <small>{{ item.product.tracksInventory === false ? 'Sin inventario' : 'Disponible: ' + item.stock }}</small>
+              }
+              @if (effective) {
+                <small>{{ vatLabel(item) }}</small>
+              }
+            </div>
           </div>
 
           <div class="line-controls">
-            <label>
-              Cant.
+            <div class="line-field quantity-field">
+              <label for="qty-{{ item.productId }}">Cant.</label>
               <p-inputnumber
                 data-cart-quantity
                 inputId="qty-{{ item.productId }}"
@@ -48,10 +51,10 @@
                 [max]="maxQuantity(item)"
                 [showButtons]="true"
               ></p-inputnumber>
-            </label>
+            </div>
 
-            <label>
-              Precio
+            <div class="line-field">
+              <label for="price-{{ item.productId }}">Precio</label>
               <p-inputnumber
                 inputId="price-{{ item.productId }}"
                 mode="decimal"
@@ -59,10 +62,10 @@
                 [ngModel]="item.unitPrice"
                 (ngModelChange)="updateUnitPrice.emit({ productId: item.productId, unitPrice: $event ?? 0 })"
               ></p-inputnumber>
-            </label>
+            </div>
 
-            <label>
-              Desc.
+            <div class="line-field">
+              <label for="discount-{{ item.productId }}">Desc.</label>
               <p-inputnumber
                 inputId="discount-{{ item.productId }}"
                 mode="currency"
@@ -73,29 +76,32 @@
                 [ngModel]="item.discountAmount"
                 (ngModelChange)="updateLineDiscount.emit({ productId: item.productId, discountAmount: $event ?? 0 })"
               ></p-inputnumber>
-            </label>
+            </div>
           </div>
 
           <div class="line-total">
-            <div>
-              <small>Bruto {{ lineSubtotal(item) | currency: 'USD' }}</small>
-              @if (effectiveLine(item); as effective) {
-                @if (effective.discountAmount > 0) {
-                  <small class="discount-line">-{{ effective.discountAmount | currency: 'USD' }} desc. total</small>
-                  <small>Neto {{ effective.taxableSubtotal | currency: 'USD' }}</small>
-                }
-                <span>{{ effective.lineTotal | currency: 'USD' }}</span>
-              } @else {
-                <span>Pendiente</span>
+            <div class="line-total__amount">
+              @if (effective) {
+                <small>Importe</small>
+                <strong>{{ effective.lineTotal | currency: 'USD' }}</strong>
               }
             </div>
             <p-button
               icon="pi pi-trash"
               severity="danger"
-              [rounded]="true"
+              size="small"
               [text]="true"
+              title="Quitar producto"
+              ariaLabel="Quitar {{ item.productName }}"
               (onClick)="removeItem.emit(item.productId)"
             ></p-button>
+          </div>
+          <div class="line-meta line-breakdown">
+            <small>Bruto {{ lineSubtotal(item) | currency: 'USD' }}</small>
+            @if (effective && effective.discountAmount > 0) {
+              <small>Desc. total −{{ effective.discountAmount | currency: 'USD' }}</small>
+              <small>Neto {{ effective.taxableSubtotal | currency: 'USD' }}</small>
+            }
           </div>
         </div>
       }
@@ -103,10 +109,11 @@
   }
 
   <footer class="summary">
+    <ng-content select="[cart-status]" />
     <div class="summary-lines">
       <div><span>Subtotal bruto</span><strong>{{ (taxSummary?.grossSubtotal ?? subtotal) | currency: 'USD' }}</strong></div>
       <div class="discount-editor">
-        <span>Descuento global</span>
+        <label for="sale-discount">Descuento global</label>
         <p-inputnumber
           inputId="sale-discount"
           mode="currency"
@@ -140,26 +147,24 @@
           }
         </div>
       }
-      <div class="grand-total"><span>Total</span><strong>{{ total | currency: 'USD' }}</strong></div>
     </div>
 
     <textarea
       pTextarea
-      rows="3"
+      rows="2"
       maxlength="500"
       [ngModel]="notes"
       (ngModelChange)="notesChange.emit($event)"
       placeholder="Notas de la venta (opcional)"
+      aria-label="Notas de la venta"
     ></textarea>
 
     <div class="checkout-zone">
-      <div>
-        <span>Cobro rápido</span>
-        <strong>↑↓ línea · +/− cantidad · Supr elimina · F12 confirma</strong>
-      </div>
+      <div class="grand-total"><span>Total</span><strong>{{ total | currency: 'USD' }}</strong></div>
       <p-button
-        label="Finalizar venta"
+        label="Cobrar (F9)"
         icon="pi pi-check"
+        [pt]="{ root: { 'aria-keyshortcuts': 'F9' } }"
         [disabled]="!canCheckout || !hasItems || !inventoryAvailable"
         (onClick)="checkout.emit()"
       ></p-button>
