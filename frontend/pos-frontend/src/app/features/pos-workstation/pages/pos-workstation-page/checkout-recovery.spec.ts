@@ -124,6 +124,38 @@ describe('Checkout recovery', () => {
     finally { context.companyId = original; }
   });
 
+  it('updates one persistent warning for manual recovery attempts without changing the frozen request or storage', () => {
+    const p = page();
+    const notices = TestBed.inject(MessageService);
+    p.confirmCheckout();
+    const first = sent();
+    const storage = JSON.stringify(sessionStorage);
+    for (const status of [503, 503, 409]) {
+      response.error(new HttpErrorResponse({ status, error: status === 409 ? { error: 'REQUEST_CONFLICT' } : {} }));
+      expect(p.pendingCheckout()).toBe(first);
+      expect(JSON.stringify(sessionStorage)).toBe(storage);
+      expect(p.checkoutPendingMessage()).toContain(status === 409 ? 'Conflicto de intención' : 'El resultado no está confirmado');
+      response = new Subject<Sale>();
+      api.createSale.mockReturnValue(response);
+      p.confirmCheckout();
+      expect(sent()).toBe(first);
+    }
+    response.next({ id: 42 } as Sale);
+    expect(p.checkoutPendingMessage()).toContain('no vuelvas a cobrar');
+    expect(p.pendingCheckout()).toBe(first);
+    expect(JSON.stringify(sessionStorage)).toBe(storage);
+    expect(notices.add).not.toHaveBeenCalled();
+    expect(api.createSale).toHaveBeenCalledTimes(4);
+    response = new Subject<Sale>();
+    api.createSale.mockReturnValue(response);
+    p.confirmCheckout();
+    expect(sent()).toBe(first);
+    response.next(success(first));
+    expect(p.pendingCheckout()).toBeNull();
+    expect(p.receiptSale()?.id).toBe(42);
+    p.ngOnDestroy();
+  });
+
   it('discovers pending by immutable actor after point and username change, without cross-actor/tenant leakage', () => {
     const p = page(); p.confirmCheckout(); const first = sent(); response.error(new HttpErrorResponse({ status: 0 })); p.ngOnDestroy();
     const originalPoint = context.emissionPointId; const originalName = context.username;

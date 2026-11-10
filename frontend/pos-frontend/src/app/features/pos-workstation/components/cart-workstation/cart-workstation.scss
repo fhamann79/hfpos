@@ -38,6 +38,17 @@ h2 {
   font-variant-numeric: tabular-nums;
 }
 
+.cart-shortcuts {
+  color: var(--app-text-muted);
+  font-size: 0.75rem;
+
+  kbd {
+    font-family: inherit;
+    font-weight: 600;
+    margin-inline-end: 0.15rem;
+  }
+}
+
 .cart-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

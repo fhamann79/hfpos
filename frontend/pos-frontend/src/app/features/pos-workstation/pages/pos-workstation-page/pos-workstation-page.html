@@ -31,7 +31,8 @@
             (onClick)="openCustomerSelector()" />
         }
         @if (canReadReports) {
-          <p-button label="Ventas recientes" icon="pi pi-receipt" size="small" severity="secondary" [outlined]="true"
+          <p-button label="Ventas recientes (F8)" icon="pi pi-receipt" size="small" severity="secondary" [outlined]="true"
+            [pt]="{ root: { 'aria-keyshortcuts': 'F8' } }"
             [disabled]="workstationModalActive()" (onClick)="openRecentSales()" />
         }
       </div>
@@ -53,7 +54,10 @@
     }
     @if (pendingCheckout()) {
       <section class="cash-context" aria-live="polite">
-        <strong>Cobro pendiente de recuperar</strong>
+        <div class="cash-context__info">
+          <strong>Cobro pendiente de recuperar</strong>
+          <small>{{ checkoutPendingMessage() }}</small>
+        </div>
         <p-button label="Recuperar cobro" icon="pi pi-refresh" [loading]="checkoutLoading()" (onClick)="confirmCheckout()" />
       </section>
     }
@@ -169,7 +173,8 @@
     [modal]="true"
     [visible]="recentSalesVisible()"
     [style]="{ width: '52rem', maxWidth: '96vw' }"
-    (visibleChange)="recentSalesVisible.set($event)"
+    (visibleChange)="onRecentSalesVisibleChange($event)"
+    (onHide)="onRecentSalesHidden()"
   >
     <app-recent-sales-panel
       [sales]="sales()"

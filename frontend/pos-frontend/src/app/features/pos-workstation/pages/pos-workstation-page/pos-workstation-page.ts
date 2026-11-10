@@ -114,7 +114,9 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   private cartStockGeneration = 0;
   private checkoutGeneration = 0;
   private restoreSearchAfterCheckoutDismiss = false;
+  private restoreSearchAfterRecentSalesDismiss = false;
   readonly pendingCheckout = signal<CheckoutRequest | null>(null);
+  readonly checkoutPendingMessage = signal('El resultado no está confirmado. Recupera el mismo cobro, sin crear otra venta.');
   readonly checkoutRecoveryError = signal('');
   readonly cashReceived = signal<number | null>(null);
   readonly receiptSale = signal<Sale | null>(null);
@@ -632,7 +634,24 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   openRecentSales(): void {
-    if (this.canReadReports && !this.workstationModalActive()) this.recentSalesVisible.set(true);
+    if (this.canReadReports && !this.workstationModalActive()) {
+      this.restoreSearchAfterRecentSalesDismiss = false;
+      this.recentSalesVisible.set(true);
+    }
+  }
+
+  onRecentSalesVisibleChange(visible: boolean): void {
+    if (visible === this.recentSalesVisible()) return;
+    this.restoreSearchAfterRecentSalesDismiss = !visible;
+    this.recentSalesVisible.set(visible);
+  }
+
+  onRecentSalesHidden(): void {
+    const restoreSearch = this.restoreSearchAfterRecentSalesDismiss;
+    this.restoreSearchAfterRecentSalesDismiss = false;
+    if (restoreSearch && !this.destroyed && !this.hasCartKeyboardModal(null)) {
+      this.productSearchPanel?.focusSearchInputNow();
+    }
   }
 
   openCustomerSelector(): void {
@@ -828,7 +847,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
         this.checkoutLoading.set(false);
         this.checkoutVisible.set(false);
         if (!sale.id || sale.requestId !== payload.requestId || !Number.isFinite(sale.total)) {
-          this.messageService.add({ severity: 'warn', summary: 'Resultado pendiente', detail: 'Reintenta recuperar el mismo cobro; no vuelvas a cobrar.' });
+          this.checkoutPendingMessage.set('Reintenta recuperar el mismo cobro; no vuelvas a cobrar.');
           return;
         }
         this.intentService.clear(this.checkoutActor());
@@ -871,9 +890,9 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
           this.refreshOperationalData();
           if (code === 'INSUFFICIENT_STOCK' || code === 'PRODUCT_INACTIVE' || code === 'PRODUCT_NOT_FOUND') this.refreshCartStock();
         } else {
-          this.messageService.add({ severity: 'warn', summary: 'Cobro pendiente de recuperar',
-            detail: code === 'REQUEST_CONFLICT' ? 'Conflicto de intención. Verifica la venta antes de volver a cobrar.'
-              : 'El resultado no está confirmado. Recupera el mismo cobro, sin crear otra venta.' });
+          this.checkoutPendingMessage.set(code === 'REQUEST_CONFLICT'
+            ? 'Conflicto de intención. Verifica la venta antes de volver a cobrar.'
+            : 'El resultado no está confirmado. Recupera el mismo cobro, sin crear otra venta.');
         }
       },
     }));
@@ -3638,8 +3657,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
 
     if (this.recentSalesVisible()) {
-      this.recentSalesVisible.set(false);
-      this.focusMainSearch();
+      this.onRecentSalesVisibleChange(false);
       return;
     }
 
