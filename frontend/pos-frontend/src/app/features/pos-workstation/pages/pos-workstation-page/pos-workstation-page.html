@@ -145,6 +145,7 @@
             [canCheckout]="canSell && (hasOpenCashSession() || !!pendingCheckout()) && !checkoutLoading()"
             [inventoryAvailable]="inventoryAvailable()"
             [activeProductId]="activeCartProductId()"
+            [revealRequest]="cartRevealRequest()"
             (updateQuantity)="updateQuantity($event)"
             (updateUnitPrice)="updateUnitPrice($event)"
             (updateLineDiscount)="updateLineDiscount($event)"

@@ -124,6 +124,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     || !!this.checkoutRecoveryError() || !!this.receiptSale());
 
   @ViewChild(ProductSearchPanel) private productSearchPanel?: ProductSearchPanel;
+  @ViewChild(CartWorkstation) private cartWorkstation?: CartWorkstation;
 
   readonly canSell = this.permissionService.hasPermission(PERMISSIONS.posSalesCreate);
   readonly canReadReports = this.permissionService.hasPermission(PERMISSIONS.reportsSalesRead);
@@ -145,6 +146,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
   readonly cart = signal<CartItem[]>([]);
   readonly activeCartProductId = signal<number | null>(null);
+  readonly cartRevealRequest = signal<{ productId: number } | null>(null);
   readonly selectedCustomer = signal<PosCustomer | null>(null);
   readonly saleDiscountAmount = signal(0);
   readonly selectedDocumentType = signal<SaleDocumentType>(SaleDocumentType.Ticket);
@@ -448,32 +450,28 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
 
     if (this.addProduct(product)) {
-      this.clearSearchAndFocus();
+      this.searchTerm.set('');
     }
   }
 
   submitSearchTerm(): void {
     const term = this.searchTerm().trim();
     if (!term.length) {
-      this.focusMainSearch();
       return;
     }
 
     const exactProduct = this.findExactIdentifierMatch(term);
     if (exactProduct) {
       if (this.addProduct(exactProduct)) {
-        this.clearSearchAndFocus();
+        this.searchTerm.set('');
       }
       return;
     }
 
     const matches = this.filteredProducts();
     if (matches.length === 1 && this.addProduct(matches[0])) {
-      this.clearSearchAndFocus();
-      return;
+      this.searchTerm.set('');
     }
-
-    this.focusMainSearch();
   }
 
   addProduct(product: PosProduct): boolean {
@@ -532,7 +530,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     });
 
     if (productAdded) {
-      this.activeCartProductId.set(product.id);
+      this.revealCartLine(product.id);
     }
 
     return productAdded;
@@ -794,6 +792,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   private restoreCheckoutDraft(draft: CheckoutDraft): void {
+    this.cartRevealRequest.set(null);
     this.cart.set(draft.cart.map(item => ({ ...item, product: { ...item.product } })));
     this.activeCartProductId.set(draft.cart[0]?.productId ?? null);
     this.selectedCustomer.set(draft.customer ? { ...draft.customer } : null);
@@ -914,6 +913,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     this.receiptPostSale.set(false);
     this.cart.set([]);
     this.activeCartProductId.set(null);
+    this.cartRevealRequest.set(null);
     this.selectedCustomer.set(null);
     this.saleDiscountAmount.set(0);
     this.selectedDocumentType.set(SaleDocumentType.Ticket);
@@ -2870,7 +2870,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
 
   handleQuickProductSelection(product: PosProduct): void {
     if (this.addProduct(product)) {
-      this.clearSearchAndFocus();
+      this.searchTerm.set('');
     }
   }
 
@@ -3254,11 +3254,21 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   private handleCartKeyboardShortcut(event: KeyboardEvent): void {
-    if (!this.shouldHandleCartKeyboardShortcut(event)) {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey
+      || !this.canSell || !this.cart().length || this.hasCartKeyboardModal(target)) {
       return;
     }
 
     const key = event.key;
+    if (event.altKey) {
+      if (key === 'Enter' && !event.repeat && !event.shiftKey && !this.checkoutLocked()) {
+        this.toggleCartQuantityFocus(event, target);
+      }
+      return;
+    }
+
+    if (this.isEditableTarget(target) && !this.isEmptyMainSearch(target)) return;
 
     if (key === 'ArrowDown') {
       this.moveActiveLine(1);
@@ -3290,28 +3300,35 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
   }
 
-  private shouldHandleCartKeyboardShortcut(event: KeyboardEvent): boolean {
-    if (!this.canSell || !this.cart().length || event.altKey || event.ctrlKey || event.metaKey) {
-      return false;
-    }
-
-    if (
-      this.quickSearchVisible()
+  private hasCartKeyboardModal(target: HTMLElement | null): boolean {
+    return !!target?.closest('[role="dialog"], [role="alertdialog"], [aria-modal="true"]')
+      || this.quickSearchVisible()
       || this.customerSelectorVisible()
       || this.checkoutVisible()
       || this.recentSalesVisible()
       || this.saleDetailVisible()
       || this.voidVisible()
-    ) {
-      return false;
-    }
+      || this.receiptVisible()
+      || this.creditNoteEligibilityVisible()
+      || this.creditNoteCancelVisible()
+      || this.creditNoteDetailVisible()
+      || this.creditNoteInventoryReturnVisible()
+      || this.creditNoteRefundVisible()
+      || this.creditNoteEmailVisible()
+      || this.creditNoteEmailDeliveriesVisible()
+      || this.sriAttemptsVisible()
+      || this.sriRideVisible()
+      || this.invoiceEmailVisible()
+      || this.invoiceEmailDeliveriesVisible();
+  }
 
-    const target = event.target as HTMLElement | null;
-    if (!this.isEditableTarget(target)) {
-      return true;
+  private toggleCartQuantityFocus(event: KeyboardEvent, target: HTMLElement | null): void {
+    if (this.cartWorkstation?.isQuantityInput(target)) {
+      if (this.productSearchPanel?.focusSearchInputNow()) event.preventDefault();
+    } else if (this.isEmptyMainSearch(target)) {
+      const item = this.getActiveCartItem();
+      if (item && this.cartWorkstation?.focusQuantity(item.productId)) event.preventDefault();
     }
-
-    return this.isMainSearchInput(target) && this.searchTerm().trim().length === 0;
   }
 
   private isEditableTarget(target: HTMLElement | null): boolean {
@@ -3320,11 +3337,14 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
 
     const tagName = target.tagName.toLowerCase();
-    return tagName === 'input' || tagName === 'textarea' || target.isContentEditable;
+    return tagName === 'input' || tagName === 'textarea' || tagName === 'select'
+      || target.isContentEditable;
   }
 
-  private isMainSearchInput(target: HTMLElement | null): boolean {
-    return target?.getAttribute('aria-label') === 'Escanear o buscar producto';
+  private isEmptyMainSearch(target: HTMLElement | null): boolean {
+    return target instanceof HTMLInputElement
+      && this.productSearchPanel?.isSearchInput(target) === true
+      && !this.searchTerm().trim();
   }
 
   private moveActiveLine(direction: 1 | -1): void {
@@ -3339,7 +3359,12 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       0
     );
     const nextIndex = Math.min(Math.max(currentIndex + direction, 0), items.length - 1);
-    this.activeCartProductId.set(items[nextIndex].productId);
+    this.revealCartLine(items[nextIndex].productId);
+  }
+
+  private revealCartLine(productId: number): void {
+    this.activeCartProductId.set(productId);
+    this.cartRevealRequest.set({ productId });
   }
 
   private adjustActiveLineQuantity(delta: 1 | -1): void {
@@ -3427,11 +3452,6 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     return [product.name, product.barcode ?? '', product.internalCode ?? '']
       .map((value) => value.trim().toLowerCase())
       .filter((value) => value.length > 0);
-  }
-
-  private clearSearchAndFocus(): void {
-    this.searchTerm.set('');
-    this.focusMainSearch();
   }
 
   private focusMainSearch(): void {

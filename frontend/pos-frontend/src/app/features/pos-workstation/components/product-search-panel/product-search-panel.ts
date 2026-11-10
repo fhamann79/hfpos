@@ -84,7 +84,7 @@ export class ProductSearchPanel implements AfterViewInit, OnDestroy {
   }
 
   onSearchKeydown(event: KeyboardEvent): void {
-    if (event.key !== 'Enter') {
+    if (event.key !== 'Enter' || event.altKey || event.isComposing) {
       return;
     }
 
@@ -124,7 +124,19 @@ export class ProductSearchPanel implements AfterViewInit, OnDestroy {
   }
 
   focusSearchInput(): void {
-    setTimeout(() => this.searchInput?.nativeElement.focus(), 0);
+    setTimeout(() => this.focusSearchInputNow(), 0);
+  }
+
+  focusSearchInputNow(): boolean {
+    const input = this.searchInput?.nativeElement;
+    if (!input) return false;
+
+    input.focus();
+    return input.ownerDocument.activeElement === input;
+  }
+
+  isSearchInput(target: HTMLElement | null): boolean {
+    return target === this.searchInput?.nativeElement;
   }
 
   resetSearch(): void {
@@ -191,7 +203,6 @@ export class ProductSearchPanel implements AfterViewInit, OnDestroy {
     this.remoteLoading.set(false);
     this.remoteError.set('');
     this.searchTermChange.emit('');
-    this.focusSearchInput();
   }
 
   private canAdd(product: PosProduct): boolean {
