@@ -255,6 +255,49 @@ describe('POS cart visibility and keyboard focus', () => {
     expect(tile.getAttribute('aria-disabled')).toBe('true');
   });
 
+  it('returns keyboard focus after a delayed favorite add so the next scan adds a different product', () => {
+    const current = new Subject<PosProduct[]>();
+    getFavorites.mockReturnValue(of({ revision: 3, productIds: [6] }));
+    refreshCartProducts.mockReturnValueOnce(of([product(6)])).mockReturnValueOnce(current);
+    host.querySelector<HTMLButtonElement>('#pos-favorites-tab')!.click();
+    fixture.detectChanges();
+    const tile = host.querySelector<HTMLButtonElement>('.product-tile')!;
+    tile.focus();
+    tile.click(); // Native keyboard button activation emits a click with detail zero.
+    expect(key(tile, 'Enter', { repeat: true }).defaultPrevented).toBe(true);
+    tile.click();
+    expect(refreshCartProducts).toHaveBeenCalledTimes(2);
+    expect(page.cart()).toHaveLength(0);
+
+    current.next([product(6)]);
+    expect(document.activeElement).toBe(search);
+    expect(key(search, 'Enter', { repeat: true }).defaultPrevented).toBe(true);
+    page.allProducts.set([product(7)]);
+    const scannerTarget = document.activeElement as HTMLInputElement;
+    scannerTarget.value = 'SYN-7';
+    scannerTarget.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+    key(scannerTarget, 'Enter');
+    expect(page.cart().map(item => [item.productId, item.quantity])).toEqual([[6, 1], [7, 1]]);
+  });
+
+  it('does not steal focus if the operator moves it while a keyboard favorite lookup is pending', () => {
+    page.addProduct(product(1));
+    const current = new Subject<PosProduct[]>();
+    getFavorites.mockReturnValue(of({ revision: 3, productIds: [6] }));
+    refreshCartProducts.mockReturnValueOnce(of([product(6)])).mockReturnValueOnce(current);
+    host.querySelector<HTMLButtonElement>('#pos-favorites-tab')!.click();
+    fixture.detectChanges();
+    const tile = host.querySelector<HTMLButtonElement>('.product-tile')!;
+    tile.focus();
+    tile.click();
+    const price = host.querySelector<HTMLInputElement>('#price-1')!;
+    price.focus();
+    current.next([product(6)]);
+    expect(page.cart().map(item => item.productId)).toEqual([1, 6]);
+    expect(document.activeElement).toBe(price);
+  });
+
   it('keeps the ranking stable during a sale and disables editing and refreshing', () => {
     getTopSellers.mockReturnValue(of([5, 4]));
     refreshCartProducts.mockReturnValue(of([product(4), product(5)]));

@@ -31,7 +31,7 @@ export class PosQuickProducts implements OnInit {
   readonly searching = input.required<boolean>();
   readonly canManage = input.required<boolean>();
   readonly idle = input.required<boolean>();
-  readonly selectProduct = output<{ product: PosProduct; trigger: HTMLButtonElement; keyboard: boolean }>();
+  readonly selectProduct = output<{ product: PosProduct; trigger: HTMLButtonElement }>();
 
   readonly limit = 12;
   readonly tab = signal<QuickTab>('favorites');
@@ -116,7 +116,7 @@ export class PosQuickProducts implements OnInit {
           return;
         }
         this.products.update(products => products.map(p => p.id === current.id ? current : p));
-        this.selectProduct.emit({ product: current, trigger, keyboard: event.detail === 0 });
+        this.selectProduct.emit({ product: current, trigger });
       },
       error: () => {
         this.selecting.set(false);

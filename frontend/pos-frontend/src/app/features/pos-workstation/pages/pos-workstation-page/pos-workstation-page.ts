@@ -481,10 +481,10 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     }
   }
 
-  addQuickProduct(selection: { product: PosProduct; trigger: HTMLButtonElement; keyboard: boolean }): void {
+  addQuickProduct(selection: { product: PosProduct; trigger: HTMLButtonElement }): void {
     if (this.saleLookupBlocked() || this.searchTerm().trim()) return;
-    const { product, trigger, keyboard } = selection;
-    if (this.addProduct(product) && !keyboard && trigger.ownerDocument.activeElement === trigger) {
+    const { product, trigger } = selection;
+    if (this.addProduct(product) && trigger.ownerDocument.activeElement === trigger) {
       this.productSearchPanel?.focusSearchInputNow();
     }
   }
