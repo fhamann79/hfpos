@@ -304,6 +304,21 @@ describe('POS cart visibility and keyboard focus', () => {
     expect(page.quickProductsEditorVisible()).toBe(false);
   });
 
+  it('unblocks keyboard shortcuts when a catalog failure unmounts the favorites editor', () => {
+    host.querySelector<HTMLButtonElement>('[aria-label="Editar favoritos"]')!.click();
+    fixture.detectChanges();
+    expect(page.quickProductsEditorVisible()).toBe(true);
+
+    page.inventoryAvailable.set(false);
+    fixture.detectChanges();
+    expect(page.quickProductsEditorVisible()).toBe(false);
+
+    page.inventoryAvailable.set(true);
+    fixture.detectChanges();
+    key(search, 'F2');
+    expect(page.quickSearchVisible()).toBe(true);
+  });
+
   it('focuses the real quantity editor intentionally and commits on return to the scanner', async () => {
     const list = renderCart();
     page.addProduct(product(2));

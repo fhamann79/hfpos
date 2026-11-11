@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnDestroy, OnInit, ViewChild, computed, effect, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, ViewChild, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -138,7 +138,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly canSubmitSriDocuments = this.permissionService.hasPermission(PERMISSIONS.sriDocumentsSubmit);
   readonly canWriteInventory = this.permissionService.hasPermission(PERMISSIONS.inventoryWrite);
   readonly canManageQuickProducts = this.permissionService.hasPermission(PERMISSIONS.catalogProductsWrite);
-  readonly quickProductsEditorVisible = signal(false);
+  private readonly quickProducts = viewChild(PosQuickProducts);
+  readonly quickProductsEditorVisible = computed(() => this.quickProducts()?.editorVisible() ?? false);
   readonly companyTimeZoneId = computed(() => this.authStore.companyTimeZoneId());
 
   readonly allProducts = signal<PosProduct[]>([]);

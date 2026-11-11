@@ -114,7 +114,6 @@
                 [searching]="!!searchTerm().trim()"
                 [idle]="!cart().length && !checkoutLocked()"
                 [canManage]="canManageQuickProducts"
-                (editorVisibleChange)="quickProductsEditorVisible.set($event)"
                 (selectProduct)="addQuickProduct($event)"
               />
             }

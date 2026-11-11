@@ -32,7 +32,6 @@ export class PosQuickProducts implements OnInit {
   readonly canManage = input.required<boolean>();
   readonly idle = input.required<boolean>();
   readonly selectProduct = output<{ product: PosProduct; trigger: HTMLButtonElement; keyboard: boolean }>();
-  readonly editorVisibleChange = output<boolean>();
 
   readonly limit = 12;
   readonly tab = signal<QuickTab>('favorites');
@@ -143,7 +142,6 @@ export class PosQuickProducts implements OnInit {
   openEditor(): void {
     if (!this.canManage() || !this.idle() || this.blocked() || this.selecting()) return;
     this.editorVisible.set(true);
-    this.editorVisibleChange.emit(true);
     this.reloadEditor();
   }
 
@@ -175,7 +173,6 @@ export class PosQuickProducts implements OnInit {
   closeEditor(): void {
     if (!this.editorVisible() || this.saving()) return;
     this.editorVisible.set(false);
-    this.editorVisibleChange.emit(false);
     this.searchEditor('');
   }
 
