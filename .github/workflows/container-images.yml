@@ -53,8 +53,16 @@ jobs:
           HFPOS_SUPERVISED_DOCKER_TESTS: 'YES'
           HFPOS_SUPERVISED_NATIVE_AGE: 'YES'
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends age
+          # Pin the official release and checksum; keep native crypto tests mandatory.
+          curl --fail --location --show-error --silent --max-time 120 \
+            --output "${RUNNER_TEMP}/age-v1.3.2-linux-amd64.tar.gz" \
+            https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz
+          echo "cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  ${RUNNER_TEMP}/age-v1.3.2-linux-amd64.tar.gz" | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/age-verified"
+          tar -xzf "${RUNNER_TEMP}/age-v1.3.2-linux-amd64.tar.gz" -C "${RUNNER_TEMP}/age-verified"
+          sudo install -m 0755 "${RUNNER_TEMP}/age-verified/age/age" "${RUNNER_TEMP}/age-verified/age/age-keygen" /usr/local/bin/
+          sudo age --version
+          sudo age-keygen --version
           sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,HFPOS_SUPERVISED_DOCKER_TESTS,HFPOS_SUPERVISED_NATIVE_AGE python3 scripts/ci/test_supervised_operations.py
       - name: Human one-shot PostgreSQL bookworm and keyring E2E (synthetic only)
         env:
