@@ -118,6 +118,7 @@
             [total]="total()"
             [taxSummary]="taxSummary()"
             [fiscalPreview]="fiscalPreviewCurrent() ? fiscalPreview() : null"
+            [checkoutPending]="!!pendingCheckout()"
             [saleDiscountAmount]="effectiveSaleDiscountAmount()"
             [notes]="notes()"
             [canCheckout]="canSell && (hasOpenCashSession() || !!pendingCheckout()) && !checkoutLoading()"

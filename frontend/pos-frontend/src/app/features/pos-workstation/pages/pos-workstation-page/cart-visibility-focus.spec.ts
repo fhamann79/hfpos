@@ -10,9 +10,12 @@ import { PermissionService } from '../../../../core/services/permission.service'
 import { AuthStore } from '../../../../core/stores/auth.store';
 import { ProductVatCategory } from '../../../../core/utils/vat-category';
 import { CashSession, CashSessionStatus } from '../../../cash-sessions/models/cash-session.model';
+import { CheckoutIntent } from '../../models/checkout-intent.model';
 import { SalePreview } from '../../models/checkout-request.model';
 import { PosProduct } from '../../models/pos-product.model';
+import { SaleDocumentType } from '../../models/sale-document.model';
 import { SaleListItem } from '../../models/sale-list-item.model';
+import { SalePaymentMethod } from '../../models/sale-payment-method.model';
 import { CheckoutIntentService } from '../../services/checkout-intent.service';
 import { PosCustomerService } from '../../services/pos-customer.service';
 import { PosProductCatalogService } from '../../services/pos-product-catalog.service';
@@ -29,6 +32,7 @@ describe('POS cart visibility and keyboard focus', () => {
   const searchProducts = vi.fn();
   const previewSale = vi.fn();
   const createCustomer = vi.fn();
+  const loadIntent = vi.fn<() => CheckoutIntent | null>();
 
   const product = (id: number): PosProduct => ({
     id, name: `Synthetic ${id}`, barcode: `SYN-${id}`, price: 2, stock: 10,
@@ -41,6 +45,7 @@ describe('POS cart visibility and keyboard focus', () => {
     searchProducts.mockReset().mockReturnValue(lookup);
     previewSale.mockReset().mockReturnValue(preview);
     createCustomer.mockReset();
+    loadIntent.mockReset().mockReturnValue(null);
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(), provideHttpClientTesting(), provideRouter([]),
@@ -51,7 +56,7 @@ describe('POS cart visibility and keyboard focus', () => {
           companyTimeZoneId: () => 'America/Guayaquil',
           me: () => ({ userId: 'synthetic' }),
         } },
-        { provide: CheckoutIntentService, useValue: { load: () => null } },
+        { provide: CheckoutIntentService, useValue: { load: loadIntent } },
         { provide: PosCustomerService, useValue: { search: () => of([]), create: createCustomer } },
         { provide: PosProductCatalogService, useValue: { searchProducts } },
         { provide: PosWorkstationService, useValue: {
@@ -60,6 +65,10 @@ describe('POS cart visibility and keyboard focus', () => {
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
+    await renderPage();
+  });
+
+  async function renderPage(): Promise<void> {
     fixture = TestBed.createComponent(PosWorkstationPage);
     page = fixture.componentInstance;
     vi.spyOn(page, 'loadProducts').mockImplementation(() => undefined);
@@ -70,7 +79,7 @@ describe('POS cart visibility and keyboard focus', () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 0)); // Existing initial search focus.
     host = fixture.nativeElement;
     search = host.querySelector<HTMLInputElement>('input[aria-keyshortcuts="Alt+Q"]')!;
-  });
+  }
 
   function key(target: HTMLElement, name: string, options: KeyboardEventInit = {}): KeyboardEvent {
     const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...options });
@@ -524,6 +533,50 @@ describe('POS cart visibility and keyboard focus', () => {
     expect(focus).not.toHaveBeenCalled();
   });
 
+  it('keeps verified amounts and distinguishes recovery from normal checkout', async () => {
+    await openCheckout();
+    expect(host.querySelector('.grand-total strong')?.textContent).toBe('$4.00');
+    expect(host.querySelector('.checkout-zone button')?.textContent?.trim()).toBe('Cobrar (F9)');
+
+    page.checkoutVisible.set(false);
+    page.pendingCheckout.set({ requestId: 'SYNTHETIC-PENDING', items: [] });
+    fixture.detectChanges();
+    expect(host.querySelector('.summary-lines')?.textContent).toContain('Subtotal bruto');
+    expect(host.querySelector('.grand-total strong')?.textContent).toBe('$4.00');
+    expect(host.querySelector('.checkout-zone button')?.textContent?.trim()).toBe('Recuperar cobro (F9)');
+  });
+
+  it('does not show fallback aggregates for a restored checkout with cart lines and no preview', async () => {
+    const line = { productId: 1, quantity: 2, unitPrice: 2, discountAmount: 0 };
+    const documentType = SaleDocumentType.Ticket;
+    const paymentMethod = SalePaymentMethod.Cash;
+    const request = { requestId: '00000000-0000-4000-8000-000000000001', documentType, paymentMethod, items: [line] };
+    loadIntent.mockReturnValue({
+      scope: '1:synthetic:2:3',
+      request,
+      draft: {
+        cart: [{ ...line, product: product(1), productName: 'Synthetic 1', stock: 10 }],
+        customer: null, discountAmount: 0, notes: '', documentType, paymentMethod, cashReceived: 5,
+      },
+    });
+    fixture.destroy();
+    await renderPage();
+
+    expect(page.pendingCheckout()).toBe(request);
+    expect(host.querySelector('.cart-list')?.textContent).toContain('Synthetic 1');
+    expect(host.querySelector('.cart-list')?.textContent).toContain('Bruto $4.00');
+    expect(host.querySelector('.summary-lines')).toBeNull();
+    expect(host.querySelector('.grand-total')?.textContent?.trim()).toBe('Total no disponible');
+    expect(host.querySelector('.summary')?.textContent).not.toContain('$0.00');
+    expect(previewSale).not.toHaveBeenCalled();
+    const recover = host.querySelector<HTMLButtonElement>('.checkout-zone button')!;
+    expect(recover.textContent?.trim()).toBe('Recuperar cobro (F9)');
+    const confirm = vi.spyOn(page, 'confirmCheckout').mockImplementation(() => undefined);
+    recover.click();
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(page.checkoutVisible()).toBe(false);
+  });
+
   it('keeps a single persistent recovery notice when its displayed reason changes', () => {
     expect(host.querySelector('.workstation-shell--pending')).toBeNull();
     page.pendingCheckout.set({ requestId: 'SYNTHETIC-PENDING', items: [] });
@@ -536,7 +589,7 @@ describe('POS cart visibility and keyboard focus', () => {
     expect(host.textContent?.match(/Cobro pendiente de recuperar/g)).toHaveLength(1);
     expect(host.textContent).toContain('Conflicto de intención');
     expect(host.textContent).not.toContain('El resultado no está confirmado');
-    expect(Array.from(host.querySelectorAll('button')).filter(button => button.textContent?.includes('Recuperar cobro'))).toHaveLength(1);
+    expect(Array.from(host.querySelectorAll('button')).filter(button => button.textContent?.trim() === 'Recuperar cobro')).toHaveLength(1);
     page.pendingCheckout.set(null);
     fixture.detectChanges();
     expect(host.querySelector('.workstation-shell--pending')).toBeNull();

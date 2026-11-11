@@ -111,44 +111,46 @@
 
   <footer class="summary">
     <ng-content select="[cart-status]" />
-    <div class="summary-lines">
-      <div><span>Subtotal bruto</span><strong>{{ (taxSummary?.grossSubtotal ?? subtotal) | currency: 'USD' }}</strong></div>
-      <div class="discount-editor">
-        <label for="sale-discount">Descuento global</label>
-        <p-inputnumber
-          inputId="sale-discount"
-          mode="currency"
-          currency="USD"
-          locale="en-US"
-          [min]="0"
-          [max]="maxSaleDiscount()"
-          [ngModel]="saleDiscountAmount"
-          (ngModelChange)="updateSaleDiscount.emit($event ?? 0)"
-        ></p-inputnumber>
-      </div>
-      <div class="discount-total"><span>Descuento total</span><strong>-{{ (taxSummary?.discountAmount ?? 0) | currency: 'USD' }}</strong></div>
-      <div><span>Subtotal neto</span><strong>{{ subtotal | currency: 'USD' }}</strong></div>
-      <div><span>IVA</span><strong>{{ taxAmount | currency: 'USD' }}</strong></div>
-      @if (taxSummary) {
-        <div class="tax-breakdown">
-          @if (taxSummary.vat15Subtotal > 0) {
-            <span>Base IVA 15%: {{ taxSummary.vat15Subtotal | currency: 'USD' }}</span>
-          }
-          @if (taxSummary.vat5Subtotal > 0) {
-            <span>Base IVA 5%: {{ taxSummary.vat5Subtotal | currency: 'USD' }}</span>
-          }
-          @if (taxSummary.vat0Subtotal > 0) {
-            <span>Base IVA 0%: {{ taxSummary.vat0Subtotal | currency: 'USD' }}</span>
-          }
-          @if (taxSummary.vatExemptSubtotal > 0) {
-            <span>Exento: {{ taxSummary.vatExemptSubtotal | currency: 'USD' }}</span>
-          }
-          @if (taxSummary.vatNotSubjectSubtotal > 0) {
-            <span>No objeto: {{ taxSummary.vatNotSubjectSubtotal | currency: 'USD' }}</span>
-          }
+    @if (showTotals) {
+      <div class="summary-lines">
+        <div><span>Subtotal bruto</span><strong>{{ (taxSummary?.grossSubtotal ?? subtotal) | currency: 'USD' }}</strong></div>
+        <div class="discount-editor">
+          <label for="sale-discount">Descuento global</label>
+          <p-inputnumber
+            inputId="sale-discount"
+            mode="currency"
+            currency="USD"
+            locale="en-US"
+            [min]="0"
+            [max]="maxSaleDiscount()"
+            [ngModel]="saleDiscountAmount"
+            (ngModelChange)="updateSaleDiscount.emit($event ?? 0)"
+          ></p-inputnumber>
         </div>
-      }
-    </div>
+        <div class="discount-total"><span>Descuento total</span><strong>-{{ (taxSummary?.discountAmount ?? 0) | currency: 'USD' }}</strong></div>
+        <div><span>Subtotal neto</span><strong>{{ subtotal | currency: 'USD' }}</strong></div>
+        <div><span>IVA</span><strong>{{ taxAmount | currency: 'USD' }}</strong></div>
+        @if (taxSummary) {
+          <div class="tax-breakdown">
+            @if (taxSummary.vat15Subtotal > 0) {
+              <span>Base IVA 15%: {{ taxSummary.vat15Subtotal | currency: 'USD' }}</span>
+            }
+            @if (taxSummary.vat5Subtotal > 0) {
+              <span>Base IVA 5%: {{ taxSummary.vat5Subtotal | currency: 'USD' }}</span>
+            }
+            @if (taxSummary.vat0Subtotal > 0) {
+              <span>Base IVA 0%: {{ taxSummary.vat0Subtotal | currency: 'USD' }}</span>
+            }
+            @if (taxSummary.vatExemptSubtotal > 0) {
+              <span>Exento: {{ taxSummary.vatExemptSubtotal | currency: 'USD' }}</span>
+            }
+            @if (taxSummary.vatNotSubjectSubtotal > 0) {
+              <span>No objeto: {{ taxSummary.vatNotSubjectSubtotal | currency: 'USD' }}</span>
+            }
+          </div>
+        }
+      </div>
+    }
 
     <textarea
       pTextarea
@@ -161,10 +163,16 @@
     ></textarea>
 
     <div class="checkout-zone">
-      <div class="grand-total"><span>Total</span><strong>{{ total | currency: 'USD' }}</strong></div>
+      <div class="grand-total">
+        @if (showTotals) {
+          <span>Total</span><strong>{{ total | currency: 'USD' }}</strong>
+        } @else {
+          <span>Total no disponible</span>
+        }
+      </div>
       <p-button
-        label="Cobrar (F9)"
-        icon="pi pi-check"
+        [label]="checkoutPending ? 'Recuperar cobro (F9)' : 'Cobrar (F9)'"
+        [icon]="checkoutPending ? 'pi pi-refresh' : 'pi pi-check'"
         [pt]="{ root: { 'aria-keyshortcuts': 'F9' } }"
         [disabled]="!canCheckout || !hasItems || !inventoryAvailable"
         (onClick)="checkout.emit()"
