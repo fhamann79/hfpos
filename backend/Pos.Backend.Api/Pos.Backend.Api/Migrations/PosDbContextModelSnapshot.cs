@@ -17,7 +17,7 @@ namespace Pos.Backend.Api.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.4")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -2225,6 +2225,24 @@ namespace Pos.Backend.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Pos.Backend.Api.Core.Entities.PosFavoriteList", b =>
+                {
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("integer");
+
+                    b.PrimitiveCollection<int[]>("ProductIds")
+                        .IsRequired()
+                        .HasColumnType("integer[]");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId");
+
+                    b.ToTable("PosFavoriteLists");
+                });
+
             modelBuilder.Entity("Pos.Backend.Api.Core.Entities.Product", b =>
                 {
                     b.Property<int>("Id")
@@ -4242,6 +4260,15 @@ namespace Pos.Backend.Api.Migrations
                     b.Navigation("InitialAdminUser");
 
                     b.Navigation("PlatformUser");
+                });
+
+            modelBuilder.Entity("Pos.Backend.Api.Core.Entities.PosFavoriteList", b =>
+                {
+                    b.HasOne("Pos.Backend.Api.Core.Entities.Company", null)
+                        .WithOne()
+                        .HasForeignKey("Pos.Backend.Api.Core.Entities.PosFavoriteList", "CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Pos.Backend.Api.Core.Entities.Product", b =>

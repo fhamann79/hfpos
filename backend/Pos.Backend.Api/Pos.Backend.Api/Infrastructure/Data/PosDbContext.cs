@@ -20,6 +20,7 @@ public class PosDbContext : DbContext
     public DbSet<Permission> Permissions { get; set; }
     public DbSet<RolePermission> RolePermissions { get; set; }
     public DbSet<Company> Companies { get; set; }
+    public DbSet<PosFavoriteList> PosFavoriteLists { get; set; }
     public DbSet<CompanyFiscalProfile> CompanyFiscalProfiles { get; set; }
     public DbSet<ProductFiscalClassification> ProductFiscalClassifications { get; set; }
     public DbSet<CompanyBranding> CompanyBrandings { get; set; }
@@ -59,6 +60,16 @@ public class PosDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<PosFavoriteList>(entity =>
+        {
+            entity.HasKey(list => list.CompanyId);
+            entity.Property(list => list.CompanyId).ValueGeneratedNever();
+            entity.Property(list => list.Revision).IsConcurrencyToken();
+            entity.HasOne<Company>().WithOne()
+                .HasForeignKey<PosFavoriteList>(list => list.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
 
         modelBuilder.Entity<CompanyFiscalProfile>(e =>
         {

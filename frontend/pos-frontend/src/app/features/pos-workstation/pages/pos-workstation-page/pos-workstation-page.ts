@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnDestroy, OnInit, ViewChild, computed, effect, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, ViewChild, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -61,6 +61,7 @@ import { SriRide } from '../../models/sri-ride.model';
 import { SriSubmissionAttempt } from '../../models/sri-submission-attempt.model';
 import { PosKeyboardService } from '../../services/pos-keyboard.service';
 import { PosCatalogSnapshot, PosProductCatalogService } from '../../services/pos-product-catalog.service';
+import { PosQuickProducts } from '../../components/product-search-panel/pos-quick-products';
 import { PosWorkstationService } from '../../services/pos-workstation.service';
 import { CheckoutIntentService } from '../../services/checkout-intent.service';
 import { SaleReceiptDialog } from '../../components/sale-receipt-dialog/sale-receipt-dialog';
@@ -75,6 +76,7 @@ import { SaleReceiptDialog } from '../../components/sale-receipt-dialog/sale-rec
     MessageModule,
     ToastModule,
     ProductSearchPanel,
+    PosQuickProducts,
     QuickProductSearchDialog,
     CartWorkstation,
     CheckoutConfirmDialog,
@@ -135,6 +137,9 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly canSignSriDocuments = this.permissionService.hasPermission(PERMISSIONS.sriDocumentsSign);
   readonly canSubmitSriDocuments = this.permissionService.hasPermission(PERMISSIONS.sriDocumentsSubmit);
   readonly canWriteInventory = this.permissionService.hasPermission(PERMISSIONS.inventoryWrite);
+  readonly canManageQuickProducts = this.permissionService.hasPermission(PERMISSIONS.catalogProductsWrite);
+  private readonly quickProducts = viewChild(PosQuickProducts);
+  readonly quickProductsEditorVisible = computed(() => this.quickProducts()?.editorVisible() ?? false);
   readonly companyTimeZoneId = computed(() => this.authStore.companyTimeZoneId());
 
   readonly allProducts = signal<PosProduct[]>([]);
@@ -473,6 +478,14 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     const matches = this.filteredProducts();
     if (matches.length === 1 && this.addProduct(matches[0])) {
       this.searchTerm.set('');
+    }
+  }
+
+  addQuickProduct(selection: { product: PosProduct; trigger: HTMLButtonElement }): void {
+    if (this.saleLookupBlocked() || this.searchTerm().trim()) return;
+    const { product, trigger } = selection;
+    if (this.addProduct(product) && trigger.ownerDocument.activeElement === trigger) {
+      this.productSearchPanel?.focusSearchInputNow();
     }
   }
 
@@ -3345,6 +3358,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.quickSearchVisible()
       || this.customerSelectorVisible()
       || this.checkoutVisible()
+      || this.quickProductsEditorVisible()
       || this.recentSalesVisible()
       || this.saleDetailVisible()
       || this.voidVisible()
@@ -3610,6 +3624,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   private closeContextualDialog(): void {
+    if (this.quickProductsEditorVisible()) return;
     if (this.checkoutLoading()) return;
     if (this.creditNoteRefundVisible()) {
       this.onCreditNoteRefundVisibleChange(false);

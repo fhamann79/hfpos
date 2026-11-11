@@ -1,0 +1,111 @@
+<div [hidden]="searching()">
+  <div class="quick-toolbar">
+    <div class="quick-tabs" role="tablist" aria-label="Accesos rápidos" (keydown)="navigateTabs($event)">
+      <button type="button" role="tab" id="pos-favorites-tab" aria-controls="pos-quick-panel"
+        [attr.aria-selected]="tab() === 'favorites'" [tabIndex]="tab() === 'favorites' ? 0 : -1"
+        (click)="loadTab('favorites')">Favoritos</button>
+      <button type="button" role="tab" id="pos-top-tab" aria-controls="pos-quick-panel"
+        [attr.aria-selected]="tab() === 'top'" [tabIndex]="tab() === 'top' ? 0 : -1"
+        (click)="loadTab('top')">Más vendidos</button>
+    </div>
+    @if (tab() === 'favorites' && canManage()) {
+      <button class="quick-action" type="button" title="Editar favoritos" aria-label="Editar favoritos"
+        [disabled]="!idle() || blocked() || selecting()" (click)="openEditor()"><i class="pi pi-pencil" aria-hidden="true"></i></button>
+    } @else if (tab() === 'top') {
+      <button class="quick-action" type="button" title="Actualizar más vendidos" aria-label="Actualizar más vendidos"
+        [disabled]="!idle() || blocked() || selecting() || state() === 'loading'"
+        (click)="loadTab('top', true)"><i class="pi pi-refresh" aria-hidden="true"></i></button>
+    }
+  </div>
+
+  <section role="tabpanel" id="pos-quick-panel"
+    [attr.aria-labelledby]="tab() === 'favorites' ? 'pos-favorites-tab' : 'pos-top-tab'">
+    @if (state() === 'loading') {
+      <p class="quick-state" role="status">Cargando productos…</p>
+    } @else if (state() === 'error') {
+      <p class="quick-state" role="status">No se pudieron cargar los productos.
+        <button class="quick-action" type="button" (click)="loadTab(tab())">Reintentar</button>
+      </p>
+    } @else if (!products().length) {
+      <p class="quick-state">{{ tab() === 'favorites' ? 'Sin favoritos para esta empresa.' : 'Sin ventas netas en este punto durante los últimos 30 días.' }}</p>
+    } @else {
+      <ul class="quick-grid">
+        @for (product of products(); track product.id) {
+          <li>
+            <button type="button" class="product-tile" [title]="product.name"
+              [attr.aria-disabled]="blocked() || selecting() || null"
+              (keydown)="suppressRepeat($event)" (click)="activate(product, $event)">
+              <i class="pi pi-box" aria-hidden="true"></i>
+              <strong>{{ product.name }}</strong>
+              <span class="tile-price">{{ product.price | currency: 'USD' }}
+                @if (product.tracksInventory !== false && product.stock <= 0) {
+                  <small>Sin stock</small>
+                }
+              </span>
+            </button>
+          </li>
+        }
+      </ul>
+    }
+    @if (activationError()) { <p class="quick-state" role="alert">{{ activationError() }}</p> }
+  </section>
+</div>
+
+<p-dialog header="Editar favoritos de la empresa" [modal]="true" [visible]="editorVisible()"
+  [closable]="!saving()" [closeOnEscape]="!saving()" [style]="{ width: '38rem', maxWidth: '96vw' }"
+  (visibleChange)="!$event && closeEditor()">
+  @if (editError()) { <p role="alert">{{ editError() }}</p> }
+  @if (editLoading()) {
+    <p role="status">Cargando favoritos…</p>
+  } @else if (stale()) {
+    <button class="quick-action" type="button" (click)="reloadEditor()">Recargar favoritos</button>
+  } @else {
+    <div class="favorite-editor">
+      <ol class="editor-list">
+        @for (id of draftIds(); track id; let index = $index) {
+          <li>
+            <span>{{ favoriteName(id) }}</span>
+            <div class="editor-actions">
+              <button class="quick-action" type="button" [disabled]="index === 0 || saving()"
+                [attr.aria-label]="'Subir ' + favoriteName(id)" title="Subir" (click)="moveFavorite(index, -1)">
+                <i class="pi pi-arrow-up" aria-hidden="true"></i>
+              </button>
+              <button class="quick-action" type="button" [disabled]="index === draftIds().length - 1 || saving()"
+                [attr.aria-label]="'Bajar ' + favoriteName(id)" title="Bajar" (click)="moveFavorite(index, 1)">
+                <i class="pi pi-arrow-down" aria-hidden="true"></i>
+              </button>
+              <button class="quick-action" type="button" [disabled]="saving()"
+                [attr.aria-label]="'Quitar ' + favoriteName(id)" title="Quitar" (click)="removeFavorite(id)">
+                <i class="pi pi-times" aria-hidden="true"></i>
+              </button>
+            </div>
+          </li>
+        }
+      </ol>
+      <span class="quick-state">{{ draftIds().length }} / {{ limit }} favoritos</span>
+      <label for="favorite-search">Buscar en el catálogo</label>
+      <input id="favorite-search" #query type="search" (input)="searchEditor(query.value)" [disabled]="saving()" />
+      @if (editSearching()) { <p role="status">Buscando…</p> }
+      @if (editSearchError()) { <p role="alert">{{ editSearchError() }}</p> }
+      @if (editMatches().length) {
+        <ul class="editor-list">
+          @for (product of editMatches(); track product.id) {
+            <li><span>{{ product.name }} @if (product.internalCode || product.barcode) { <small>{{ product.internalCode || product.barcode }}</small> }</span>
+              <button class="quick-action" type="button"
+                [disabled]="saving() || draftIds().length >= limit || draftIds().includes(product.id)"
+                [attr.aria-label]="'Agregar a favoritos: ' + product.name" title="Agregar a favoritos"
+                (click)="addFavorite(product)"><i class="pi pi-plus" aria-hidden="true"></i></button>
+            </li>
+          }
+        </ul>
+      } @else if (query.value.trim() && !editSearching() && !editSearchError()) {
+        <p class="quick-state">No hay coincidencias.</p>
+      }
+    </div>
+  }
+  <ng-template #footer>
+    <button class="quick-action" type="button" [disabled]="saving()" (click)="closeEditor()">Cancelar</button>
+    <button class="quick-action quick-action--primary" type="button"
+      [disabled]="stale() || editLoading() || saving()" (click)="save()">{{ saving() ? 'Guardando…' : 'Guardar' }}</button>
+  </ng-template>
+</p-dialog>

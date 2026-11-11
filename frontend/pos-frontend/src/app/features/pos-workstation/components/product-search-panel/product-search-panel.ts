@@ -86,6 +86,10 @@ export class ProductSearchPanel implements AfterViewInit, OnDestroy {
     if (event.key !== 'Enter') {
       return;
     }
+    if (event.repeat) {
+      event.preventDefault();
+      return;
+    }
 
     const term = this.searchTerm.trim();
     const exact = this.findExactIdentifierMatch(term);

@@ -107,7 +107,17 @@
             (searchTermChange)="onSearchTermChange($event)"
             (submitSearch)="submitSearchTerm()"
             (addProduct)="addProduct($event)"
-          ></app-product-search-panel>
+          >
+            @if (inventoryAvailable()) {
+              <app-pos-quick-products
+                [blocked]="saleLookupBlocked()"
+                [searching]="!!searchTerm().trim()"
+                [idle]="!cart().length && !checkoutLocked()"
+                [canManage]="canManageQuickProducts"
+                (selectProduct)="addQuickProduct($event)"
+              />
+            }
+          </app-product-search-panel>
         </main>
 
         <aside class="active-sale">
