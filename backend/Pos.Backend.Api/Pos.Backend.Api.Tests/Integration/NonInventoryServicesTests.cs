@@ -470,9 +470,26 @@ public sealed class NonInventoryServicesTests(PostgresDatabaseFixture database) 
         }
         await using var db = database.CreateDbContext();
         Assert.False(db.Database.HasPendingModelChanges());
-        var migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+        const string beforeNonInventory = "20261020215533_AddTenantFiscalProfiles";
+        const string nonInventory = "20261021235813_AddNonInventoryServices";
         var migrator = db.GetService<IMigrator>();
-        await migrator.MigrateAsync(migrations[^2]);
+
+        async Task AssertUnsafeRollbackAsync()
+        {
+            try
+            {
+                var ex = await Assert.ThrowsAsync<PostgresException>(() => migrator.MigrateAsync(beforeNonInventory));
+                Assert.Contains("DEV531_ROLLBACK_UNSAFE", ex.MessageText);
+                Assert.Contains(nonInventory, await db.Database.GetAppliedMigrationsAsync());
+            }
+            finally
+            {
+                // EF may already have reverted newer migrations before reaching the guard.
+                await migrator.MigrateAsync();
+            }
+        }
+
+        await migrator.MigrateAsync(beforeNonInventory);
         await migrator.MigrateAsync();
         Assert.True((await db.Products.AsNoTracking().SingleAsync()).TracksInventory);
         Assert.True((await db.SaleItems.AsNoTracking().SingleAsync()).TracksInventorySnapshot);
@@ -481,16 +498,12 @@ public sealed class NonInventoryServicesTests(PostgresDatabaseFixture database) 
         var inserted = new Product { CompanyId = t.CompanyId, CategoryId = original.CategoryId, Name = "Synthetic false insert", TracksInventory = false, IsActive = true, CreatedAt = Now };
         db.Products.Add(inserted); await db.SaveChangesAsync(); db.ChangeTracker.Clear();
         Assert.False((await db.Products.AsNoTracking().SingleAsync(p => p.Id == inserted.Id)).TracksInventory);
-        var ex = await Assert.ThrowsAsync<PostgresException>(() => migrator.MigrateAsync(migrations[^2]));
-        Assert.Contains("DEV531_ROLLBACK_UNSAFE", ex.MessageText);
-        Assert.Contains(migrations[^1], await db.Database.GetAppliedMigrationsAsync());
+        await AssertUnsafeRollbackAsync();
         await db.Products.ExecuteUpdateAsync(p => p.SetProperty(x => x.TracksInventory, true));
         await db.SaleItems.ExecuteUpdateAsync(p => p.SetProperty(x => x.TracksInventorySnapshot, false));
-        Assert.Contains("DEV531_ROLLBACK_UNSAFE", (await Assert.ThrowsAsync<PostgresException>(
-            () => migrator.MigrateAsync(migrations[^2]))).MessageText);
+        await AssertUnsafeRollbackAsync();
         await db.SaleItems.ExecuteUpdateAsync(p => p.SetProperty(x => x.TracksInventorySnapshot, true));
         await db.CreditNoteItems.ExecuteUpdateAsync(p => p.SetProperty(x => x.TracksInventorySnapshot, false));
-        Assert.Contains("DEV531_ROLLBACK_UNSAFE", (await Assert.ThrowsAsync<PostgresException>(
-            () => migrator.MigrateAsync(migrations[^2]))).MessageText);
+        await AssertUnsafeRollbackAsync();
     }
 }
