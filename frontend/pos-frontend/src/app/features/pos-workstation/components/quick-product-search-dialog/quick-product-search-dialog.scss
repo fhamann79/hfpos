@@ -1,7 +1,8 @@
 .quick-search-input { width: 100%; margin-bottom: .75rem; }
 .result-list { list-style:none; margin:0; padding:0; display:grid; gap:.35rem; max-height: 340px; overflow:auto; }
-.result-item { display:flex; justify-content:space-between; gap:.8rem; border:1px solid #e2e8f0; border-radius:6px; padding:.5rem .6rem; cursor:pointer; }
+.result-item { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.25rem .8rem; border:1px solid #e2e8f0; border-radius:6px; padding:.5rem .6rem; cursor:pointer; overflow-wrap:anywhere; }
+.result-item > * { min-width:0; }
 .result-item--active { border-color:#2563eb; background:#eff6ff; }
 .result-item--out { opacity: .65; }
 .result-identifiers { display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.25rem; color:#64748b; font-size:.78rem; font-weight:400; }
-.result-identifiers span { display:inline-flex; align-items:center; gap:.25rem; }
+.result-identifiers span { display:inline-flex; align-items:center; gap:.25rem; min-width:0; }

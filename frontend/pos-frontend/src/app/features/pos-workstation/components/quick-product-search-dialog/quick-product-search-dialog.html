@@ -2,7 +2,7 @@
   header="Búsqueda rápida"
   [modal]="true"
   [visible]="visible"
-  [style]="{ width: '42rem' }"
+  [style]="{ width: '42rem', maxWidth: '96vw' }"
   (visibleChange)="onVisibleChange($event)"
 >
   <input
@@ -13,6 +13,7 @@
     (ngModelChange)="onFilterChange($event)"
     (keydown)="onKeydown($event)"
     placeholder="Nombre, código de barras o código interno"
+    aria-label="Buscar producto"
     class="quick-search-input"
   />
 

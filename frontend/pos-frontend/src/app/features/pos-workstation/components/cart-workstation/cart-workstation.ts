@@ -22,6 +22,7 @@ export class CartWorkstation {
   @Input({ required: true }) total = 0;
   @Input() taxSummary: TaxSummary | null = null;
   @Input() fiscalPreview: SalePreview | null = null;
+  @Input() checkoutPending = false;
   @Input() saleDiscountAmount = 0;
   @Input() notes = '';
   @Input() canCheckout = false;
@@ -102,6 +103,10 @@ export class CartWorkstation {
 
   get hasItems(): boolean {
     return this.items.length > 0;
+  }
+
+  get showTotals(): boolean {
+    return !this.checkoutPending || this.fiscalPreview !== null;
   }
 
   lineSubtotal(item: CartItem): number {

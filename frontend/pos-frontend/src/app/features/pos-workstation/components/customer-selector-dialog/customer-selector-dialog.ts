@@ -82,8 +82,9 @@ export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
 
   onLookupKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
-      this.close();
+      event.stopPropagation();
       event.preventDefault();
+      if (!event.repeat) this.close();
       return;
     }
 
@@ -112,9 +113,11 @@ export class CustomerSelectorDialog implements AfterViewInit, OnChanges {
 
   onCreateKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
+      event.stopPropagation();
+      event.preventDefault();
+      if (event.repeat) return;
       this.createMode = false;
       this.focusLookup();
-      event.preventDefault();
       return;
     }
 

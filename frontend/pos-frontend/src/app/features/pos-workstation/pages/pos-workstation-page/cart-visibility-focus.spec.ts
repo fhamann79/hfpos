@@ -4,14 +4,20 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { MessageService } from 'primeng/api';
 import { providePrimeNG } from 'primeng/config';
-import { Subject } from 'rxjs';
+import { Subject, of } from 'rxjs';
 import { vi } from 'vitest';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { AuthStore } from '../../../../core/stores/auth.store';
 import { ProductVatCategory } from '../../../../core/utils/vat-category';
+import { CashSession, CashSessionStatus } from '../../../cash-sessions/models/cash-session.model';
+import { CheckoutIntent } from '../../models/checkout-intent.model';
 import { SalePreview } from '../../models/checkout-request.model';
 import { PosProduct } from '../../models/pos-product.model';
+import { SaleDocumentType } from '../../models/sale-document.model';
+import { SaleListItem } from '../../models/sale-list-item.model';
+import { SalePaymentMethod } from '../../models/sale-payment-method.model';
 import { CheckoutIntentService } from '../../services/checkout-intent.service';
+import { PosCustomerService } from '../../services/pos-customer.service';
 import { PosProductCatalogService } from '../../services/pos-product-catalog.service';
 import { PosWorkstationService } from '../../services/pos-workstation.service';
 import { PosWorkstationPage } from './pos-workstation-page';
@@ -25,6 +31,8 @@ describe('POS cart visibility and keyboard focus', () => {
   let preview: Subject<SalePreview>;
   const searchProducts = vi.fn();
   const previewSale = vi.fn();
+  const createCustomer = vi.fn();
+  const loadIntent = vi.fn<() => CheckoutIntent | null>();
 
   const product = (id: number): PosProduct => ({
     id, name: `Synthetic ${id}`, barcode: `SYN-${id}`, price: 2, stock: 10,
@@ -36,6 +44,8 @@ describe('POS cart visibility and keyboard focus', () => {
     preview = new Subject();
     searchProducts.mockReset().mockReturnValue(lookup);
     previewSale.mockReset().mockReturnValue(preview);
+    createCustomer.mockReset();
+    loadIntent.mockReset().mockReturnValue(null);
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(), provideHttpClientTesting(), provideRouter([]),
@@ -46,12 +56,19 @@ describe('POS cart visibility and keyboard focus', () => {
           companyTimeZoneId: () => 'America/Guayaquil',
           me: () => ({ userId: 'synthetic' }),
         } },
-        { provide: CheckoutIntentService, useValue: { load: () => null } },
+        { provide: CheckoutIntentService, useValue: { load: loadIntent } },
+        { provide: PosCustomerService, useValue: { search: () => of([]), create: createCustomer } },
         { provide: PosProductCatalogService, useValue: { searchProducts } },
-        { provide: PosWorkstationService, useValue: { previewSale } },
+        { provide: PosWorkstationService, useValue: {
+          previewSale, resolveBusinessError: () => 'Perfil fiscal pendiente',
+        } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
+    await renderPage();
+  });
+
+  async function renderPage(): Promise<void> {
     fixture = TestBed.createComponent(PosWorkstationPage);
     page = fixture.componentInstance;
     vi.spyOn(page, 'loadProducts').mockImplementation(() => undefined);
@@ -62,7 +79,7 @@ describe('POS cart visibility and keyboard focus', () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 0)); // Existing initial search focus.
     host = fixture.nativeElement;
     search = host.querySelector<HTMLInputElement>('input[aria-keyshortcuts="Alt+Q"]')!;
-  });
+  }
 
   function key(target: HTMLElement, name: string, options: KeyboardEventInit = {}): KeyboardEvent {
     const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...options });
@@ -102,9 +119,52 @@ describe('POS cart visibility and keyboard focus', () => {
     return list;
   }
 
+  async function openCheckout(): Promise<HTMLElement> {
+    page.currentCashSession.set({
+      id: 1, status: CashSessionStatus.Open, openingAmount: 0, expectedCashAmount: 0,
+      openedAt: '2026-11-10T10:00:00Z', openBusinessDate: '2026-11-10',
+      openTimeZoneIdSnapshot: 'America/Guayaquil',
+    } as CashSession);
+    page.addProduct(product(1));
+    fixture.detectChanges();
+    await finishPreview(1);
+    search.focus();
+    key(search, 'F9');
+    fixture.detectChanges();
+    expect(page.checkoutVisible()).toBe(true);
+    const dialog = host.querySelector<HTMLElement>('app-checkout-confirm-dialog [role="dialog"]')!;
+    dialog.querySelector<HTMLInputElement>('#checkout-cash-received')!.focus();
+    return dialog;
+  }
+
   afterEach(() => {
     fixture.destroy();
     vi.restoreAllMocks();
+  });
+
+  it('keeps closed cash visible and presents one recoverable fiscal status for the whole cart', async () => {
+    page.addProduct(product(1));
+    page.addProduct(product(2));
+    fixture.detectChanges();
+    expect(host.querySelector('.cash-context--blocked')?.textContent).toContain('Debes abrir caja');
+    expect(host.querySelector<HTMLButtonElement>('button[aria-keyshortcuts="F9"]')?.disabled).toBe(true);
+    expect(host.querySelector('.pos-page__header button[aria-keyshortcuts="F2"]')).not.toBeNull();
+    expect(host.querySelector('.pos-page__header button[aria-keyshortcuts="F4"]')).not.toBeNull();
+    expect(host.querySelector('.cart-shortcuts')?.textContent).toContain('Alt+Q');
+    expect(host.querySelector('.cart-shortcuts')?.textContent).toContain('↑');
+    expect(host.querySelector('.cart-shortcuts')?.textContent).toContain('↓');
+    expect(host.querySelectorAll('.summary .fiscal-status')).toHaveLength(1);
+    expect(host.querySelector('.fiscal-status')?.textContent).toContain('Calculando impuestos');
+    expect(host.querySelector('.cart-list')?.textContent).not.toMatch(/pendiente/i);
+
+    await vi.waitFor(() => expect(previewSale.mock.lastCall?.[0].items).toHaveLength(2));
+    preview.error(new Error('Synthetic fiscal error'));
+    fixture.detectChanges();
+    expect(host.querySelectorAll('.summary .fiscal-status')).toHaveLength(1);
+    expect(host.querySelector('.fiscal-status')?.textContent).toContain('Perfil fiscal pendiente');
+    const retry = vi.spyOn(page, 'refreshFiscalPreview');
+    host.querySelector<HTMLButtonElement>('.fiscal-status button')!.click();
+    expect(retry).toHaveBeenCalledOnce();
   });
 
   it('reveals new and repeated lines locally, and follows arrows without moving search focus', () => {
@@ -238,6 +298,171 @@ describe('POS cart visibility and keyboard focus', () => {
     expect(confirm).toHaveBeenCalledOnce();
   });
 
+  it.each(['Escape', 'Cancelar', 'Cerrar cobro'])('restores scan focus after dismissing F9 with %s', async (action) => {
+    const dialog = await openCheckout();
+    const footer = dialog.querySelector<HTMLElement>('[data-pc-section="footer"]')!;
+    const cancel = footer.querySelector<HTMLButtonElement>('button[aria-keyshortcuts="Escape"]')!;
+    expect(cancel.textContent).toContain('Cancelar');
+    expect(footer.querySelector('button[aria-keyshortcuts="F12"]')?.textContent).toContain('Confirmar');
+    expect(dialog.querySelector('.confirm-content button[aria-keyshortcuts="F12"]')).toBeNull();
+
+    if (action === 'Escape') key(cancel, 'Escape');
+    else if (action === 'Cancelar') cancel.click();
+    else dialog.querySelector<HTMLButtonElement>('button[aria-label="Cerrar cobro"]')!.click();
+
+    expect(page.checkoutVisible()).toBe(false);
+    expect(document.activeElement).not.toBe(search);
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(document.activeElement).toBe(search);
+    });
+  });
+
+  it('does not focus the scanner after a programmatic close or when another dialog opens during dismissal', async () => {
+    await openCheckout();
+    const focusSearch = vi.spyOn(search, 'focus');
+    const afterHide = vi.spyOn(page, 'onCheckoutHidden');
+    page.checkoutVisible.set(false);
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(afterHide).toHaveBeenCalledOnce();
+    });
+    expect(focusSearch).not.toHaveBeenCalled();
+
+    key(search, 'F9');
+    fixture.detectChanges();
+    const dialog = host.querySelector<HTMLElement>('app-checkout-confirm-dialog [role="dialog"]')!;
+    key(dialog.querySelector<HTMLInputElement>('#checkout-cash-received')!, 'Escape');
+    page.recentSalesVisible.set(true);
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(afterHide).toHaveBeenCalledTimes(2);
+    });
+    expect(page.recentSalesVisible()).toBe(true);
+    expect(focusSearch).not.toHaveBeenCalled();
+  });
+
+  it('keeps one confirmation path per gesture and locks the footer and Escape while loading', async () => {
+    const dialog = await openCheckout();
+    const confirm = vi.spyOn(page, 'confirmCheckout').mockImplementation(() => undefined);
+    const button = dialog.querySelector<HTMLButtonElement>('button[aria-keyshortcuts="F12"]')!;
+    const cancel = dialog.querySelector<HTMLButtonElement>('button[aria-keyshortcuts="Escape"]')!;
+    const cash = dialog.querySelector<HTMLInputElement>('#checkout-cash-received')!;
+    expect(key(cash, 'Enter', { repeat: true }).defaultPrevented).toBe(true);
+    expect(key(button, 'Enter', { repeat: true }).defaultPrevented).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+    key(button, 'Enter');
+    expect(confirm).not.toHaveBeenCalled(); // Native button activation owns Enter in the footer.
+    button.click();
+    expect(confirm).toHaveBeenCalledOnce();
+    key(cash, 'F12');
+    expect(confirm).toHaveBeenCalledTimes(2);
+    key(cash, 'F12', { repeat: true });
+    expect(confirm).toHaveBeenCalledTimes(2);
+
+    page.checkoutLoading.set(true);
+    fixture.detectChanges();
+    expect(button.disabled).toBe(true);
+    expect(cancel.disabled).toBe(true);
+    expect(dialog.querySelector('button[aria-label="Cerrar cobro"]')).toBeNull();
+    button.click();
+    cancel.click();
+    key(cancel, 'Escape');
+    key(cash, 'Enter');
+    expect(page.checkoutVisible()).toBe(true);
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('blocks competing shortcuts during checkout and only lets F12 confirm from inside checkout', async () => {
+    const dialog = await openCheckout();
+    const confirm = vi.spyOn(page, 'confirmCheckout').mockImplementation(() => undefined);
+    const cash = dialog.querySelector<HTMLInputElement>('#checkout-cash-received')!;
+    for (const shortcut of ['F2', 'F4', 'F8']) {
+      key(cash, shortcut);
+    }
+    expect(page.quickSearchVisible()).toBe(false);
+    expect(page.customerSelectorVisible()).toBe(false);
+    expect(page.recentSalesVisible()).toBe(false);
+    for (const shortcut of ['F2', 'F4']) {
+      expect(host.querySelector<HTMLButtonElement>(`button[aria-keyshortcuts="${shortcut}"]`)?.disabled).toBe(true);
+    }
+    key(search, 'F12');
+
+    // Exercise the target guard even if another dialog becomes visible unexpectedly.
+    page.quickSearchVisible.set(true);
+    fixture.detectChanges();
+    key(host.querySelector<HTMLInputElement>('.quick-search-input')!, 'F12');
+    page.quickSearchVisible.set(false);
+    page.customerSelectorVisible.set(true);
+    fixture.detectChanges();
+    key(host.querySelector<HTMLInputElement>('input[aria-label="Buscar cliente"]')!, 'F12');
+    expect(confirm).not.toHaveBeenCalled();
+    page.customerSelectorVisible.set(false);
+    fixture.detectChanges();
+
+    key(cash, 'F12');
+    expect(confirm).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { first: 'F4', second: 'F2', input: 'input[aria-label="Buscar cliente"]' },
+    { first: 'F2', second: 'F4', input: '.quick-search-input' },
+  ])('keeps $first active when $second or F8 is pressed, then restores scanner focus', async ({ first, second, input }) => {
+    key(search, first);
+    fixture.detectChanges();
+    const active = host.querySelector<HTMLInputElement>(input)!;
+    await vi.waitFor(() => expect(document.activeElement).toBe(active));
+
+    key(active, second);
+    key(active, 'F8');
+    fixture.detectChanges();
+    expect(page.quickSearchVisible()).toBe(first === 'F2');
+    expect(page.customerSelectorVisible()).toBe(first === 'F4');
+    expect(page.recentSalesVisible()).toBe(false);
+    expect(host.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(host.querySelector<HTMLButtonElement>(`button[aria-keyshortcuts="${second}"]`)?.disabled).toBe(true);
+    expect(document.activeElement).toBe(active);
+
+    const confirm = vi.spyOn(page, 'confirmCheckout');
+    key(active, 'F12');
+    key(active, 'F12', { repeat: true });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(page.checkoutVisible()).toBe(false);
+
+    key(active, 'Escape');
+    fixture.detectChanges();
+    await vi.waitFor(() => expect(document.activeElement).toBe(search));
+    expect(page.quickSearchVisible()).toBe(false);
+    expect(page.customerSelectorVisible()).toBe(false);
+    expect(host.querySelector<HTMLButtonElement>(`button[aria-keyshortcuts="${second}"]`)?.disabled).toBe(false);
+  });
+
+  it('routes the first F4 Escape back to customer lookup and the second back to the scanner', async () => {
+    key(search, 'F4');
+    fixture.detectChanges();
+    const lookupInput = () => host.querySelector<HTMLInputElement>('input[aria-label="Buscar cliente"]')!;
+    await vi.waitFor(() => expect(document.activeElement).toBe(lookupInput()));
+    const dialog = lookupInput().closest('[role="dialog"]')!;
+    const newCustomer = Array.from(dialog.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Nuevo')!;
+    newCustomer.click();
+    fixture.detectChanges();
+    const name = dialog.querySelector<HTMLInputElement>('input[name="name"]')!;
+    await vi.waitFor(() => expect(document.activeElement).toBe(name));
+
+    expect(key(name, 'Escape').defaultPrevented).toBe(true);
+    fixture.detectChanges();
+    expect(page.customerSelectorVisible()).toBe(true);
+    expect(dialog.querySelector('.create-form')).toBeNull();
+    await vi.waitFor(() => expect(document.activeElement).toBe(lookupInput()));
+    key(lookupInput(), 'Escape', { repeat: true });
+    expect(page.customerSelectorVisible()).toBe(true);
+    expect(key(lookupInput(), 'Escape').defaultPrevented).toBe(true);
+    fixture.detectChanges();
+    expect(page.customerSelectorVisible()).toBe(false);
+    await vi.waitFor(() => expect(document.activeElement).toBe(search));
+    expect(createCustomer).not.toHaveBeenCalled();
+  });
+
   it('does not pick or close a real F2 search with the quantity shortcut; plain Enter still picks', () => {
     renderCart();
     expect(key(search, 'F2').defaultPrevented).toBe(true);
@@ -253,5 +478,120 @@ describe('POS cart visibility and keyboard focus', () => {
     expect(key(quickSearch, 'Enter').defaultPrevented).toBe(true);
     expect(page.cart().map(item => item.productId)).toEqual([1, 2]);
     expect(page.quickSearchVisible()).toBe(false);
+  });
+
+  it.each([
+    { action: 'Escape', pending: false }, { action: 'X', pending: false },
+    { action: 'Escape', pending: true }, { action: 'X', pending: true },
+  ])('restores scanner focus after F8 $action (pending=$pending)', async ({ action, pending }) => {
+    if (pending) page.pendingCheckout.set({ requestId: 'SYNTHETIC-PENDING', items: [] });
+    search.focus();
+    key(search, 'F8');
+    fixture.detectChanges();
+    expect(page.recentSalesVisible()).toBe(true);
+    const button = host.querySelector<HTMLButtonElement>('button[aria-keyshortcuts="F8"]')!;
+    expect(button.textContent).toContain('Ventas recientes (F8)');
+    const dialog = host.querySelector('app-recent-sales-panel')!.closest<HTMLElement>('[role="dialog"]')!;
+    const close = dialog.querySelector<HTMLButtonElement>('[data-pc-section="header"] button')!;
+    close.focus();
+    const confirm = vi.spyOn(page, 'confirmCheckout');
+    key(close, 'F12');
+    key(close, 'F12', { repeat: true });
+    key(close, 'F9');
+    expect(confirm).not.toHaveBeenCalled();
+    expect(page.checkoutVisible()).toBe(false);
+
+    if (action === 'Escape') key(close, 'Escape');
+    else close.click();
+    expect(page.recentSalesVisible()).toBe(false);
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(document.activeElement).toBe(search);
+    });
+    expect(!!page.pendingCheckout()).toBe(pending);
+
+    button.click();
+    fixture.detectChanges();
+    expect(page.recentSalesVisible()).toBe(true);
+  });
+
+  it.each(['detail', 'void'])('does not steal focus from %s when history finishes hiding', async (destination) => {
+    key(search, 'F8');
+    fixture.detectChanges();
+    const focus = vi.spyOn(search, 'focus');
+    const hidden = vi.spyOn(page, 'onRecentSalesHidden');
+    if (destination === 'detail') {
+      vi.spyOn(page, 'openSaleDetail').mockImplementation(() => page.saleDetailVisible.set(true));
+      page.openSaleDetailFromRecent(1);
+    } else {
+      page.openVoidDialogFromRecent({ id: 1 } as SaleListItem);
+    }
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(hidden).toHaveBeenCalledOnce();
+    });
+    expect(focus).not.toHaveBeenCalled();
+  });
+
+  it('keeps verified amounts and distinguishes recovery from normal checkout', async () => {
+    await openCheckout();
+    expect(host.querySelector('.grand-total strong')?.textContent).toBe('$4.00');
+    expect(host.querySelector('.checkout-zone button')?.textContent?.trim()).toBe('Cobrar (F9)');
+
+    page.checkoutVisible.set(false);
+    page.pendingCheckout.set({ requestId: 'SYNTHETIC-PENDING', items: [] });
+    fixture.detectChanges();
+    expect(host.querySelector('.summary-lines')?.textContent).toContain('Subtotal bruto');
+    expect(host.querySelector('.grand-total strong')?.textContent).toBe('$4.00');
+    expect(host.querySelector('.checkout-zone button')?.textContent?.trim()).toBe('Recuperar cobro (F9)');
+  });
+
+  it('does not show fallback aggregates for a restored checkout with cart lines and no preview', async () => {
+    const line = { productId: 1, quantity: 2, unitPrice: 2, discountAmount: 0 };
+    const documentType = SaleDocumentType.Ticket;
+    const paymentMethod = SalePaymentMethod.Cash;
+    const request = { requestId: '00000000-0000-4000-8000-000000000001', documentType, paymentMethod, items: [line] };
+    loadIntent.mockReturnValue({
+      scope: '1:synthetic:2:3',
+      request,
+      draft: {
+        cart: [{ ...line, product: product(1), productName: 'Synthetic 1', stock: 10 }],
+        customer: null, discountAmount: 0, notes: '', documentType, paymentMethod, cashReceived: 5,
+      },
+    });
+    fixture.destroy();
+    await renderPage();
+
+    expect(page.pendingCheckout()).toBe(request);
+    expect(host.querySelector('.cart-list')?.textContent).toContain('Synthetic 1');
+    expect(host.querySelector('.cart-list')?.textContent).toContain('Bruto $4.00');
+    expect(host.querySelector('.summary-lines')).toBeNull();
+    expect(host.querySelector('.grand-total')?.textContent?.trim()).toBe('Total no disponible');
+    expect(host.querySelector('.summary')?.textContent).not.toContain('$0.00');
+    expect(previewSale).not.toHaveBeenCalled();
+    const recover = host.querySelector<HTMLButtonElement>('.checkout-zone button')!;
+    expect(recover.textContent?.trim()).toBe('Recuperar cobro (F9)');
+    const confirm = vi.spyOn(page, 'confirmCheckout').mockImplementation(() => undefined);
+    recover.click();
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(page.checkoutVisible()).toBe(false);
+  });
+
+  it('keeps a single persistent recovery notice when its displayed reason changes', () => {
+    expect(host.querySelector('.workstation-shell--pending')).toBeNull();
+    page.pendingCheckout.set({ requestId: 'SYNTHETIC-PENDING', items: [] });
+    fixture.detectChanges();
+    expect(host.querySelector('.workstation-shell--pending')).not.toBeNull();
+    expect(host.textContent?.match(/Cobro pendiente de recuperar/g)).toHaveLength(1);
+    expect(host.textContent).toContain('El resultado no está confirmado');
+    page.checkoutPendingMessage.set('Conflicto de intención. Verifica la venta antes de volver a cobrar.');
+    fixture.detectChanges();
+    expect(host.textContent?.match(/Cobro pendiente de recuperar/g)).toHaveLength(1);
+    expect(host.textContent).toContain('Conflicto de intención');
+    expect(host.textContent).not.toContain('El resultado no está confirmado');
+    expect(Array.from(host.querySelectorAll('button')).filter(button => button.textContent?.trim() === 'Recuperar cobro')).toHaveLength(1);
+    page.pendingCheckout.set(null);
+    fixture.detectChanges();
+    expect(host.querySelector('.workstation-shell--pending')).toBeNull();
   });
 });

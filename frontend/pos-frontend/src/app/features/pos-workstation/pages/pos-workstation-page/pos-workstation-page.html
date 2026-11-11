@@ -1,39 +1,63 @@
 <section class="pos-page">
   <header class="pos-page__header">
-    <div>
-      <span class="eyebrow">Estación de venta</span>
-      <h1>POS Workstation</h1>
-      <p>Escaneo rápido, venta activa y cierre con teclado.</p>
-    </div>
+    <h1>Estación de venta</h1>
 
-    <div class="header-actions">
-      @if (canReadReports) {
-        <p-button
-          label="Ventas recientes"
-          icon="pi pi-receipt"
-          severity="secondary"
-          [outlined]="true"
-          (onClick)="recentSalesVisible.set(true)"
-        ></p-button>
+    @if (canSell) {
+      @if (cashSessionLoading()) {
+        <span class="cash-indicator" role="status">Consultando caja...</span>
+      } @else if (hasOpenCashSession() && currentCashSession(); as cashSession) {
+        <div class="cash-indicator">
+          <i class="pi pi-check-circle" aria-hidden="true"></i>
+          <strong>Caja abierta</strong>
+          <span class="cash-indicator__amounts">
+            Inicial {{ cashSession.openingAmount | currency: 'USD' }}
+            · Esperado {{ cashSession.expectedCashAmount | currency: 'USD' }}
+          </span>
+          <p-button label="Ver caja" icon="pi pi-wallet" size="small" severity="secondary" [text]="true"
+            title="Apertura {{ cashSessionOpenBusinessDateLabel(cashSession) }} · {{ cashSessionOpenedAtLabel(cashSession) }}"
+            (onClick)="openCashSessionsPage()" />
+        </div>
       }
-      <span class="shortcut-hint">F2 buscar · F4 cliente · F9 cobrar · F12 confirmar</span>
-    </div>
+    }
+
+    @if (canSell || canReadReports) {
+      <div class="header-actions">
+        @if (canSell) {
+          <p-button label="Buscar (F2)" icon="pi pi-search" size="small" severity="secondary" [outlined]="true"
+            [disabled]="saleLookupBlocked()" [pt]="{ root: { 'aria-keyshortcuts': 'F2' } }"
+            (onClick)="openQuickSearch()" />
+          <p-button label="Cliente (F4)" icon="pi pi-user" size="small" severity="secondary" [outlined]="true"
+            [disabled]="saleLookupBlocked()" [pt]="{ root: { 'aria-keyshortcuts': 'F4' } }"
+            (onClick)="openCustomerSelector()" />
+        }
+        @if (canReadReports) {
+          <p-button label="Ventas recientes (F8)" icon="pi pi-receipt" size="small" severity="secondary" [outlined]="true"
+            [pt]="{ root: { 'aria-keyshortcuts': 'F8' } }"
+            [disabled]="workstationModalActive()" (onClick)="openRecentSales()" />
+        }
+      </div>
+    }
   </header>
 
   @if (!canSell && !canReadReports) {
     <p-message severity="warn" text="No tienes permisos para usar la estación POS."></p-message>
   } @else {
     @if (checkoutRecoveryError()) { <p-message severity="error" [text]="checkoutRecoveryError()" /> }
-    @if (fiscalPreviewLoading()) { <p-message severity="info" text="Calculando impuestos..." /> }
-    @if (fiscalPreviewError() && !pendingCheckout()) {
-      <div class="cash-context" role="alert">
-        <p-message severity="error" [text]="fiscalPreviewError()" />
-        <p-button icon="pi pi-refresh" label="Recalcular" severity="secondary" (onClick)="refreshFiscalPreview()" />
-      </div>
+    @if (canSell && !cashSessionLoading() && !hasOpenCashSession()) {
+      <section class="cash-context cash-context--blocked">
+        <div class="cash-context__info" role="status">
+          <strong>Debes abrir caja antes de vender.</strong>
+          <small>{{ cashSessionError() || 'El cobro queda bloqueado hasta abrir una caja para este punto de emisión.' }}</small>
+        </div>
+        <p-button label="Abrir caja" icon="pi pi-unlock" size="small" (onClick)="openCashSessionsPage()" />
+      </section>
     }
     @if (pendingCheckout()) {
       <section class="cash-context" aria-live="polite">
-        <strong>Cobro pendiente de recuperar</strong>
+        <div class="cash-context__info">
+          <strong>Cobro pendiente de recuperar</strong>
+          <small>{{ checkoutPendingMessage() }}</small>
+        </div>
         <p-button label="Recuperar cobro" icon="pi pi-refresh" [loading]="checkoutLoading()" (onClick)="confirmCheckout()" />
       </section>
     }
@@ -44,44 +68,7 @@
         <p-button label="Siguiente cliente" icon="pi pi-arrow-right" (onClick)="nextCustomer()" />
       </section>
     }
-    @if (canSell) {
-      <section class="cash-context" [class.cash-context--blocked]="!hasOpenCashSession() && !cashSessionLoading()">
-        @if (cashSessionLoading()) {
-          <div class="cash-context__info">
-            <span>Caja</span>
-            <strong>Consultando caja actual...</strong>
-          </div>
-        } @else if (currentCashSession(); as cashSession) {
-          <div class="cash-context__info">
-            <span>Caja abierta</span>
-            <strong>
-              Inicial {{ cashSession.openingAmount | currency: 'USD' : 'symbol' : '1.2-2' }}
-              · Esperado {{ cashSession.expectedCashAmount | currency: 'USD' : 'symbol' : '1.2-2' }}
-            </strong>
-            <small>
-              Apertura {{ cashSessionOpenBusinessDateLabel(cashSession) }}
-              · {{ cashSessionOpenedAtLabel(cashSession) }}
-            </small>
-          </div>
-          <p-button
-            label="Ver caja"
-            icon="pi pi-wallet"
-            severity="secondary"
-            [outlined]="true"
-            (onClick)="openCashSessionsPage()"
-          ></p-button>
-        } @else {
-          <div class="cash-context__info">
-            <span>Caja requerida</span>
-            <strong>Debes abrir caja antes de vender.</strong>
-            <small>{{ cashSessionError() || 'El cobro queda bloqueado hasta abrir una caja para este punto de emisión.' }}</small>
-          </div>
-          <p-button label="Abrir caja" icon="pi pi-unlock" (onClick)="openCashSessionsPage()"></p-button>
-        }
-      </section>
-    }
-
-    <div class="workstation-shell">
+    <div class="workstation-shell" [class.workstation-shell--pending]="!!pendingCheckout()">
       @if (canSell) {
         <main class="sale-flow">
           <section class="customer-context">
@@ -96,25 +83,17 @@
               }
             </div>
 
-            <div class="customer-context__actions">
+            @if (selectedCustomer()) {
               <p-button
-                [label]="selectedCustomer() ? 'Cambiar' : 'Seleccionar cliente'"
-                icon="pi pi-user"
+                icon="pi pi-times"
+                size="small"
                 severity="secondary"
-                [outlined]="true"
-                (onClick)="openCustomerSelector()"
-              ></p-button>
-              @if (selectedCustomer()) {
-                <p-button
-                  icon="pi pi-times"
-                  severity="secondary"
-                  [rounded]="true"
-                  [text]="true"
-                  ariaLabel="Quitar cliente"
-                  (onClick)="clearCustomer()"
-                ></p-button>
-              }
-            </div>
+                [text]="true"
+                title="Quitar cliente"
+                ariaLabel="Quitar cliente"
+                (onClick)="clearCustomer()"
+              />
+            }
           </section>
 
           <app-product-search-panel
@@ -128,7 +107,6 @@
             (searchTermChange)="onSearchTermChange($event)"
             (submitSearch)="submitSearchTerm()"
             (addProduct)="addProduct($event)"
-            (quickSearch)="quickSearchVisible.set(true)"
           ></app-product-search-panel>
         </main>
 
@@ -140,6 +118,7 @@
             [total]="total()"
             [taxSummary]="taxSummary()"
             [fiscalPreview]="fiscalPreviewCurrent() ? fiscalPreview() : null"
+            [checkoutPending]="!!pendingCheckout()"
             [saleDiscountAmount]="effectiveSaleDiscountAmount()"
             [notes]="notes()"
             [canCheckout]="canSell && (hasOpenCashSession() || !!pendingCheckout()) && !checkoutLoading()"
@@ -154,13 +133,28 @@
             (notesChange)="updateNotes($event)"
             (selectLine)="selectCartLine($event)"
             (checkout)="openCheckoutDialog()"
-          ></app-cart-workstation>
+          >
+            <ng-container cart-status>
+              @if (!pendingCheckout()) {
+                @if (fiscalPreviewError()) {
+                  <div class="fiscal-status">
+                    <p-message severity="error" size="small" [text]="fiscalPreviewError()" />
+                    <p-button icon="pi pi-refresh" label="Recalcular" size="small" severity="secondary"
+                      (onClick)="refreshFiscalPreview()" />
+                  </div>
+                } @else if (fiscalPreviewLoading()) {
+                  <p class="fiscal-status" role="status">Calculando impuestos...</p>
+                }
+              }
+            </ng-container>
+          </app-cart-workstation>
         </aside>
       }
 
       @if (!canSell && canReadReports) {
         <div class="reports-only">
-          <p-button label="Abrir ventas recientes" icon="pi pi-receipt" (onClick)="recentSalesVisible.set(true)"></p-button>
+          <p-button label="Abrir ventas recientes" icon="pi pi-receipt"
+            [disabled]="workstationModalActive()" (onClick)="openRecentSales()" />
         </div>
       }
     </div>
@@ -180,7 +174,8 @@
     [modal]="true"
     [visible]="recentSalesVisible()"
     [style]="{ width: '52rem', maxWidth: '96vw' }"
-    (visibleChange)="recentSalesVisible.set($event)"
+    (visibleChange)="onRecentSalesVisibleChange($event)"
+    (onHide)="onRecentSalesHidden()"
   >
     <app-recent-sales-panel
       [sales]="sales()"
@@ -221,6 +216,7 @@
     [cashReceived]="cashReceived()"
     (cashReceivedChange)="updateCashReceived($event)"
     (visibleChange)="setCheckoutVisible($event)"
+    (hidden)="onCheckoutHidden()"
     (documentTypeChange)="updateDocumentType($event)"
     (paymentMethodChange)="updatePaymentMethod($event)"
     (confirm)="confirmCheckout()"

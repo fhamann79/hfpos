@@ -1,5 +1,8 @@
-.confirm-content { display:grid; gap:.6rem; outline:none; }
-.hint { color:#64748b; font-size:.9rem; }
+.confirm-content { display:grid; grid-template-columns:minmax(0, 1fr); gap:.6rem; outline:none; overflow-wrap:anywhere; }
+.confirm-content p { margin:0; }
+.checkout-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:.5rem; }
+:host ::ng-deep .p-dialog-header,
+:host ::ng-deep .p-dialog-footer { flex-shrink:0; }
 .money-lines { display:grid; gap:.25rem; padding:.65rem; border-radius:.75rem; background:#f8fafc; }
 .money-lines > strong { color:#0f172a; font-size:1.2rem; }
 .discount-line { color:#b45309; }

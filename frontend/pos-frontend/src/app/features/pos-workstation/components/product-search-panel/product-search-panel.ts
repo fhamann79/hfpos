@@ -45,7 +45,6 @@ export class ProductSearchPanel implements AfterViewInit, OnDestroy {
   @Output() searchTermChange = new EventEmitter<string>();
   @Output() submitSearch = new EventEmitter<void>();
   @Output() addProduct = new EventEmitter<PosProduct>();
-  @Output() quickSearch = new EventEmitter<void>();
 
   @ViewChild('searchInput') private searchInput?: ElementRef<HTMLInputElement>;
 
@@ -113,14 +112,6 @@ export class ProductSearchPanel implements AfterViewInit, OnDestroy {
 
   getVatLabel(product: PosProduct): string {
     return getVatCategoryOption(product.vatCategory).shortLabel;
-  }
-
-  openQuickSearch(): void {
-    if (!this.canSell) {
-      return;
-    }
-
-    this.quickSearch.emit();
   }
 
   focusSearchInput(): void {
