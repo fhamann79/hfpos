@@ -61,6 +61,7 @@ import { SriRide } from '../../models/sri-ride.model';
 import { SriSubmissionAttempt } from '../../models/sri-submission-attempt.model';
 import { PosKeyboardService } from '../../services/pos-keyboard.service';
 import { PosCatalogSnapshot, PosProductCatalogService } from '../../services/pos-product-catalog.service';
+import { PosQuickProducts } from '../../components/product-search-panel/pos-quick-products';
 import { PosWorkstationService } from '../../services/pos-workstation.service';
 import { CheckoutIntentService } from '../../services/checkout-intent.service';
 import { SaleReceiptDialog } from '../../components/sale-receipt-dialog/sale-receipt-dialog';
@@ -75,6 +76,7 @@ import { SaleReceiptDialog } from '../../components/sale-receipt-dialog/sale-rec
     MessageModule,
     ToastModule,
     ProductSearchPanel,
+    PosQuickProducts,
     QuickProductSearchDialog,
     CartWorkstation,
     CheckoutConfirmDialog,
@@ -135,6 +137,8 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   readonly canSignSriDocuments = this.permissionService.hasPermission(PERMISSIONS.sriDocumentsSign);
   readonly canSubmitSriDocuments = this.permissionService.hasPermission(PERMISSIONS.sriDocumentsSubmit);
   readonly canWriteInventory = this.permissionService.hasPermission(PERMISSIONS.inventoryWrite);
+  readonly canManageQuickProducts = this.permissionService.hasPermission(PERMISSIONS.catalogProductsWrite);
+  readonly quickProductsEditorVisible = signal(false);
   readonly companyTimeZoneId = computed(() => this.authStore.companyTimeZoneId());
 
   readonly allProducts = signal<PosProduct[]>([]);
@@ -473,6 +477,14 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
     const matches = this.filteredProducts();
     if (matches.length === 1 && this.addProduct(matches[0])) {
       this.searchTerm.set('');
+    }
+  }
+
+  addQuickProduct(selection: { product: PosProduct; trigger: HTMLButtonElement; keyboard: boolean }): void {
+    if (this.saleLookupBlocked() || this.searchTerm().trim()) return;
+    const { product, trigger, keyboard } = selection;
+    if (this.addProduct(product) && !keyboard && trigger.ownerDocument.activeElement === trigger) {
+      this.productSearchPanel?.focusSearchInputNow();
     }
   }
 
@@ -3345,6 +3357,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
       || this.quickSearchVisible()
       || this.customerSelectorVisible()
       || this.checkoutVisible()
+      || this.quickProductsEditorVisible()
       || this.recentSalesVisible()
       || this.saleDetailVisible()
       || this.voidVisible()
@@ -3610,6 +3623,7 @@ export class PosWorkstationPage implements OnInit, OnDestroy {
   }
 
   private closeContextualDialog(): void {
+    if (this.quickProductsEditorVisible()) return;
     if (this.checkoutLoading()) return;
     if (this.creditNoteRefundVisible()) {
       this.onCreditNoteRefundVisibleChange(false);

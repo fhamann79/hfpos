@@ -17,6 +17,8 @@
     </div>
   </header>
 
+  <ng-content />
+
   @if (effectiveErrorMessage) {
     <p-message severity="error" [text]="effectiveErrorMessage"></p-message>
   }
@@ -27,14 +29,9 @@
 
   @if (isLoading) {
     <div class="state">Buscando productos...</div>
-  } @else if (!hasSearchTerm) {
-    <div class="scan-empty">
-      <i class="pi pi-barcode" aria-hidden="true"></i>
-      <span>Sin búsqueda activa</span>
-    </div>
-  } @else if (!results.length) {
+  } @else if (hasSearchTerm && !results.length) {
     <div class="state">No hay coincidencias para esta búsqueda.</div>
-  } @else {
+  } @else if (hasSearchTerm) {
     <ul class="product-list">
       @for (product of results; track product.id) {
         <li class="product-item" [class.product-item--out]="product.tracksInventory !== false && product.stock <= 0">

@@ -1,10 +1,12 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { HttpErrorResponse } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { MessageService } from 'primeng/api';
 import { providePrimeNG } from 'primeng/config';
-import { Subject, of } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { AuthStore } from '../../../../core/stores/auth.store';
@@ -19,8 +21,10 @@ import { SalePaymentMethod } from '../../models/sale-payment-method.model';
 import { CheckoutIntentService } from '../../services/checkout-intent.service';
 import { PosCustomerService } from '../../services/pos-customer.service';
 import { PosProductCatalogService } from '../../services/pos-product-catalog.service';
+import { PosQuickProductsService } from '../../services/pos-quick-products.service';
 import { PosWorkstationService } from '../../services/pos-workstation.service';
 import { PosWorkstationPage } from './pos-workstation-page';
+import { PosQuickProducts } from '../../components/product-search-panel/pos-quick-products';
 
 describe('POS cart visibility and keyboard focus', () => {
   let fixture: ComponentFixture<PosWorkstationPage>;
@@ -30,6 +34,10 @@ describe('POS cart visibility and keyboard focus', () => {
   let lookup: Subject<PosProduct[]>;
   let preview: Subject<SalePreview>;
   const searchProducts = vi.fn();
+  const refreshCartProducts = vi.fn();
+  const getFavorites = vi.fn();
+  const getTopSellers = vi.fn();
+  const saveFavorites = vi.fn();
   const previewSale = vi.fn();
   const createCustomer = vi.fn();
   const loadIntent = vi.fn<() => CheckoutIntent | null>();
@@ -43,6 +51,10 @@ describe('POS cart visibility and keyboard focus', () => {
     lookup = new Subject();
     preview = new Subject();
     searchProducts.mockReset().mockReturnValue(lookup);
+    refreshCartProducts.mockReset().mockReturnValue(of([]));
+    getFavorites.mockReset().mockReturnValue(of({ revision: 0, productIds: [] }));
+    getTopSellers.mockReset().mockReturnValue(of([]));
+    saveFavorites.mockReset();
     previewSale.mockReset().mockReturnValue(preview);
     createCustomer.mockReset();
     loadIntent.mockReset().mockReturnValue(null);
@@ -58,7 +70,8 @@ describe('POS cart visibility and keyboard focus', () => {
         } },
         { provide: CheckoutIntentService, useValue: { load: loadIntent } },
         { provide: PosCustomerService, useValue: { search: () => of([]), create: createCustomer } },
-        { provide: PosProductCatalogService, useValue: { searchProducts } },
+        { provide: PosProductCatalogService, useValue: { searchProducts, refreshCartProducts } },
+        { provide: PosQuickProductsService, useValue: { getFavorites, getTopSellers, saveFavorites } },
         { provide: PosWorkstationService, useValue: {
           previewSale, resolveBusinessError: () => 'Perfil fiscal pendiente',
         } },
@@ -202,6 +215,93 @@ describe('POS cart visibility and keyboard focus', () => {
     fixture.detectChanges();
     expect(list.scrollTop).toBe(60);
     expect(document.activeElement).toBe(rowButton);
+  });
+
+  it('adds a favorite via the current product lookup and returns pointer focus to the scanner', () => {
+    const service = { ...product(6), tracksInventory: false, stock: 0 };
+    getFavorites.mockReturnValue(of({ revision: 3, productIds: [6] }));
+    refreshCartProducts.mockReturnValueOnce(of([service])).mockReturnValueOnce(of([{ ...service, price: 3 }]));
+    host.querySelector<HTMLButtonElement>('[aria-label="Accesos rápidos"] button')!.click();
+    fixture.detectChanges();
+    const tile = host.querySelector<HTMLButtonElement>('.product-tile')!;
+    tile.focus();
+    expect(key(tile, 'Enter', { repeat: true }).defaultPrevented).toBe(true);
+    tile.dispatchEvent(new MouseEvent('click', { detail: 1, bubbles: true }));
+    fixture.detectChanges();
+    expect(page.cart()[0]).toMatchObject({ productId: 6, quantity: 1, unitPrice: 3 });
+    expect(document.activeElement).toBe(search);
+
+    page.allProducts.set([service]);
+    page.onSearchTermChange('SYN-6');
+    fixture.detectChanges();
+    expect(page.cart()[0].quantity).toBe(2);
+    expect(document.activeElement).toBe(search);
+  });
+
+  it('does not replay a delayed tile selection after recovery starts and leaves the cart unchanged', () => {
+    const current = new Subject<PosProduct[]>();
+    getFavorites.mockReturnValue(of({ revision: 3, productIds: [6] }));
+    refreshCartProducts.mockReturnValueOnce(of([product(6)])).mockReturnValueOnce(current);
+    host.querySelector<HTMLButtonElement>('[aria-label="Accesos rápidos"] button')!.click();
+    fixture.detectChanges();
+    const tile = host.querySelector<HTMLButtonElement>('.product-tile')!;
+    tile.click();
+    tile.click();
+    expect(refreshCartProducts).toHaveBeenCalledTimes(2);
+    page.pendingCheckout.set({ requestId: 'synthetic-pending', items: [] });
+    fixture.detectChanges();
+    current.next([product(6)]);
+    expect(page.cart()).toHaveLength(0);
+    expect(tile.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('keeps the ranking stable during a sale and disables editing and refreshing', () => {
+    getTopSellers.mockReturnValue(of([5, 4]));
+    refreshCartProducts.mockReturnValue(of([product(4), product(5)]));
+    const top = host.querySelector<HTMLButtonElement>('#pos-top-tab')!;
+    top.click();
+    fixture.detectChanges();
+    expect([...host.querySelectorAll('.product-tile strong')].map(tile => tile.textContent)).toEqual(['Synthetic 5', 'Synthetic 4']);
+    page.addProduct(product(1));
+    fixture.detectChanges();
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="Actualizar más vendidos"]')!.disabled).toBe(true);
+    host.querySelector<HTMLButtonElement>('#pos-favorites-tab')!.click();
+    fixture.detectChanges();
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="Editar favoritos"]')!.disabled).toBe(true);
+    top.click();
+    expect(getTopSellers).toHaveBeenCalledTimes(1);
+  });
+
+  it('protects the editor from checkout keys and requires an explicit reload after a conflict', () => {
+    const editor = fixture.debugElement.query(By.directive(PosQuickProducts)).componentInstance as PosQuickProducts;
+    getFavorites.mockReturnValue(of({ revision: 3, productIds: [4, 5] }));
+    refreshCartProducts.mockReturnValue(of([product(4), product(5)]));
+    saveFavorites.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409 })));
+    host.querySelector<HTMLButtonElement>('[aria-label="Editar favoritos"]')!.click();
+    fixture.detectChanges();
+    expect(page.quickProductsEditorVisible()).toBe(true);
+    key(search, 'F2');
+    key(search, 'F4');
+    key(search, 'F8');
+    key(search, 'F9');
+    key(search, 'F12');
+    expect(page.quickSearchVisible()).toBe(false);
+    expect(page.customerSelectorVisible()).toBe(false);
+    expect(page.recentSalesVisible()).toBe(false);
+    expect(page.checkoutVisible()).toBe(false);
+
+    editor.moveFavorite(1, -1);
+    editor.save();
+    expect(saveFavorites).toHaveBeenCalledExactlyOnceWith({ revision: 3, productIds: [5, 4] });
+    expect(editor.stale()).toBe(true);
+    editor.save();
+    expect(saveFavorites).toHaveBeenCalledTimes(1);
+    getFavorites.mockReturnValue(of({ revision: 4, productIds: [5] }));
+    editor.reloadEditor();
+    expect(editor.stale()).toBe(false);
+    expect(editor.draftIds()).toEqual([5]);
+    editor.closeEditor();
+    expect(page.quickProductsEditorVisible()).toBe(false);
   });
 
   it('focuses the real quantity editor intentionally and commits on return to the scanner', async () => {

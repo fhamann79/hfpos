@@ -9,7 +9,7 @@ namespace Pos.Backend.Api.Infrastructure.Services;
 internal static class CreditNoteReporting
 {
     // Both reports share fiscal recognition and historical cost, never financial refunds.
-    private static IQueryable<NoteProjection> AuthorizedInContext(
+    internal static IQueryable<Core.Entities.CreditNote> AuthorizedNotesInContext(
         PosDbContext context, OperationalContext scope)
     {
         return context.CreditNotes.AsNoTracking()
@@ -26,7 +26,12 @@ internal static class CreditNoteReporting
                     || (n.SriAuthorizationStatus != null
                         && n.SriAuthorizationStatus.Trim().ToUpper() == "AUTORIZADO"))
                 && n.AuthorizationNumber != null && n.AuthorizationNumber.Trim() != ""
-                && n.AccessKey != null && n.AccessKey.Trim() != "")
+                && n.AccessKey != null && n.AccessKey.Trim() != "");
+    }
+
+    private static IQueryable<NoteProjection> AuthorizedInContext(PosDbContext context, OperationalContext scope)
+    {
+        return AuthorizedNotesInContext(context, scope)
             .Select(n => new NoteProjection
             {
                 SaleId = n.OriginalSaleId,
