@@ -129,6 +129,7 @@ figcaption { font-size: .86rem; }
 .footer-inner a { padding-block: 10px; }
 
 @media (max-width: 1060px) {
+  .hero::after { background: rgb(5 23 40 / 65%); }
   .header-inner { flex-wrap: wrap; gap: 0 22px; padding-block: 10px; }
   .header-inner nav { order: 1; width: 100%; }
   .hero-inner { min-height: 540px; }
