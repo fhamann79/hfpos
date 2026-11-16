@@ -27,7 +27,17 @@ server {
         proxy_cache off;
         proxy_buffering off;
     }
+    # Canonical public marketing entry point; keep SPA login and application routes intact.
+    location = / {
+        try_files /conoce-hf-one/index.html =404;
+        add_header Cache-Control "no-cache, must-revalidate" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy no-referrer always;
+    }
     location = /index.html {
+        # Private Angular SPA pages must not compete with the public marketing landing in search.
+        add_header X-Robots-Tag "noindex, nofollow" always;
         add_header Cache-Control "no-cache, must-revalidate" always;
         add_header X-Content-Type-Options nosniff always;
         add_header X-Frame-Options DENY always;

@@ -1,44 +1,31 @@
-# SEO de la landing de HF One
+# Publicación de landing HF One — FE-175
 
-## Estado de la vista previa
+## Estado real y fuente
 
-`/conoce-hf-one/` es HTML estático. Mantiene `noindex` hasta la autorización expresa de publicación e indexación. No es un control de acceso: no debe contener material privado. No se publican un canonical, `og:url`, robots.txt ni sitemap.xml, porque el host y la ruta pública finales no se han confirmado. Las rutas de las imágenes sociales son locales a la vista previa.
+La landing comercial está **implementada e integrada** desde PR #174 en `/conoce-hf-one/`. 
+El cambio FE-175 prepara la publicación en la URL canónica **https://hfone.app/**.
+**Código preparado/mergeado no implica despliegue productivo:** RC8 sigue operativo hasta una R4 humana separada.
 
-El contenido responde a la intención comercial de encontrar un punto de venta para Ecuador, gestionar inventario y caja, o emitir y consultar facturas electrónicas. No se declaran volúmenes de búsqueda ni se añaden listas de palabras clave. Los datos estructurados describen únicamente HF One y su desarrollador; no añaden ofertas, reseñas ni valoraciones ni prometen resultados enriquecidos.
+## Funcionamiento previsto
 
-## Activación durante el lanzamiento autorizado
+- `https://hfone.app/` sirve el HTML estático comercial desde `/conoce-hf-one/index.html`, sin ejecutar la SPA.
+- `https://hfone.app/login` y `/platform/login`: Angular y los guards existentes, sin cambios.
+- `/api/*` y `/health/*`: proxy existente a backend, sin cambios.
+- Assets de la landing permanecen en `/conoce-hf-one/`; la URL histórica puede verse, pero declara canonical de la raíz.
+- SPA `index.html` declara `X-Robots-Tag: noindex, nofollow` por Nginx; el sitio comercial no hereda ese encabezado.
+- `robots.txt` y `sitemap.xml` enumeran solo la URL comercial canónica, nunca login/tenant/API.
 
-1. Confirmar con Fernando el host HTTPS y la ruta pública definitiva. No inferirlos del piloto. Comprobar que la URL final devuelve 200, que carga sin depender de JavaScript y que su HTML, imágenes y enlaces responden.
-2. Añadir un `rel="canonical"` y un `og:url` absolutos con esa misma URL. Convertir `og:image` y `twitter:image` a la URL HTTPS absoluta del JPEG 1200 × 630 ya publicado y comprobar que devuelve 200 con su tipo correcto. Revisar la vista previa social.
-3. Solo tras aprobar el lanzamiento, retirar el `noindex` de la landing, comprobar que no exista un `X-Robots-Tag` contradictorio y permitir el rastreo de la URL y sus recursos. No sobrescribir reglas del host sin revisar su alcance ni usar robots.txt como protección de autenticación.
-4. Publicar el sitemap con la misma URL canónica y referenciarlo desde robots.txt. Mantener las rutas de aplicación y login fuera de este sitemap. Validar respuestas HTTPS, canonical y rastreabilidad antes de verificar la propiedad pública en Search Console, inspeccionar la URL y enviar el sitemap.
+## www
 
-Actualizar las pruebas que hoy preservan el contrato de vista previa en ese mismo cambio autorizado. No activar DNS, Search Console ni la indexación con este PR.
+`www.hfone.app` **no se habilita automáticamente**. Antes de añadir redirección HTTP 308 hacia `https://hfone.app/`, comprobar resolución DNS y que el certificado TLS cubre también `www.hfone.app`.
+No crear host `www` que produzca alerta de certificado. Usar `hfone.app` como dominio canónico.
 
-### Plantillas inertes
+## Puerta R4 de publicación web-only
 
-Sustituir todos los marcadores por URLs aprobadas. Estos bloques son documentación, no archivos de `public/`.
+1. CI/revisión independiente del PR y aceptación humana pertinente; el merge no es permiso de despliegue.
+2. Construir/publicar por workflow autorizado una **imagen web inmutable** a partir del commit aprobado; backend y migrator permanecen fijados al RC8 actual. No reutilizar la imagen web RC8 antigua ni desplegar `main` directamente.
+3. Respaldar `pilot.env` y conservar digest web RC8. Actualizar **solo** `HFPOS_WEB_IMAGE`; no migraciones EF, stop de PostgreSQL, reconfiguración fiscal ni cambio de `HFPOS_RELEASE_VERSION` del backend.
+4. Una sola comprobación funcional de `/` (HTML comercial, canonical, imágenes y contactos), `/login` (SPA), `/platform/login`, `/api`/health y HTTPS. Si falla, volver **solo imagen web** al digest RC8 conocido, sin DB Down.
+5. Tras la activación verificar 200, HTTPS, `robots.txt`/`sitemap.xml`, canonical/OG y ausencia de `X-Robots-Tag: noindex` en landing. Solo entonces tramitar Search Console si es oportuno.
 
-```html
-<link rel="canonical" href="URL_PUBLICA_HTTPS_CONFIRMADA">
-<meta property="og:url" content="URL_PUBLICA_HTTPS_CONFIRMADA">
-<meta property="og:image" content="URL_HTTPS_CONFIRMADA_IMAGEN_SOCIAL">
-<meta name="twitter:image" content="URL_HTTPS_CONFIRMADA_IMAGEN_SOCIAL">
-```
-
-Fragmento para integrar al robots.txt del host, sin descartar sus reglas vigentes:
-
-```text
-Sitemap: URL_HTTPS_CONFIRMADA_SITEMAP
-```
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>URL_PUBLICA_HTTPS_CONFIRMADA</loc>
-  </url>
-</urlset>
-```
-
-Referencias oficiales: [SEO Starter Guide](https://developers.google.com/search/docs/fundamentals/seo-starter-guide), [URLs canónicas](https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls) y [sitemaps](https://developers.google.com/search/docs/crawling-indexing/sitemaps/build-sitemap).
+No usar recursos/certificados/secrets/SRI reales en agentes ni ejecutar operaciones R4 dentro de un PR. No afirmar indexación inmediata en buscadores ni resultados SEO garantizados.
