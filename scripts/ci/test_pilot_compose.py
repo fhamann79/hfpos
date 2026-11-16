@@ -19,6 +19,7 @@ BASE = ROOT / "deploy/compose/compose.production.example.yml"
 OVERLAY = ROOT / "deploy/compose/compose.production.postgres.example.yml"
 MIGRATOR = ROOT / "deploy/compose/compose.production.migrator.example.yml"
 BASE_SHA = "d9939e1c4f2d62dfc071f68b344d4cc33ec099ef"
+SMOKE_SHA = "eb029fce778a925e0725ce28c4a435f78d5dd54f"
 VALUES = {
     "HFPOS_BACKEND_IMAGE": "synthetic/backend@sha256:" + "1" * 64,
     "HFPOS_WEB_IMAGE": "synthetic/web@sha256:" + "2" * 64,
@@ -57,11 +58,15 @@ def materialize(values, topology="cohost"):
 
 class PilotComposeTests(unittest.TestCase):
     def test_legacy_base_and_smoke_fixture_are_unchanged(self):
-        paths = ("deploy/compose/compose.production.example.yml", "deploy/compose/.env.production.example",
-                 "scripts/ops/start-deployment-smoke.ps1")
+        paths = ("deploy/compose/compose.production.example.yml", "deploy/compose/.env.production.example")
         diff = subprocess.run(["git", "diff", "--quiet", BASE_SHA, "--", *paths],
                               cwd=ROOT, capture_output=True)
-        self.assertEqual(0, diff.returncode, "Legacy base/env/smoke fixture changed from approved main.")
+        self.assertEqual(0, diff.returncode, "Legacy base/env fixture changed from approved main.")
+        # FE-175 changed which URLs serve the landing and the Angular SPA.
+        smoke_diff = subprocess.run(["git", "diff", "--quiet", SMOKE_SHA, "--",
+                                     "scripts/ops/start-deployment-smoke.ps1"],
+                                    cwd=ROOT, capture_output=True)
+        self.assertEqual(0, smoke_diff.returncode, "Smoke fixture changed from the FE-175 baseline.")
         legacy = dict(VALUES)
         legacy.pop("HFPOS_MIGRATION_DATABASE_CONNECTION")
         code, base = materialize(legacy, topology="legacy")
