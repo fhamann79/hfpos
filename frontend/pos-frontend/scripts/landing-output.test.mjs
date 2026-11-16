@@ -13,11 +13,12 @@ const whatsapp = `https://wa.me/593983842862?text=${encodeURIComponent(demoMessa
 const mailto = 'mailto:fhamann79@hotmail.com';
 const normalizedText = (element) => element?.textContent.replace(/\s+/g, ' ').trim();
 
-test('the built landing preserves preview metadata and navigable sections', () => {
+test('the published landing preserves metadata and navigable sections', () => {
   assert.equal(document.documentElement.lang, 'es-EC');
   assert.match(document.title, /HF One/);
   assert.ok(document.querySelector('meta[name="description"]')?.content);
-  assert.equal(document.querySelector('meta[name="robots"]')?.content, 'noindex');
+  assert.equal(document.querySelector('meta[name="robots"]')?.content, 'index,follow');
+  assert.equal(document.querySelector('link[rel="canonical"]')?.href, 'https://hfone.app/');
   assert.equal(document.querySelectorAll('main h1').length, 1);
   const headline = document.querySelector('main h1');
   assert.equal(normalizedText(headline.firstElementChild), 'HF One');
@@ -46,21 +47,22 @@ test('the built landing preserves preview metadata and navigable sections', () =
   }
 });
 
-test('SEO metadata and structured data stay valid without activating indexation', async () => {
+test('SEO metadata and structured data identify the public canonical homepage', async () => {
   const meta = (attr, key) => document.querySelector(`meta[${attr}="${key}"]`)?.content;
   assert.match(document.title, /Punto de venta y facturación electrónica para Ecuador/);
   assert.equal(meta('property', 'og:locale'), 'es_EC');
+  assert.equal(meta('property', 'og:url'), 'https://hfone.app/');
   assert.equal(meta('name', 'twitter:card'), 'summary_large_image');
   for (const [attr, prefix] of [['property', 'og'], ['name', 'twitter']]) {
     assert.ok(meta(attr, `${prefix}:title`));
     assert.ok(meta(attr, `${prefix}:description`));
     assert.ok(meta(attr, `${prefix}:image:alt`));
-    assert.equal(meta(attr, `${prefix}:image`), '/conoce-hf-one/social-hf-one.jpg');
+    assert.equal(meta(attr, `${prefix}:image`), 'https://hfone.app/conoce-hf-one/social-hf-one.jpg');
   }
   assert.equal(meta('property', 'og:image:width'), '1200');
   assert.equal(meta('property', 'og:image:height'), '630');
   assert.equal(meta('property', 'og:image:type'), 'image/jpeg');
-  assert.equal(document.querySelector('link[rel="canonical"], meta[property="og:url"], meta[name="twitter:url"]'), null);
+  assert.equal(document.querySelector('link[rel="canonical"]')?.href, 'https://hfone.app/');
   const scripts = document.querySelectorAll('script');
   assert.equal(scripts.length, 1);
   assert.equal(scripts[0].type, 'application/ld+json');
@@ -75,9 +77,15 @@ test('SEO metadata and structured data stay valid without activating indexation'
     operatingSystem: 'Web',
     publisher: { '@type': 'Organization', name: 'Comercial HFSISTEMAS' },
   });
-  for (const filename of ['robots.txt', 'sitemap.xml']) {
-    await assert.rejects(readFile(new URL(filename, browserRoot)), { code: 'ENOENT' });
-  }
+  const robots = await readFile(new URL('robots.txt', browserRoot), 'utf8');
+  const sitemap = await readFile(new URL('sitemap.xml', browserRoot), 'utf8');
+  assert.match(robots, /Sitemap: https:\/\/hfone\.app\/sitemap\.xml/);
+  const sitemapDoc = new JSDOM(sitemap, { contentType: 'text/xml' }).window.document;
+  assert.deepEqual(
+    [...sitemapDoc.querySelectorAll('loc')].map((loc) => loc.textContent),
+    ['https://hfone.app/'],
+  );
+  assert.doesNotMatch(sitemap, /login|platform|\/pos</);
 });
 
 test('the only external links are the approved commercial contacts', () => {
@@ -106,7 +114,7 @@ test('the landing loads only local build assets and does not collect data', asyn
   for (const element of document.querySelectorAll('*')) {
     assert.equal(element.getAttributeNames().some((name) => name.startsWith('on')), false);
   }
-  const resources = document.querySelectorAll('[src], [srcset], link[href], use[href]');
+  const resources = document.querySelectorAll('[src], [srcset], link[href]:not([rel="canonical"]), use[href]');
   const allowed = new Set([
     '/hf-one-logo.svg',
     '/hf-one-mark.svg',
@@ -159,4 +167,15 @@ test('the landing loads only local build assets and does not collect data', asyn
     assert.ok(data.length < 200_000, filename);
   }
   assert.match(normalizedText(document.querySelector('.hero figcaption')), /datos ficticios/);
+});
+
+test('nginx serves the public landing only at root and preserves SPA and API routing', async () => {
+  const config = await readFile(new URL('../../../deploy/nginx/default.conf.template', import.meta.url), 'utf8');
+  assert.match(config, /location = \/ \{\s*try_files \/conoce-hf-one\/index\.html =404;/);
+  assert.match(config, /location = \/index\.html \{/);
+  assert.match(config, /X-Robots-Tag "noindex, nofollow"/);
+  assert.match(config, /location \/ \{ try_files \$uri \$uri\/ \/index\.html; \}/);
+  assert.match(config, /proxy_pass http:\/\/backend:8080;/);
+  const app = await readFile(new URL('index.html', browserRoot), 'utf8');
+  assert.match(app, /<app-root><\/app-root>/);
 });

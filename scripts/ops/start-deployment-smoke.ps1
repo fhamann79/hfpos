@@ -159,14 +159,23 @@ try {
     $backendId = Compose -Arguments @('ps', '-q', 'backend')
     $ports = DockerCommand -Arguments @('inspect', '--format', '{{json .HostConfig.PortBindings}}', $backendId.Trim())
     Check ($ports -in @('{}', 'null')) 'Backend must not publish host ports.'
-    Wait-SmokeWebReady -Probe { param($seconds) (Invoke-SmokeHttps '/' -Extra @('--max-time', "$seconds")) -match '<app-root' }
+    Wait-SmokeWebReady -Probe { param($seconds) (Invoke-SmokeHttps '/login' -Extra @('--max-time', "$seconds")) -match '<app-root' }
     Write-Host 'SYNTHETIC WEB READY'
+    $landing = Invoke-SmokeHttps '/' -Extra @('--fail', '-i')
+    Check ($landing -match '<link rel="canonical" href="https://hfone\.app/"') 'Root must serve the canonical marketing landing.'
+    Check ($landing -notmatch '(?m)^X-Robots-Tag:[^\r\n]*\bnoindex\b') 'Marketing landing must remain indexable.'
+    $loginPage = Invoke-SmokeHttps '/login' -Extra @('--fail', '-i')
+    $platformLoginPage = Invoke-SmokeHttps '/platform/login' -Extra @('--fail', '-i')
+    foreach ($page in @($loginPage, $platformLoginPage)) {
+        Check ($page -match '<app-root') 'Login route must serve the Angular SPA.'
+        Check ($page -match '(?m)^X-Robots-Tag:[^\r\n]*\bnoindex\b') 'Login route must exclude the SPA from indexing.'
+    }
     Check ((Invoke-SmokeHttps '/platform/tenants') -match '<app-root') 'SPA deep link failed.'
     Check ((Invoke-SmokeHttps '/missing-asset.js' -Extra @('-o', '/dev/null', '-w', '%{http_code}')) -eq '404') 'Missing asset must return 404.'
     Check ((Invoke-SmokeHttps '/api/missing' -Extra @('-o', '/dev/null', '-w', '%{http_code}')) -eq '404') 'API must not fall back to Angular.'
     $indexHeaders = Invoke-SmokeHttps '/index.html' -Extra @('-I')
     Check ($indexHeaders -match 'no-cache, must-revalidate') 'Index caching contract failed.'
-    $asset = [regex]::Match((Invoke-SmokeHttps '/'), 'src="([^\"]+-[A-Za-z0-9_-]{8,}\.js)"').Groups[1].Value
+    $asset = [regex]::Match($loginPage, 'src="([^\"]+-[A-Za-z0-9_-]{8,}\.js)"').Groups[1].Value
     Check (![string]::IsNullOrEmpty($asset)) 'Hashed JavaScript asset missing.'
     Check ((Invoke-SmokeHttps "/$asset" -Extra @('-I')) -match 'immutable') 'Hashed asset cache failed.'
     Check (((Invoke-SmokeHttps '/health/live' -Extra @('-H', 'X-Forwarded-Proto: http') | ConvertFrom-Json).status) -eq 'Healthy') 'Proxy must replace forwarded proto.'
@@ -243,7 +252,7 @@ try {
     Check ((BusinessFingerprint -Database 'hfpos_ops_ci') -eq (BusinessFingerprint -Database 'hfpos_ops_restore')) 'Restored data, snapshots, XML or logical sequence state differ from source backup.'
     Invoke-SmokeSequenceNegatives -Backup $backup
     $null = Compose -Arguments @('up', '-d', '--wait', '--wait-timeout', '120', 'restored-backend', 'restored-web')
-    Wait-SmokeWebReady -Probe { param($seconds) (Invoke-SmokeHttps '/' -Port 8445 -Extra @('--max-time', "$seconds")) -match '<app-root' }
+    Wait-SmokeWebReady -Probe { param($seconds) (Invoke-SmokeHttps '/login' -Port 8445 -Extra @('--max-time', "$seconds")) -match '<app-root' }
     $restoredLogin = Invoke-SmokeHttps '/api/platform/auth/login' -Port 8445 -Extra @('-H', 'Content-Type: application/json', '--data-binary', "@$loginPath") | ConvertFrom-Json
     Check (![string]::IsNullOrWhiteSpace($restoredLogin.token)) 'Restored container platform login failed.'
     [IO.File]::WriteAllText($loginPath, (@{ username = 'pilot-tenant'; password = 'Synthetic-only-531-tenant' } | ConvertTo-Json -Compress))
