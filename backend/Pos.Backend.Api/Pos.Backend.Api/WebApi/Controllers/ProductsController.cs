@@ -229,6 +229,15 @@ public class ProductsController : ControllerBase
         {
             return BadRequest(new ApiErrorResponse { Error = "INVALID_PRODUCT_VAT_CATEGORY" });
         }
+        if (dto.VatCategory.HasValue && dto.VatCategory.Value != product.VatCategory)
+        {
+            var classificationRevision = await _context.ProductFiscalClassifications
+                .Where(c => c.CompanyId == operationalContext.CompanyId && c.ProductId == id)
+                .MaxAsync(c => (long?)c.Revision) ?? 0;
+            if (dto.ExpectedProductFiscalRevision != product.FiscalRevision
+                || dto.ExpectedClassificationRevision != classificationRevision)
+                return Conflict(new ApiErrorResponse { Error = "PRODUCT_FISCAL_REVISION_CONFLICT" });
+        }
 
         var duplicateIdentifierError = await ValidateUniqueIdentifiersAsync(
             operationalContext.CompanyId,

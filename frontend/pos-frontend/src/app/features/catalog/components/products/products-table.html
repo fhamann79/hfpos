@@ -37,6 +37,11 @@
       <div class="caption-actions">
         <p-button label="Buscar" icon="pi pi-search" [loading]="loading()" (onClick)="applyFilters()"></p-button>
         <p-button label="Limpiar" icon="pi pi-filter-slash" severity="secondary" [outlined]="true" (onClick)="clearFilters()"></p-button>
+        @if (canBatchClassify()) {
+          <button #fiscalBatchTrigger type="button" pButton (click)="fiscalBatchOpen = true">
+            <i pButtonIcon class="pi pi-list-check" aria-hidden="true"></i><span pButtonLabel>Clasificación fiscal</span>
+          </button>
+        }
         @if (canWrite) {
           <p-button label="Nuevo Producto" icon="pi pi-plus" (onClick)="openCreateDialog()"></p-button>
         }
@@ -132,6 +137,10 @@
     </ng-template>
   </p-table>
 </div>
+
+@if (fiscalBatchOpen) {
+  <app-product-fiscal-batch-dialog [categories]="categories()" (closed)="closeFiscalBatch()" (applied)="onProductSaved()" />
+}
 @if (canClassify) {
   <app-product-fiscal-dialog [visible]="!!fiscalProduct" [product]="fiscalProduct" (visibleChange)="!$event && (fiscalProduct = null)" />
 }

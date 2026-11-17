@@ -75,11 +75,11 @@ public static class FiscalTaxResolver
 
         var expectedCategory = classification.TaxBasis switch
         {
-            FiscalTaxBasis.GeneralRate => ProductVatCategory.Vat15,
+            FiscalTaxBasis.GeneralRate => NominalCategory(classification.TaxBasis)!.Value,
             FiscalTaxBasis.NaturalAgriculturalFoodArt55_1 when classification.Kind == FiscalProductKind.Goods
                 && classification.NaturalAgriculturalFoodConfirmed && classification.FoodProcessing.HasValue
-                && ((int)classification.FoodProcessing.Value & ~15) == 0 => ProductVatCategory.Vat0,
-            FiscalTaxBasis.ConstructionMaterials24_13 when classification.Kind == FiscalProductKind.Goods => ProductVatCategory.Vat5,
+                && ((int)classification.FoodProcessing.Value & ~15) == 0 => NominalCategory(classification.TaxBasis)!.Value,
+            FiscalTaxBasis.ConstructionMaterials24_13 when classification.Kind == FiscalProductKind.Goods => NominalCategory(classification.TaxBasis)!.Value,
             FiscalTaxBasis.NotSubjectArt54 or FiscalTaxBasis.ExemptSpecialLaw =>
                 throw new InvalidOperationException("FISCAL_OPERATION_FACTS_UNSUPPORTED"),
             _ => throw new InvalidOperationException("FISCAL_LEGAL_BASIS_UNSUPPORTED")
@@ -93,6 +93,15 @@ public static class FiscalTaxResolver
         if (expectedCategory != ProductVatCategory.Vat5 && classification.SriMaterialCode is not null)
             throw new InvalidOperationException("FISCAL_CLASSIFICATION_CONFLICT");
     }
+
+    // Nominal category alone is not evidence of eligibility; callers must still validate the declaration.
+    public static ProductVatCategory? NominalCategory(FiscalTaxBasis? basis) => basis switch
+    {
+        FiscalTaxBasis.GeneralRate => ProductVatCategory.Vat15,
+        FiscalTaxBasis.NaturalAgriculturalFoodArt55_1 => ProductVatCategory.Vat0,
+        FiscalTaxBasis.ConstructionMaterials24_13 => ProductVatCategory.Vat5,
+        _ => null
+    };
 
     public static bool IsSupportedMaterialCode(string? code) => code is
         "F010101" or "F010201" or "F010202" or "F010203" or "F010204" or "F010205"

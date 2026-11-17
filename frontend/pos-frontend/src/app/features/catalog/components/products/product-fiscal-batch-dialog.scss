@@ -1,0 +1,21 @@
+h3 { margin: .75rem 0; font-size: 1.1rem; }
+.filters, .actions { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; margin-block: .75rem; }
+.end { justify-content: flex-end; align-items: center; }
+label { display: grid; gap: .3rem; min-width: 0; }
+label input, label select { min-width: 0; max-width: 100%; }
+select {
+  min-height: 2.45rem; padding: .35rem .5rem;
+  color: var(--p-text-color); background: var(--p-form-field-background);
+  border: 1px solid var(--p-form-field-border-color); border-radius: var(--p-form-field-border-radius);
+}
+.results { overflow: auto; max-height: 42vh; }
+table { width: 100%; border-collapse: collapse; text-align: start; }
+th, td { padding: .6rem; border-bottom: 1px solid var(--p-content-border-color); vertical-align: top; text-align: start; }
+td { min-width: 6rem; overflow-wrap: anywhere; }
+td:first-child:has(input) { min-width: auto; }
+tbody th { min-width: 8rem; overflow-wrap: anywhere; }
+small { display: block; margin-top: .2rem; }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.reason { margin-top: 1rem; }
+.selection { max-height: 12rem; overflow: auto; }
+.reference { overflow-wrap: anywhere; }

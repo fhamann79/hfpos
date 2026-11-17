@@ -86,6 +86,7 @@ builder.Services.AddScoped<IFiscalDocumentNumberService, FiscalDocumentNumberSer
 builder.Services.AddScoped<IFiscalSettingsService, FiscalSettingsService>();
 builder.Services.AddScoped<IFiscalProfileService, FiscalProfileService>();
 builder.Services.AddScoped<IProductEditorService, ProductEditorService>();
+builder.Services.AddScoped<ProductFiscalBatchService>();
 builder.Services.AddScoped<ICompanyEmailSettingsService, CompanyEmailSettingsService>();
 builder.Services.AddScoped<IEmailSenderService, SmtpEmailSenderService>();
 builder.Services.AddScoped<ISriCertificateService, SriCertificateService>();

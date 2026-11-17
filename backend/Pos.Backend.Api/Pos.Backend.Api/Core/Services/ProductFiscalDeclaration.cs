@@ -7,14 +7,14 @@ public static class ProductFiscalDeclaration
 {
     // Revisions are checked against the previous state by the transaction owner.
     public static ProductFiscalClassification Create(Product product, DeclareProductFiscalClassificationDto dto,
-        int userId, DateTime now)
+        int userId, DateTime now, long? previousRevision = null)
     {
         if (!dto.Confirmed || dto.Kind is null || dto.Activity is null || dto.TaxBasis is null
             || !ValidReference(dto.LegalReference) || !ValidReference(dto.EvidenceReference))
             throw new InvalidOperationException("PRODUCT_FISCAL_CLASSIFICATION_INVALID");
         var classification = new ProductFiscalClassification
         {
-            CompanyId = product.CompanyId, ProductId = product.Id, Revision = checked(dto.ExpectedRevision + 1),
+            CompanyId = product.CompanyId, ProductId = product.Id, Revision = checked((previousRevision ?? dto.ExpectedRevision) + 1),
             ProductFiscalRevision = product.FiscalRevision, DeclaredVatCategory = product.VatCategory,
             Kind = dto.Kind.Value, Activity = dto.Activity.Value, TaxBasis = dto.TaxBasis.Value,
             LegalReference = dto.LegalReference.Trim(), EvidenceReference = dto.EvidenceReference.Trim(),
