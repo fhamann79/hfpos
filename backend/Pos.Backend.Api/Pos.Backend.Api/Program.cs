@@ -87,6 +87,7 @@ builder.Services.AddScoped<IFiscalSettingsService, FiscalSettingsService>();
 builder.Services.AddScoped<IFiscalProfileService, FiscalProfileService>();
 builder.Services.AddScoped<IProductEditorService, ProductEditorService>();
 builder.Services.AddScoped<ProductFiscalBatchService>();
+builder.Services.AddScoped<ProductPriceBatchService>();
 builder.Services.AddScoped<ICompanyEmailSettingsService, CompanyEmailSettingsService>();
 builder.Services.AddScoped<IEmailSenderService, SmtpEmailSenderService>();
 builder.Services.AddScoped<ISriCertificateService, SriCertificateService>();
@@ -149,6 +150,7 @@ builder.Services.AddAuthorization(options =>
         AppPermissions.CatalogCategoriesWrite,
         AppPermissions.CatalogProductsRead,
         AppPermissions.CatalogProductsWrite,
+        AppPermissions.CatalogProductPricesBatch,
         AppPermissions.CustomersRead,
         AppPermissions.CustomersWrite,
         AppPermissions.SuppliersRead,

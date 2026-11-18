@@ -1,0 +1,203 @@
+<p-dialog header="Precios por lote" [visible]="true" [modal]="true" [draggable]="false"
+  [closable]="!busy" [closeOnEscape]="!busy" [style]="{ width: 'min(70rem, 96vw)' }"
+  (visibleChange)="!$event && close()">
+  @if (error) { <p-message severity="error" [text]="error" /> }
+
+  @if (stage === 'selection') {
+    <h3 tabindex="-1" data-batch-focus>Seleccionar productos</h3>
+    <form (ngSubmit)="search()">
+      <fieldset class="filters" [disabled]="busy">
+      <label>Nombre o código <input pInputText name="search" [(ngModel)]="filters.search" (ngModelChange)="filtersChanged()" maxlength="150" autofocus /></label>
+      <label>Categoría
+        <select name="category" [(ngModel)]="filters.categoryId" (ngModelChange)="filtersChanged()">
+          <option [ngValue]="null">Todas</option>
+          @for (category of categories; track category.id) { <option [ngValue]="category.id">{{ category.name }}</option> }
+        </select>
+      </label>
+      <label>Estado comercial
+        <select name="active" [(ngModel)]="filters.active" (ngModelChange)="filtersChanged()">
+          <option [ngValue]="null">Todos</option><option [ngValue]="true">Activos</option><option [ngValue]="false">Inactivos</option>
+        </select>
+      </label>
+      <label>Estado fiscal
+        <select name="fiscal" [(ngModel)]="filters.fiscalStatus" (ngModelChange)="filtersChanged()">
+          <option [ngValue]="null">Todos</option>
+          <option value="pending">Sin declaración</option><option value="stale">Declaración desactualizada</option>
+          <option value="current">Declaración vigente</option>
+        </select>
+      </label>
+      <label>IVA nominal
+        <select name="vat" [(ngModel)]="filters.vatCategory" (ngModelChange)="filtersChanged()">
+          <option [ngValue]="null">Todos</option>
+          @for (option of vatCategoryOptions; track option.value) {
+            <option [ngValue]="option.value">{{ option.label }}</option>
+          }
+        </select>
+      </label>
+      <p-button type="submit" label="Buscar" icon="pi pi-search" [disabled]="busy" />
+      </fieldset>
+    </form>
+    <div class="actions">
+      <span role="status">
+        @if (loading) { Consultando productos… }
+        @else if (total !== null) {
+          {{ total }} encontrados / {{ selected.size }} seleccionados
+          @if (total > maxProducts) { <span> Acota los filtros a {{ maxProducts }} productos o menos.</span> }
+          @else if (total === 0) { <span> Sin resultados.</span> }
+        }
+        @else if (!error) { Pulsa Buscar para aplicar los filtros. }
+      </span>
+      <p-button label="Limpiar selección" icon="pi pi-times" [text]="true" [disabled]="busy || !selected.size"
+        (onClick)="clearSelection()" />
+    </div>
+    @if (candidates.length) {
+    <div class="results candidates" role="region" aria-label="Productos disponibles" tabindex="0">
+      <table>
+        <thead><tr><th scope="col"><label class="choose-all">
+          <input type="checkbox" aria-label="Elegir todos los productos encontrados" [checked]="allSelected"
+            [indeterminate]="selected.size > 0 && !allSelected" [disabled]="busy" (change)="toggleAll($event.target.checked)" />
+          Elegir
+        </label></th><th scope="col">Producto</th><th scope="col">SKU / código</th>
+          <th scope="col">IVA nominal</th><th scope="col">Estado fiscal</th><th scope="col">Comercial</th></tr></thead>
+        <tbody>
+          @for (product of candidates; track product.id) {
+            <tr>
+              <td><input type="checkbox" [checked]="selected.has(product.id)"
+                [disabled]="busy"
+                [attr.aria-label]="'Seleccionar ' + product.name + ' #' + product.id"
+                (change)="toggle(product.id, $event.target.checked)" /></td>
+              <th scope="row">{{ product.name }}</th><td>{{ product.internalCode || product.barcode || '—' }}</td>
+              <td>{{ vat(product.vatCategory) }}</td><td>{{ fiscalStatus(product.fiscalStatus) }}</td>
+              <td>{{ product.isActive ? 'Activo' : 'Inactivo' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    }
+    <div class="actions end">
+      <p-button label="Continuar" icon="pi pi-arrow-right" [disabled]="!selected.size || busy || loading" (onClick)="editDeclaration()" />
+    </div>
+    <details #history (toggle)="history.open && recent === null && !recentError && loadRecent()">
+      <summary>Recuperar comprobante</summary>
+      <h4>Comprobantes recientes</h4>
+      <div role="status">
+        @if (recentLoading) { Consultando comprobantes… }
+        @else if (recentError) { {{ recentError }} }
+        @else if (recent?.length === 0) { No hay comprobantes recientes en este contexto. }
+      </div>
+      @if (recentError) {
+        <p-button label="Reintentar" [text]="true" (onClick)="loadRecent()" />
+      }
+      @if (!recentLoading && recent?.length) {
+        <ul class="recent">
+          @for (receipt of recent; track receipt.operationId) {
+            <li>
+              <p-button [label]="(receipt.appliedAt | date:'medium') + ' · ' + receipt.rowCount + ' productos'"
+                icon="pi pi-file" [text]="true" [disabled]="busy || loading" (onClick)="recover(receipt.operationId)" />
+            </li>
+          }
+        </ul>
+      }
+      <form class="actions" (ngSubmit)="recover()">
+        <label>Referencia de operación <input pInputText [(ngModel)]="lookupId" name="lookupId" maxlength="36" /></label>
+        <p-button type="submit" label="Recuperar" [disabled]="loading || !validId(lookupId)" [loading]="busy" />
+      </form>
+    </details>
+  }
+
+  @if (stage === 'declaration') {
+    <h3 tabindex="-1" data-batch-focus>Precio para {{ selected.size }} productos</h3>
+    <fieldset class="filters" [disabled]="busy">
+      <label>Operacion
+        <select [(ngModel)]="action" (ngModelChange)="factsChanged()">
+          @for (item of actions; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }
+        </select>
+      </label>
+      <label>{{ action === 'gross-margin' || action.endsWith('percent') ? 'Porcentaje' : 'Importe USD' }}
+        <input pInputText type="number" min="0" max="1000000000" step="0.0001" [(ngModel)]="value" (ngModelChange)="factsChanged()" />
+      </label>
+      <label class="reason">Motivo del cambio
+        <input pInputText [(ngModel)]="reason" (ngModelChange)="factsChanged()" maxlength="500" />
+      </label>
+    </fieldset>
+    <p>Precio base sin IVA. USD: 2 decimales, mitades alejadas de cero.</p>
+    <p>Limite tecnico por precio, costo e importe de regla: USD 1.000.000.000. Regla: maximo 4 decimales.</p>
+    @if (action === 'gross-margin') {
+      <p>Margen bruto sobre ventas: precio = costo / (1 - margen / 100), con 0 &lt;= margen &lt; 100.
+        No es recargo sobre costo ni utilidad neta. El redondeo puede variar el margen resultante.</p>
+    }
+    <div class="actions end">
+      <p-button label="Volver a seleccion" severity="secondary" [outlined]="true" [disabled]="busy" (onClick)="editSelection()" />
+      <p-button label="Previsualizar" icon="pi pi-eye" [disabled]="!canPreview()" [loading]="busy" (onClick)="review()" />
+    </div>
+  }
+  @if (stage === 'preview' || stage === 'result') {
+    @if ((stage === 'result' ? result : preview); as report) {
+      <h3 tabindex="-1" data-batch-focus>{{ stage === 'result' ? 'Comprobante de precios' : 'Revisar precios' }}</h3>
+      <p><strong>{{ report.companyName }}</strong> (#{{ report.companyId }})</p>
+      <div class="actions">
+        <span class="reference">Referencia: {{ report.operationId }}</span>
+        @if (stage === 'result' && result) {
+          <p-button label="Copiar referencia" icon="pi pi-copy" [text]="true" (onClick)="copyReference(result)" />
+          <span role="status">{{ copyStatus }}</span>
+        }
+      </div>
+      <p class="reference">Motivo: {{ report.reason }}</p>
+      <p>{{ actionLabel(report.action) }}: {{ report.value | number:'1.0-4' }}.
+        Precio base sin IVA, USD a 2 decimales; mitades alejadas de cero.</p>
+      <p><strong>{{ report.changed }}</strong> {{ stage === 'result' ? 'modificados' : 'por modificar' }} ·
+        <strong>{{ report.unchanged }}</strong> sin cambios · <strong>{{ report.rejected }}</strong> rechazados</p>
+      @if (stage === 'result' && result) {
+        <p>Aplicado: {{ result.appliedAt | date:'medium' }} · Usuario #{{ result.userId }}</p>
+      } @else if (preview?.expiresAt) {
+        <p>Previsualizacion valida hasta {{ preview?.expiresAt | date:'mediumTime' }}.</p>
+      }
+      <div class="results" role="region" aria-label="Detalle de precios" tabindex="0">
+        <table>
+          <thead><tr><th scope="col">Producto / SKU</th><th scope="col">Precio actual</th>
+            <th scope="col">Costo vigente</th><th scope="col">Precio propuesto</th>
+            <th scope="col">Margen bruto actual / propuesto</th><th scope="col">Resultado e incidencias</th></tr></thead>
+          <tbody>
+            @for (row of report.rows; track row.productId) {
+              <tr>
+                <th scope="row">{{ row.name || 'No disponible' }} (#{{ row.productId }}) <small>{{ row.internalCode }}</small></th>
+                <td>{{ row.currentPrice | currency:'USD':'symbol':'1.2-2' }}</td>
+                <td>{{ row.cost | currency:'USD':'symbol':'1.2-4' }}</td>
+                <td>{{ row.proposedPrice | currency:'USD':'symbol':'1.2-2' }}</td>
+                <td>{{ row.currentMargin === null ? 'No definido' : row.currentMargin + '%' }} /
+                  {{ row.proposedMargin === null ? 'No definido' : row.proposedMargin + '%' }}</td>
+                <td>
+                  @if (row.rejection; as code) { <strong>Rechazado</strong><small>{{ issue(code) }}</small> }
+                  @else { <strong>{{ row.outcome === 'unchanged' ? 'Sin cambios' : stage === 'result' ? 'Modificado' : 'Por modificar' }}</strong> }
+                  @for (code of row.warnings; track code) { <small>{{ issue(code) }}</small> }
+                  @if (stage === 'preview') {
+                    <p-button label="Excluir del lote" icon="pi pi-minus" [text]="true" [disabled]="busy" (onClick)="exclude(row.productId)" />
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      @if (stage === 'preview') {
+        <label class="choose-all reason"><input type="checkbox" [(ngModel)]="acknowledged" [disabled]="busy" />
+          Confirmo los precios y advertencias de los {{ report.rows.length }} productos. Aplicacion atomica del lote.</label>
+      }
+      <div class="actions end">
+        @if (stage === 'preview') {
+          @if (report.rejected) { <span>El lote no se aplicara mientras tenga rechazos.</span> }
+          <p-button label="Volver a seleccion" severity="secondary" [outlined]="true" [disabled]="busy || pending || recoveryBlocked" (onClick)="editSelection()" />
+          <p-button label="Volver a precios" severity="secondary" [outlined]="true" [disabled]="busy || pending || recoveryBlocked" (onClick)="editDeclaration()" />
+          @if (preview?.previewToken) {
+            @if (error || pending) {
+              <p-button label="Consultar comprobante" icon="pi pi-file" [outlined]="true" [disabled]="busy" (onClick)="recover(report.operationId)" />
+            }
+            <p-button [label]="pending ? 'Reintentar misma operacion' : report.changed ? 'Confirmar precios (' + report.changed + ')' : 'Confirmar lote sin cambios'"
+              icon="pi pi-check" [disabled]="!acknowledged || recoveryBlocked" [loading]="busy" (onClick)="confirm()" />
+          }
+        } @else { <p-button label="Cerrar" (onClick)="close()" /> }
+      </div>
+    }
+  }
+</p-dialog>

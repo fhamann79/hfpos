@@ -14,6 +14,7 @@ public static class TenantDefaults
             new(AppPermissions.CatalogCategoriesWrite, "Write categories"),
             new(AppPermissions.CatalogProductsRead, "Read products"),
             new(AppPermissions.CatalogProductsWrite, "Write products"),
+            new(AppPermissions.CatalogProductPricesBatch, "Update catalog prices in batches"),
             new(AppPermissions.CustomersRead, "Leer clientes"),
             new(AppPermissions.CustomersWrite, "Escribir clientes"),
             new(AppPermissions.SuppliersRead, "Leer proveedores"),
@@ -54,6 +55,7 @@ public static class TenantDefaults
                 new[]
                 {
                     AppPermissions.AuthProbeAdmin,
+                    AppPermissions.CatalogProductPricesBatch,
                     AppPermissions.AuthProbeSupervisor,
                     AppPermissions.AuthProbeCashier,
                     AppPermissions.CatalogCategoriesRead,

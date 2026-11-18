@@ -20,6 +20,7 @@ import { ProductPageQuery, ProductService, ProductStatusFilter } from '../../ser
 import { ProductDialog } from './product-dialog';
 import { ProductFiscalDialog } from '../../../fiscal-settings/components/product-fiscal-dialog';
 import { ProductFiscalBatchDialog } from './product-fiscal-batch-dialog';
+import { ProductPriceBatchDialog } from './product-price-batch-dialog';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { AuthStore } from '../../../../core/stores/auth.store';
@@ -42,6 +43,7 @@ import { AuthStore } from '../../../../core/stores/auth.store';
     ProductDialog,
     ProductFiscalDialog,
     ProductFiscalBatchDialog,
+    ProductPriceBatchDialog,
   ],
   templateUrl: './products-table.html',
   styleUrl: './products-table.scss',
@@ -53,6 +55,16 @@ export class ProductsTable implements OnInit {
     && inject(PermissionService).hasPermission(PERMISSIONS.fiscalSettingsRead);
   fiscalProduct: Product | null = null;
   fiscalBatchOpen = false;
+  priceBatchOpen = false;
+  @ViewChild('priceBatchTrigger') priceBatchTrigger?: ElementRef<HTMLButtonElement>;
+  canBatchPrice() {
+    return [PERMISSIONS.catalogProductsRead, PERMISSIONS.catalogProductPricesBatch]
+      .every(code => this.permission.hasPermission(code));
+  }
+  closePriceBatch() {
+    this.priceBatchOpen = false;
+    this.priceBatchTrigger?.nativeElement.focus();
+  }
   private readonly permission = inject(PermissionService);
   canBatchClassify() {
     return this.canWrite && [PERMISSIONS.catalogProductsRead, PERMISSIONS.catalogProductsWrite,
