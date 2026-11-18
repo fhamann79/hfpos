@@ -1,6 +1,6 @@
 import { CommonModule, CurrencyPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, Input, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, Input, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -19,6 +19,7 @@ import { CategoryService } from '../../services/category.service';
 import { ProductPageQuery, ProductService, ProductStatusFilter } from '../../services/product.service';
 import { ProductDialog } from './product-dialog';
 import { ProductFiscalDialog } from '../../../fiscal-settings/components/product-fiscal-dialog';
+import { ProductFiscalBatchDialog } from './product-fiscal-batch-dialog';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { AuthStore } from '../../../../core/stores/auth.store';
@@ -40,15 +41,27 @@ import { AuthStore } from '../../../../core/stores/auth.store';
     ConfirmDialogModule,
     ProductDialog,
     ProductFiscalDialog,
+    ProductFiscalBatchDialog,
   ],
   templateUrl: './products-table.html',
   styleUrl: './products-table.scss',
 })
 export class ProductsTable implements OnInit {
   @Input() canWrite = false;
+  @ViewChild('fiscalBatchTrigger') fiscalBatchTrigger?: ElementRef<HTMLButtonElement>;
   readonly canClassify = inject(PermissionService).hasPermission(PERMISSIONS.fiscalSettingsWrite)
     && inject(PermissionService).hasPermission(PERMISSIONS.fiscalSettingsRead);
   fiscalProduct: Product | null = null;
+  fiscalBatchOpen = false;
+  private readonly permission = inject(PermissionService);
+  canBatchClassify() {
+    return this.canWrite && [PERMISSIONS.catalogProductsRead, PERMISSIONS.catalogProductsWrite,
+      PERMISSIONS.fiscalSettingsRead, PERMISSIONS.fiscalSettingsWrite].every(code => this.permission.hasPermission(code));
+  }
+  closeFiscalBatch() {
+    this.fiscalBatchOpen = false;
+    this.fiscalBatchTrigger?.nativeElement.focus();
+  }
 
   private readonly productService = inject(ProductService);
   private readonly categoryService = inject(CategoryService);

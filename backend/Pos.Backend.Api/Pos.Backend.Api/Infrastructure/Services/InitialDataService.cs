@@ -118,7 +118,9 @@ public sealed class InitialDataService(PosDbContext db, IOperationalContextAcces
     {
         var ctx = await accessor.GetRequiredContextAsync();
         await RequirePermissionAsync(ctx, AppPermissions.OpStructureRead);
-        var results = await db.InitialDataBatches.AsNoTracking().Where(b => b.CompanyId == ctx.CompanyId)
+        var importKinds = Headers.Keys.ToArray();
+        var results = await db.InitialDataBatches.AsNoTracking()
+            .Where(b => b.CompanyId == ctx.CompanyId && importKinds.Contains(b.Kind))
             .OrderByDescending(b => b.Id).Skip((int)Math.Min((long)(Math.Max(page, 1) - 1) * 30, int.MaxValue))
             .Take(30).Select(b => b.ResultJson).ToListAsync();
         return results.Select(s => JsonSerializer.Deserialize<InitialDataResultDto>(s)!).ToList();

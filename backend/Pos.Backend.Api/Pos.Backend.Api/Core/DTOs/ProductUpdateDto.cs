@@ -7,6 +7,7 @@ public class ProductUpdateDto
     public int CategoryId { get; set; }
     public bool? TracksInventory { get; set; }
     public long? ExpectedClassificationRevision { get; set; }
+    public long? ExpectedProductFiscalRevision { get; set; }
     public string Name { get; set; }
     public string? Barcode { get; set; }
     public string? InternalCode { get; set; }

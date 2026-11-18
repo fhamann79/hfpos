@@ -46,6 +46,7 @@ export interface CreateProductRequest {
 export interface UpdateProductRequest {
   tracksInventory?: boolean;
   expectedClassificationRevision?: number;
+  expectedProductFiscalRevision?: number;
   categoryId: number;
   name: string;
   barcode?: string | null;
@@ -53,5 +54,5 @@ export interface UpdateProductRequest {
   price: number;
   cost: number;
   minimumStock: number;
-  vatCategory: ProductVatCategory;
+  vatCategory?: ProductVatCategory;
 }

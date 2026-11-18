@@ -154,7 +154,7 @@ public sealed class ProductEditorService(PosDbContext db, IOperationalContextAcc
             visibleClassification && c is not null ? ProductFiscalDeclaration.Map(c, p) : null, canDisable, pending);
     }
 
-    private static string Token(Product p, ProductFiscalClassification? c) => Convert.ToHexString(SHA256.HashData(
+    internal static string Token(Product p, ProductFiscalClassification? c) => Convert.ToHexString(SHA256.HashData(
         JsonSerializer.SerializeToUtf8Bytes(new { Product = new { p.Id, p.TracksInventory, p.CategoryId, p.Name,
             p.Barcode, p.InternalCode, Price = DecimalToken(p.Price), Cost = DecimalToken(p.Cost),
             MinimumStock = DecimalToken(p.MinimumStock), p.VatCategory, p.IsActive }, p.CompanyId, p.FiscalRevision,
