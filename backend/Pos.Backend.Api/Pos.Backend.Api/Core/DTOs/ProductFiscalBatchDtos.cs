@@ -6,6 +6,10 @@ namespace Pos.Backend.Api.Core.DTOs;
 public sealed record ProductFiscalBatchCandidate(int Id, string Name, string? InternalCode,
     string? Barcode, int CategoryId, bool IsActive, ProductVatCategory VatCategory, string FiscalStatus);
 
+public sealed record ProductFiscalBatchCandidates(int TotalItems, int MaxProducts, ProductFiscalBatchCandidate[] Items);
+
+public sealed record ProductFiscalBatchReceiptSummary(Guid OperationId, DateTime AppliedAt, int RowCount);
+
 public sealed record ProductFiscalBatchRequest(int[] ProductIds, DeclareProductFiscalClassificationDto Declaration,
     string Reason);
 

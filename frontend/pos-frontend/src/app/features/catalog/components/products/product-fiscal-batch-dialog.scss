@@ -9,6 +9,8 @@ select {
   border: 1px solid var(--p-form-field-border-color); border-radius: var(--p-form-field-border-radius);
 }
 .results { overflow: auto; max-height: 42vh; }
+.candidates thead th { position: sticky; top: 0; background: var(--p-dialog-background); }
+.choose-all { display: flex; align-items: center; gap: .3rem; }
 table { width: 100%; border-collapse: collapse; text-align: start; }
 th, td { padding: .6rem; border-bottom: 1px solid var(--p-content-border-color); vertical-align: top; text-align: start; }
 td { min-width: 6rem; overflow-wrap: anywhere; }
@@ -17,5 +19,5 @@ tbody th { min-width: 8rem; overflow-wrap: anywhere; }
 small { display: block; margin-top: .2rem; }
 fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .reason { margin-top: 1rem; }
-.selection { max-height: 12rem; overflow: auto; }
+.recent { max-height: 12rem; overflow: auto; list-style: none; padding: 0; }
 .reference { overflow-wrap: anywhere; }

@@ -5,72 +5,100 @@
 
   @if (stage === 'selection') {
     <h3 tabindex="-1" data-batch-focus>Seleccionar productos</h3>
-    <form class="filters" (ngSubmit)="search()">
-      <label>Nombre o código <input pInputText name="search" [(ngModel)]="filters.search" maxlength="150" autofocus /></label>
+    <form (ngSubmit)="search()">
+      <fieldset class="filters" [disabled]="busy">
+      <label>Nombre o código <input pInputText name="search" [(ngModel)]="filters.search" (ngModelChange)="filtersChanged()" maxlength="150" autofocus /></label>
       <label>Categoría
-        <select name="category" [(ngModel)]="filters.categoryId">
+        <select name="category" [(ngModel)]="filters.categoryId" (ngModelChange)="filtersChanged()">
           <option [ngValue]="null">Todas</option>
           @for (category of categories; track category.id) { <option [ngValue]="category.id">{{ category.name }}</option> }
         </select>
       </label>
       <label>Estado comercial
-        <select name="active" [(ngModel)]="filters.active">
+        <select name="active" [(ngModel)]="filters.active" (ngModelChange)="filtersChanged()">
           <option [ngValue]="null">Todos</option><option [ngValue]="true">Activos</option><option [ngValue]="false">Inactivos</option>
         </select>
       </label>
       <label>Estado fiscal
-        <select name="fiscal" [(ngModel)]="filters.fiscalStatus">
+        <select name="fiscal" [(ngModel)]="filters.fiscalStatus" (ngModelChange)="filtersChanged()">
           <option [ngValue]="null">Todos</option>
           <option value="pending">Sin declaración</option><option value="stale">Declaración desactualizada</option>
           <option value="current">Declaración vigente</option>
         </select>
       </label>
+      <label>IVA nominal
+        <select name="vat" [(ngModel)]="filters.vatCategory" (ngModelChange)="filtersChanged()">
+          <option [ngValue]="null">Todos</option>
+          @for (option of vatCategoryOptions; track option.value) {
+            <option [ngValue]="option.value">{{ option.label }}</option>
+          }
+        </select>
+      </label>
       <p-button type="submit" label="Buscar" icon="pi pi-search" [disabled]="busy" />
+      </fieldset>
     </form>
-    <div class="results" role="region" aria-label="Productos disponibles" tabindex="0" [attr.aria-busy]="loading">
+    <div class="actions">
+      <span role="status">
+        @if (loading) { Consultando productos… }
+        @else if (total !== null) {
+          {{ total }} encontrados / {{ selected.size }} seleccionados
+          @if (total > maxProducts) { <span> Acota los filtros a {{ maxProducts }} productos o menos.</span> }
+          @else if (total === 0) { <span> Sin resultados.</span> }
+        }
+        @else if (!error) { Pulsa Buscar para aplicar los filtros. }
+      </span>
+      <p-button label="Limpiar selección" icon="pi pi-times" [text]="true" [disabled]="busy || !selected.size"
+        (onClick)="clearSelection()" />
+    </div>
+    @if (candidates.length) {
+    <div class="results candidates" role="region" aria-label="Productos disponibles" tabindex="0">
       <table>
-        <thead><tr><th scope="col">Elegir</th><th scope="col">Producto</th><th scope="col">SKU / código</th>
+        <thead><tr><th scope="col"><label class="choose-all">
+          <input type="checkbox" aria-label="Elegir todos los productos encontrados" [checked]="allSelected"
+            [indeterminate]="selected.size > 0 && !allSelected" [disabled]="busy" (change)="toggleAll($event.target.checked)" />
+          Elegir
+        </label></th><th scope="col">Producto</th><th scope="col">SKU / código</th>
           <th scope="col">IVA nominal</th><th scope="col">Estado fiscal</th><th scope="col">Comercial</th></tr></thead>
         <tbody>
           @for (product of candidates; track product.id) {
             <tr>
               <td><input type="checkbox" [checked]="selected.has(product.id)"
-                [disabled]="busy || (!selected.has(product.id) && selected.size >= maxProducts)"
+                [disabled]="busy"
                 [attr.aria-label]="'Seleccionar ' + product.name + ' #' + product.id"
-                (change)="toggle(product, $event.target.checked)" /></td>
+                (change)="toggle(product.id, $event.target.checked)" /></td>
               <th scope="row">{{ product.name }}</th><td>{{ product.internalCode || product.barcode || '—' }}</td>
               <td>{{ vat(product.vatCategory) }}</td><td>{{ fiscalStatus(product.fiscalStatus) }}</td>
               <td>{{ product.isActive ? 'Activo' : 'Inactivo' }}</td>
             </tr>
-          } @empty {
-            <tr><td colspan="6">{{ loading ? 'Consultando productos…' : error ? 'Consulta no disponible' : 'Sin resultados' }}</td></tr>
           }
         </tbody>
       </table>
     </div>
-    <div class="actions">
-      <p-button icon="pi pi-angle-left" ariaLabel="Página anterior" [outlined]="true"
-        [disabled]="loading || busy || page <= 1" (onClick)="load(page - 1)" />
-      <span aria-live="polite">{{ pages ? page : 0 }} de {{ pages }} · {{ total }} productos</span>
-      <p-button icon="pi pi-angle-right" ariaLabel="Página siguiente" [outlined]="true"
-        [disabled]="loading || busy || page >= pages" (onClick)="load(page + 1)" />
-    </div>
-    <details>
-      <summary>{{ selected.size }} de {{ maxProducts }} seleccionados</summary>
-      <ul class="selection">
-        @for (product of selected.values(); track product.id) {
-          <li>{{ product.name }} (#{{ product.id }})
-            <p-button icon="pi pi-times" [ariaLabel]="'Quitar ' + product.name" [text]="true" [disabled]="busy"
-              (onClick)="toggle(product, false)" />
-          </li>
-        } @empty { <li>Ningún producto seleccionado</li> }
-      </ul>
-    </details>
+    }
     <div class="actions end">
       <p-button label="Continuar" icon="pi pi-arrow-right" [disabled]="!selected.size || busy || loading" (onClick)="editDeclaration()" />
     </div>
-    <details>
+    <details #history (toggle)="history.open && recent === null && !recentError && loadRecent()">
       <summary>Recuperar comprobante</summary>
+      <h4>Comprobantes recientes</h4>
+      <div role="status">
+        @if (recentLoading) { Consultando comprobantes… }
+        @else if (recentError) { {{ recentError }} }
+        @else if (recent?.length === 0) { No hay comprobantes recientes en este contexto. }
+      </div>
+      @if (recentError) {
+        <p-button label="Reintentar" [text]="true" (onClick)="loadRecent()" />
+      }
+      @if (!recentLoading && recent?.length) {
+        <ul class="recent">
+          @for (receipt of recent; track receipt.operationId) {
+            <li>
+              <p-button [label]="(receipt.appliedAt | date:'medium') + ' · ' + receipt.rowCount + ' productos'"
+                icon="pi pi-file" [text]="true" [disabled]="busy || loading" (onClick)="recover(receipt.operationId)" />
+            </li>
+          }
+        </ul>
+      }
       <form class="actions" (ngSubmit)="recover()">
         <label>Referencia de operación <input pInputText [(ngModel)]="lookupId" name="lookupId" maxlength="36" /></label>
         <p-button type="submit" label="Recuperar" [disabled]="loading || !validId(lookupId)" [loading]="busy" />
@@ -94,7 +122,15 @@
     @if ((stage === 'result' ? result : preview); as report) {
       <h3 tabindex="-1" data-batch-focus>{{ stage === 'result' ? 'Comprobante fiscal' : 'Revisar clasificación fiscal' }}</h3>
       <p><strong>{{ report.companyName }}</strong> (#{{ report.companyId }}) · Fecha fiscal {{ report.fiscalDate }}</p>
-      <p class="reference">Referencia: {{ report.operationId }}</p>
+      @if (stage === 'result' && result) {
+        <div class="actions">
+          <span class="reference">Referencia: {{ report.operationId }}</span>
+          <p-button label="Copiar referencia" icon="pi pi-copy" [text]="true" (onClick)="copyReference(result)" />
+          <span role="status">{{ copyStatus }}</span>
+        </div>
+      } @else {
+        <p class="reference">Referencia: {{ report.operationId }}</p>
+      }
       <p class="reference">Motivo: {{ report.reason }}</p>
       @if (stage === 'preview' && preview; as draftReport) {
         <p class="reference">Declarado: {{ classification(draftReport.declaration) }} ·

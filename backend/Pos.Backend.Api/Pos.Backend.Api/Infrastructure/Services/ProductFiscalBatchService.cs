@@ -1,9 +1,11 @@
+using System.Data;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
+using Pos.Backend.Api.Core.Enums;
 using Pos.Backend.Api.Core.Models;
 using Pos.Backend.Api.Core.Security;
 using Pos.Backend.Api.Core.Services;
@@ -17,22 +19,25 @@ public sealed class ProductFiscalBatchService(PosDbContext db, IOperationalConte
 {
     // Covers the ~228 legacy items in #155 with bounded locks, request and audit payloads.
     public const int MaxProducts = 250;
+    private const int RecentReceiptLimit = 20;
     private const string Kind = "product-fiscal-batch";
     private static readonly string[] Permissions =
         [AppPermissions.CatalogProductsRead, AppPermissions.CatalogProductsWrite,
          AppPermissions.FiscalSettingsRead, AppPermissions.FiscalSettingsWrite];
     private readonly IDataProtector protector = dataProtection.CreateProtector("ProductFiscalBatch.Preview.v1");
 
-    public async Task<PagedResultDto<ProductFiscalBatchCandidate>> PageAsync(string? search, bool? active,
-        int? categoryId, string? fiscalStatus, int page, int pageSize)
+    public async Task<ProductFiscalBatchCandidates> CandidatesAsync(string? search, bool? active,
+        int? categoryId, string? fiscalStatus, ProductVatCategory? vatCategory, CancellationToken cancellationToken = default)
     {
         var actor = await accessor.GetRequiredContextAsync();
         await RequirePermissionsAsync(actor);
-        if (search?.Length > 150 || fiscalStatus is not (null or "pending" or "stale" or "current"))
+        if (search?.Length > 150 || fiscalStatus is not (null or "pending" or "stale" or "current")
+            || (vatCategory.HasValue && !Enum.IsDefined(vatCategory.Value)))
             throw Error("FISCAL_BATCH_FILTER_INVALID", 400);
         var products = db.Products.AsNoTracking().Where(p => p.CompanyId == actor.CompanyId);
         if (active.HasValue) products = products.Where(p => p.IsActive == active.Value);
         if (categoryId.HasValue) products = products.Where(p => p.CategoryId == categoryId.Value);
+        if (vatCategory.HasValue) products = products.Where(p => p.VatCategory == vatCategory.Value);
         if (search?.Trim() is { Length: > 0 } text)
         {
             var term = text.ToLowerInvariant();
@@ -50,15 +55,15 @@ public sealed class ProductFiscalBatchService(PosDbContext db, IOperationalConte
                     c.Confirmed && c.ProductFiscalRevision == p.FiscalRevision && c.DeclaredVatCategory == p.VatCategory
                     ? "current" : "stale" };
         if (fiscalStatus is not null) candidates = candidates.Where(p => p.FiscalStatus == fiscalStatus);
-        page = Math.Max(1, page);
-        pageSize = Math.Clamp(pageSize, 1, 50);
-        var total = await candidates.CountAsync();
-        var pages = (int)Math.Ceiling((double)total / pageSize);
-        var items = page > pages ? [] : await candidates.OrderBy(p => p.Name).ThenBy(p => p.Id)
-            .Skip((page - 1) * pageSize).Take(pageSize)
+        // Count and rows must describe the same snapshot even if another writer changes a match.
+        await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
+        var total = await candidates.CountAsync(cancellationToken);
+        var items = total is 0 or > MaxProducts ? [] : await candidates.OrderBy(p => p.Name).ThenBy(p => p.Id)
+            .Take(MaxProducts)
             .Select(p => new ProductFiscalBatchCandidate(p.Id, p.Name, p.InternalCode, p.Barcode,
-                p.CategoryId, p.IsActive, p.VatCategory, p.FiscalStatus)).ToArrayAsync();
-        return new() { Items = items, TotalItems = total, TotalPages = pages, Page = page, PageSize = pageSize };
+                p.CategoryId, p.IsActive, p.VatCategory, p.FiscalStatus)).ToArrayAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+        return new(total, MaxProducts, items);
     }
 
     public async Task<ProductFiscalBatchPreview> PreviewAsync(ProductFiscalBatchRequest request)
@@ -156,6 +161,18 @@ public sealed class ProductFiscalBatchService(PosDbContext db, IOperationalConte
         var batch = await FindReceiptAsync(actor.CompanyId, operationId);
         return batch is not null && OwnReceipt(batch, actor) ? ReadReceipt(batch)
             : throw Error("FISCAL_BATCH_RESULT_NOT_FOUND", 404);
+    }
+
+    public async Task<ProductFiscalBatchReceiptSummary[]> RecentReceiptsAsync(CancellationToken cancellationToken = default)
+    {
+        var actor = await accessor.GetRequiredContextAsync();
+        await RequirePermissionsAsync(actor);
+        return await db.InitialDataBatches.AsNoTracking()
+            .Where(b => b.CompanyId == actor.CompanyId && b.Kind == Kind && b.UserId == actor.UserId
+                && b.EstablishmentId == actor.EstablishmentId && b.EmissionPointId == actor.EmissionPointId)
+            .OrderByDescending(b => b.CreatedAt).ThenByDescending(b => b.Id).Take(RecentReceiptLimit)
+            .Select(b => new ProductFiscalBatchReceiptSummary(b.RequestId, b.CreatedAt, b.RowCount))
+            .ToArrayAsync(cancellationToken);
     }
 
     private async Task<Evaluation> EvaluateAsync(OperationalContext actor, ProductFiscalBatchRequest request,

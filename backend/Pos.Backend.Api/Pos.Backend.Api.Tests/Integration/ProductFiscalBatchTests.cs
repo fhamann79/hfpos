@@ -1,4 +1,5 @@
 using System.Data;
+using System.Data.Common;
 using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
@@ -32,7 +33,7 @@ public sealed class ProductFiscalBatchTests(PostgresDatabaseFixture database) : 
     public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
-    public async Task Pages_and_filters_select_explicit_ids_and_preserve_commercial_fields_and_unselected_products()
+    public async Task Filters_select_explicit_ids_and_preserve_commercial_fields_and_unselected_products()
     {
         var tenant = await TenantAsync("batch", 15501, true, 5m, 0m, 5m);
         var ids = tenant.Products.Select(p => p.Id).ToArray();
@@ -42,13 +43,17 @@ public sealed class ProductFiscalBatchTests(PostgresDatabaseFixture database) : 
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
         var service = Service(db, tenant);
-        var a = await service.PageAsync("batch-P", null, second.CategoryId, "pending", 1, 1);
-        var b = await service.PageAsync("batch-P", false, second.CategoryId, "pending", 1, 1);
+        var a = await service.CandidatesAsync("batch-P", null, second.CategoryId, "pending", ProductVatCategory.Vat0);
+        var b = await service.CandidatesAsync("batch-P", false, second.CategoryId, "pending", ProductVatCategory.Vat0);
         Assert.Equal(3, a.TotalItems);
-        Assert.Equal(ids[0], Assert.Single(a.Items).Id);
+        Assert.Equal(ids, a.Items.Select(p => p.Id));
         Assert.Equal(ids[1], Assert.Single(b.Items).Id);
-        var page2 = await service.PageAsync(null, null, null, "pending", 2, 1);
-        Assert.Equal(ids[1], Assert.Single(page2.Items).Id);
+        Assert.Empty((await service.CandidatesAsync("batch-P", false, second.CategoryId, "pending", ProductVatCategory.Vat15)).Items);
+        Assert.Empty((await service.CandidatesAsync("absent", false, second.CategoryId, "pending", ProductVatCategory.Vat0)).Items);
+        Assert.Empty((await service.CandidatesAsync("batch-P", false, -1, "pending", ProductVatCategory.Vat0)).Items);
+        Assert.Empty((await service.CandidatesAsync("batch-P", false, second.CategoryId, "current", ProductVatCategory.Vat0)).Items);
+        Assert.Equal("FISCAL_BATCH_FILTER_INVALID", (await Assert.ThrowsAsync<OperationalContextException>(() =>
+            service.CandidatesAsync(null, null, null, null, (ProductVatCategory)999))).ErrorCode);
 
         var preview = await service.PreviewAsync(Request([ids[1], ids[0]]));
         Assert.Equal(2, preview.Changed);
@@ -63,8 +68,10 @@ public sealed class ProductFiscalBatchTests(PostgresDatabaseFixture database) : 
         var applied = await service.ConfirmAsync(Confirmation(preview));
         Assert.Equal(JsonSerializer.Serialize(preview.Rows), JsonSerializer.Serialize(applied.Rows));
         Assert.Equal(applied.OperationId, (await service.ReceiptAsync(applied.OperationId)).OperationId);
-        Assert.Equal(2, (await service.PageAsync(null, null, null, "current", 1, 10)).TotalItems);
-        Assert.Equal(ids[2], Assert.Single((await service.PageAsync(null, null, null, "pending", 1, 10)).Items).Id);
+        var recent = Assert.Single(await service.RecentReceiptsAsync());
+        Assert.Equal(new ProductFiscalBatchReceiptSummary(applied.OperationId, applied.AppliedAt, 2), recent);
+        Assert.Equal(2, (await service.CandidatesAsync(null, null, null, "current", ProductVatCategory.Vat15)).TotalItems);
+        Assert.Equal(ids[2], Assert.Single((await service.CandidatesAsync(null, null, null, "pending", ProductVatCategory.Vat0)).Items).Id);
 
         var products = await db.Products.AsNoTracking().OrderBy(p => p.Id).ToArrayAsync();
         Assert.Equal(new[] { ProductVatCategory.Vat15, ProductVatCategory.Vat15, ProductVatCategory.Vat0 },
@@ -81,6 +88,117 @@ public sealed class ProductFiscalBatchTests(PostgresDatabaseFixture database) : 
         var imports = new InitialDataService(scope.DbContext, new StaticOperationalContextAccessor(tenant.OperationalContext),
             new TenantAdministrationGuard(scope.DbContext), scope.Inventory, new ProductCostService(scope.DbContext), protection);
         Assert.Empty(await imports.GetBatchesAsync());
+    }
+
+    [Fact]
+    public async Task Candidates_return_all_250_or_exact_count_without_rows_and_exclude_other_tenants()
+    {
+        var tenant = await TenantAsync("limit", 15511, true, 0m);
+        var other = await TenantAsync("foreign", 15512, true, 0m);
+        await using var writer = database.CreateDbContext();
+        var seed = await writer.Products.SingleAsync(p => p.CompanyId == tenant.CompanyId);
+        var foreign = await writer.Products.SingleAsync(p => p.CompanyId == other.CompanyId);
+        var matches = Enumerable.Range(0, 249).Select(_ => Extra(seed)).ToArray();
+        writer.Products.AddRange(matches);
+        writer.Products.Add(Extra(foreign));
+        await writer.SaveChangesAsync();
+
+        // Insert the 251st match after the count but before the list query.
+        var insert = new AfterCandidateCount(async () =>
+        {
+            var concurrent = Extra(seed);
+            concurrent.Name = "A concurrent candidate";
+            writer.Products.Add(concurrent);
+            await writer.SaveChangesAsync();
+        });
+        await using var reader = database.CreateDbContext(insert);
+        var service = Service(reader, tenant);
+        var allowed = await service.CandidatesAsync(null, null, null, null, ProductVatCategory.Vat0);
+        Assert.True(insert.Ran);
+        Assert.Equal(250, allowed.MaxProducts);
+        Assert.Equal(250, allowed.TotalItems);
+        Assert.Equal(matches.Select(p => p.Id).Order().Append(seed.Id), allowed.Items.Select(p => p.Id));
+        var overflow = await service.CandidatesAsync(null, null, null, null, ProductVatCategory.Vat0);
+        Assert.Equal(251, overflow.TotalItems);
+        Assert.Empty(overflow.Items);
+
+        static Product Extra(Product template) => new()
+        {
+            CompanyId = template.CompanyId, CategoryId = template.CategoryId, Name = "Bulk candidate",
+            VatCategory = ProductVatCategory.Vat0, IsActive = true, CreatedAt = Now
+        };
+    }
+
+    [Fact]
+    public async Task Recent_receipts_are_bounded_stably_ordered_and_filter_every_scope_dimension()
+    {
+        var tenant = await TenantAsync("recent", 15513, true, 0m);
+        var other = await TenantAsync("other", 15514, true, 0m);
+        var unauthorized = await TenantAsync("read-denied", 15515, false, 0m);
+        await using var db = database.CreateDbContext();
+        var own = Enumerable.Range(0, 22).Select(i => Batch(tenant.OperationalContext, i + 1)).ToArray();
+        own[0].CreatedAt = Now.AddMinutes(1);
+        var actor = tenant.OperationalContext;
+        var hidden = new[]
+        {
+            Batch(actor, 1, companyId: other.CompanyId),
+            Batch(actor, 1, userId: other.UserId),
+            Batch(actor, 1, establishmentId: other.OperationalContext.EstablishmentId),
+            Batch(actor, 1, emissionPointId: other.OperationalContext.EmissionPointId),
+            Batch(actor, 1, "catalog")
+        };
+        foreach (var batch in hidden) batch.CreatedAt = Now.AddDays(1);
+        db.InitialDataBatches.AddRange(own);
+        db.InitialDataBatches.AddRange(hidden);
+        await db.SaveChangesAsync();
+        var service = Service(db, tenant);
+        var recent = await service.RecentReceiptsAsync();
+        Assert.Equal(own.OrderByDescending(b => b.CreatedAt).ThenByDescending(b => b.Id).Take(20)
+            .Select(b => new ProductFiscalBatchReceiptSummary(b.RequestId, b.CreatedAt, b.RowCount)), recent);
+        foreach (var batch in hidden)
+            Assert.Equal(404, (await Assert.ThrowsAsync<OperationalContextException>(() => service.ReceiptAsync(batch.RequestId))).StatusCode);
+        Assert.Equal(403, (await Assert.ThrowsAsync<OperationalContextException>(() => Service(db, unauthorized).RecentReceiptsAsync())).StatusCode);
+        Assert.Equal(403, (await Assert.ThrowsAsync<OperationalContextException>(() =>
+            Service(db, unauthorized).CandidatesAsync(null, null, null, null, null))).StatusCode);
+
+        static InitialDataBatch Batch(OperationalContext scope, int rows, string kind = "product-fiscal-batch",
+            int? companyId = null, int? userId = null, int? establishmentId = null, int? emissionPointId = null) => new()
+        {
+            CompanyId = companyId ?? scope.CompanyId, UserId = userId ?? scope.UserId,
+            EstablishmentId = establishmentId ?? scope.EstablishmentId, EmissionPointId = emissionPointId ?? scope.EmissionPointId,
+            RequestId = Guid.NewGuid(), Kind = kind,
+            CreatedAt = Now, RowCount = rows, ResultJson = "not read by recent"
+        };
+    }
+
+    [Fact]
+    public async Task Popular_business_ordinary_goods_match_nominal_category_not_effective_vat()
+    {
+        var tenant = await TenantAsync("popular", 15516, true, 0m, 0m, 0m);
+        var id = tenant.Products[0].Id;
+        await using var db = database.CreateDbContext();
+        var profile = await db.CompanyFiscalProfiles.SingleAsync();
+        profile.Regime = FiscalRegime.PopularBusiness;
+        profile.RimpeEligibilityConfirmed = true;
+        var exemptId = tenant.Products[1].Id;
+        var notSubjectId = tenant.Products[2].Id;
+        (await db.Products.SingleAsync(p => p.Id == exemptId)).VatCategory = ProductVatCategory.VatExempt;
+        (await db.Products.SingleAsync(p => p.Id == notSubjectId)).VatCategory = ProductVatCategory.VatNotSubject;
+        await db.SaveChangesAsync();
+
+        var service = Service(db, tenant);
+        var preview = await service.PreviewAsync(Request([id]));
+        var row = Assert.Single(preview.Rows);
+        Assert.Equal(ProductVatCategory.Vat15, row.ProposedVat);
+        Assert.Equal(ProductVatCategory.Vat0, row.ProposedDecision!.Category);
+        Assert.Equal(0m, row.ProposedDecision.Rate);
+        Assert.Equal(FiscalTaxResolver.RuleVersion, row.ProposedDecision.LegalRuleVersion);
+        var applied = await service.ConfirmAsync(Confirmation(preview));
+        Assert.Equal(row.ProposedDecision, Assert.Single(applied.Rows).ProposedDecision);
+        Assert.Equal(id, Assert.Single((await service.CandidatesAsync(null, null, null, "current", ProductVatCategory.Vat15)).Items).Id);
+        Assert.Empty((await service.CandidatesAsync(null, null, null, "current", ProductVatCategory.Vat0)).Items);
+        Assert.Equal(exemptId, Assert.Single((await service.CandidatesAsync(null, null, null, null, ProductVatCategory.VatExempt)).Items).Id);
+        Assert.Equal(notSubjectId, Assert.Single((await service.CandidatesAsync(null, null, null, null, ProductVatCategory.VatNotSubject)).Items).Id);
     }
 
     [Fact]
@@ -354,6 +472,22 @@ public sealed class ProductFiscalBatchTests(PostgresDatabaseFixture database) : 
     }
 
     private sealed class SyntheticFailure : Exception;
+
+    private sealed class AfterCandidateCount(Func<Task> action) : DbCommandInterceptor
+    {
+        public bool Ran { get; private set; }
+
+        public override async ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command,
+            CommandExecutedEventData eventData, DbDataReader result, CancellationToken cancellationToken = default)
+        {
+            if (!Ran && command.CommandText.Contains("count(*)") && command.CommandText.Contains("\"Products\""))
+            {
+                Ran = true;
+                await action();
+            }
+            return result;
+        }
+    }
 
     private sealed class FailAfterSave : SaveChangesInterceptor
     {

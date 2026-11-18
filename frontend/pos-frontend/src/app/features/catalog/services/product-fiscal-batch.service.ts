@@ -1,16 +1,23 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { environment } from '../../../../environments/environment';
-import { PagedResult } from '../../../core/models/paged-result.model';
+import { ProductVatCategory } from '../../../core/utils/vat-category';
 import { DeclareProductFiscalClassification, ProductFiscalClassification } from '../../fiscal-settings/models/fiscal-profile.model';
 
 export type FiscalStatus = 'pending' | 'stale' | 'current';
 export interface FiscalBatchCandidate {
   id: number; name: string; internalCode: string | null; barcode: string | null; categoryId: number;
-  isActive: boolean; vatCategory: number; fiscalStatus: FiscalStatus;
+  isActive: boolean; vatCategory: ProductVatCategory; fiscalStatus: FiscalStatus;
 }
 export interface FiscalBatchQuery {
-  search: string; active: boolean | null; categoryId: number | null; fiscalStatus: FiscalStatus | null; page: number;
+  search: string; active: boolean | null; categoryId: number | null; fiscalStatus: FiscalStatus | null;
+  vatCategory: ProductVatCategory | null;
+}
+interface FiscalBatchCandidates {
+  totalItems: number; maxProducts: number; items: FiscalBatchCandidate[];
+}
+export interface FiscalBatchReceiptSummary {
+  operationId: string; appliedAt: string; rowCount: number;
 }
 interface FiscalBatchDecision { category: number; rate: number; reason: string }
 export interface FiscalBatchRow {
@@ -39,12 +46,13 @@ export class ProductFiscalBatchService {
   private readonly base = `${environment.apiUrl}/api/products/fiscal-batches`;
 
   candidates(query: FiscalBatchQuery) {
-    let params = new HttpParams().set('page', query.page);
+    let params = new HttpParams();
     if (query.search.trim()) params = params.set('search', query.search.trim());
     if (query.categoryId !== null) params = params.set('categoryId', query.categoryId);
     if (query.active !== null) params = params.set('active', query.active);
     if (query.fiscalStatus) params = params.set('fiscalStatus', query.fiscalStatus);
-    return this.http.get<PagedResult<FiscalBatchCandidate>>(`${this.base}/candidates`, { params });
+    if (query.vatCategory !== null) params = params.set('vatCategory', query.vatCategory);
+    return this.http.get<FiscalBatchCandidates>(`${this.base}/candidates`, { params });
   }
 
   preview(productIds: number[], declaration: DeclareProductFiscalClassification, reason: string) {
@@ -57,5 +65,9 @@ export class ProductFiscalBatchService {
 
   receipt(operationId: string) {
     return this.http.get<FiscalBatchResult>(`${this.base}/${encodeURIComponent(operationId)}`);
+  }
+
+  recentReceipts() {
+    return this.http.get<FiscalBatchReceiptSummary[]>(`${this.base}/recent`);
   }
 }

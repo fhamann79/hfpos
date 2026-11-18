@@ -7,6 +7,7 @@ import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
+import { Subscription } from 'rxjs';
 import { PERMISSIONS } from '../../../../core/constants/permissions';
 import { PermissionService } from '../../../../core/services/permission.service';
 import { AuthStore } from '../../../../core/stores/auth.store';
@@ -16,7 +17,7 @@ import { ProductFiscalFields, classificationComplete, emptyProductClassification
 import { DeclareProductFiscalClassification } from '../../../fiscal-settings/models/fiscal-profile.model';
 import { Category } from '../../models/category.model';
 import {
-  FiscalBatchCandidate, FiscalBatchPreview, FiscalBatchQuery, FiscalBatchResult, ProductFiscalBatchService,
+  FiscalBatchCandidate, FiscalBatchPreview, FiscalBatchQuery, FiscalBatchReceiptSummary, FiscalBatchResult, ProductFiscalBatchService,
 } from '../../services/product-fiscal-batch.service';
 
 const ISSUE_LABELS: Record<string, string> = {
@@ -58,15 +59,18 @@ export class ProductFiscalBatchDialog implements OnInit {
   private readonly initialScope = this.scope();
   private sequence = 0;
   private dismissed = false;
+  private candidateRequest?: Subscription;
 
-  readonly maxProducts = 250;
-  readonly selected = new Map<number, FiscalBatchCandidate>();
-  filters: FiscalBatchQuery = { search: '', active: null, categoryId: null, fiscalStatus: null, page: 1 };
-  private appliedFilters = { ...this.filters };
+  readonly vatCategoryOptions = VAT_CATEGORY_OPTIONS;
+  readonly selected = new Set<number>();
+  filters: FiscalBatchQuery = { search: '', active: null, categoryId: null, fiscalStatus: null, vatCategory: null };
   candidates: FiscalBatchCandidate[] = [];
-  page = 1;
-  pages = 0;
-  total = 0;
+  maxProducts = 0;
+  total: number | null = null;
+  recent: FiscalBatchReceiptSummary[] | null = null;
+  recentLoading = false;
+  recentError = '';
+  copyStatus = '';
   draft = emptyProductClassification();
   reason = '';
   lookupId = '';
@@ -83,24 +87,27 @@ export class ProductFiscalBatchDialog implements OnInit {
 
   ngOnInit() { this.search(); }
 
-  search() {
-    this.appliedFilters = { ...this.filters };
-    this.load(1);
+  filtersChanged() {
+    ++this.sequence;
+    this.candidateRequest?.unsubscribe();
+    this.loading = false;
+    this.candidates = [];
+    this.total = null;
+    this.error = '';
+    this.clearSelection();
   }
 
-  load(page: number) {
-    const request = ++this.sequence;
+  search() {
+    if (this.busy || !this.validScope()) return;
+    this.filtersChanged();
+    const request = this.sequence;
     this.loading = true;
-    this.candidates = [];
-    this.error = '';
     this.view.markForCheck();
-    this.service.candidates({ ...this.appliedFilters, page }).pipe(takeUntilDestroyed(this.destroy)).subscribe({
+    this.candidateRequest = this.service.candidates(this.filters).pipe(takeUntilDestroyed(this.destroy)).subscribe({
       next: data => {
         if (!this.live(request)) return;
-        if (data.totalPages && page > data.totalPages) { this.load(data.totalPages); return; }
-        this.candidates = data.items;
-        this.page = data.page;
-        this.pages = data.totalPages;
+        this.maxProducts = data.maxProducts;
+        this.candidates = data.totalItems > data.maxProducts ? [] : data.items;
         this.total = data.totalItems;
         this.loading = false;
         this.view.markForCheck();
@@ -114,12 +121,29 @@ export class ProductFiscalBatchDialog implements OnInit {
     });
   }
 
-  toggle(candidate: FiscalBatchCandidate, selected: boolean) {
-    if (selected && !this.selected.has(candidate.id) && this.selected.size < this.maxProducts) {
-      this.selected.set(candidate.id, candidate);
+  get allSelected() { return this.candidates.length > 0 && this.selected.size === this.candidates.length; }
+
+  toggleAll(checked: boolean) {
+    if (this.busy || this.loading || !this.candidates.length) return;
+    if (checked) {
+      for (const candidate of this.candidates) this.selected.add(candidate.id);
+      this.factsChanged();
+    } else this.clearSelection();
+  }
+
+  clearSelection() {
+    if (!this.selected.size) return;
+    this.selected.clear();
+    this.factsChanged();
+  }
+
+  toggle(id: number, checked: boolean) {
+    if (this.busy || this.loading || !this.candidates.some(candidate => candidate.id === id)) return;
+    if (checked && !this.selected.has(id)) {
+      this.selected.add(id);
       this.factsChanged();
     }
-    if (!selected && this.selected.delete(candidate.id)) this.factsChanged();
+    if (!checked && this.selected.delete(id)) this.factsChanged();
   }
 
   factsChanged() {
@@ -192,7 +216,7 @@ export class ProductFiscalBatchDialog implements OnInit {
   }
 
   recover(id = this.lookupId.trim()) {
-    if (this.busy || !this.validScope() || !this.validId(id)) return;
+    if (this.busy || this.loading || !this.validScope() || !this.validId(id)) return;
     const request = ++this.sequence;
     this.busy = true;
     this.error = '';
@@ -202,10 +226,46 @@ export class ProductFiscalBatchDialog implements OnInit {
     });
   }
 
+  loadRecent() {
+    if (this.recentLoading || this.dismissed || !this.validScope()) return;
+    this.recentLoading = true;
+    this.recentError = '';
+    this.service.recentReceipts().pipe(takeUntilDestroyed(this.destroy)).subscribe({
+      next: receipts => {
+        if (this.dismissed || !this.validScope()) return;
+        this.recentLoading = false;
+        this.recent = receipts;
+        this.view.markForCheck();
+      },
+      error: () => {
+        if (this.dismissed || !this.validScope()) return;
+        this.recentLoading = false;
+        this.recent = null;
+        this.recentError = 'No se pudieron consultar los comprobantes recientes.';
+        this.view.markForCheck();
+      },
+    });
+  }
+
+  async copyReference(result: FiscalBatchResult) {
+    this.copyStatus = '';
+    let status: string;
+    try {
+      await navigator.clipboard.writeText(result.operationId);
+      status = 'Referencia copiada.';
+    } catch {
+      status = 'No se pudo copiar. Selecciona la referencia para copiarla manualmente.';
+    }
+    if (this.dismissed || !this.validScope() || this.result !== result) return;
+    this.copyStatus = status;
+    this.view.markForCheck();
+  }
+
   validId(value: string) { return /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(value.trim()); }
   close() {
     if (this.dismissed) return;
     this.dismissed = true;
+    this.candidateRequest?.unsubscribe();
     this.closed.emit();
   }
 
@@ -225,6 +285,7 @@ export class ProductFiscalBatchDialog implements OnInit {
     if (!this.live(request)) return;
     this.busy = false;
     this.result = result;
+    this.copyStatus = '';
     this.go('result');
     this.applied.emit();
   }
