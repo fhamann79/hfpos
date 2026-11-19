@@ -462,6 +462,7 @@ public sealed class NonInventoryServicesTests(PostgresDatabaseFixture database) 
     [Fact]
     public async Task Migration_defaults_legacy_to_physical_and_false_inserts_survive_reload_and_block_down()
     {
+        await using var baseline = await database.UseMigrationBaselineAsync(PostgresDatabaseFixture.PreDev532Migration);
         var t = await Tenant(1m);
         await using (var scope = new TestServiceScope(database, t.OperationalContext))
         {
@@ -485,12 +486,12 @@ public sealed class NonInventoryServicesTests(PostgresDatabaseFixture database) 
             finally
             {
                 // EF may already have reverted newer migrations before reaching the guard.
-                await migrator.MigrateAsync();
+                await migrator.MigrateAsync(PostgresDatabaseFixture.PreDev532Migration);
             }
         }
 
         await migrator.MigrateAsync(beforeNonInventory);
-        await migrator.MigrateAsync();
+        await migrator.MigrateAsync(PostgresDatabaseFixture.PreDev532Migration);
         Assert.True((await db.Products.AsNoTracking().SingleAsync()).TracksInventory);
         Assert.True((await db.SaleItems.AsNoTracking().SingleAsync()).TracksInventorySnapshot);
         Assert.True((await db.CreditNoteItems.AsNoTracking().SingleAsync()).TracksInventorySnapshot);

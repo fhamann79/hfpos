@@ -10,6 +10,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using Pos.Backend.Api.Configuration;
@@ -95,6 +97,66 @@ public sealed class PlatformControlPlaneTests(PostgresDatabaseFixture database) 
         using var client = factory.CreateClient();
         var token = await LoginAsync(client, "/api/Auth/login", request.InitialAdmin.Username);
         Assert.Equal(HttpStatusCode.OK, (await SendAsync(client, HttpMethod.Get, "/api/Auth/me", token)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Dev532_company_gate_allows_reads_and_excludes_provisioning_and_tenant_writes()
+    {
+        await using var baseline = await database.UseMigrationBaselineAsync(PostgresDatabaseFixture.PreDev532Migration);
+        var actor = await ActorAsync();
+        var tenant = await TestDataBuilder.CreateTenantAsync(database, "dev532-lock", 53210, 1m);
+        await using var catalog = database.CreateDbContext();
+        await catalog.Database.OpenConnectionAsync();
+        await using var catalogTx = await catalog.Database.BeginTransactionAsync();
+        await catalog.Database.ExecuteSqlRawAsync("""LOCK TABLE "Permissions" IN SHARE ROW EXCLUSIVE MODE""");
+
+        await using var migration = database.CreateDbContext();
+        await using var provision = database.CreateDbContext();
+        await using var admin = database.CreateDbContext();
+        await using var operational = database.CreateDbContext();
+        await migration.Database.OpenConnectionAsync();
+        await provision.Database.OpenConnectionAsync();
+        await admin.Database.OpenConnectionAsync();
+        await operational.Database.OpenConnectionAsync();
+
+        async Task AdminWriteAsync()
+        {
+            await using var tx = await new TenantAdministrationGuard(admin).BeginChangeAsync(tenant.CompanyId);
+            await tx.CommitAsync();
+        }
+        async Task OperationalWriteAsync()
+        {
+            await using var tx = await operational.Database.BeginTransactionAsync();
+            await new TenantAdministrationGuard(operational).LockOperationalWriteAsync(tenant.OperationalContext);
+            await tx.CommitAsync();
+        }
+
+        var applying = migration.GetService<IMigrator>().MigrateAsync();
+        Task provisioning = Task.CompletedTask, changing = Task.CompletedTask, operating = Task.CompletedTask;
+        try
+        {
+            await AssertBlockedAsync(applying, migration, catalog);
+            provisioning = Service(provision, actor).ProvisionAsync(Request("dev532-new", 53211));
+            changing = AdminWriteAsync();
+            operating = OperationalWriteAsync();
+            await AssertBlockedAsync(provisioning, provision, migration);
+            await AssertBlockedAsync(changing, admin, migration);
+            await AssertBlockedAsync(operating, operational, migration);
+            Assert.Equal(1, await catalog.Companies.CountAsync());
+        }
+        finally
+        {
+            await catalogTx.RollbackAsync();
+            await Task.WhenAll(applying, provisioning, changing, operating).WaitAsync(Timeout);
+        }
+
+        var grant = await provision.RolePermissions.Where(rp => rp.Permission.Code == AppPermissions.CatalogProductPricesBatch)
+            .Select(rp => new { rp.Role.Code, rp.Role.AuthorizationVersion, rp.Role.CompanyId }).SingleAsync();
+        Assert.Equal(AppRoles.Admin, grant.Code);
+        Assert.Equal(1, grant.AuthorizationVersion);
+        Assert.NotEqual(tenant.CompanyId, grant.CompanyId);
+        Assert.Contains(TenantAdminBatchPriceMigrationTests.MigrationId,
+            await migration.Database.GetAppliedMigrationsAsync());
     }
 
     [Fact]

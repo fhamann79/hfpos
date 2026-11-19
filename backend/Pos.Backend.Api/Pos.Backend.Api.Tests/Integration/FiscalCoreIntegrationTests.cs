@@ -395,6 +395,7 @@ public sealed class FiscalCoreIntegrationTests(PostgresDatabaseFixture database)
     [InlineData("snapshot")]
     public async Task Downgrade_cannot_erase_fiscal_evidence_even_without_profile_foreign_keys(string evidence)
     {
+        await using var baseline = await database.UseMigrationBaselineAsync(PostgresDatabaseFixture.PreDev532Migration);
         var tenant = evidence == "declarations" ? await Tenant("downgrade")
             : await TestDataBuilder.CreateTenantAsync(database, "downgrade", 7153, 10m);
         await using var db = database.CreateDbContext();
@@ -420,7 +421,7 @@ public sealed class FiscalCoreIntegrationTests(PostgresDatabaseFixture database)
         finally
         {
             // Later additive migrations may already have been reverted before the fiscal guard rejects Down.
-            await migrator.MigrateAsync();
+            await migrator.MigrateAsync(PostgresDatabaseFixture.PreDev532Migration);
             db.ChangeTracker.Clear();
         }
         Assert.Equal(profiles, await db.CompanyFiscalProfiles.CountAsync());

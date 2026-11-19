@@ -92,6 +92,34 @@ public sealed class SessionVersioningHttpTests(PostgresDatabaseFixture database)
     }
 
     [Fact]
+    public async Task Dev532_stales_only_the_changed_role_and_fresh_admin_jwt_carries_the_grant()
+    {
+        await using var baseline = await database.UseMigrationBaselineAsync(PostgresDatabaseFixture.PreDev532Migration);
+        await database.ResetDataAsync();
+        var tenant = await SeedTenantAsync("dev532", 53212);
+        using var factory = new SecurityApiFactory(database);
+        using var client = factory.CreateClient();
+        var oldAdmin = await LoginAsync(client, tenant.AdminName);
+        var oldStaff = await LoginAsync(client, tenant.StaffName);
+        var jwt = new JwtSecurityTokenHandler();
+        Assert.DoesNotContain(jwt.ReadJwtToken(oldAdmin).Claims, c =>
+            c.Type == AppClaims.Permission && c.Value == AppPermissions.CatalogProductPricesBatch);
+
+        await using var context = database.CreateDbContext();
+        await context.Database.MigrateAsync();
+        await AssertErrorAsync(await SendAsync(client, HttpMethod.Get, "/api/Auth/me", oldAdmin),
+            HttpStatusCode.Unauthorized, "SESSION_STALE");
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(client, HttpMethod.Get, "/api/Auth/me", oldStaff)).StatusCode);
+
+        var freshAdmin = await LoginAsync(client, tenant.AdminName);
+        var claims = jwt.ReadJwtToken(freshAdmin).Claims.ToArray();
+        Assert.Contains(claims, c => c.Type == AppClaims.Permission && c.Value == AppPermissions.CatalogProductPricesBatch);
+        Assert.Contains(claims, c => c.Type == AppClaims.RoleAuthorizationVersion && c.Value == "2");
+        Assert.Contains(claims, c => c.Type == AppClaims.UserSessionVersion && c.Value == "1");
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(client, HttpMethod.Get, "/api/Auth/me", freshAdmin)).StatusCode);
+    }
+
+    [Fact]
     public async Task Permission_changes_stale_old_tokens_fresh_missing_permission_is_forbidden_and_no_op_keeps_token()
     {
         var tenant = await SeedTenantAsync("permissions", 102);
