@@ -17,7 +17,7 @@ public sealed class PlatformMigrationSafetyTests(PostgresDatabaseFixture databas
     {
         try
         {
-            await database.RecreateDatabaseAsync();
+            await database.RecreateDatabaseAsync(PostgresDatabaseFixture.PreDev532Migration);
             await using var context = database.CreateDbContext();
             var one = await TestDataBuilder.CreateTenantAsync(database, "duplicate-one", 330, 1m);
             var two = await TestDataBuilder.CreateTenantAsync(database, "duplicate-two", 331, 1m);

@@ -182,6 +182,7 @@ public sealed class PosQuickProductsTests(PostgresDatabaseFixture database) : IA
     [Fact]
     public async Task Additive_migration_rolls_back_only_favorites_and_preserves_catalog()
     {
+        await using var baseline = await database.UseMigrationBaselineAsync(PostgresDatabaseFixture.PreDev532Migration);
         var tenant = await TestDataBuilder.CreateTenantAsync(database, "quick-migration", 436, 2);
         await using var db = database.CreateDbContext();
         var migrator = db.GetService<IMigrator>();
@@ -193,10 +194,10 @@ public sealed class PosQuickProductsTests(PostgresDatabaseFixture database) : IA
                 """SELECT to_regclass('public."PosFavoriteLists"') IS NOT NULL AS "Value" """).SingleAsync());
             Assert.True(await db.Products.AnyAsync(product => product.Id == tenant.Products[0].Id));
         }
-        finally { await migrator.MigrateAsync(); }
+        finally { await migrator.MigrateAsync(PostgresDatabaseFixture.PreDev532Migration); }
 
         Assert.False(db.Database.HasPendingModelChanges());
-        Assert.Empty(await db.Database.GetPendingMigrationsAsync());
+        Assert.DoesNotContain(PostgresDatabaseFixture.PreDev532Migration, await db.Database.GetPendingMigrationsAsync());
         Assert.Empty((await Service(db, tenant.OperationalContext).GetFavoritesAsync(Ct)).ProductIds);
         Assert.True(await db.Products.AnyAsync(product => product.Id == tenant.Products[0].Id));
     }

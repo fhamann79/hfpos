@@ -1,6 +1,8 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
 using Pos.Backend.Api.Infrastructure.Data;
 
@@ -9,6 +11,7 @@ namespace Pos.Backend.Api.Tests.Infrastructure;
 public sealed class PostgresDatabaseFixture : IAsyncLifetime
 {
     public const string ConnectionStringEnvironmentVariable = "HF_POS_TEST_CONNECTION_STRING";
+    internal const string PreDev532Migration = "20261111200103_AddPosFavoriteLists";
 
     private static readonly Regex SafeDatabaseNamePattern = new(
         @"^hfpos_(test|ci)(_[a-z0-9_]+)?$",
@@ -63,13 +66,24 @@ public sealed class PostgresDatabaseFixture : IAsyncLifetime
         return new PosDbContext(options.Options);
     }
 
-    public async Task RecreateDatabaseAsync()
+    public async Task RecreateDatabaseAsync(string? targetMigration = null)
     {
         EnsureSafeDatabaseName(new NpgsqlConnectionStringBuilder(_connectionString).Database);
 
         await using var context = CreateDbContext();
         await context.Database.EnsureDeletedAsync();
-        await context.Database.MigrateAsync();
+        await context.GetService<IMigrator>().MigrateAsync(targetMigration);
+    }
+
+    internal async Task<IAsyncDisposable> UseMigrationBaselineAsync(string targetMigration)
+    {
+        await RecreateDatabaseAsync(targetMigration);
+        return new MigrationBaseline(this);
+    }
+
+    private sealed class MigrationBaseline(PostgresDatabaseFixture fixture) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync() => new(fixture.RecreateDatabaseAsync());
     }
 
     public async Task ResetDataAsync()

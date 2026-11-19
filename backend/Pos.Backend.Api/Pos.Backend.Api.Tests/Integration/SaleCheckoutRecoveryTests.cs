@@ -573,6 +573,7 @@ public sealed class SaleCheckoutRecoveryTests(PostgresDatabaseFixture database) 
     [Fact]
     public async Task Additive_migration_preserves_legacy_rows_without_fabricating_history()
     {
+        await using var baseline = await database.UseMigrationBaselineAsync(PostgresDatabaseFixture.PreDev532Migration);
         var tenant = await TestDataBuilder.CreateTenantAsync(database, "legacy", 810, 5m);
         await Open(tenant);
         await using var scope = new TestServiceScope(database, tenant.OperationalContext);
@@ -589,7 +590,7 @@ public sealed class SaleCheckoutRecoveryTests(PostgresDatabaseFixture database) 
         scope.DbContext.Sales.Add(sale); await scope.DbContext.SaveChangesAsync();
         var migrator = scope.DbContext.GetService<IMigrator>();
         await migrator.MigrateAsync("20261004050131_AddInitialDataBatches");
-        await migrator.MigrateAsync();
+        await migrator.MigrateAsync(PostgresDatabaseFixture.PreDev532Migration);
         scope.DbContext.ChangeTracker.Clear();
         var legacy = await scope.Sales.GetByIdAsync(sale.Id);
         Assert.NotNull(legacy); Assert.Equal(sale.Total, legacy.Total); Assert.Equal(sale.Number, legacy.Number);

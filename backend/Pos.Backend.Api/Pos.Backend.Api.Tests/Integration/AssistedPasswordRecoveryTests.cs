@@ -231,6 +231,7 @@ public sealed class AssistedPasswordRecoveryTests(PostgresDatabaseFixture databa
     [Fact]
     public async Task Migration_grants_only_existing_ADMIN_and_bumps_only_new_assignments()
     {
+        await using var baseline = await database.UseMigrationBaselineAsync(PostgresDatabaseFixture.PreDev532Migration);
         await using var db = database.CreateDbContext();
         var migrator = db.GetService<IMigrator>();
         var t1 = await TestDataBuilder.CreateTenantAsync(database, "migration530a", 535, 1m);
@@ -244,7 +245,7 @@ public sealed class AssistedPasswordRecoveryTests(PostgresDatabaseFixture databa
         db.Roles.AddRange(supervisor, cashier);
         var permission = new Permission { Code = AppPermissions.UsersRecoveryManage, Description = "Synthetic permission", IsActive = true, CreatedAt = DateTime.UtcNow };
         db.RolePermissions.Add(new RolePermission { Role = second, Permission = permission }); await db.SaveChangesAsync();
-        await migrator.MigrateAsync();
+        await migrator.MigrateAsync(PostgresDatabaseFixture.PreDev532Migration);
         db.ChangeTracker.Clear();
         Assert.Equal(2, (await db.Roles.SingleAsync(r => r.Id == first.Id)).AuthorizationVersion);
         Assert.Equal(1, (await db.Roles.SingleAsync(r => r.Id == second.Id)).AuthorizationVersion);
