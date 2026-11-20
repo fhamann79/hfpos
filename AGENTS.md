@@ -45,7 +45,7 @@ The coordinator, never the implementer acting as its own reviewer, may execute a
 - It is not R4 and uses no real business data, production infrastructure operations, secrets, certificates or real SRI. A code merge is not deployment authorization.
 - Immediately before merge, recheck HEAD/base and gates. Bind the merge request to the verified HEAD and honor GitHub required checks/rules (including merge-queue checks when configured). Never bypass protections, use an admin override or arm unattended auto-merge before gates are complete. If safe execution cannot be demonstrated, stop.
 
-For actual changes to critical semantics or material doubt, say **VALIDACION HUMANA PRE-MERGE REQUERIDA**, give concrete steps and wait for **VALIDADO OK**. For eligible evidence-based technical-platform exceptions under section 4, request explicit human acceptance of the agent's report instead of Fernando executing the smoke. Then recheck all remaining conditions; that reply alone is not sufficient. Explicit human restrictions such as `NO MERGE` always take precedence. R4 remains human-controlled, never autonomous.
+For actual changes to critical semantics or material doubt, say **VALIDACION HUMANA PRE-MERGE REQUERIDA**, give concrete steps and wait for **VALIDADO OK**. For eligible evidence-based technical-platform exceptions under section 4, request explicit human acceptance of the agent's report instead of Fernando executing the smoke. Then recheck all remaining conditions; that reply alone is not sufficient. Explicit human restrictions such as `NO MERGE` always take precedence. R4 always requires Fernando's explicit, scoped human authorization; an agent may operate as his delegated executor only under section 4's supervised R4 procedure, never as an unattended self-authorized deployment.
 
 ## 3. Parallel agents and worktrees
 
@@ -129,9 +129,13 @@ Minimum validation:
 Examples: production deployment/change, real database mutation, real SRI submission, real certificates/keys, secret rotation, irreversible data repair.
 
 Rules:
-- autonomous agents MUST NOT execute R4 operations;
-- real credentials, certificates, production data and real SRI endpoints MUST NOT be exposed to agent sandboxes;
-- an R4 task requires a separate human-approved runbook, backup/rollback plan and explicit execution authorization.
+- R4 requires a separate approved runbook, backup and recovery plan, explicit human authorization of the exact operation, and enforceable preflight/STOP gates. A PR merge, CI pass, broad agent permission or access to credentials is NOT R4 authorization.
+- **Delegated execution is allowed, not unilateral autonomy**: after Fernando explicitly authorizes a named R4 window and scope, Codex operating in his trusted local environment MAY directly run the approved SSH/deployment commands as the delegated operator, including the one-shot approved migrator, without passing routine commands back to Fernando. This does not authorize unrelated changes, unattended future deployments or retries after an uncertain result.
+- Keep required human decisions where the runbook demands them, especially opening public ingress, accepting a materially changed plan, or resolving uncertain fiscal/database effects. Codex should own routine diagnostics and verified corrections within the granted scope; do not convert every failed guard into a manual terminal chore for Fernando.
+- Use local OS credential custody (SSH agent or interactive credential entry) and the minimum necessary privileges. Never ask for private keys, passwords, certificates, production data or connection strings in ChatGPT/Codex prompts, GitHub issues, commits, logs, CI or agent sandboxes. Do not bypass host-enforced tool approvals or claim access not granted.
+- Maintain SRI quiescence, multi-tenant isolation, verified offsite backup, EF one-shot execution, release digest pinning and safe reconciliation/STOP semantics. An operator monitor must actually cover both public IP families using a capable observer, not assume a Windows IPv6 route exists. No blind retries, destructive restore or EF Down.
+- When a real host, tool, policy or network limitation prevents delegated access, report the precise blocker and a narrowly scoped authorization/access step; do not claim production was changed or deploy via an unverified alternative. Passing synthetic CI does not prove a production preflight: independently verify the actual SSH path, both exposed IP families, and the pre-cutover backup before any real mutation.
+- This policy amendment itself cannot self-authorize a PR merge. Apply the policy integrated in `main` before starting an agent-executed R4.
 
 ## 5. Non-negotiable HFPOS invariants
 
@@ -148,7 +152,7 @@ Whenever relevant, reviewers and implementers must explicitly reason about these
 
 ## 6. Databases, migrations, SRI and secrets
 
-- Agents MUST NOT run `dotnet ef database update` against Fernando's persistent Development database, any shared database or production.
+- Agents MUST NOT run raw `dotnet ef database update` against Fernando's persistent Development database or any shared/production database. The only production exception is execution of the explicitly approved, version-pinned one-shot migration container as part of a human-authorized R4 runbook, with verified backup, single-attempt semantics and post-run reconciliation.
 - Migration validation may use disposable/ephemeral databases created specifically for tests/CI.
 - Never call real SRI services from automated tests or agent sandboxes.
 - Never use real signing certificates or private keys in tests, prompts, commits, logs or artifacts.
