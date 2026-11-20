@@ -31,6 +31,14 @@ jobs:
         run: sudo python3 -B scripts/ci/test_human_application_verification.py -v
       - name: Test automatic backup formats, maintenance exclusion and failure cleanup (synthetic only)
         run: sudo python3 -B scripts/ci/test_hourly_backup.py -v
+      - name: Verify RC11 cutover artifacts and synthetic state machine (no production access)
+        working-directory: scripts/ops/rc11
+        run: |
+          set -euo pipefail
+          sha256sum --check --strict SHA256SUMS
+          python3 -B Probar-Corte-DEV532-RC11.py "$GITHUB_WORKSPACE"
+          docker compose -p rc11-fixture -f rc11-compose-fixture.yml -f rc11-compose-fixture-private.yml config --format json \
+            | python3 -c 'import json,sys; p=json.load(sys.stdin)["services"]["web"]["ports"]; assert len(p)==1 and p[0]["host_ip"]=="127.0.0.1" and str(p[0]["published"])=="443" and p[0]["target"]==8443'
   operations:
     name: Production-like smoke and restore rehearsal
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
@@ -118,6 +126,9 @@ jobs:
         run: python scripts/ci/test_human_recovery.py -v
       - name: Test automatic archive adapters and authentication failure on native private ACL staging
         run: python -B scripts/ci/test_hourly_backup.py -v
+      - name: Test RC11 operator launcher with mocked SSH and local processes
+        shell: powershell
+        run: ./scripts/ops/rc11/Test-Launcher.ps1
   verify-release-source:
     name: Verify release tag belongs to main
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
