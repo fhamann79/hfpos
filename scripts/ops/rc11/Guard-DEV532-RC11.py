@@ -9,26 +9,68 @@ NFT = "/usr/sbin/nft"
 POLICY = GUARD_DIR / "guard.nft"
 SNAPSHOT = GUARD_DIR / "guard.expected"
 WINDOW = GUARD_DIR / "maintenance.nft"
+BOOT_CHECK = GUARD_DIR / "boot-check.py"
+BOOT_COMMAND = f"/usr/bin/python3 -I {BOOT_CHECK}"
 
 UNIT_TEXT = f"""[Unit]
 Description=HF ONE RC11 ingress protection
 Before=docker.service
+After=ufw.service
 RefuseManualStop=yes
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart={NFT} -f {POLICY}
-ExecStart=/bin/sh -ec 'if [ -e {WINDOW} ]; then exec {NFT} -f {WINDOW}; fi'
+ExecStart={BOOT_COMMAND} --load-window
 """
 DROPIN_TEXT = f"""[Unit]
 Requires={GUARD_UNIT}
 After={GUARD_UNIT}
 
 [Service]
-ExecStartPre=/bin/sh -ec '{NFT} -s list table inet {PERMANENT} | /usr/bin/cmp -s {SNAPSHOT} -'
-ExecStartPre=/bin/sh -ec 'if [ -e {WINDOW} ]; then exec {NFT} list table inet {TABLE} >/dev/null; fi'
+ExecStartPre={BOOT_COMMAND} --check
 """
+
+
+def boot_check(action):
+    """Also runs in an isolated Python process before dockerd, independent of oneshot state."""
+    d = GUARD_DIR.lstat()
+    need(stat.S_ISDIR(d.st_mode) and d.st_uid == 0 and (d.st_mode & 0o077) == 0,
+         "GUARD_DIRECTORIO_NO_PRIVADO")
+    need(action in ("--load-window", "--check"), "GUARD_BOOT_ACCION_INCIERTA")
+    need(private_file(POLICY) and private_file(SNAPSHOT), "GUARD_PERMANENTE_DERIVA")
+    if action == "--load-window" and not any(
+            row.get("table", {}).get("family") == "inet"
+            and row["table"].get("name") == PERMANENT for row in nft_state()):
+        cmd([NFT, "-f", str(POLICY)], "GUARD_INSTALACION_INCIERTA")
+    need(guard_snapshot() == SNAPSHOT.read_text(encoding="ascii"), "GUARD_PERMANENTE_DERIVA")
+    if WINDOW.exists() or WINDOW.is_symlink():
+        ident = STATE / "guard-id"
+        d = STATE.lstat()
+        need(stat.S_ISDIR(d.st_mode) and d.st_uid == 0 and (d.st_mode & 0o077) == 0
+             and private_file(ident), "TABLA_PROPIEDAD_NO_ACREDITADA")
+        token = ident.read_text(encoding="ascii")
+        need(re.fullmatch(r"hf-one-rc11-[a-f0-9]{32}", token) and private_file(WINDOW)
+             and WINDOW.read_text(encoding="ascii") == firewall_spec(token),
+             "NFT_CIERRE_PERSISTENTE_NO_VERIFICADO")
+        if action == "--load-window":
+            # Never replace a live table, including one left by an earlier partial start.
+            if absent():
+                cmd([NFT, "-f", "-"], "NFT_CIERRE_NO_CONFIRMADO", firewall_spec(token))
+        verify_guard(token)
+    else:
+        need(absent(), "NFT_CIERRE_DISCO_KERNEL_DIVERGENTE")
+    if action == "--check":
+        verify_ufw()
+
+
+def exact_exec(value, *commands):
+    pattern = []
+    for command in commands:
+        path = command.split()[0]
+        pattern.append(r"\{ path=" + re.escape(path) + r" ; argv\[\]=" + re.escape(command)
+                       + r" ; ignore_errors=no ; [^{}]*\}")
+    return re.fullmatch(r"\s*".join(pattern), value) is not None
 
 
 def guard_spec(bridges, origins, web):
@@ -53,14 +95,19 @@ def guard_spec(bridges, origins, web):
              and not (host.is_unspecified or host.is_loopback or host.is_link_local or host.is_multicast)
              and not any(host in n for n in blocks), "GUARD_ORIGEN_INCIERTO")
         incoming = f'iifname "{ingress}" meta nfproto ipv{v}'
-        rules.append(("input", f'{incoming} {family} daddr {host} tcp dport 443 return'))
         if v in web:
-            ep = ipaddress.ip_address(web[v])
+            mode, target = web[v]
+            ep = ipaddress.ip_address(target)
             web_br = next(iter(bridges))
-            need(ep.version == v and any(ep in n for n in prefixes[web_br]), "GUARD_WEB_IP_INCIERTA")
-            rules.append(("forward", f'{incoming} oifname "{web_br}" {family} daddr {ep} '
-                          f'tcp dport 8443 ct status dnat ct direction original '
-                          f'ct original {family} daddr {host} ct original proto-dst 443 return'))
+            need(any(ep in n for n in prefixes[web_br]), "GUARD_WEB_IP_INCIERTA")
+            if mode == "proxy":
+                need(ep.version == v or (v,ep.version)==(6,4), "GUARD_WEB_IP_INCIERTA")
+                rules.append(("input", f'{incoming} {family} daddr {host} tcp dport 443 return'))
+            else:
+                need(mode == "dnat" and ep.version == v, "GUARD_WEB_IP_INCIERTA")
+                rules.append(("forward", f'{incoming} oifname "{web_br}" {family} daddr {ep} '
+                              f'tcp dport 8443 ct status dnat ct direction original '
+                              f'ct original {family} daddr {host} ct original proto-dst 443 return'))
         for br, nets in prefixes.items():
             for net in (n for n in nets if n.version == v):
                 reply = (f'{incoming} oifname "{br}" {family} daddr {net} '
@@ -87,7 +134,8 @@ def guard_spec(bridges, origins, web):
 
 
 def systemd_props(unit, *keys):
-    result = cmd(["systemctl", "show", *("-p"+k for k in keys), unit], "GUARD_SYSTEMD_NO_ACREDITADO")
+    result = cmd(["/usr/bin/systemctl", "show", "--all", *("-p"+k for k in keys), unit],
+                 "GUARD_SYSTEMD_NO_ACREDITADO")
     return dict(line.split("=", 1) for line in result.splitlines())
 
 
@@ -101,46 +149,97 @@ def guard_host_checks():
               (p.get("LoadState") == "loaded" and p.get("UnitFileState") == "disabled" and
                all(p.get(k) == "" for k in ("RequiredBy", "WantedBy", "TriggeredBy")))),
              "GUARD_SERVICIO_FIREWALL_CONFLICTIVO")
-    ufw = systemd_props("ufw.service", "LoadState", "ActiveState", "FragmentPath", "DropInPaths",
-                        "ExecStart", "ExecStop", "ExecReload", "ExecStartPre", "ExecStartPost",
-                        "ExecStopPost", "NeedDaemonReload")
-    if ufw.get("LoadState") in ("masked", "not-found"):
-        need(ufw.get("ActiveState") == "inactive", "GUARD_UFW_UNIDAD_NO_ACREDITADA")
-    else:
-        need(ufw.get("FragmentPath") in ("/lib/systemd/system/ufw.service", "/usr/lib/systemd/system/ufw.service")
-             and ufw.get("NeedDaemonReload") == "no"
-             and all(ufw.get(k) == "" for k in ("DropInPaths", "ExecReload", "ExecStartPre",
-                                               "ExecStartPost", "ExecStopPost")),
-             "GUARD_UFW_UNIDAD_NO_ACREDITADA")
-        for key, action in (("ExecStart", "start quiet"), ("ExecStop", "stop")):
-            need(re.fullmatch(r"\{ path=(?P<init>/(?:usr/)?lib/ufw/ufw-init) ; argv\[\]=(?P=init) "
-                              + action + r" ; ignore_errors=no ; [^{}]*\}", ufw.get(key, "")),
-                 "GUARD_UFW_ACCION_NO_ACREDITADA")
-        verify_ufw_scripts()
+    verify_ufw()
     need(Path(NFT).is_file() and cmd(["docker", "info", "--format", "{{.LiveRestoreEnabled}}"],
          "GUARD_LIVE_RESTORE_INCIERTO").strip() == "false", "GUARD_LIVE_RESTORE_O_NFT_INCIERTO")
     prove_raw_hooks(nft_state())
 
 
-def verify_ufw_scripts():
-    md5s = Path("/var/lib/dpkg/info/ufw.md5sums").read_text(encoding="ascii").splitlines()
-    conffiles = cmd(["dpkg-query", "-W", "-f=${Conffiles}", "ufw"], "GUARD_UFW_PAQUETE_NO_ACREDITADO")
-    hashes = {"/" + path: digest for digest, path in (line.split() for line in md5s)}
-    for line in conffiles.splitlines():
-        if line.strip():
-            path, digest, *_ = line.split()
-            hashes[path] = digest
-    for name in ("/lib/ufw/ufw-init", "/lib/ufw/ufw-init-functions",
-                 "/etc/ufw/before.init", "/etc/ufw/after.init"):
-        path = Path(name)
-        if name.endswith(".init") and not path.exists() and not path.is_symlink():
+def verify_ufw():
+    ufw = systemd_props("ufw.service", "LoadState", "ActiveState", "FragmentPath", "DropInPaths",
+                        "ExecStart", "ExecStop", "ExecReload", "ExecStartPre", "ExecStartPost",
+                        "ExecStopPost", "ExecCondition", "Environment", "EnvironmentFiles", "NeedDaemonReload")
+    init = "/usr/lib/ufw/ufw-init"
+    if ufw.get("LoadState") in ("masked", "not-found"):
+        need(ufw.get("ActiveState") == "inactive", "GUARD_UFW_UNIDAD_NO_ACREDITADA")
+        if not any(p.exists() or p.is_symlink() for p in
+                   map(Path,(init,"/lib/ufw/ufw-init","/usr/sbin/ufw","/etc/init.d/ufw"))):
+            return
+    else:
+        need(ufw.get("LoadState") == "loaded"
+             and ufw.get("FragmentPath") in ("/lib/systemd/system/ufw.service", "/usr/lib/systemd/system/ufw.service")
+             and ufw.get("NeedDaemonReload") == "no"
+             and all(ufw.get(k, "") == "" for k in ("DropInPaths", "ExecReload", "ExecStartPre",
+                                               "ExecStartPost", "ExecStopPost", "ExecCondition",
+                                               "Environment", "EnvironmentFiles")),
+             "GUARD_UFW_UNIDAD_NO_ACREDITADA")
+        need(any(exact_exec(ufw.get("ExecStart",""), f"{p} start quiet")
+                 and exact_exec(ufw.get("ExecStop",""), f"{p} stop")
+                 and Path(p).resolve(strict=True)==Path(init)
+                 for p in (init,"/lib/ufw/ufw-init")), "GUARD_UFW_ACCION_NO_ACREDITADA")
+    verify_ufw_scripts()
+
+
+def trusted_read(path):
+    info = path.lstat()
+    need(stat.S_ISREG(info.st_mode) and info.st_uid==0 and not info.st_mode & 0o022
+         and info.st_size <= 524288, "GUARD_UFW_ARCHIVO_NO_ACREDITADO")
+    return path.read_bytes()
+
+
+def ufw_config(text, allowed):
+    need(not re.search(r"[^\t\n -~]", text), "GUARD_UFW_CONFIG_NO_ACREDITADA")
+    found = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
             continue
-        digest = hashes.get(name, hashes.get("/usr" + name))
-        need(not path.is_symlink() and digest == hashlib.md5(path.read_bytes(), usedforsecurity=False).hexdigest(),
-             "GUARD_UFW_HOOK_NO_ACREDITADO")
-    for tool in ("iptables", "ip6tables"):
-        need("(nf_tables)" in cmd([tool, "--version"], "GUARD_UFW_BACKEND_INCIERTO"),
-             "GUARD_UFW_BACKEND_INCIERTO")
+        m = re.fullmatch(r"""([A-Z][A-Z0-9_]*)=(?:(["'])([A-Za-z0-9_./-]*)\2|([A-Za-z0-9_./-]+))""", line)
+        need(m and m[1] not in found and (m[3] if m[2] else m[4]) in allowed.get(m[1],()),
+             "GUARD_UFW_CONFIG_NO_ACREDITADA")
+        found[m[1]] = m[3] if m[2] else m[4]
+    need(found.keys() == allowed.keys(), "GUARD_UFW_CONFIG_INCOMPLETA")
+    return found
+
+
+def verify_ufw_scripts():
+    code = "GUARD_UFW_PAQUETE_NO_ACREDITADO"
+    need(cmd(["/usr/bin/dpkg-query","-W","-f=${Status} ${Version}", "ufw"], code)
+         == "install ok installed 0.36.2-6", code)
+    data = trusted_read(Path("/var/lib/dpkg/info/ufw.md5sums")).decode("ascii")
+    hashes = {"/"+name:digest for digest,name in (line.split() for line in data.splitlines())}
+    def stock(path, name):
+        need(hashes.get(name) == hashlib.md5(trusted_read(Path(path)), usedforsecurity=False).hexdigest(), code)
+    prefix = "/usr/lib/python3/dist-packages/ufw/"
+    for name in ("/usr/lib/ufw/ufw-init","/usr/lib/ufw/ufw-init-functions","/usr/sbin/ufw",
+                 "/usr/lib/systemd/system/ufw.service",*(n for n in hashes if n.startswith(prefix))):
+        stock(name,name)
+    need(Path("/lib/ufw/ufw-init-functions").resolve(strict=True)==Path("/usr/lib/ufw/ufw-init-functions"), code)
+    for hook in ("before.init","after.init"):
+        path=Path("/etc/ufw")/hook
+        if path.exists() or path.is_symlink():
+            stock(path,"/usr/share/ufw/"+hook)
+    actions=("ACCEPT","DROP","REJECT")
+    defaults = ufw_config(trusted_read(Path("/etc/default/ufw")).decode("ascii"),dict(
+        IPV6=("yes",), MANAGE_BUILTINS=("no",), IPT_SYSCTL=("/etc/ufw/sysctl.conf", ""), IPT_MODULES=("",),
+        DEFAULT_INPUT_POLICY=actions, DEFAULT_OUTPUT_POLICY=actions, DEFAULT_FORWARD_POLICY=actions,
+        DEFAULT_APPLICATION_POLICY=(*actions,"SKIP")))
+    if defaults["IPT_SYSCTL"]:
+        need(hashlib.sha256(trusted_read(Path(defaults["IPT_SYSCTL"]))).hexdigest()
+             == "df05de02ea325b3c6d0d22c06c3dc7ebaf3a4e06e41fb98a0671b430b7da5b7f",
+             "GUARD_UFW_SYSCTL_NO_ACREDITADO")
+    ufw_config(trusted_read(Path("/etc/ufw/ufw.conf")).decode("ascii"),
+               dict(ENABLED=("yes","no"), LOGLEVEL=("off","low","medium","high","full")))
+    for base in ("before","after","user"):
+        for family in ("","6"):
+            rules=trusted_read(Path(f"/etc/ufw/{base}{family}.rules")).decode("utf-8")
+            lines=[line.strip() for line in rules.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+            need(lines[:1]==["*filter"] and lines[-1:]==["COMMIT"]
+                 and all(line.startswith((":ufw-", "-A ufw-")) for line in lines[1:-1]),
+                 "GUARD_UFW_RULES_NO_ACREDITADAS")
+    for tool in ("iptables","ip6tables","iptables-restore","ip6tables-restore","iptables-save","ip6tables-save"):
+        path=Path("/usr/sbin")/tool
+        need(path.resolve(strict=True)==Path("/usr/sbin/xtables-nft-multi"), "GUARD_UFW_BACKEND_INCIERTO")
 
 
 def sync_dir(path):
@@ -170,17 +269,23 @@ def guard_snapshot():
 
 def guard_boot_files():
     need(all(private_file(p) and p.read_text(encoding="ascii") == value for p, value in
-             ((UNIT_PATH, UNIT_TEXT), (DOCKER_DROPIN, DROPIN_TEXT))),
+             ((UNIT_PATH, UNIT_TEXT), (DOCKER_DROPIN, DROPIN_TEXT), (BOOT_CHECK, boot_source))),
          "GUARD_ARCHIVOS_SYSTEMD_INCIERTOS")
-    docker = systemd_props("docker.service", "Requires", "After", "DropInPaths", "NeedDaemonReload", "ExecStartPre")
+    docker = systemd_props("docker.service", "LoadState", "Requires", "After", "DropInPaths",
+                           "NeedDaemonReload", "ExecStartPre")
     need(all(GUARD_UNIT in docker.get(k, "").split() for k in ("Requires", "After"))
          and str(DOCKER_DROPIN) in docker.get("DropInPaths", "").split()
-         and docker.get("NeedDaemonReload") == "no" and all(str(p) in docker.get("ExecStartPre", "")
-                                                          for p in (SNAPSHOT, WINDOW)),
+         and docker.get("LoadState") == "loaded" and docker.get("NeedDaemonReload") == "no"
+         and exact_exec(docker.get("ExecStartPre", ""), BOOT_COMMAND + " --check"),
          "GUARD_ORDEN_DOCKER_NO_ACREDITADO")
-    unit = systemd_props(GUARD_UNIT, "FragmentPath", "DropInPaths", "ActiveState", "NeedDaemonReload")
-    need(unit == {"FragmentPath":str(UNIT_PATH), "DropInPaths":"", "ActiveState":"active",
-                  "NeedDaemonReload":"no"}, "GUARD_SERVICIO_NO_ACREDITADO")
+    unit = systemd_props(GUARD_UNIT, "FragmentPath", "DropInPaths", "ActiveState", "NeedDaemonReload",
+                         "Type", "RemainAfterExit", "ExecStart", "ExecCondition", "Conditions", "Asserts")
+    need(unit.get("FragmentPath") == str(UNIT_PATH) and unit.get("ActiveState") == "active"
+         and unit.get("NeedDaemonReload") == "no" and unit.get("Type") == "oneshot"
+         and unit.get("RemainAfterExit") == "yes"
+         and all(unit.get(k, "") == "" for k in ("DropInPaths", "ExecCondition", "Conditions", "Asserts"))
+         and exact_exec(unit.get("ExecStart", ""), BOOT_COMMAND + " --load-window"),
+         "GUARD_SERVICIO_NO_ACREDITADO")
 
 
 def assert_permanent(spec=None):
@@ -188,6 +293,7 @@ def assert_permanent(spec=None):
     need(private_file(POLICY) and private_file(SNAPSHOT)
          and (spec is None or POLICY.read_text(encoding="ascii") == spec)
          and guard_snapshot() == SNAPSHOT.read_text(encoding="ascii"), "GUARD_PERMANENTE_DERIVA")
+    boot_check("--check")
     guard_host_checks()
 
 
@@ -201,13 +307,15 @@ def install_permanent(spec):
     GUARD_DIR.mkdir(mode=0o700)
     sync_dir(GUARD_DIR.parent)
     durable_file(POLICY, spec)
+    durable_file(BOOT_CHECK, boot_source)
+    cmd([NFT, "-f", str(POLICY)], "GUARD_INSTALACION_INCIERTA")
+    durable_file(SNAPSHOT, guard_snapshot())
     DOCKER_DROPIN.parent.mkdir(exist_ok=True)
     sync_dir(DOCKER_DROPIN.parent.parent)
     durable_file(DOCKER_DROPIN, DROPIN_TEXT)
     durable_file(UNIT_PATH, UNIT_TEXT)
     cmd(["systemctl", "daemon-reload"], "GUARD_SYSTEMD_RELOAD_INCIERTO")
     cmd(["systemctl", "start", GUARD_UNIT], "GUARD_INSTALACION_INCIERTA")
-    durable_file(SNAPSHOT, guard_snapshot())
     assert_permanent(spec)
 
 

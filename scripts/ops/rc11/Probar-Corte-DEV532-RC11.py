@@ -16,6 +16,7 @@ import copy
 here=Path(__file__).resolve().parent
 repo=sys.argv[1]
 payload=subprocess.check_output([sys.executable,"-B",str(here/"Empaquetar-DEV532-RC11.py"),repo])
+assert len(payload.strip()) <= 28000
 code=lzma.decompress(base64.b64decode(payload)).decode().rsplit("\nentry={'reconcile'",1)[0]
 fcntl=SimpleNamespace(LOCK_EX=2,LOCK_NB=4,flock=None)
 sys.modules["fcntl"]=fcntl
@@ -37,6 +38,7 @@ def trial(mode):
     env=root/"pilot.env"; original="HFPOS_BACKEND_IMAGE=x\nHFPOS_WEB_IMAGE=x\nHFPOS_MIGRATIONS_IMAGE=x\nHFPOS_RELEASE_VERSION=y\n"
     env.write_text(original,encoding="utf-8")
     ns.update(LOCK=lock,ENV=env,STATE=root/"state",WINDOW=root/"maintenance.nft",private_file=lambda _:True,
+              sync_dir=lambda _:None,
               durable_file=lambda p,s:p.write_text(s,encoding="ascii"))
     events=[]; guard=False; stopped=False; applied=False; rebuilt=set(); restarted=set(); acquired=0
     web_private=False
@@ -115,6 +117,8 @@ def trial(mode):
     def verify(*a,**kw):
       if not guard: raise ns["Stop"]("GUARD_LOST")
     def network(*a,**kw):
+      if mode=="public-proof-fail" and "up-web" in events and not web_private:
+        raise ns["Stop"]("WEB_HTTPS_RUTA_IPV6_NO_ACREDITADA")
       return "changed" if mode=="daemon-change" and "auth-probe" in events else "daemon"
     def backup(*a):
       assert guard and stopped and not applied and acquired==1
@@ -127,10 +131,11 @@ def trial(mode):
               verify_guard=verify, remove_guard=recover, absent=lambda:not guard, guard_host_checks=lambda:None,
               install_permanent=install, assert_permanent=assert_permanent, refresh_permanent=refresh,
               network_guard=lambda *a: (network(),{"br-web":["172.30.10.0/24"],"br-db":["172.30.20.0/24"]},
-                                        {4:("eth0","192.0.2.1"),6:("eth0","2001:db8::1")},{4:"172.30.10.2"}),
+                                        {4:("eth0","192.0.2.1"),6:("eth0","2001:db8::1")},
+                                        {4:("dnat","172.30.10.2"),6:("proxy","172.30.10.2")}),
               check_migrator_auth=lambda a: events.append("auth-probe"),
               borrow_and_capture=backup, backup_bindings=lambda *a:None,
-              private_compose=lambda *a:["private"],check_private_network=network,active_docker_identity=network,
+              private_compose=lambda *a:["private"],active_docker_identity=network,
               load_worker=lambda:SimpleNamespace(load_config=lambda _:dict(containers=ns["NAMES"])))
     output=io.StringIO()
     with patch.object(os,"O_NOFOLLOW",getattr(os,"O_NOFOLLOW",0),create=True), \
@@ -143,17 +148,20 @@ def trial(mode):
       assert events.index("backup-ok")<events.index("ef-write")<events.index("read-ef-after")<events.index("up-backend")<events.index("up-web")<events.index("remove-own-guard")
       assert events.index("permanent-refreshed")<events.index("remove-own-guard")
     else:
-      assert status==4 and (env.read_text()!=original)==(mode=="refresh-fail")
+      assert status==4 and (env.read_text()!=original)==(mode in ("refresh-fail","public-proof-fail"))
       if mode=="ef-receipt-lost":
         assert events.count("ef-write")==1 and guard and not rebuilt and (root/"state"/"ef-confirmed").is_file()
       elif mode in ("guard-lost","permanent-lost"):
         assert "private-web" in events and web_private and "VALIDADO FUNCIONAL Y ABRIR RC11" not in events
         assert events.count("ef-write")==1 and events.count("up-web")==1
-      elif mode=="refresh-fail":
+      elif mode in ("refresh-fail","public-proof-fail"):
         assert guard and "remove-own-guard" not in events
       else:
         assert "ef-write" not in events
       if mode=="external-proof-fail": assert "remove-own-guard" not in events and guard and not stopped
+      if mode=="public-proof-fail":
+        assert applied and events.count("ef-write")==1
+        assert "BLOQUEO=WEB_HTTPS_RUTA_IPV6_NO_ACREDITADA" in output.getvalue()
       if mode=="install-fail": assert not guard and "prefetch" not in events and not stopped
       if mode=="backup-fail": assert guard and stopped and not rebuilt
       if mode=="backup-return":
@@ -164,7 +172,8 @@ def trial(mode):
     print("PASS",mode)
 
 for mode in ("happy","authorization-denied","lock-fail","external-proof-fail","backup-fail","backup-return",
-             "ef-receipt-lost","guard-lost","daemon-change","install-fail","permanent-lost","refresh-fail"):
+             "ef-receipt-lost","guard-lost","daemon-change","install-fail","permanent-lost","refresh-fail",
+             "public-proof-fail"):
     trial(mode)
 
 ns.update(initial)
@@ -179,6 +188,9 @@ with tempfile.TemporaryDirectory() as d:
     fcntl.flock=unexpected
     def capture(c,r,ident):
        assert "retention" not in c and c["state"]==str(root/"private-state")
+       assert r.run(["docker","inspect"])==["/usr/bin/docker","--host","unix:///run/docker.sock","inspect"]
+       assert worker.Runner().run(["docker","exec"])==["/usr/bin/docker","--host","unix:///run/docker.sock","exec"]
+       assert r.run(["rclone","version"])==["rclone","version"]
        with worker.maintenance_lock():
            n=[{"Id":str(i),"Image":"test","Config":{},"Mounts":[],"State":s} for i,s in enumerate([
              {"Status":"exited","ExitCode":0,"OOMKilled":False},
@@ -193,9 +205,12 @@ with tempfile.TemporaryDirectory() as d:
            (folder/marker).write_text(json.dumps(dict(recovery_id=ident,completed_utc="2026Z",
                ciphertext_sha256="0"*64,ciphertext_bytes=1)))
        return 0
-    worker=SimpleNamespace(backup_attempt=capture, Runner=lambda:None, secure_path=lambda p,**_:p)
+    class Runner:
+      def run(self,args): return args
+    worker=SimpleNamespace(backup_attempt=capture, Runner=Runner, secure_path=lambda p,**_:p)
     try:
       ns["borrow_and_capture"](worker,{"base":str(root),"state":"ORIGINAL","retention":{}},fd,root/"private-state",["0","1","2"])
+      assert worker.Runner is Runner
       assert calls==["oom-blocked"]
     finally: os.close(fd)
 print("PASS borrowed lock and adapter states")
@@ -223,7 +238,8 @@ with tempfile.TemporaryDirectory() as d:
     root=Path(d)
     (root/"ef-attempted").touch()
     window=root/"maintenance.nft"
-    ns.update(STATE=root,WINDOW=window,absent=lambda:True,assert_permanent=lambda:None)
+    ns.update(STATE=root,WINDOW=window,absent=lambda:True,assert_permanent=lambda:None,
+              active_docker_identity=lambda:None)
     running=False
     def read_only(args,code,data=None,timeout=0):
       if args[:2]==["docker","port"]: return "8443/tcp -> 127.0.0.1:443\n"
@@ -272,38 +288,12 @@ def rejects(f,*args):
     except (ns["Stop"],ValueError): return
     raise AssertionError("unsafe network proof passed")
 
-raw=r"""*raw
+parse=ns["netfilter_rules"]
+raw="""*raw
 :PREROUTING ACCEPT [0:0]
 -A PREROUTING -d 127.0.0.0/8 ! -i lo -j DROP
--A PREROUTING -d 172.30.52.10/32 ! -i br-app -j DROP
 COMMIT
 """
-filters=r"""*filter
-:FORWARD DROP [0:0]
-:DOCKER-USER - [0:0]
-:DOCKER-FORWARD - [0:0]
-:DOCKER-CT - [0:0]
-:DOCKER-INTERNAL - [0:0]
--A FORWARD -j DOCKER-USER
--A FORWARD -j DOCKER-FORWARD
--A DOCKER-FORWARD -j DOCKER-CT
--A DOCKER-FORWARD -j DOCKER-INTERNAL
--A DOCKER-CT -o br-app -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
--A DOCKER-INTERNAL ! -i br-db -o br-db -j DROP
-COMMIT
-"""
-parse=ns["netfilter_rules"]
-rules=parse(raw+filters)
-ns["prove_endpoint_drop"](rules,"172.30.52.10","br-app")
-ns["prove_database_drop"](rules,"br-db")
-raw6=raw.replace("172.30.52.10/32","fd00:52::a/128").replace("127.0.0.0/8","::1/128")
-ns["prove_endpoint_drop"](parse(raw6),"fd00:52::a","br-app")
-rejects(ns["prove_endpoint_drop"],rules,"172.30.52.11","br-app")
-rejects(ns["prove_endpoint_drop"],rules,"172.30.52.10","br-db")
-rejects(ns["prove_endpoint_drop"],parse(raw.replace("-j DROP","-j ACCEPT",1)),"172.30.52.10","br-app")
-rejects(ns["prove_database_drop"],parse(filters.replace("-A FORWARD -j DOCKER-FORWARD","-A FORWARD -j ACCEPT\n-A FORWARD -j DOCKER-FORWARD")),"br-db")
-rejects(ns["prove_database_drop"],parse(filters.replace("-o br-app -m","-o br-db -m")),"br-db")
-rejects(ns["prove_database_drop"],parse(filters.replace("! -i br-db -o br-db","-o br-db ! -s 172.31.0.0/16")),"br-db")
 c={"chain":{"family":"ip","table":"raw","name":"PREROUTING","type":"filter","hook":"prerouting","prio":-300}}
 ns["prove_raw_hooks"]([c])
 rejects(ns["prove_raw_hooks"],[c,{"flowtable":{}}])
@@ -338,7 +328,7 @@ rejects(ns["prove_private_publication"],approvable,["172.30.52.10"],socket.repla
 with_nat=copy.deepcopy(approvable)
 with_nat[6][("nat","DOCKER")]=[["-j","DNAT","--to-destination","fd00::2"]]
 rejects(ns["prove_private_publication"],with_nat,["172.30.52.10"],socket)
-print("PASS active kernel rule proof rejects missing drops, early bypass and unsafe bridge options")
+print("PASS private publication rejects missing loopback drop, public listener and unsafe bridge options")
 
 ports=[{"ifindex":8,"link_index":2,"linkinfo":{"info_kind":"veth"}},
        {"ifindex":9,"link_index":3,"linkinfo":{"info_kind":"veth"}}]
@@ -349,3 +339,118 @@ rejects(ns["prove_bridge_members"],ports,{8:2,9:4})
 rejects(ns["prove_bridge_members"],ports[:1],{8:2,9:3})
 rejects(ns["prove_bridge_members"],ports, {8:2})
 print("PASS bridge membership rejects external ports and unproved peers")
+
+
+def exec_record(command, ignored="no"):
+    return "{ path="+command.split()[0]+" ; argv[]="+command+" ; ignore_errors="+ignored+" ; pid=0 }"
+
+
+check=ns["BOOT_COMMAND"]+" --check"
+assert ns["exact_exec"](exec_record(check),check)
+assert not ns["exact_exec"](exec_record(check,"yes"),check)
+assert not ns["exact_exec"](exec_record("/bin/true "+check),check)
+assert not ns["exact_exec"](exec_record(check)+exec_record("/bin/true"),check)
+assert "Requires="+ns["GUARD_UNIT"] in ns["DROPIN_TEXT"] and "After="+ns["GUARD_UNIT"] in ns["DROPIN_TEXT"]
+tok="hf-one-rc11-"+"a"*32
+table=ns["TABLE"]
+def match(op,left,right):
+    return {"match":dict(op=op,left=left,right=right)}
+gate=[{"table":dict(family="inet",name=table,handle=1)},
+      {"chain":dict(family="inet",table=table,name="gate",type="filter",hook="prerouting",
+                    prio=-310,policy="accept",handle=2)}]
+for v in (4,6):
+    gate.append({"rule":dict(family="inet",table=table,chain="gate",comment=tok,expr=[
+        match("==",{"meta":{"key":"nfproto"}},f"ipv{v}"),
+        match("!=",{"meta":{"key":"iifname"}},"lo"),
+        match("==",{"fib":{"result":"type","flags":["daddr"]}},"local"),
+        match("==",{"payload":{"protocol":"tcp","field":"dport"}},443),
+        {"counter":{"packets":5,"bytes":300}},{"drop":None}])})
+ns["verify_gate_rules"](gate,tok,True)
+altered=copy.deepcopy(gate)
+altered[1]["chain"]["prio"]=-309
+reordered=gate[:2]+gate[2:][::-1]
+with tempfile.TemporaryDirectory() as d:
+    base=Path(d)
+    marker,ident,policy,snapshot=[base/name for name in ("maintenance.nft","guard-id","guard.nft","expected")]
+    for path,value in ((marker,ns["firewall_spec"](tok)),(ident,tok),(policy,"spec"),(snapshot,"permanent")):
+        path.write_text(value,encoding="ascii")
+    def nft(args,code,data=None,timeout=0):
+        assert args[0]==ns["NFT"]
+        if kernel is None:
+            raise ns["Stop"](code)
+        return json.dumps({"nftables":kernel})
+    ns.update(GUARD_DIR=base,STATE=base,WINDOW=marker,POLICY=policy,SNAPSHOT=snapshot,
+              private_file=Path.is_file,guard_snapshot=lambda:"permanent",cmd=nft,verify_ufw=lambda:None)
+    lst=Path.lstat
+    with patch.object(Path,"lstat",lambda p: SimpleNamespace(st_uid=0,st_mode=0o40700) if p==base else lst(p)):
+        kernel=gate
+        ns["boot_check"]("--check")
+        for kernel in (None,gate[:1],altered,reordered,gate+[{"set":{"name":"extra"}}]):
+            rejects(ns["boot_check"],"--check")
+        kernel=gate
+        ident.write_text("hf-one-rc11-"+"b"*32,encoding="ascii")
+        rejects(ns["boot_check"],"--check")
+        ident.write_text(tok,encoding="ascii")
+        marker.write_text(ns["firewall_spec"](tok)+"# extra\n",encoding="ascii")
+        rejects(ns["boot_check"],"--check")
+print("PASS exact boot command, owned marker, and absent, empty, altered or reordered gate")
+
+ns.update(initial)
+with patch.object(subprocess,"run",return_value=SimpleNamespace(returncode=0,stdout="ok")) as invoke:
+    with patch.dict(os.environ,{"DOCKER_CONTEXT":"remote","DOCKER_HOST":"tcp://example.invalid:2375"}):
+        assert ns["cmd"](["docker","compose","config"],"FAILED")=="ok"
+    assert invoke.call_args.args[0]==["/usr/bin/docker","--host","unix:///run/docker.sock","compose","config"]
+    assert not ({"DOCKER_CONTEXT","DOCKER_HOST"} & invoke.call_args.kwargs["env"].keys())
+row="00000000: 00000002 00000000 00010000 0001 01 1123 "
+assert ns["socket_listener_inode"](row+"/run/docker.sock",{"/run/docker.sock"})=="1123"
+rejects(ns["socket_listener_inode"],row+"/tmp/wrong.sock",{"/run/docker.sock"})
+rejects(ns["socket_listener_inode"],(row+"/run/docker.sock\n")*2,{"/run/docker.sock"})
+print("PASS pinned CLI/Compose, backup and cleanup; missing/ambiguous kernel socket rejected")
+
+nat="""*nat
+:PREROUTING ACCEPT [0:0]
+:DOCKER - [0:0]
+-A PREROUTING -m addrtype --dst-type LOCAL -j DOCKER
+-A DOCKER ! -i br-app -p tcp -m tcp --dport 443 -j DNAT --to-destination 172.30.52.10:8443
+COMMIT
+"""
+origins={4:("eth0","192.0.2.1"),6:("eth0","2001:db8::1")}
+ports={4:"",6:'LISTEN 0 4096 [::]:443 [::]:* users:(("docker-proxy",pid=235,fd=4)) ino:1081'}
+published={4:"172.30.52.10"}
+def proxy(*a):
+    return a==("235","4","1081","231","::","172.30.52.10")
+ns["proxy_target"]=proxy
+rules={4:parse(nat),6:{}}
+proof=ns["prove_public_https"](rules,ports,origins,published,"br-app","231")
+assert proof=={4:("dnat","172.30.52.10"),6:("proxy","172.30.52.10")}
+for bad in (nat.replace("52.10:8443","52.11:8443"),nat.replace("52.10:8443","52.10:9443"),
+            nat.replace("-A PREROUTING -m","-A PREROUTING -j ACCEPT\n-A PREROUTING -m")):
+    rejects(ns["prove_public_https"],{4:parse(bad),6:{}},ports,origins,published,"br-app","231")
+for bad in ("",ports[6].replace("docker-proxy","nginx"),ports[6].replace("pid=235","pid=999")):
+    rejects(ns["prove_public_https"],rules,{4:"",6:bad},origins,published,"br-app","231")
+guard=ns["guard_spec"]({"br-app":["172.30.52.0/24"],"br-db":["172.30.53.0/24"]},origins,proof)
+assert "input iifname \"eth0\" meta nfproto ipv4" not in guard
+assert 'input iifname "eth0" meta nfproto ipv6 ip6 daddr 2001:db8::1 tcp dport 443 return' in guard
+assert "172.30.52.10 tcp dport 8443 ct status dnat" in guard
+print("PASS IPv4 exact DNAT and IPv6 owned proxy; failed public proof keeps quarantine")
+
+config='IPV6=yes\nMANAGE_BUILTINS=no\nIPT_SYSCTL=\'\'\n'
+allowed={"IPV6":("yes",),"MANAGE_BUILTINS":("no",),"IPT_SYSCTL":("","/etc/ufw/sysctl.conf")}
+assert ns["ufw_config"](config,allowed)["IPT_SYSCTL"]==""
+for unsafe in (config+"IPV6=yes\n",config+"nft flush ruleset\n",config.replace("=no","=yes"),
+               config.replace("''",'"$(nft flush ruleset)"'),config.replace("''","/tmp/sysctl.conf"),
+               config.replace("IPV6=yes\n","")):
+    rejects(ns["ufw_config"],unsafe,allowed)
+vendor="/usr/lib/ufw/ufw-init"
+props=dict(LoadState="loaded", ActiveState="active", FragmentPath="/usr/lib/systemd/system/ufw.service",
+           NeedDaemonReload="no",ExecStart=exec_record(vendor+" start quiet"),ExecStop=exec_record(vendor+" stop"))
+ns.update(systemd_props=lambda *a:props,verify_ufw_scripts=lambda:None)
+with patch.object(Path,"resolve",lambda *a,**kw:Path(vendor)):
+    ns["verify_ufw"]()
+    for key,value in (("ExecReload",exec_record("/usr/sbin/nft flush ruleset")),
+                      ("ExecStart",exec_record(vendor+" start quiet","yes")),("DropInPaths","/etc/custom.conf")):
+        old=props.get(key,"")
+        props[key]=value
+        rejects(ns["verify_ufw"])
+        props[key]=old
+print("PASS UFW vendor unit and strict local configuration (mocked; no real reload)")

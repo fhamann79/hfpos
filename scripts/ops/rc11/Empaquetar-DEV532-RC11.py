@@ -25,11 +25,50 @@ for node in ast.parse(i).body:
 files={name:hashlib.sha256(subprocess.check_output(["git","-C",str(repo),"cat-file","blob",
                   COMMIT+":scripts/ops/"+name], stderr=subprocess.DEVNULL,timeout=8)).hexdigest() for name in SOURCES}
 blobs=repr(files)
-code="\n".join(base)+"\nbackup_hashes="+blobs+"\n"+k+"\n"+g+(
+boot_nodes = {"Path", "stat", "json", "re", "subprocess", "sys", "hashlib", "TABLE", "STATE", "ROOT",
+              "SAFE_ENV", "DOCKER_CLI", "local_cli", "Stop", "need", "cmd", "private_file", "firewall_spec", "nft_state",
+              "absent", "verify_guard", "verify_gate_rules", "PERMANENT", "GUARD_DIR", "NFT",
+              "POLICY", "SNAPSHOT", "WINDOW", "guard_snapshot", "boot_check", "systemd_props",
+              "verify_ufw", "verify_ufw_scripts", "trusted_read", "ufw_config", "exact_exec"}
+boot, rest = [], []
+for source in ("\n".join(base), k, g):
+    lines = source.splitlines(keepends=True)
+    for node in ast.parse(source).body:
+        if (isinstance(node,(ast.FunctionDef,ast.ClassDef)) and node.name in boot_nodes
+            or isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id in boot_nodes
+                                                  for t in node.targets)
+            or isinstance(node,(ast.Import,ast.ImportFrom))
+               and any((a.asname or a.name) in boot_nodes for a in node.names)):
+            segment = ast.get_source_segment(source,node)
+            if segment not in boot:
+                boot.append(segment)
+            lines[node.lineno-1:node.end_lineno] = ["\n"]*(node.end_lineno-node.lineno+1)
+    rest.append("".join(lines))
+boot_main = """
+try:
+    boot_check(sys.argv[1] if len(sys.argv) == 2 else None)
+except Exception as e:
+    print(str(e) if isinstance(e, Stop) else "GUARD_BOOT_EVIDENCIA_INCOMPLETA", file=sys.stderr)
+    sys.exit(4)
+"""
+def compact(source):
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node,(ast.Module,ast.FunctionDef,ast.ClassDef)) and ast.get_docstring(node) is not None:
+            node.body.pop(0)
+    return ast.unparse(tree)
+
+
+boot_common = compact("\n".join(boot))
+compile(boot_common+boot_main,"<rc11 boot>","exec")
+body=("boot_common="+repr(boot_common)+"\nexec(boot_common)\nboot_source=boot_common+"+repr(boot_main)
+      +"\nbackup_hashes="+blobs+"\n"+"\n".join(rest))
+code=compact(body)+(
     "\nentry={'reconcile':main_reconcile,'verify-network':main_verify_network,'cutover':main_cutover}\n"
     "sys.exit(entry[sys.argv[2]](*sys.argv[3:]) if sys.argv[2] in entry else 4)\n")
 compile(code,"<rc11>","exec")
-result=base64.b64encode(lzma.compress(code.encode(),preset=9)).decode()
+result=base64.b64encode(lzma.compress(code.encode(),filters=[
+    {"id":lzma.FILTER_LZMA2,"preset":9,"pb":0}])).decode()
 if len(result)>28000:
     raise SystemExit("PAYLOAD_RC11_EXCEDE_LIMITE_SSH")
 print(result)

@@ -14,7 +14,7 @@ La publicacion de este directorio no autoriza R4.
 | `Empaquetar-DEV532-RC11.py` | Arma el payload local; obtiene las huellas de los helpers del commit fijo RC11. |
 | `Inspeccion-DEV532-RC11.py` | Fuente de las constantes, consultas y funciones que incorpora el empaquetador. |
 | `Corte-DEV532-RC11.py` | Controlador remoto con autorizacion humana y modo de reconciliacion de solo lectura. |
-| `Guard-DEV532-RC11.py` | Proteccion dedicada que se conserva al retirar el cierre de mantenimiento; verifica tambien su carga con systemd. |
+| `Guard-DEV532-RC11.py` | Proteccion dedicada y fuente de `boot-check.py`, ejecutado obligatoriamente antes de iniciar Docker. |
 | `Probar-Corte-DEV532-RC11.py` | Prueba sintetica del payload: red, Docker, EF y backup simulados. |
 | `rc11-compose-fixture*.yml` | Prueba del modelo Compose privado con una imagen ficticia; no se arranca. |
 | `Test-Launcher.ps1` | Adaptador adicional de CI: SSH, empaquetado y procesos simulados. |
@@ -38,8 +38,26 @@ el runbook y los fixtures. Git no normaliza sus finales de linea. La huella del
 controlador original se conserva en el [PR #180](https://github.com/fhamann79/hfpos/pull/180).
 
 El preflight acredita la topologia y el perfil de filtrado antes de preparar una
-tabla propia que bloquea las rutas directas. La publicacion privada sigue
-requiriendo reglas y sockets compatibles con loopback, sin NAT publico.
+tabla propia que bloquea las rutas directas. El proceso usa solamente
+`unix:///run/docker.sock` para Docker, Compose y el adaptador de respaldo,
+sin escribir el contexto de root. Se verifica que el socket y la unidad
+activada correspondan al proceso local `dockerd`.
+
+El guard persistente se carga antes de Docker. Incluso con el oneshot activo,
+el `ExecStartPre` obligatorio vuelve a cotejar el snapshot permanente y, si
+hay marcador, el token y la tabla temporal exacta. El perfil UFW aceptado es
+el stock Noble 0.36.2-6, sin hooks personalizados, con IPv6, alternativas
+iptables-nft, reglas en filter y sysctl stock o desactivado; cualquier perfil
+no acreditado detiene el corte. No se ejecuta un reload de prueba en el host.
+
+La publicacion privada sigue requiriendo loopback sin NAT publico. Antes de
+retirar el cierre, se acredita por familia el DNAT exacto o el `docker-proxy`
+propietario del socket y dirigido al endpoint web real. Solo el proxy probado
+recibe un permiso INPUT limitado al origen de esa familia.
+
+Pruebas locales sin despliegue: `python -B Probar-Corte-DEV532-RC11.py <repo>`
+y `Test-Launcher.ps1`. Estas pruebas enmascaran Docker, nftables, systemd, SSH,
+EF y respaldo; no acreditan la activacion real, el reload ni un corte VPS.
 
 El modo `-VerificarBridge` solo lee y comprueba la regla propuesta o la proteccion
 ya instalada. No inicia el corte ni sustituye el monitoreo independiente del

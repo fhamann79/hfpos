@@ -88,6 +88,8 @@ exec psql -X -w -qAt -v ON_ERROR_STOP=1 -h /var/run/postgresql -p 5432 \
 
 def run(args, payload=None, seconds=12):
     try:
+        if args[0] == "docker":
+            args = ["/usr/bin/docker", "--host", "unix:///run/docker.sock", *args[1:]]
         p = subprocess.run(args, input=payload or "", text=True, encoding="utf-8",
                            errors="replace", capture_output=True, timeout=seconds,
                            env={"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
