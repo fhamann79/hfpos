@@ -1,0 +1,5 @@
+services:
+  web:
+    image: example.invalid/rc11-fixture
+    ports:
+      - "443:8443"

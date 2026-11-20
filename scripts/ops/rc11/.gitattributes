@@ -1,0 +1,7 @@
+*-DEV532-RC11.* -text
+Runbook-DEV532-RC11-ejecucion.md -text
+rc11-compose-fixture*.yml -text
+# Retain the reviewed EOF bytes of these frozen originals.
+Corte-DEV532-RC11.py whitespace=-blank-at-eof
+Inspeccion-DEV532-RC11.py whitespace=-blank-at-eof
+Runbook-DEV532-RC11-ejecucion.md whitespace=-blank-at-eof
