@@ -12,9 +12,8 @@ $payload=& python.exe -B (Join-Path $PSScriptRoot 'Empaquetar-DEV532-RC11.py') $
 if ($LASTEXITCODE -ne 0 -or @($payload).Count -ne 1 -or $payload -cnotmatch '^[A-Za-z0-9+/=]{1,28000}$') { throw 'NO-GO PAQUETE_LOCAL' }
 $baseCommand='set -- ${SSH_CONNECTION-}; exec sudo -- python3 -I -B -c ''import sys,base64,lzma;exec(lzma.decompress(base64.b64decode(sys.argv[1])))'' ' + $payload
 if ($Reconciliar -and $VerificarBridge) { throw 'NO-GO MODO_AMBIGUO' }
-if ($Reconciliar -or $VerificarBridge) {
-    $mode=if($Reconciliar) { 'reconcile' } else { 'verify-network' }
-    & ssh.exe -tt -o StrictHostKeyChecking=yes -o ClearAllForwardings=yes -o ForwardAgent=no -- $Destino ($baseCommand+' '+$mode+' $4')
+if ($Reconciliar) {
+    & ssh.exe -tt -o StrictHostKeyChecking=yes -o ClearAllForwardings=yes -o ForwardAgent=no -- $Destino ($baseCommand+' reconcile $4')
     return
 }
 if (!$OrigenIPv4) { $OrigenIPv4=Read-Host 'IPv4 de origen del VPS (inventario privado; no IP de CDN)' }
@@ -23,6 +22,10 @@ $v4=[Net.IPAddress]::Parse($OrigenIPv4); $v6=[Net.IPAddress]::Parse($OrigenIPv6)
 if ($v4.AddressFamily -ne 'InterNetwork' -or $v6.AddressFamily -ne 'InterNetworkV6' -or
     $v6.IsIPv4MappedToIPv6 -or $v6.IsIPv6LinkLocal -or $v6.ScopeId -ne 0 -or
     [Net.IPAddress]::IsLoopback($v4) -or [Net.IPAddress]::IsLoopback($v6)) { throw 'NO-GO ORIGEN_DUALSTACK_NO_VALIDO' }
+if ($VerificarBridge) {
+    & ssh.exe -tt -o StrictHostKeyChecking=yes -o ClearAllForwardings=yes -o ForwardAgent=no -- $Destino ($baseCommand+' verify-network $4 '+$v4.ToString()+' '+$v6.ToString())
+    return
+}
 $observer=Join-Path $PSScriptRoot 'Sondeo-DEV532-RC11.ps1'
 $exe=Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $window=Start-Process -FilePath $exe -WindowStyle Normal -PassThru -ArgumentList @('-NoProfile','-File',('"' + $observer + '"'),'-Ip4',$v4.ToString(),'-Ip6',$v6.ToString(),'-Destino',$Destino)
@@ -30,7 +33,7 @@ try {
     Write-Host 'ANTES: confirma que el monitor muestra TLS4/TLS6=True, SSH 4/6 y AUTH NUEVA=True.'
     Write-Host 'CIERRE: exige dos muestras TCP4/TCP6=False y publica=False, con SSH 4/6/AUTH NUEVA=True y TLS por tunel=True.'
     Write-Host 'APERTURA: verifica TLS de origen y publica; si falla, no repitas ni reviertas automaticamente.'
-    $remote=$baseCommand+' cutover $4'
+    $remote=$baseCommand+' cutover $4 '+$v4.ToString()+' '+$v6.ToString()
     & ssh.exe -tt -o StrictHostKeyChecking=yes -o ControlMaster=no -o ControlPath=none -o ForwardAgent=no -o ForwardX11=no -o GatewayPorts=no -o ExitOnForwardFailure=yes -L '127.0.0.1:7443:127.0.0.1:443' -- $Destino $remote
     $code=$LASTEXITCODE
     if ($code -ne 0) { Write-Host 'STOP. Si el VPS quedo en contencion, consulta el runbook antes de cualquier retorno.' }

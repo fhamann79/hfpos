@@ -23,7 +23,7 @@ ns={}
 exec(compile(code,"<rc11 exact>", "exec"),ns)
 assert all(len(d)==64 for d in ns["backup_hashes"].values())
 spec=ns["firewall_spec"]("token")
-assert 'add table inet' in spec and 'hook prerouting priority -310' in spec
+assert 'create table inet' in spec and 'hook prerouting priority -310' in spec
 assert 'iifname != "lo" fib daddr type local tcp dport 443 counter drop' in spec and 'tcp dport 22' not in spec
 assert ns["image"]("web",ns["NEW"]["web"]).endswith(ns["NEW"]["web"])
 initial=dict(ns)
@@ -36,7 +36,8 @@ def trial(mode):
     lock=root/"manual.lock"; lock.write_text("")
     env=root/"pilot.env"; original="HFPOS_BACKEND_IMAGE=x\nHFPOS_WEB_IMAGE=x\nHFPOS_MIGRATIONS_IMAGE=x\nHFPOS_RELEASE_VERSION=y\n"
     env.write_text(original,encoding="utf-8")
-    ns.update(LOCK=lock,ENV=env,STATE=root/"state",private_file=lambda _:True)
+    ns.update(LOCK=lock,ENV=env,STATE=root/"state",WINDOW=root/"maintenance.nft",private_file=lambda _:True,
+              durable_file=lambda p,s:p.write_text(s,encoding="ascii"))
     events=[]; guard=False; stopped=False; applied=False; rebuilt=set(); restarted=set(); acquired=0
     web_private=False
     def flock(fd,flags):
@@ -64,9 +65,9 @@ def trial(mode):
       if args[:2]==["docker","version"]: return "28.1.0"
       if args[:2]==["docker","port"]:
         return (("8443/tcp -> 127.0.0.1:443\n" if web_private else "8443/tcp -> 0.0.0.0:443\n8443/tcp -> [::]:443\n") if "web" in args[-1] else "")
-      if args[:2]==["nft","-c"]: events.append("nft-check");return ""
+      if args[0] in ("nft",ns["NFT"]) and args[1]=="-c": events.append("nft-check");return ""
       if args[:2]==["nft","-f"]: events.append("close");guard=True;return ""
-      if "stop" in args: assert guard;stopped=True;events.append("drain");return ""
+      if "stop" in args: assert guard and "permanent-installed" in events;stopped=True;events.append("drain");return ""
       if "pull" in args: events.append("prefetch");return ""
       if "run" in args:
         assert guard and stopped and "backup-ok" in events
@@ -74,7 +75,7 @@ def trial(mode):
         if mode=="ef-receipt-lost": raise ns["Stop"]("NO_RECEIPT")
         return "MIGRATION PASS\n"
       if "up" in args:
-        assert guard
+        assert guard and "permanent-installed" in events
         if args[-1]=="web":
           web_private=args[0]=="private"
           if web_private:
@@ -95,6 +96,17 @@ def trial(mode):
       assert guard
       guard=False
       events.append("remove-own-guard")
+    def install(_):
+      events.append("permanent-installed")
+      if mode=="install-fail": raise ns["Stop"]("INSTALL")
+    def assert_permanent(_=None):
+      assert "permanent-installed" in events
+      if mode=="permanent-lost" and "private-web" in events: raise ns["Stop"]("PERMANENT_LOST")
+    def refresh(*_):
+      assert_permanent()
+      assert guard and "up-web" in events
+      if mode=="refresh-fail": raise ns["Stop"]("REFRESH")
+      events.append("permanent-refreshed")
     def sample(ef,drained=False):
       assert (ef==ns["EF1"])==applied
       if drained: assert stopped and not rebuilt
@@ -112,7 +124,10 @@ def trial(mode):
       return "0"*32
     ns.update(cmd=cmd,ask=ask,sample=sample,rendered=lambda _: {},check_delta=lambda *a:None,
               check_dsn=lambda *a:None, tls=lambda a:None, check_ingress_priority=lambda:None, containers=items,
-              verify_guard=verify, remove_guard=recover, absent=lambda:not guard,
+              verify_guard=verify, remove_guard=recover, absent=lambda:not guard, guard_host_checks=lambda:None,
+              install_permanent=install, assert_permanent=assert_permanent, refresh_permanent=refresh,
+              network_guard=lambda *a: (network(),{"br-web":["172.30.10.0/24"],"br-db":["172.30.20.0/24"]},
+                                        {4:("eth0","192.0.2.1"),6:("eth0","2001:db8::1")},{4:"172.30.10.2"}),
               check_migrator_auth=lambda a: events.append("auth-probe"),
               borrow_and_capture=backup, backup_bindings=lambda *a:None,
               private_compose=lambda *a:["private"],check_private_network=network,active_docker_identity=network,
@@ -120,21 +135,26 @@ def trial(mode):
     output=io.StringIO()
     with patch.object(os,"O_NOFOLLOW",getattr(os,"O_NOFOLLOW",0),create=True), \
          patch.object(os,"geteuid",lambda:0,create=True), redirect_stdout(output):
-      status=ns["main_cutover"]("22")
+      status=ns["main_cutover"]("22","192.0.2.1","2001:db8::1")
     if mode=="happy":
-      assert status==0 and not guard and env.read_text()!=original
+      assert status==0 and not guard and env.read_text()!=original,(output.getvalue(),events)
       assert events.count("ef-write")==1 and (root/"state"/"ef-confirmed").is_file()
+      assert events.index("AUTORIZO R4 RC11")<events.index("permanent-installed")<events.index("close")<events.index("drain")
       assert events.index("backup-ok")<events.index("ef-write")<events.index("read-ef-after")<events.index("up-backend")<events.index("up-web")<events.index("remove-own-guard")
+      assert events.index("permanent-refreshed")<events.index("remove-own-guard")
     else:
-      assert status==4 and env.read_text()==original
+      assert status==4 and (env.read_text()!=original)==(mode=="refresh-fail")
       if mode=="ef-receipt-lost":
         assert events.count("ef-write")==1 and guard and not rebuilt and (root/"state"/"ef-confirmed").is_file()
-      elif mode=="guard-lost":
+      elif mode in ("guard-lost","permanent-lost"):
         assert "private-web" in events and web_private and "VALIDADO FUNCIONAL Y ABRIR RC11" not in events
         assert events.count("ef-write")==1 and events.count("up-web")==1
+      elif mode=="refresh-fail":
+        assert guard and "remove-own-guard" not in events
       else:
         assert "ef-write" not in events
-      if mode=="external-proof-fail": assert "remove-own-guard" in events and not guard and not stopped
+      if mode=="external-proof-fail": assert "remove-own-guard" not in events and guard and not stopped
+      if mode=="install-fail": assert not guard and "prefetch" not in events and not stopped
       if mode=="backup-fail": assert guard and stopped and not rebuilt
       if mode=="backup-return":
         assert not guard and restarted=={"backend","web"} and not rebuilt
@@ -143,7 +163,8 @@ def trial(mode):
       if mode=="lock-fail": assert acquired==1 and not guard and not stopped
     print("PASS",mode)
 
-for mode in ("happy","authorization-denied","lock-fail","external-proof-fail","backup-fail","backup-return","ef-receipt-lost","guard-lost","daemon-change"):
+for mode in ("happy","authorization-denied","lock-fail","external-proof-fail","backup-fail","backup-return",
+             "ef-receipt-lost","guard-lost","daemon-change","install-fail","permanent-lost","refresh-fail"):
     trial(mode)
 
 ns.update(initial)
@@ -201,7 +222,8 @@ ns.update(initial)
 with tempfile.TemporaryDirectory() as d:
     root=Path(d)
     (root/"ef-attempted").touch()
-    ns.update(STATE=root,absent=lambda:True)
+    window=root/"maintenance.nft"
+    ns.update(STATE=root,WINDOW=window,absent=lambda:True,assert_permanent=lambda:None)
     running=False
     def read_only(args,code,data=None,timeout=0):
       if args[:2]==["docker","port"]: return "8443/tcp -> 127.0.0.1:443\n"
@@ -213,14 +235,27 @@ with tempfile.TemporaryDirectory() as d:
       assert args[:2]==["docker","exec"] and "READ ONLY" in data
       return ns["EF1"]+"\nFIN\n"
     ns["cmd"]=read_only
-    with patch.object(os,"geteuid",lambda:0,create=True),patch.object(Path,"stat",lambda *a,**k:SimpleNamespace(st_uid=0,st_mode=0o40700),create=True),patch.object(Path,"is_symlink",lambda _:False):
+    real_stat=Path.stat
+    def state_stat(path,*args,**kwargs):
+      return SimpleNamespace(st_uid=0,st_mode=0o40700) if path==root else real_stat(path,*args,**kwargs)
+    with patch.object(os,"geteuid",lambda:0,create=True),patch.object(Path,"stat",state_stat):
       output=io.StringIO()
       with redirect_stdout(output):
         assert ns["main_reconcile"]("22")==0
         running=True
         assert ns["main_reconcile"]("22")==4
+        running=False
+        window.write_text(ns["firewall_spec"]("hf-one-rc11-"+"1"*32),encoding="ascii")
+        assert ns["main_reconcile"]("22")==4
+        assert window.is_file()
+        window.unlink()
+        def lost_permanent():
+          raise ns["Stop"]("GUARD_PERMANENTE_AUSENTE")
+        ns["assert_permanent"]=lost_permanent
+        assert ns["main_reconcile"]("22")==4
       assert "EF COMPROMETIDA" in output.getvalue() and "MIGRATOR_PUEDE_SEGUIR_EN_CURSO" in output.getvalue()
-print("PASS recovery distinguishes committed and still-running without mutations")
+      assert output.getvalue().count("STOP_INGRESO:")==2
+print("PASS recovery distinguishes committed and still-running, missing guard and disk/kernel drift without mutations")
 
 ns.update(initial)
 ns["daemon_policy"](["dockerd","--iptables=true","--allow-direct-routing=false"],{})

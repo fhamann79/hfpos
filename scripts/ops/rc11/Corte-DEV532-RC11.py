@@ -111,9 +111,10 @@ def private_compose(env, override, expected):
 
 
 def firewall_spec(token):
-    return (f"add table inet {TABLE}\n"
+    return (f"create table inet {TABLE}\n"
             f"add chain inet {TABLE} gate {{ type filter hook prerouting priority -310; policy accept; }}\n"
-            f'add rule inet {TABLE} gate iifname != "lo" fib daddr type local tcp dport 443 counter drop comment "{token}"\n')
+            + "".join(f'add rule inet {TABLE} gate meta nfproto ipv{v} iifname != "lo" '
+                      f'fib daddr type local tcp dport 443 counter drop comment "{token}"\n' for v in (4,6)))
 
 
 def nft_state():
@@ -135,21 +136,51 @@ def check_ingress_priority():
 
 
 def verify_guard(token, require_hits=False):
+    need(private_file(WINDOW) and WINDOW.read_text(encoding="ascii")==firewall_spec(token),
+         "NFT_CIERRE_PERSISTENTE_NO_VERIFICADO")
     data=json.loads(cmd(["nft","-j","list","table","inet",TABLE],"NFT_TABLA_NO_VERIFICADA"))["nftables"]
+    verify_gate_rules(data,token,require_hits)
+
+
+def verify_gate_rules(data, token, require_hits=False):
+    def match(op,left,right):
+        return {"match":{"op":op,"left":left,"right":right}}
     chain=[r["chain"] for r in data if "chain" in r]
     rules=[r["rule"] for r in data if "rule" in r]
-    need(len(chain)==1 and chain[0].get("hook")=="prerouting" and chain[0].get("prio")==-310
-         and len(rules)==1 and rules[0].get("comment")==token
-         and any("drop" in e for e in rules[0].get("expr",[])),"NFT_GUARD_IDENTIDAD_INCIERTA")
-    if require_hits:
-        need(any(e.get("counter",{}).get("packets",0)>0 for e in rules[0]["expr"]),
-             "NFT_NO_OBSERVO_TRAFICO_RECHAZADO")
+    expected=dict(family="inet",table=TABLE,name="gate",type="filter",hook="prerouting",prio=-310,policy="accept")
+    tables=[r["table"] for r in data if "table" in r]
+    need(all(len(r)==1 and next(iter(r)) in ("metainfo","table","chain","rule") for r in data)
+         and len(tables)==1 and tables[0].get("family")=="inet" and tables[0].get("name")==TABLE
+         and not tables[0].get("flags")
+         and len(chain)==1 and all(chain[0].get(k)==v for k,v in expected.items())
+         and len(rules)==2,"NFT_GUARD_IDENTIDAD_INCIERTA")
+    for v,rule in zip((4,6),rules):
+        want=[match("==",{"meta":{"key":"nfproto"}},f"ipv{v}"),
+              match("!=",{"meta":{"key":"iifname"}},"lo"),
+              match("==",{"fib":{"result":"type","flags":["daddr"]}},"local"),
+              match("==",{"payload":{"protocol":"tcp","field":"dport"}},443)]
+        expr=rule.get("expr",[])
+        need(rule.get("family")=="inet" and rule.get("table")==TABLE and rule.get("chain")=="gate"
+             and rule.get("comment")==token and len(expr)==6 and expr[:4]==want
+             and list(expr[4])==["counter"] and expr[5]=={"drop":None},
+             "NFT_GUARD_IDENTIDAD_INCIERTA")
+        if require_hits:
+            need(expr[4]["counter"].get("packets",0)>0,f"NFT_NO_OBSERVO_TRAFICO_IPV{v}_RECHAZADO")
 
 
 def remove_guard(token):
+    assert_permanent()
     verify_guard(token)
     cmd(["nft","delete","table","inet",TABLE],"NFT_NO_SE_PUDO_REABRIR")
     need(absent(),"NFT_TABLA_AUN_PRESENTE")
+    WINDOW.unlink()
+    sync_dir(WINDOW.parent)
+    assert_permanent()
+
+
+def verify_window(token, require_hits=False):
+    assert_permanent()
+    verify_guard(token, require_hits)
 
 
 def tls(paths):
@@ -318,7 +349,7 @@ def bridge_shape(items, nets):
 
 def prove_raw_hooks(objects):
     allowed={("ip","raw","PREROUTING",-300),("ip6","raw","PREROUTING",-300),
-             ("inet",TABLE,"gate",-310)}
+             ("inet",TABLE,"gate",-310),("inet",PERMANENT,"prerouting",-110)}
     hooks=set()
     for item in objects:
         need("flowtable" not in item,"DOCKER_NFT_FLOW_OFFLOAD_INCIERTO")
@@ -326,7 +357,7 @@ def prove_raw_hooks(objects):
         if c.get("hook") in ("ingress","prerouting"):
             need(type(c.get("prio")) is int,"DOCKER_NFT_ORDEN_INCIERTO")
             key=(c.get("family"),c.get("table"),c.get("name"),c.get("prio"))
-            if c["hook"]=="ingress" or c["prio"]<=-300:
+            if c["hook"]=="ingress" or c["prio"]<=-300 or key==("inet",PERMANENT,"prerouting",-110):
                 need(key in allowed and c.get("type")=="filter" and key not in hooks,
                      "DOCKER_NFT_ORDEN_INCIERTO")
                 hooks.add(key)
@@ -459,6 +490,55 @@ def check_private_network(items, private_web=False):
     return identity
 
 
+def network_guard(items, addresses, private_web=False):
+    identity=active_docker_identity()
+    daemon_policy(identity[2],{})
+    ids={e["NetworkID"] for i in items for e in i["NetworkSettings"]["Networks"].values()}
+    need(len(ids)==2 and all(re.fullmatch(r"[a-f0-9]{64}",n) for n in ids),"DOCKER_RED_TOPOLOGIA_INCIERTA")
+    nets={n:json.loads(cmd(["docker","network","inspect",n],"DOCKER_RED_NO_VERIFICADA"))[0] for n in ids}
+    ((web_br,_),(db_br,_))=bridge_shape(items,nets)
+    bridges={web_br:[],db_br:[]}
+    for n, net in nets.items():
+        br=net["Options"].get("com.docker.network.bridge.name","br-"+n[:12])
+        links=json.loads(cmd(["ip","-j","-d","link","show","dev",br],"DOCKER_RED_INTERFAZ_INCIERTA"))
+        need(len(links)==1 and links[0].get("ifname")==br and not links[0].get("master") and
+             links[0].get("linkinfo",{}).get("info_kind")=="bridge","DOCKER_RED_INTERFAZ_INCIERTA")
+        bridges[br]=[x["Subnet"] for x in net["IPAM"]["Config"]]
+    bridge_members(items,nets)
+    origins={}
+    links=json.loads(cmd(["ip","-j","-d","address","show"],"GUARD_INGRESO_NO_ACREDITADO"))
+    for v, host in zip((4,6),addresses,strict=True):
+        host=ipaddress.ip_address(host)
+        matches=[link for link in links if any(a["local"]==str(host) and not any(
+                 a.get(flag) or flag in a.get("flags",[]) for flag in ("tentative","dadfailed"))
+                 for a in link.get("addr_info",[]))]
+        routes=json.loads(cmd(["ip","-j",f"-{v}","route","show","default"],"GUARD_RUTA_NO_ACREDITADA"))
+        need(host.version==v and len(matches)==1 and len(routes)==1
+             and matches[0]["ifname"]==routes[0].get("dev") and not matches[0].get("master")
+             and "UP" in matches[0]["flags"]
+             and matches[0].get("linkinfo",{}).get("info_kind") not in ("bridge","veth"),
+             "GUARD_INGRESO_NO_ACREDITADO")
+        origins[v]=(matches[0]["ifname"],host)
+    for svc in (NAMES[0],NAMES[2]):
+        need(not cmd(["docker","port",svc],"PUERTO_NO_VERIFICADO").strip(),"PUERTO_DIRECTO_WRITER")
+    mapping={"8443/tcp -> 127.0.0.1:443"} if private_web else {
+             "8443/tcp -> 0.0.0.0:443","8443/tcp -> [::]:443"}
+    need(set(cmd(["docker","port",NAMES[1]],"WEB_PUBLICACION_INCIERTA").splitlines())==mapping,
+         "WEB_PUBLICACION_DISTINTA")
+    ep=next(iter(items[1]["NetworkSettings"]["Networks"].values()))
+    web={v:ep[key] for v,key in ((4,"IPAddress"),(6,"GlobalIPv6Address")) if ep.get(key)}
+    if private_web:
+        snapshot={v:netfilter_rules(cmd([tool],"DOCKER_REGLAS_KERNEL_NO_DISPONIBLES"))
+                  for v,tool in ((4,"iptables-save"),(6,"ip6tables-save"))}
+        prove_private_publication(snapshot,[web[4]],
+            cmd(["ss","-H","-ltn","sport = :443"],"DOCKER_WEB_SOCKET_INCIERTO"))
+    need(identity==active_docker_identity() and all(
+         (a["Id"],a["State"]["Pid"],a["NetworkSettings"]["Networks"])
+         ==(b["Id"],b["State"]["Pid"],b["NetworkSettings"]["Networks"]) for a,b in zip(items,containers(),strict=True)),
+         "DOCKER_DAEMON_O_TOPOLOGIA_CAMBIO")
+    return identity, bridges, origins, web
+
+
 def backup_bindings(cfg, items, envfile):
     def source(container,destination):
         bind=[x["Source"] for x in container["Mounts"] if x.get("Destination")==destination
@@ -566,14 +646,18 @@ def interrupted(*_):
     raise Stop("SESION_INTERRUPCION_O_ESPERA_AGOTADA")
 
 
-def main_verify_network(ssh_port):
+def main_verify_network(ssh_port, ipv4, ipv6):
     try:
         need(os.geteuid()==0 and ssh_port=="22","SSH_O_SUDO_NO_COINCIDE")
-        items=containers()
-        for i in (0,2):
-            need(not cmd(["docker","port",NAMES[i]],"PUERTO_NO_VERIFICADO").strip(),
-                 "PUERTO_DIRECTO_WRITER")
-        check_private_network(items)
+        _,bridges,origins,web=network_guard(containers(),(ipv4,ipv6))
+        spec=guard_spec(bridges,origins,web)
+        guard_host_checks()
+        if GUARD_DIR.exists() or GUARD_DIR.is_symlink():
+            assert_permanent(spec)
+            print("GUARD_PERMANENTE_ACREDITADO")
+        else:
+            cmd([NFT,"-c","-f","-"],"GUARD_NFT_NO_COMPATIBLE",spec)
+            print("TOPOLOGIA_Y_REGLA_PROPUESTA_ACREDITADAS; guard no instalado")
         return 0
     except Exception as e:
         print("NO-GO FILTRADO_DIRECTO",str(e) if isinstance(e,Stop) else "EVIDENCIA_INCOMPLETA")
@@ -586,15 +670,22 @@ def main_reconcile(ssh_port):
              "ESTADO_DE_CORTE_NO_ENCONTRADO")
         info=STATE.stat()
         need(info.st_uid==0 and info.st_mode & 0o077==0,"ESTADO_NO_PRIVADO")
-        if absent():
-            print("INGRESO sin tabla RC11; no asumir contencion")
-        elif private_file(STATE/"guard-id"):
-            token=(STATE/"guard-id").read_text(encoding="ascii")
-            need(re.fullmatch(r"hf-one-rc11-[a-f0-9]{32}",token),"TABLA_PROPIEDAD_NO_ACREDITADA")
-            verify_guard(token)
-            print("INGRESO tabla propia presente")
-        else:
-            raise Stop("TABLA_PROPIEDAD_NO_ACREDITADA")
+        ingress_verified=False
+        try:
+            assert_permanent()
+            print("INGRESO guard permanente presente")
+            if absent():
+                need(not WINDOW.exists() and not WINDOW.is_symlink(),"NFT_CIERRE_DISCO_KERNEL_DIVERGENTE")
+                print("INGRESO sin cierre temporal; no asumir contencion")
+            else:
+                need(private_file(STATE/"guard-id"),"TABLA_PROPIEDAD_NO_ACREDITADA")
+                token=(STATE/"guard-id").read_text(encoding="ascii")
+                need(re.fullmatch(r"hf-one-rc11-[a-f0-9]{32}",token),"TABLA_PROPIEDAD_NO_ACREDITADA")
+                verify_guard(token)
+                print("INGRESO cierre temporal presente")
+            ingress_verified=True
+        except Exception:
+            print("STOP_INGRESO: reglas o persistencia inciertas; no reabrir ni repetir el corte.")
         web=cmd(["docker","port",NAMES[1]],"WEB_PUBLICACION_INCIERTA").splitlines()
         print("WEB", "privada" if set(web)=={"8443/tcp -> 127.0.0.1:443"} else
               "sin-publicacion-observada" if not web else "publicada")
@@ -621,13 +712,13 @@ def main_reconcile(ssh_port):
         else:
             raise Stop("PG_HISTORIAL_DIVERGENTE")
         print("RECONCILIACION SOLO LECTURA. No se reabrio ni se restauro nada.")
-        return 0
+        return 0 if ingress_verified else 4
     except Exception as e:
         print("STOP_RECONCILIACION",str(e) if isinstance(e,Stop) else "LECTURA_INCIERTA")
         return 4
 
 
-def main_cutover(ssh_port):
+def main_cutover(ssh_port, ipv4, ipv6):
     phase="SOLO_LECTURA"
     guard=False
     token="hf-one-rc11-"+uuid.uuid4().hex
@@ -648,12 +739,24 @@ def main_cutover(ssh_port):
         need(all(x["State"]["Running"] for x in before) and
              [x["Config"]["Image"] for x in before[:2]]==[image("backend",OLD[0]),image("web",OLD[1])],
              "PAR_BASE_DISTINTO")
-        initial_docker=check_private_network(before)
+        addresses=(ipv4,ipv6)
+        initial_docker,bridges,origins,web=network_guard(before,addresses)
+        permanent=guard_spec(bridges,origins,web)
+        def current_policy(items, private=False):
+            daemon, current_bridges, current_origins, endpoint=network_guard(items,addresses,private)
+            need((daemon,current_bridges,current_origins)==(initial_docker,bridges,origins),
+                 "GUARD_TOPOLOGIA_CAMBIO_DURANTE_CORTE")
+            return guard_spec(bridges,origins,endpoint)
+        def public_policy(expected, expected_env):
+            items=containers()
+            need(all(a["State"]["Running"] and a["Config"]["Image"]==b["Config"]["Image"]
+                     and a["Mounts"]==b["Mounts"] for a,b in zip(items,expected,strict=True))
+                 and items[0]["Id"]==expected[0]["Id"] and items[2]["Id"]==expected[2]["Id"]
+                 and ENV.read_text(encoding="utf-8")==expected_env,"PAR_PUBLICO_O_ENV_CAMBIO")
+            return current_policy(items)
+        guard_host_checks()
+        cmd([NFT,"-c","-f","-"],"GUARD_NFT_NO_COMPATIBLE",permanent)
         orig=[x["Id"] for x in before]
-        for svc in NAMES[0],NAMES[2]:
-            need(not cmd(["docker","port",svc],"PUERTO_NO_VERIFICADO").strip(),"PUERTO_DIRECTO_WRITER")
-        maps=set(cmd(["docker","port",NAMES[1]],"PUBLICACION_WEB_NO_VERIFICADA").splitlines())
-        need(maps=={"8443/tcp -> 0.0.0.0:443","8443/tcp -> [::]:443"},"PUBLICACION_DUALSTACK_CAMBIO")
         db_hash=sample(EF0)
         check_dsn(old_cfg,db_hash)
         tls(("/health/live","/health/ready","/","/login","/pos"))
@@ -676,6 +779,9 @@ def main_cutover(ssh_port):
         need((s.st_dev,s.st_ino)==(f.st_dev,f.st_ino) and f.st_nlink==1,"LOCK_INODE_CAMBIO")
         os.umask(0o077)
         STATE.mkdir(mode=0o700)
+        phase="INSTALACION_GUARD_PERMANENTE"
+        need(current_policy(containers())==permanent,"GUARD_TOPOLOGIA_CAMBIO_DURANTE_CORTE")
+        install_permanent(permanent)
         phase="PREPARACION_AUTORIZADA"
         (STATE/"old.env").write_text(old,encoding="utf-8")
         candidate=STATE/"rc11.env"
@@ -695,17 +801,18 @@ def main_cutover(ssh_port):
         check_migrator_auth(c)
         need([x["Id"] for x in containers()]==orig and absent(),"TOPOLOGIA_CAMBIO_ANTES_DE_CERRAR")
         need(sample(EF0)==db_hash,"PG_IDENTIDAD_CAMBIO_ANTES_DE_CERRAR")
-        need(check_private_network(before)==initial_docker,"DOCKER_DAEMON_CAMBIO_DURANTE_CORTE")
+        assert_permanent(current_policy(containers()))
         phase="CIERRE_ANTES_DE_DRENAR"
-        (STATE/"guard-id").write_text(token,encoding="ascii")
+        durable_file(STATE/"guard-id",token)
         # Treat uncertain nft result as potentially applied.
         guard=True
+        durable_file(WINDOW,firewall_spec(token))
         cmd(["nft","-f","-"],"NFT_CIERRE_NO_CONFIRMADO",firewall_spec(token))
-        verify_guard(token)
+        verify_window(token)
         tls(("/health/ready",))
         print("CONFIRMA que la ventana externa muestra HTTPS bloqueado en ambas familias y SSH disponible.",flush=True)
         ask("CIERRE DUAL CONFIRMADO",100)
-        verify_guard(token,require_hits=True)
+        verify_window(token,require_hits=True)
         phase="DRENAJE"
         cmd(compose(ENV)+["stop","--timeout","45","web","backend"],"DRENAJE_PAR_FALLO",timeout=110)
         need(stopped(containers()),"DRENAJE_SALIDA_NO_LIMPIA")
@@ -713,7 +820,7 @@ def main_cutover(ssh_port):
         phase="RESPALDO"
         backup=borrow_and_capture(worker,cfg,fd,state,orig)
         (STATE/"backup-id").write_text(backup,encoding="ascii")
-        verify_guard(token)
+        verify_window(token)
         sample(EF0,drained=True)
         phase="EF_RESULTADO_POTENCIALMENTE_COMPROMETIDO"
         (STATE/"ef-attempted").touch(exist_ok=False)
@@ -734,13 +841,13 @@ def main_cutover(ssh_port):
         (STATE/"ef-confirmed").touch(exist_ok=False)
         need(outcome is None,outcome)
         for service in ("backend","web"):
-            verify_guard(token)
+            verify_window(token)
             cmd((private_c if service=="web" else c)+["up","-d","--no-deps","--no-build","--pull","never","--force-recreate",service],
                 "ARRANQUE_"+service.upper(),timeout=150)
             if service=="backend":
                 wait_backend()
         now=containers()
-        need(check_private_network(now,private_web=True)==initial_docker,"DOCKER_DAEMON_CAMBIO_DURANTE_CORTE")
+        current_policy(now,private=True)
         need(now[2]["Id"]==orig[2] and now[2]["Mounts"]==before[2]["Mounts"]
              and all(now[i]["Config"]["Image"]==image(s,NEW[s]) and now[i]["Mounts"]==before[i]["Mounts"]
                      for i,s in enumerate(("backend","web"))),"DIGEST_O_MONTAJES_POSTCORTE")
@@ -749,12 +856,12 @@ def main_cutover(ssh_port):
         need(set(cmd(["docker","port",NAMES[1]],"WEB_PRIVADA_NO_VERIFICADA").splitlines())
              =={"8443/tcp -> 127.0.0.1:443"},"WEB_NO_ES_PRIVADA")
         tls(("/health/live","/health/ready","/","/login","/pos"))
-        verify_guard(token)
+        verify_window(token)
         print("GO_POSTCORTE | TLS en origen, historial, cola y permisos verificados con el ingreso cerrado.",flush=True)
         print("Usa el navegador privado del monitor para reingresar y abrir ambos selectores sin confirmar lotes.")
         ask("VALIDADO FUNCIONAL Y ABRIR RC11",420)
-        verify_guard(token)
-        need(check_private_network(containers(),private_web=True)==initial_docker,"DOCKER_DAEMON_CAMBIO_DURANTE_CORTE")
+        verify_window(token)
+        current_policy(containers(),private=True)
         need(ENV.read_text(encoding="utf-8")==old,"ENV_CANONICO_CAMBIO")
         tmp_fd,tmp=tempfile.mkstemp(prefix=".rc11-",dir=ENV.parent)
         with os.fdopen(tmp_fd,"w",encoding="utf-8",newline="") as stream:
@@ -765,6 +872,7 @@ def main_cutover(ssh_port):
         phase="APERTURA_NO_REVERTIR_AUTOMATICAMENTE"
         cmd(c+["up","-d","--no-deps","--no-build","--pull","never","--force-recreate","web"],
             "PUBLICACION_WEB",timeout=150)
+        refresh_permanent(permanent,public_policy(now,cand),token)
         wait_tls(("/","/login"))
         remove_guard(token)
         guard=False
@@ -774,22 +882,13 @@ def main_cutover(ssh_port):
         return 0
     except (Exception,KeyboardInterrupt) as e:
         detail=str(e) if isinstance(e,Stop) else "ERROR_PRIVADO_NO_DIVULGADO"
-        if phase=="CIERRE_ANTES_DE_DRENAR" and guard:
-            try:
-                need([x["Id"] for x in containers()]==orig and all(x["State"]["Running"] for x in containers()),
-                     "PAR_ANTERIOR_NO_VERIFICADO_PARA_REABRIR")
-                if not absent():
-                    remove_guard(token)
-                print("RETORNO_INGRESO_ANTERIOR_SIN_DRENAR")
-            except Exception:
-                print("NO_SE_CONFIRMÓ_REAPERTURA_NO_TOCAR_OTRAS_REGLAS")
         print(f"NO-GO FASE={phase} BLOQUEO={detail}")
         if phase in ("DRENAJE","RESPALDO") and guard and detail!="SESION_INTERRUPCION_O_ESPERA_AGOTADA":
             try:
                 current=containers()
                 need(stopped(current) and [x["Id"] for x in current]==orig
                      and not (STATE/"ef-attempted").exists(),"RETORNO_BASE_NO_VERIFICADA")
-                verify_guard(token)
+                verify_window(token)
                 sample(EF0,drained=True)
                 print("EF no se intento. Retorno disponible con los contenedores anteriores, sin cambiar datos.")
                 ask("VOLVER A RC8",100)
@@ -798,15 +897,17 @@ def main_cutover(ssh_port):
                 wait_backend()
                 cmd(private_old+["up","-d","--no-deps","--no-build","--pull","never","--force-recreate","web"],
                     "RETORNO_WEB_PRIVADA",timeout=90)
-                need(check_private_network(containers(),private_web=True)==initial_docker,
-                     "DOCKER_DAEMON_CAMBIO_DURANTE_CORTE")
+                current_policy(containers(),private=True)
                 wait_tls(("/","/login"))
                 ask("REABRIR RC8",100)
-                verify_guard(token)
-                need(check_private_network(containers(),private_web=True)==initial_docker,
-                     "DOCKER_DAEMON_CAMBIO_DURANTE_CORTE")
+                verify_window(token)
+                private_pair=containers()
+                current_policy(private_pair,private=True)
+                need(all(a["Config"]["Image"]==b["Config"]["Image"] and a["Mounts"]==b["Mounts"]
+                         for a,b in zip(private_pair,before,strict=True)),"RETORNO_PAR_BASE_CAMBIO")
                 cmd(compose(ENV)+["up","-d","--no-deps","--no-build","--pull","never","--force-recreate","web"],
                     "RETORNO_WEB_PUBLICA",timeout=90)
+                refresh_permanent(permanent,public_policy(private_pair,old),token)
                 wait_tls(("/","/login"))
                 remove_guard(token)
                 guard=False
@@ -814,7 +915,8 @@ def main_cutover(ssh_port):
                 return 4
             except Exception:
                 print("RETORNO_NO_CONFIRMADO; conservar contencion.")
-        if phase in ("DRENAJE","RESPALDO","EF_RESULTADO_POTENCIALMENTE_COMPROMETIDO","EF_COMPROMETIDA"):
+        if phase in ("INSTALACION_GUARD_PERMANENTE","PREPARACION_AUTORIZADA","CIERRE_ANTES_DE_DRENAR",
+                     "DRENAJE","RESPALDO","EF_RESULTADO_POTENCIALMENTE_COMPROMETIDO","EF_COMPROMETIDA"):
             print("CONTENCION: no repetir el corte ni EF. Conservar tabla, historial, respaldo y estado. Reconciliar por SSH.")
         if phase=="APERTURA_NO_REVERTIR_AUTOMATICAMENTE":
             print("APERTURA_INCIERTA: no revertir datos ni imágenes automáticamente; pueden existir efectos nuevos.")

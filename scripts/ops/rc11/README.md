@@ -14,6 +14,7 @@ La publicacion de este directorio no autoriza R4.
 | `Empaquetar-DEV532-RC11.py` | Arma el payload local; obtiene las huellas de los helpers del commit fijo RC11. |
 | `Inspeccion-DEV532-RC11.py` | Fuente de las constantes, consultas y funciones que incorpora el empaquetador. |
 | `Corte-DEV532-RC11.py` | Controlador remoto con autorizacion humana y modo de reconciliacion de solo lectura. |
+| `Guard-DEV532-RC11.py` | Proteccion dedicada que se conserva al retirar el cierre de mantenimiento; verifica tambien su carga con systemd. |
 | `Probar-Corte-DEV532-RC11.py` | Prueba sintetica del payload: red, Docker, EF y backup simulados. |
 | `rc11-compose-fixture*.yml` | Prueba del modelo Compose privado con una imagen ficticia; no se arranca. |
 | `Test-Launcher.ps1` | Adaptador adicional de CI: SSH, empaquetado y procesos simulados. |
@@ -32,21 +33,17 @@ activo con age/rclone y su lock. El empaquetador ancla
 `postgres-backup.sh` y `verify-postgres-backup.sh` en
 `8c80d8468834d2e8cdf6353a443ec35fa51e70ae`; no los duplica ni instala.
 
-`SHA256SUMS` fija los bytes de los nueve artefactos de esta revision, incluyendo
+`SHA256SUMS` fija los bytes de los artefactos del payload, incluyendo
 el runbook y los fixtures. Git no normaliza sus finales de linea. La huella del
 controlador original se conserva en el [PR #180](https://github.com/fhamann79/hfpos/pull/180).
 
-El preflight no deduce el filtrado de fechas o archivos de configuracion. Exige
-el perfil iptables-nft reconocido, reglas DROP efectivas para cada endpoint
-ruteable de web/backend y una barrera de entrada a la bridge de datos que no
-dependa de la direccion de origen. Una cadena previa desconocida, una regla
-solo por prefijo, un perfil no reconocido o un cambio de PID, red o reglas
-detienen la operacion. La publicacion privada requiere ademas reglas y sockets
-compatibles con loopback, sin NAT publico.
+El preflight acredita la topologia y el perfil de filtrado antes de preparar una
+tabla propia que bloquea las rutas directas. La publicacion privada sigue
+requiriendo reglas y sockets compatibles con loopback, sin NAT publico.
 
-El modo `-VerificarBridge` solo lee y correlaciona esos datos desde el host y
-devuelve un resultado saneado; no inicia corte, modifica reglas ni sustituye
-el monitoreo independiente del cierre IPv4/IPv6 y del SSH fresco.
+El modo `-VerificarBridge` solo lee y comprueba la regla propuesta o la proteccion
+ya instalada. No inicia el corte ni sustituye el monitoreo independiente del
+cierre IPv4/IPv6 y del SSH fresco.
 
 Este directorio no contiene archivos env, claves, respaldos ni configuracion
 privada de PG, SSH, age o rclone.

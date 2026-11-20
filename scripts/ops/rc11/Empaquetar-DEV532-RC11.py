@@ -14,6 +14,7 @@ root=Path(__file__).resolve().parent
 repo=Path(sys.argv[1])
 i=(root/"Inspeccion-DEV532-RC11.py").read_text(encoding="utf-8")
 k=(root/"Corte-DEV532-RC11.py").read_text(encoding="utf-8")
+g=(root/"Guard-DEV532-RC11.py").read_text(encoding="utf-8")
 base=[]
 for node in ast.parse(i).body:
     if isinstance(node,(ast.Import,ast.ImportFrom)) or \
@@ -24,9 +25,9 @@ for node in ast.parse(i).body:
 files={name:hashlib.sha256(subprocess.check_output(["git","-C",str(repo),"cat-file","blob",
                   COMMIT+":scripts/ops/"+name], stderr=subprocess.DEVNULL,timeout=8)).hexdigest() for name in SOURCES}
 blobs=repr(files)
-code="\n".join(base)+"\nbackup_hashes="+blobs+"\n"+k+(
+code="\n".join(base)+"\nbackup_hashes="+blobs+"\n"+k+"\n"+g+(
     "\nentry={'reconcile':main_reconcile,'verify-network':main_verify_network,'cutover':main_cutover}\n"
-    "sys.exit(entry[sys.argv[-2]](sys.argv[-1]) if sys.argv[-2] in entry else 4)\n")
+    "sys.exit(entry[sys.argv[2]](*sys.argv[3:]) if sys.argv[2] in entry else 4)\n")
 compile(code,"<rc11>","exec")
 result=base64.b64encode(lzma.compress(code.encode(),preset=9)).decode()
 if len(result)>28000:
