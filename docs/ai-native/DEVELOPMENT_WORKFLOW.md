@@ -7,7 +7,7 @@ The root [AGENTS.md](../../AGENTS.md) is normative. This document describes the 
 - **Orchestrator**: owns discovery, proposals, approved tickets, dependency graph/collision matrix, internal prompts, isolation, validation, review, exact-HEAD CI and the full integration loop. Not the default feature writer; may author an approved operating-policy update.
 - **Implementer**: one approved ticket, branch, isolated worktree and PR; implement, test, self-check, commit, push, open a non-draft PR and report exact evidence. Never merge.
 - **Specialist/reviewer**: read-only unless separately assigned approved implementation ownership. The independent reviewer must not be the implementation author.
-- **Fernando**: approves what to develop, resolves ambiguous functional/material decisions and accepts behavior when human validation adds value. Routine merges are delegated only through the root conditional gate. R4 requires a separate human-approved runbook and explicit authorization, never autonomous agent execution.
+- **Fernando**: approves what to develop, resolves ambiguous functional/material decisions and accepts behavior when human validation adds value. Routine merges are delegated only through the root conditional gate. R4 requires a separate human-approved runbook and explicit authorization. Codex may execute as Fernando's supervised delegate from a trusted local environment only when the currently integrated root policy's R4 requirements are met; never as an unattended or self-authorized operator.
 
 Fernando must not copy prompts or act as a message bus between agents. Agents own relevant technical checks; human validation focuses on business/UX/safety value. Pause at approval, material decisions and required human validation, not ceremonial merges or repeated technical checks. The policy-introduction PR remains manual under its base policy; no self-activation from a branch.
 
@@ -65,7 +65,7 @@ Validation is proportional to effective behavior and the root risk matrix:
 | R1 | targeted tests and affected build/type checks; UX check when relevant |
 | R2 | relevant regression/affected CI and independent review |
 | R3 | R2 plus PostgreSQL, concurrency/idempotency, model/migration and security evidence as applicable; human validation with timing per root policy |
-| R4 | no autonomous execution; separate human runbook/authorization |
+| R4 | explicit human authorization and approved runbook; supervised Codex execution may be delegated under root policy section 4, with enforced preflight/STOP and protected secrets |
 
 ### Fast path by effective diff
 
@@ -93,7 +93,7 @@ Apply the root policy's distinction explicitly in every affected PR:
 
 Choose merge order from dependencies, overlap, contracts and risk. The coordinator executes a merge only under the root **conditional merge gate**: approved scope, final HEAD/CI, independent review without BLOCKER/MAJOR, no pending conflict/decision/human pre-merge barrier, no R4 or real environment operation. Recheck HEAD/base and bind execution to the verified HEAD; no bypass, admin override or prematurely armed auto-merge. If authority/tooling/evidence is insufficient, stop rather than assume eligibility.
 
-For critical effective semantics or material doubt, say **VALIDACION HUMANA PRE-MERGE REQUERIDA**, provide concrete steps and wait for Fernando's **VALIDADO OK**. Acceptance applies to the validated change, not arbitrary later changes; revalidate material deltas proportionally. After acceptance, merge automatically only if all other conditions remain satisfied. R4 is never autonomous. Explicit `NO MERGE` instructions remain binding.
+For critical effective semantics or material doubt, say **VALIDACION HUMANA PRE-MERGE REQUERIDA**, provide concrete steps and wait for Fernando's **VALIDADO OK**. Acceptance applies to the validated change, not arbitrary later changes; revalidate material deltas proportionally. After acceptance, merge automatically only if all other conditions remain satisfied. R4 is never self-authorized; approved supervised agent execution is governed separately by root policy section 4 and never by the merge loop. Explicit `NO MERGE` instructions remain binding.
 
 The PR introducing conditional authority is the bootstrap exception: **LISTO. HAZ MERGE MANUAL #<PR>**, then stop. Verify Fernando's merge and the policy in `main` before using new authority. No change can authorize its own merge from a proposed branch policy.
 
@@ -125,4 +125,4 @@ These are examples of intent, not mandatory literal commands:
 | MERGEADO #<PR> | Optional manual/exception flow: verify and automatically reconcile remaining PRs |
 | VALIDADO OK | At pre-merge gate: accept validated change, recheck conditions and continue integration. At cycle gate: close accepted cycle, safe cleanup, DISCOVER and propose |
 
-None authorizes production deployment, persistent DB mutation, real SRI, real certificates/secrets, secret rotation or irreversible repair. Those remain separate human R4 operations.
+None authorizes production deployment, persistent DB mutation, real SRI, real certificates/secrets, secret rotation or irreversible repair. Those remain separate, explicitly human-authorized R4 operations that may be executed by a supervised local Codex delegate only under the root R4 policy.
