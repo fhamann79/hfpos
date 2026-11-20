@@ -374,6 +374,48 @@ def active_docker_identity():
     return (pid,(process/"stat").read_text().rsplit(")",1)[1].split()[19],argv)
 
 
+def prove_bridge_members(host, peers):
+    """Require every live bridge port to be a veth paired with a known Docker endpoint."""
+    found=set()
+    for port in host:
+        idx,peer=port.get("ifindex"),port.get("link_index")
+        need(port.get("linkinfo",{}).get("info_kind")=="veth" and
+             type(idx) is int and type(peer) is int and idx>0 and peer>0 and idx not in found and
+             peers.get(idx)==peer,"DOCKER_BRIDGE_MIEMBRO_NO_IDENTIFICADO")
+        found.add(idx)
+    need(found==set(peers),"DOCKER_BRIDGE_MIEMBROS_INCOMPLETOS")
+
+
+def bridge_members(items, nets):
+    members={}
+    for net in nets.values():
+        network=net["Id"]
+        opts=net.get("Options",{})
+        iface=opts.get("com.docker.network.bridge.name","br-"+network[:12])
+        host=json.loads(cmd(["ip","-j","-d","link","show","master",iface],"DOCKER_BRIDGE_MIEMBROS_INCIERTOS"))
+        peers={}
+        for item in items:
+            links=item["NetworkSettings"]["Networks"].values()
+            for endpoint in (l for l in links if l["NetworkID"]==network):
+                address=ipaddress.ip_address(endpoint["IPAddress"])
+                pid=item["State"]["Pid"]
+                need(type(pid) is int and pid>1,"DOCKER_ENDPOINT_PID_INCIERTO")
+                inside=json.loads(cmd(["nsenter","-t",str(pid),"-n","ip","-j","-d","addr","show"],
+                                      "DOCKER_ENDPOINT_PEER_INCIERTO"))
+                matched=[p for p in inside if p.get("linkinfo",{}).get("info_kind")=="veth" and
+                         any(a.get("family")=="inet" and a.get("local")==str(address)
+                             for a in p.get("addr_info",[]))]
+                need(len(matched)==1,"DOCKER_ENDPOINT_PEER_INCIERTO")
+                p=matched[0]
+                idx,peer=p.get("link_index"),p.get("ifindex")
+                need(type(idx) is int and type(peer) is int and idx>0 and peer>0 and idx not in peers,
+                     "DOCKER_ENDPOINT_PEER_INCIERTO")
+                peers[idx]=peer
+        prove_bridge_members(host,peers)
+        members[network]=peers
+    return members
+
+
 def check_private_network(items, private_web=False):
     def networks():
         return {n:json.loads(cmd(["docker","network","inspect",n],"DOCKER_RED_NO_VERIFICADA"))[0] for n in ids}
@@ -381,7 +423,7 @@ def check_private_network(items, private_web=False):
         return {i:netfilter_rules(cmd([name],"DOCKER_REGLAS_KERNEL_NO_DISPONIBLES"))
                 for i,name in ((4,"iptables-save"),(6,"ip6tables-save"))}
     def topology(inspects):
-        return [(i["Id"],i["HostConfig"]["NetworkMode"],i["NetworkSettings"]["Networks"]) for i in inspects]
+        return [(i["Id"],i["State"]["Pid"],i["HostConfig"]["NetworkMode"],i["NetworkSettings"]["Networks"]) for i in inspects]
     identity=active_docker_identity()
     daemon_policy(identity[2],{})
     ids={e["NetworkID"] for item in items for e in item["NetworkSettings"]["Networks"].values()}
@@ -392,6 +434,7 @@ def check_private_network(items, private_web=False):
         links=json.loads(cmd(["ip","-j","-d","link","show","dev",iface],"DOCKER_RED_INTERFAZ_INCIERTA"))
         need(len(links)==1 and links[0].get("ifname")==iface and
              links[0].get("linkinfo",{}).get("info_kind")=="bridge","DOCKER_RED_INTERFAZ_INCIERTA")
+    members=bridge_members(items,net)
     v=snapshot()
     before_hooks=prove_raw_hooks(nft_state())
     for family,tool in ((4,"iptables"),(6,"ip6tables")):
@@ -410,7 +453,8 @@ def check_private_network(items, private_web=False):
         prove_private_publication(v,web_ips[4],
             cmd(["ss","-H","-ltn","sport = :443"],"DOCKER_WEB_SOCKET_INCIERTO"))
     need(identity==active_docker_identity() and topology(items)==topology(containers()) and net==networks()
-         and v==snapshot() and before_hooks==prove_raw_hooks(nft_state()),"DOCKER_RED_O_REGLAS_CAMBIARON")
+         and members==bridge_members(items,net) and v==snapshot() and before_hooks==prove_raw_hooks(nft_state()),
+         "DOCKER_RED_O_REGLAS_CAMBIARON")
     print("DOCKER_FILTRADO_DIRECTO_VERIFICADO",flush=True)
     return identity
 

@@ -304,3 +304,13 @@ with_nat=copy.deepcopy(approvable)
 with_nat[6][("nat","DOCKER")]=[["-j","DNAT","--to-destination","fd00::2"]]
 rejects(ns["prove_private_publication"],with_nat,["172.30.52.10"],socket)
 print("PASS active kernel rule proof rejects missing drops, early bypass and unsafe bridge options")
+
+ports=[{"ifindex":8,"link_index":2,"linkinfo":{"info_kind":"veth"}},
+       {"ifindex":9,"link_index":3,"linkinfo":{"info_kind":"veth"}}]
+ns["prove_bridge_members"](ports,{8:2,9:3})
+rejects(ns["prove_bridge_members"],ports+[
+    {"ifindex":10,"link_index":4,"linkinfo":{"info_kind":"tun"}}],{8:2,9:3})
+rejects(ns["prove_bridge_members"],ports,{8:2,9:4})
+rejects(ns["prove_bridge_members"],ports[:1],{8:2,9:3})
+rejects(ns["prove_bridge_members"],ports, {8:2})
+print("PASS bridge membership rejects external ports and unproved peers")
