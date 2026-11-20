@@ -36,11 +36,17 @@ activo con age/rclone y su lock. El empaquetador ancla
 el runbook y los fixtures. Git no normaliza sus finales de linea. La huella del
 controlador original se conserva en el [PR #180](https://github.com/fhamann79/hfpos/pull/180).
 
-El preflight solo tolera metadata posterior de `/etc` cuando la configuracion
-predeterminada de Docker esta ausente en una raiz ext4 compartida con dockerd,
-sin monturas sobre la ruta. La raiz y `/etc/docker` siguen sujetos al control
-de antiguedad; se revalidan identidad, flags y red Docker. Una configuracion
-presente o una prueba inconclusa mantienen el control estricto.
+El preflight no deduce el filtrado de fechas o archivos de configuracion. Exige
+el perfil iptables-nft reconocido, reglas DROP efectivas para cada endpoint
+ruteable de web/backend y una barrera de entrada a la bridge de datos que no
+dependa de la direccion de origen. Una cadena previa desconocida, una regla
+solo por prefijo, un perfil no reconocido o un cambio de PID, red o reglas
+detienen la operacion. La publicacion privada requiere ademas reglas y sockets
+compatibles con loopback, sin NAT publico.
+
+El modo `-VerificarBridge` solo lee y correlaciona esos datos desde el host y
+devuelve un resultado saneado; no inicia corte, modifica reglas ni sustituye
+el monitoreo independiente del cierre IPv4/IPv6 y del SSH fresco.
 
 Este directorio no contiene archivos env, claves, respaldos ni configuracion
 privada de PG, SSH, age o rclone.

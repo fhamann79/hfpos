@@ -20,7 +20,7 @@ function Read-Host { '' }
 function ssh.exe {
     $global:LASTEXITCODE = 0
     if ($args[0] -eq '-G') { 'hostname fixture.invalid'; return }
-    $mode = [regex]::Match($args[-1], ' UkMxMS1TRU5USU5FTA== (cutover|reconcile) \$4$')
+    $mode = [regex]::Match($args[-1], ' UkMxMS1TRU5USU5FTA== (cutover|reconcile|verify-network) \$4$')
     if (!$mode.Success -or $args -notcontains 'StrictHostKeyChecking=yes') { throw 'Unexpected SSH command' }
     $global:Rc11FixtureModes += $mode.Groups[1].Value
     $hasTunnel = $args -contains '127.0.0.1:7443:127.0.0.1:443'
@@ -31,7 +31,8 @@ try {
     $launcher = Join-Path $PSScriptRoot 'Ejecutar-DEV532-RC11.ps1'
     & $launcher -Destino 'hfadmin@fixture.invalid' -OrigenIPv4 '192.0.2.2' -OrigenIPv6 '2001:db8::2' 6>$null
     & $launcher -Destino 'hfadmin@fixture.invalid' -Reconciliar 6>$null
-    if (($global:Rc11FixtureModes -join ',') -ne 'cutover,reconcile' -or $global:Rc11FixtureWindows -ne 1) {
+    & $launcher -Destino 'hfadmin@fixture.invalid' -VerificarBridge 6>$null
+    if (($global:Rc11FixtureModes -join ',') -ne 'cutover,reconcile,verify-network' -or $global:Rc11FixtureWindows -ne 1) {
         throw 'Unexpected execution sequence'
     }
     Write-Output 'PASS RC11 Windows PowerShell launcher with mocked SSH'

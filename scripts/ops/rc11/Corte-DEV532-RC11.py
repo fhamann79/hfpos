@@ -217,95 +217,202 @@ def daemon_policy(argv, settings):
              "DOCKER_FILTRADO_" + flag.upper() + "_NO_ACREDITADO")
 
 
-def default_config_mount(mountinfo):
-    roots=[]
-    for line in mountinfo.splitlines():
-        fields,separator,backend=line.partition(" - ")
-        front,tail=fields.split(),backend.split()
-        if not separator or len(front)<6 or len(tail)<3:
-            return None
-        path=front[4]
-        if path=="/":
-            roots.append((front[2],front[3],tail[0]))
-        elif path=="/etc" or path=="/etc/docker" or path.startswith("/etc/docker/"):
-            return None
-    return roots[0] if len(roots)==1 and roots[0][1:]==("/","ext4") else None
+def netfilter_rules(dump):
+    rules={}
+    table=None
+    for line in dump.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("*"):
+            need(table is None,"DOCKER_REGLAS_FORMATO")
+            table=line[1:]
+        elif line=="COMMIT":
+            need(table is not None,"DOCKER_REGLAS_FORMATO")
+            table=None
+        elif line.startswith(":"):
+            need(table is not None,"DOCKER_REGLAS_FORMATO")
+            key=(table,line[1:].split()[0])
+            need(key not in rules,"DOCKER_REGLAS_FORMATO")
+            rules[key]=[]
+        elif line.startswith("-A "):
+            args=shlex.split(line)
+            need((table,args[1]) in rules,"DOCKER_REGLAS_FORMATO")
+            rules[table,args[1]].append(args[2:])
+        else:
+            raise Stop("DOCKER_REGLAS_FORMATO")
+    need(table is None,"DOCKER_REGLAS_FORMATO")
+    return rules
 
 
-def default_absence_proof(process, daemon):
-    """Check that dockerd and the operator see the same unovermounted default path."""
-    if daemon!=Path("/etc/docker/daemon.json"):
-        return False
-    try:
-        self_mount=default_config_mount(Path("/proc/self/mountinfo").read_text())
-        dock_mount=default_config_mount((process/"mountinfo").read_text())
-        if self_mount is None or self_mount!=dock_mount:
-            return False
-        for name in ("/","/etc","/etc/docker"):
-            host=Path(name).lstat()
-            proc=(process/"root"/name.lstrip("/")).lstat() if name!="/" else (process/"root").stat()
-            if (host.st_dev,host.st_ino)!=(proc.st_dev,proc.st_ino):
-                return False
-        return not (process/"root/etc/docker/daemon.json").exists()
-    except OSError:
-        return False
+def prove_endpoint_drop(rules, address, iface):
+    # Moby 28's per-endpoint guard runs before Docker DNAT and does not
+    # allow directly routed traffic from outside the endpoint's bridge.
+    wanted=ipaddress.ip_network(address)
+    for args in rules.get(("raw","PREROUTING"),[]):
+        # An earlier unknown target could end traversal or rewrite the packet.
+        need(args[-2:]==["-j","DROP"],"DOCKER_RAW_REGLA_PREVIA_NO_ACREDITADA")
+        if (len(args)==7 and args[0]=="-d" and args[2:4]==["!","-i"]
+            and ipaddress.ip_network(args[1])==wanted and args[4]==iface):
+            return
+    raise Stop("DOCKER_RAW_ENDPOINT_DROP_AUSENTE")
 
 
-def trusted_config_stamp(path, metadata, began, shared_default_absence):
-    # /etc/docker and / must still predate dockerd, even if unrelated /etc
-    # entries can account for a late mtime/ctime on /etc itself.
-    unrelated_parent=shared_default_absence and path==Path("/etc")
-    need(metadata.st_uid==0 and not metadata.st_mode&0o022 and not stat.S_ISLNK(metadata.st_mode) and
-         (unrelated_parent or max(metadata.st_mtime,metadata.st_ctime)<=began-2),
-         "DOCKER_CONFIG_CAMBIO_DESDE_ARRANQUE")
-    return metadata.st_dev,metadata.st_ino,metadata.st_mtime_ns,metadata.st_ctime_ns
+def prove_database_drop(rules, iface):
+    # Accept only a positively proved drop independent of source address.
+    # Do not assume the Docker Internal attribute or a subnet match prevents spoofed packets.
+    def chain(name):
+        return rules.get(("filter",name),[])
+    forward=chain("FORWARD")
+    if forward[:1]==[["-j","DOCKER-USER"]]:
+        need(chain("DOCKER-USER") in ([],[["-j","RETURN"]]),"DOCKER_DB_USER_CADENA_INCIERTA")
+        forward=forward[1:]
+    want=["!","-i",iface,"-o",iface,"-j","DROP"]
+    if forward[:1]==[want]:
+        return
+    need(forward[:1]==[["-j","DOCKER-FORWARD"]],"DOCKER_DB_FORWARD_NO_ACREDITADO")
+    entry=chain("DOCKER-FORWARD")
+    if entry[:1]==[["-j","DOCKER-CT"]]:
+        need(all(len(a)==8 and a[0]=="-o" and a[1]!=iface and
+                 a[2:]==["-m","conntrack","--ctstate","RELATED,ESTABLISHED","-j","ACCEPT"]
+                 for a in chain("DOCKER-CT")),"DOCKER_DB_CT_NO_ACREDITADO")
+        entry=entry[1:]
+    need(any(entry[:1]==[["-j",name]] and want in chain(name)[:1]
+             for name in ("DOCKER-INTERNAL","DOCKER-ISOLATION-STAGE-1")),
+         "DOCKER_DB_DROP_EXTERNO_NO_ACREDITADO")
 
 
-def check_private_network(items):
+def bridge_shape(items, nets):
+    endpoints=[list(i["NetworkSettings"]["Networks"].values()) for i in items]
+    need([len(e) for e in endpoints]==[2,1,1],"DOCKER_RED_TOPOLOGIA_INCIERTA")
+    web,db=endpoints[1][0]["NetworkID"],endpoints[2][0]["NetworkID"]
+    need(web!=db and {e["NetworkID"] for e in endpoints[0]}=={web,db} and set(nets)=={web,db},
+         "DOCKER_RED_TOPOLOGIA_INCIERTA")
+    shapes={}
+    for network in (web,db):
+        n=nets[network]
+        options=n.get("Options",{})
+        need(n["Id"]==network and n["Driver"]=="bridge" and n["Internal"]==(network==db)
+             and n["Labels"].get("com.docker.compose.project")=="hf-one-pilot"
+             and not options.get("com.docker.network.bridge.trusted_host_interfaces")
+             and all(options.get("com.docker.network.bridge.gateway_mode_"+family,"nat")=="nat"
+                     for family in ("ipv4","ipv6")),"DOCKER_RED_INSEGURA_O_DISTINTA")
+        iface=options.get("com.docker.network.bridge.name","br-"+network[:12])
+        need(re.fullmatch(r"[A-Za-z0-9_.-]{1,15}",iface) is not None,"DOCKER_RED_INTERFAZ_INCIERTA")
+        prefixes=[ipaddress.ip_network(p["Subnet"]) for p in n["IPAM"]["Config"]]
+        found={4:[],6:[]}
+        for endpoint in (e for es in endpoints for e in es if e["NetworkID"]==network):
+            for version,key in ((4,"IPAddress"),(6,"GlobalIPv6Address")):
+                text=endpoint.get(key)
+                if version==6 and n["EnableIPv6"] is False:
+                    need(not text,"DOCKER_RED_IPV6_INCONSISTENTE")
+                    continue
+                address=ipaddress.ip_address(text)
+                need(address.version==version and not (address.is_loopback or address.is_unspecified
+                     or address.is_multicast or address.is_link_local) and any(address in p for p in prefixes),
+                     "DOCKER_RED_IP_INCIERTA")
+                found[version].append(str(address))
+        shapes[network]=(iface,found)
+    need(shapes[web][0]!=shapes[db][0],"DOCKER_RED_INTERFAZ_INCIERTA")
+    return shapes[web],shapes[db]
+
+
+def prove_raw_hooks(objects):
+    allowed={("ip","raw","PREROUTING",-300),("ip6","raw","PREROUTING",-300),
+             ("inet",TABLE,"gate",-310)}
+    hooks=set()
+    for item in objects:
+        need("flowtable" not in item,"DOCKER_NFT_FLOW_OFFLOAD_INCIERTO")
+        c=item.get("chain",{})
+        if c.get("hook") in ("ingress","prerouting"):
+            need(type(c.get("prio")) is int,"DOCKER_NFT_ORDEN_INCIERTO")
+            key=(c.get("family"),c.get("table"),c.get("name"),c.get("prio"))
+            if c["hook"]=="ingress" or c["prio"]<=-300:
+                need(key in allowed and c.get("type")=="filter" and key not in hooks,
+                     "DOCKER_NFT_ORDEN_INCIERTO")
+                hooks.add(key)
+            else:
+                family,table,name,priority=key
+                need(family in ("ip","ip6") and name=="PREROUTING" and
+                     (table,c.get("type"),priority) in (("nat","nat",-100),("mangle","filter",-150)),
+                     "DOCKER_NFT_PREROUTING_NO_ACREDITADO")
+    return hooks
+
+
+def prove_private_publication(v, addresses, sockets):
+    variants=(["-d","127.0.0.1/32","!","-i","lo","-p","tcp","-m","tcp","--dport","443","-j","DROP"],
+              ["-d","127.0.0.1/32","!","-i","lo","-p","tcp","--dport","443","-j","DROP"])
+    early=v[4].get(("raw","PREROUTING"),[])
+    for rule in early:
+        need(rule[-2:]==["-j","DROP"],"DOCKER_RAW_REGLA_PREVIA_NO_ACREDITADA")
+        if rule in variants:
+            break
+    else:
+        raise Stop("DOCKER_LOOPBACK_RAW_DROP_AUSENTE")
+    need(all(len(s.split())>=5 and s.split()[3]=="127.0.0.1:443" for s in sockets.splitlines()),
+         "DOCKER_WEB_SOCKET_PUBLICO")
+    for family, rules in v.items():
+        for (table,_), chain in rules.items():
+            if table!="nat":
+                continue
+            for r in chain:
+                if any(target in r for target in ("DNAT","REDIRECT","NETMAP")):
+                    need(family==4 and "-d" in r and r[r.index("-d")+1]=="127.0.0.1/32"
+                         and "--dport" in r and r[r.index("--dport")+1]=="443" and
+                         "--to-destination" in r and
+                         r[r.index("--to-destination")+1] in {a+":8443" for a in addresses},
+                         "DOCKER_NAT_PRIVADO_NO_ACREDITADO")
+
+
+def active_docker_identity():
     pid=cmd(["systemctl","show","-p","MainPID","--value","docker.service"],"DOCKER_DAEMON_NO_ACREDITADO").strip()
     need(re.fullmatch(r"[1-9][0-9]*",pid) is not None,"DOCKER_DAEMON_NO_ACREDITADO")
     process=Path("/proc")/pid
-    need(process.stat().st_uid==0 and (process/"exe").resolve().name=="dockerd",
+    need(process.stat().st_uid==0 and (process/"exe").resolve().name=="dockerd"
+         and (process/"ns/net").stat().st_ino==Path("/proc/self/ns/net").stat().st_ino,
          "DOCKER_DAEMON_NO_ACREDITADO")
     argv=(process/"cmdline").read_bytes().decode().rstrip("\0").split("\0")
-    paths=[x.split("=",1)[1] for x in argv if x.startswith("--config-file=")]
-    paths.extend(argv[i+1] for i,x in enumerate(argv[:-1]) if x=="--config-file")
-    need(len(paths)<=1,"DOCKER_CONFIG_DAEMON_INCIERTA")
-    daemon=Path(paths[0] if paths else "/etc/docker/daemon.json")
-    need(daemon.is_absolute() and daemon==daemon.resolve(),"DOCKER_CONFIG_DAEMON_INCIERTA")
-    # Do not infer daemon state from a file that may have been edited or deleted since startup.
-    # For the absent default file, the parent directory must predate dockerd too.
-    pid_ticks=int((process/"stat").read_text().rsplit(")",1)[1].split()[19])
-    boot=int(next(line[6:] for line in Path("/proc/stat").read_text().splitlines() if line.startswith("btime ")))
-    began=boot+pid_ticks/os.sysconf("SC_CLK_TCK")
-    found=daemon.exists()
-    source=daemon if found else daemon.parent
-    if not found:
-        need(not paths and source.is_dir(),"DOCKER_CONFIG_DAEMON_NO_ACREDITADA")
-    shared_default_absence=not found and not paths and default_absence_proof(process,daemon)
-    cfg_paths=(source,*source.parents)
-    def config_stamp(path):
-        return trusted_config_stamp(path,path.lstat(),began,shared_default_absence)
-    stamps=[config_stamp(path) for path in cfg_paths]
-    settings={}
-    if found:
-        settings=json.loads(daemon.read_text(encoding="utf-8"))
-    need([config_stamp(path) for path in cfg_paths]==stamps and daemon.exists()==found and
-         (not shared_default_absence or default_absence_proof(process,daemon)) and
-         cmd(["systemctl","show","-p","MainPID","--value","docker.service"],"DOCKER_DAEMON_NO_ACREDITADO").strip()==pid,
-         "DOCKER_CONFIG_O_PROCESO_CAMBIO")
-    daemon_policy(argv,settings)
-    web=list(items[1]["NetworkSettings"]["Networks"].values())
-    joined=items[0]["NetworkSettings"]["Networks"].values()
-    need(len(web)==1 and re.fullmatch(r"[a-f0-9]{64}",web[0]["NetworkID"])
-         and web[0]["NetworkID"] in {n["NetworkID"] for n in joined},"DOCKER_WEB_RED_PRIVADA_NO_ACREDITADA")
-    net=json.loads(cmd(["docker","network","inspect",web[0]["NetworkID"]],"DOCKER_WEB_RED_NO_VERIFICADA"))[0]
-    need(net["Driver"]=="bridge" and net["Labels"].get("com.docker.compose.project")=="hf-one-pilot",
-         "DOCKER_WEB_RED_NO_PERTENECE_AL_PROYECTO")
-    options=net.get("Options",{})
-    need(not options.get("com.docker.network.bridge.trusted_host_interfaces") and
-         all(options.get("com.docker.network.bridge.gateway_mode_"+family,"nat")=="nat"
-             for family in ("ipv4","ipv6")),"DOCKER_RED_DIRECT_ROUTING_ACTIVO")
+    return (pid,(process/"stat").read_text().rsplit(")",1)[1].split()[19],argv)
+
+
+def check_private_network(items, private_web=False):
+    def networks():
+        return {n:json.loads(cmd(["docker","network","inspect",n],"DOCKER_RED_NO_VERIFICADA"))[0] for n in ids}
+    def snapshot():
+        return {i:netfilter_rules(cmd([name],"DOCKER_REGLAS_KERNEL_NO_DISPONIBLES"))
+                for i,name in ((4,"iptables-save"),(6,"ip6tables-save"))}
+    def topology(inspects):
+        return [(i["Id"],i["HostConfig"]["NetworkMode"],i["NetworkSettings"]["Networks"]) for i in inspects]
+    identity=active_docker_identity()
+    daemon_policy(identity[2],{})
+    ids={e["NetworkID"] for item in items for e in item["NetworkSettings"]["Networks"].values()}
+    need(len(ids)==2 and all(re.fullmatch(r"[a-f0-9]{64}",i) for i in ids),"DOCKER_RED_TOPOLOGIA_INCIERTA")
+    net=networks()
+    (web_iface,web_ips),(db_iface,db_ips)=bridge_shape(items,net)
+    for iface in (web_iface,db_iface):
+        links=json.loads(cmd(["ip","-j","-d","link","show","dev",iface],"DOCKER_RED_INTERFAZ_INCIERTA"))
+        need(len(links)==1 and links[0].get("ifname")==iface and
+             links[0].get("linkinfo",{}).get("info_kind")=="bridge","DOCKER_RED_INTERFAZ_INCIERTA")
+    v=snapshot()
+    before_hooks=prove_raw_hooks(nft_state())
+    for family,tool in ((4,"iptables"),(6,"ip6tables")):
+        version=cmd([tool,"--version"],"DOCKER_BACKEND_FIREWALL_INCIERTO")
+        need("(nf_tables)" in version,"DOCKER_BACKEND_FIREWALL_INCIERTO")
+        if web_ips[family]:
+            need(("ip" if family==4 else "ip6","raw","PREROUTING",-300) in before_hooks,
+                 "DOCKER_RAW_HOOK_NO_ACREDITADO")
+            for address in web_ips[family]:
+                prove_endpoint_drop(v[family],address,web_iface)
+        if db_ips[family]:
+            prove_database_drop(v[family],db_iface)
+    if private_web:
+        need(set(cmd(["docker","port",NAMES[1]],"WEB_PRIVADA_NO_VERIFICADA").splitlines())
+             =={"8443/tcp -> 127.0.0.1:443"},"WEB_NO_ES_PRIVADA")
+        prove_private_publication(v,web_ips[4],
+            cmd(["ss","-H","-ltn","sport = :443"],"DOCKER_WEB_SOCKET_INCIERTO"))
+    need(identity==active_docker_identity() and topology(items)==topology(containers()) and net==networks()
+         and v==snapshot() and before_hooks==prove_raw_hooks(nft_state()),"DOCKER_RED_O_REGLAS_CAMBIARON")
+    print("DOCKER_FILTRADO_DIRECTO_VERIFICADO",flush=True)
+    return identity
 
 
 def backup_bindings(cfg, items, envfile):
@@ -415,6 +522,20 @@ def interrupted(*_):
     raise Stop("SESION_INTERRUPCION_O_ESPERA_AGOTADA")
 
 
+def main_verify_network(ssh_port):
+    try:
+        need(os.geteuid()==0 and ssh_port=="22","SSH_O_SUDO_NO_COINCIDE")
+        items=containers()
+        for i in (0,2):
+            need(not cmd(["docker","port",NAMES[i]],"PUERTO_NO_VERIFICADO").strip(),
+                 "PUERTO_DIRECTO_WRITER")
+        check_private_network(items)
+        return 0
+    except Exception as e:
+        print("NO-GO FILTRADO_DIRECTO",str(e) if isinstance(e,Stop) else "EVIDENCIA_INCOMPLETA")
+        return 4
+
+
 def main_reconcile(ssh_port):
     try:
         need(os.geteuid()==0 and ssh_port=="22" and STATE.is_dir() and not STATE.is_symlink(),
@@ -483,7 +604,7 @@ def main_cutover(ssh_port):
         need(all(x["State"]["Running"] for x in before) and
              [x["Config"]["Image"] for x in before[:2]]==[image("backend",OLD[0]),image("web",OLD[1])],
              "PAR_BASE_DISTINTO")
-        check_private_network(before)
+        initial_docker=check_private_network(before)
         orig=[x["Id"] for x in before]
         for svc in NAMES[0],NAMES[2]:
             need(not cmd(["docker","port",svc],"PUERTO_NO_VERIFICADO").strip(),"PUERTO_DIRECTO_WRITER")
@@ -530,6 +651,7 @@ def main_cutover(ssh_port):
         check_migrator_auth(c)
         need([x["Id"] for x in containers()]==orig and absent(),"TOPOLOGIA_CAMBIO_ANTES_DE_CERRAR")
         need(sample(EF0)==db_hash,"PG_IDENTIDAD_CAMBIO_ANTES_DE_CERRAR")
+        need(check_private_network(before)==initial_docker,"DOCKER_DAEMON_CAMBIO_DURANTE_CORTE")
         phase="CIERRE_ANTES_DE_DRENAR"
         (STATE/"guard-id").write_text(token,encoding="ascii")
         # Treat uncertain nft result as potentially applied.
@@ -574,7 +696,7 @@ def main_cutover(ssh_port):
             if service=="backend":
                 wait_backend()
         now=containers()
-        check_private_network(now)
+        need(check_private_network(now,private_web=True)==initial_docker,"DOCKER_DAEMON_CAMBIO_DURANTE_CORTE")
         need(now[2]["Id"]==orig[2] and now[2]["Mounts"]==before[2]["Mounts"]
              and all(now[i]["Config"]["Image"]==image(s,NEW[s]) and now[i]["Mounts"]==before[i]["Mounts"]
                      for i,s in enumerate(("backend","web"))),"DIGEST_O_MONTAJES_POSTCORTE")
@@ -588,6 +710,7 @@ def main_cutover(ssh_port):
         print("Usa el navegador privado del monitor para reingresar y abrir ambos selectores sin confirmar lotes.")
         ask("VALIDADO FUNCIONAL Y ABRIR RC11",420)
         verify_guard(token)
+        need(check_private_network(containers(),private_web=True)==initial_docker,"DOCKER_DAEMON_CAMBIO_DURANTE_CORTE")
         need(ENV.read_text(encoding="utf-8")==old,"ENV_CANONICO_CAMBIO")
         tmp_fd,tmp=tempfile.mkstemp(prefix=".rc11-",dir=ENV.parent)
         with os.fdopen(tmp_fd,"w",encoding="utf-8",newline="") as stream:
@@ -626,13 +749,18 @@ def main_cutover(ssh_port):
                 sample(EF0,drained=True)
                 print("EF no se intento. Retorno disponible con los contenedores anteriores, sin cambiar datos.")
                 ask("VOLVER A RC8",100)
+                need(active_docker_identity()==initial_docker,"DOCKER_DAEMON_CAMBIO_DURANTE_CORTE")
                 cmd(compose(ENV)+["start","backend"],"RETORNO_BACKEND",timeout=90)
                 wait_backend()
                 cmd(private_old+["up","-d","--no-deps","--no-build","--pull","never","--force-recreate","web"],
                     "RETORNO_WEB_PRIVADA",timeout=90)
+                need(check_private_network(containers(),private_web=True)==initial_docker,
+                     "DOCKER_DAEMON_CAMBIO_DURANTE_CORTE")
                 wait_tls(("/","/login"))
                 ask("REABRIR RC8",100)
                 verify_guard(token)
+                need(check_private_network(containers(),private_web=True)==initial_docker,
+                     "DOCKER_DAEMON_CAMBIO_DURANTE_CORTE")
                 cmd(compose(ENV)+["up","-d","--no-deps","--no-build","--pull","never","--force-recreate","web"],
                     "RETORNO_WEB_PUBLICA",timeout=90)
                 wait_tls(("/","/login"))

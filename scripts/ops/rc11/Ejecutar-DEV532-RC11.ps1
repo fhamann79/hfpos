@@ -1,4 +1,5 @@
-param([string]$Destino,[string]$OrigenIPv4,[string]$OrigenIPv6,[switch]$Reconciliar)
+param([string]$Destino,[string]$OrigenIPv4,[string]$OrigenIPv6,
+      [switch]$Reconciliar,[switch]$VerificarBridge)
 $ErrorActionPreference='Stop'
 if (!$Destino) { $Destino=Read-Host 'Destino SSH habitual ya verificado' }
 if ($Destino -cnotmatch '^(hfadmin@)?[A-Za-z0-9][A-Za-z0-9.-]{0,252}$') { throw 'NO-GO SSH_DESTINO_NO_VALIDO' }
@@ -10,8 +11,10 @@ $root='C:\Users\fhama\source\repos\hfpos'
 $payload=& python.exe -B (Join-Path $PSScriptRoot 'Empaquetar-DEV532-RC11.py') $root
 if ($LASTEXITCODE -ne 0 -or @($payload).Count -ne 1 -or $payload -cnotmatch '^[A-Za-z0-9+/=]{1,28000}$') { throw 'NO-GO PAQUETE_LOCAL' }
 $baseCommand='set -- ${SSH_CONNECTION-}; exec sudo -- python3 -I -B -c ''import sys,base64,lzma;exec(lzma.decompress(base64.b64decode(sys.argv[1])))'' ' + $payload
-if ($Reconciliar) {
-    & ssh.exe -tt -o StrictHostKeyChecking=yes -o ClearAllForwardings=yes -o ForwardAgent=no -- $Destino ($baseCommand+' reconcile $4')
+if ($Reconciliar -and $VerificarBridge) { throw 'NO-GO MODO_AMBIGUO' }
+if ($Reconciliar -or $VerificarBridge) {
+    $mode=if($Reconciliar) { 'reconcile' } else { 'verify-network' }
+    & ssh.exe -tt -o StrictHostKeyChecking=yes -o ClearAllForwardings=yes -o ForwardAgent=no -- $Destino ($baseCommand+' '+$mode+' $4')
     return
 }
 if (!$OrigenIPv4) { $OrigenIPv4=Read-Host 'IPv4 de origen del VPS (inventario privado; no IP de CDN)' }

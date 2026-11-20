@@ -16,7 +16,7 @@ import copy
 here=Path(__file__).resolve().parent
 repo=sys.argv[1]
 payload=subprocess.check_output([sys.executable,"-B",str(here/"Empaquetar-DEV532-RC11.py"),repo])
-code=lzma.decompress(base64.b64decode(payload)).decode().rsplit("sys.exit(main_reconcile",1)[0]
+code=lzma.decompress(base64.b64decode(payload)).decode().rsplit("\nentry={'reconcile'",1)[0]
 fcntl=SimpleNamespace(LOCK_EX=2,LOCK_NB=4,flock=None)
 sys.modules["fcntl"]=fcntl
 ns={}
@@ -102,6 +102,8 @@ def trial(mode):
       return "hash"
     def verify(*a,**kw):
       if not guard: raise ns["Stop"]("GUARD_LOST")
+    def network(*a,**kw):
+      return "changed" if mode=="daemon-change" and "auth-probe" in events else "daemon"
     def backup(*a):
       assert guard and stopped and not applied and acquired==1
       events.append("backup")
@@ -113,7 +115,7 @@ def trial(mode):
               verify_guard=verify, remove_guard=recover, absent=lambda:not guard,
               check_migrator_auth=lambda a: events.append("auth-probe"),
               borrow_and_capture=backup, backup_bindings=lambda *a:None,
-              private_compose=lambda *a:["private"],check_private_network=lambda _:None,
+              private_compose=lambda *a:["private"],check_private_network=network,active_docker_identity=network,
               load_worker=lambda:SimpleNamespace(load_config=lambda _:dict(containers=ns["NAMES"])))
     output=io.StringIO()
     with patch.object(os,"O_NOFOLLOW",getattr(os,"O_NOFOLLOW",0),create=True), \
@@ -141,7 +143,7 @@ def trial(mode):
       if mode=="lock-fail": assert acquired==1 and not guard and not stopped
     print("PASS",mode)
 
-for mode in ("happy","authorization-denied","lock-fail","external-proof-fail","backup-fail","backup-return","ef-receipt-lost","guard-lost"):
+for mode in ("happy","authorization-denied","lock-fail","external-proof-fail","backup-fail","backup-return","ef-receipt-lost","guard-lost","daemon-change"):
     trial(mode)
 
 ns.update(initial)
@@ -230,56 +232,75 @@ for argv,cfg in ((["dockerd","--ip6tables=false"],{}),(["dockerd"],{"iptables":F
 print("PASS direct routing and disabled filtering are rejected")
 
 ns.update(initial)
-stamp=ns["trusted_config_stamp"]
-age=dict(st_uid=0,st_mode=0o40755,st_mtime=160,st_ctime=160,
-         st_dev=1,st_ino=2,st_mtime_ns=160000000000,st_ctime_ns=160000000000)
-mtime_only_parent=SimpleNamespace(**age)
-assert stamp(Path("/etc"),mtime_only_parent,100,True)==(1,2,160000000000,160000000000)
-for path,options,proof in (("/etc",age,False),("/etc/docker",age,True),("/",age,True),
-                           ("/etc/docker/daemon.json",age,True),
-                           ("/etc",dict(age,st_mode=0o120777),True),
-                           ("/etc",dict(age,st_mode=0o40775),True),
-                           ("/etc",dict(age,st_uid=1000),True)):
-    try: stamp(Path(path),SimpleNamespace(**options),100,proof)
-    except ns["Stop"]: pass
-    else: raise AssertionError("unsafe metadata passed")
+def rejects(f,*args):
+    try: f(*args)
+    except (ns["Stop"],ValueError): return
+    raise AssertionError("unsafe network proof passed")
 
-mount=ns["default_config_mount"]
-root_mount="29 28 8:1 / / rw,relatime - ext4 /dev/vda1 rw"
-assert mount(root_mount)==("8:1","/","ext4")
-assert mount(root_mount+"\n33 29 8:1 /usr /mnt unrelated - ext4 /dev/vda1 rw") is not None
-for extra in ("/etc","/etc/docker","/etc/docker/daemon.json"):
-    assert mount(root_mount+"\n33 29 8:1 /other "+extra+" ro - ext4 /dev/vda1 rw") is None
-assert mount(root_mount.replace(" ext4 ", " overlay ")) is None
-assert mount(root_mount+"\n"+root_mount) is None
-assert mount("unreadable metadata") is None
-
-proof=ns["default_absence_proof"]
-process=Path("/proc/42")
-default=Path("/etc/docker/daemon.json")
-host_mount=root_mount
-daemon_mount=root_mount
-inode_mismatch=False
-file_exists=False
-def read_mount(path):
-    return host_mount if path==Path("/proc/self/mountinfo") else daemon_mount
-def read_stamp(path):
-    item=path.as_posix()
-    ino=3 if item.endswith("/etc/docker") else 2 if item.endswith("/etc") else 1
-    if inode_mismatch and item.endswith("/root/etc/docker"): ino=4
-    return SimpleNamespace(st_dev=8,st_ino=ino)
-with patch.object(Path,"read_text",read_mount),patch.object(Path,"lstat",read_stamp), \
-     patch.object(Path,"stat",read_stamp),patch.object(Path,"exists",lambda _:file_exists):
-    assert proof(process,default)
-    assert not proof(process,Path("/elsewhere/daemon.json"))
-    file_exists=True
-    assert not proof(process,default)
-    file_exists=False
-    inode_mismatch=True
-    assert not proof(process,default)
-    inode_mismatch=False
-    daemon_mount=root_mount.replace("8:1","8:2")
-    assert not proof(process,default)
-    daemon_mount=root_mount+"\n33 29 8:1 /other /etc/docker ro - ext4 /dev/vda1 rw"
-    assert not proof(process,default)
-print("PASS only unrelated /etc timestamps accepted with coherent default-absent config proof")
+raw=r"""*raw
+:PREROUTING ACCEPT [0:0]
+-A PREROUTING -d 127.0.0.0/8 ! -i lo -j DROP
+-A PREROUTING -d 172.30.52.10/32 ! -i br-app -j DROP
+COMMIT
+"""
+filters=r"""*filter
+:FORWARD DROP [0:0]
+:DOCKER-USER - [0:0]
+:DOCKER-FORWARD - [0:0]
+:DOCKER-CT - [0:0]
+:DOCKER-INTERNAL - [0:0]
+-A FORWARD -j DOCKER-USER
+-A FORWARD -j DOCKER-FORWARD
+-A DOCKER-FORWARD -j DOCKER-CT
+-A DOCKER-FORWARD -j DOCKER-INTERNAL
+-A DOCKER-CT -o br-app -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A DOCKER-INTERNAL ! -i br-db -o br-db -j DROP
+COMMIT
+"""
+parse=ns["netfilter_rules"]
+rules=parse(raw+filters)
+ns["prove_endpoint_drop"](rules,"172.30.52.10","br-app")
+ns["prove_database_drop"](rules,"br-db")
+raw6=raw.replace("172.30.52.10/32","fd00:52::a/128").replace("127.0.0.0/8","::1/128")
+ns["prove_endpoint_drop"](parse(raw6),"fd00:52::a","br-app")
+rejects(ns["prove_endpoint_drop"],rules,"172.30.52.11","br-app")
+rejects(ns["prove_endpoint_drop"],rules,"172.30.52.10","br-db")
+rejects(ns["prove_endpoint_drop"],parse(raw.replace("-j DROP","-j ACCEPT",1)),"172.30.52.10","br-app")
+rejects(ns["prove_database_drop"],parse(filters.replace("-A FORWARD -j DOCKER-FORWARD","-A FORWARD -j ACCEPT\n-A FORWARD -j DOCKER-FORWARD")),"br-db")
+rejects(ns["prove_database_drop"],parse(filters.replace("-o br-app -m","-o br-db -m")),"br-db")
+rejects(ns["prove_database_drop"],parse(filters.replace("! -i br-db -o br-db","-o br-db ! -s 172.31.0.0/16")),"br-db")
+c={"chain":{"family":"ip","table":"raw","name":"PREROUTING","type":"filter","hook":"prerouting","prio":-300}}
+ns["prove_raw_hooks"]([c])
+rejects(ns["prove_raw_hooks"],[c,{"flowtable":{}}])
+early=copy.deepcopy(c)
+early["chain"]["table"]="custom"
+rejects(ns["prove_raw_hooks"],[c,early])
+ids={"a":"a"*64,"b":"b"*64}
+def ep(bridge,v4,v6=""):
+    return {"NetworkID":ids[bridge],"IPAddress":v4,"GlobalIPv6Address":v6}
+i=[{"NetworkSettings":{"Networks":es}} for es in ({"a":ep("a","172.30.52.11","fd00::2"),"b":ep("b","172.31.0.2")},
+   {"a":ep("a","172.30.52.10","fd00::1")},{"b":ep("b","172.31.0.3")})]
+n={k:{"Id":k,"Driver":"bridge","Internal":k==ids["b"],"EnableIPv6":k==ids["a"],
+      "Labels":{"com.docker.compose.project":"hf-one-pilot"},"Options":{},
+      "IPAM":{"Config":[{"Subnet":"172.31.0.0/16"}] if k==ids["b"] else
+                       [{"Subnet":"172.30.52.0/24"},{"Subnet":"fd00::/64"}]}} for k in ids.values()}
+ns["bridge_shape"](i,n)
+bad=copy.deepcopy(n)
+bad[ids["a"]]["Options"]["com.docker.network.bridge.gateway_mode_ipv6"]="routed"
+rejects(ns["bridge_shape"],i,bad)
+bad=copy.deepcopy(n)
+bad[ids["a"]]["Options"]["com.docker.network.bridge.trusted_host_interfaces"]="eth0"
+rejects(ns["bridge_shape"],i,bad)
+bad=copy.deepcopy(i)
+bad[1]["NetworkSettings"]["Networks"]["a"]["IPAddress"]="192.0.2.1"
+rejects(ns["bridge_shape"],bad,n)
+loop="-A PREROUTING -d 127.0.0.1/32 ! -i lo -p tcp -m tcp --dport 443 -j DROP\n"
+approvable={4:parse(raw.replace("COMMIT",loop+"COMMIT")),6:{}}
+socket="LISTEN 0 1024 127.0.0.1:443 0.0.0.0:*"
+ns["prove_private_publication"](approvable,["172.30.52.10"],socket)
+rejects(ns["prove_private_publication"],{4:parse(raw),6:{}},["172.30.52.10"],socket)
+rejects(ns["prove_private_publication"],approvable,["172.30.52.10"],socket.replace("127.0.0.1","[::]"))
+with_nat=copy.deepcopy(approvable)
+with_nat[6][("nat","DOCKER")]=[["-j","DNAT","--to-destination","fd00::2"]]
+rejects(ns["prove_private_publication"],with_nat,["172.30.52.10"],socket)
+print("PASS active kernel rule proof rejects missing drops, early bypass and unsafe bridge options")
