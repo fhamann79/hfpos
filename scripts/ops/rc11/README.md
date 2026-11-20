@@ -32,8 +32,15 @@ activo con age/rclone y su lock. El empaquetador ancla
 `postgres-backup.sh` y `verify-postgres-backup.sh` en
 `8c80d8468834d2e8cdf6353a443ec35fa51e70ae`; no los duplica ni instala.
 
-`SHA256SUMS` fija los bytes de los nueve archivos revisados, incluyendo el
-runbook y los fixtures. Git no normaliza sus finales de linea. README, el
-manifiesto y el adaptador Windows de CI fueron agregados solo para publicacion.
+`SHA256SUMS` fija los bytes de los nueve artefactos de esta revision, incluyendo
+el runbook y los fixtures. Git no normaliza sus finales de linea. La huella del
+controlador original se conserva en el [PR #180](https://github.com/fhamann79/hfpos/pull/180).
+
+El preflight solo tolera metadata posterior de `/etc` cuando la configuracion
+predeterminada de Docker esta ausente en una raiz ext4 compartida con dockerd,
+sin monturas sobre la ruta. La raiz y `/etc/docker` siguen sujetos al control
+de antiguedad; se revalidan identidad, flags y red Docker. Una configuracion
+presente o una prueba inconclusa mantienen el control estricto.
+
 Este directorio no contiene archivos env, claves, respaldos ni configuracion
 privada de PG, SSH, age o rclone.

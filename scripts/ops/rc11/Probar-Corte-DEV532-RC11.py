@@ -228,3 +228,58 @@ for argv,cfg in ((["dockerd","--ip6tables=false"],{}),(["dockerd"],{"iptables":F
     except ns["Stop"]: pass
     else: raise AssertionError("route/filter bypass not blocked")
 print("PASS direct routing and disabled filtering are rejected")
+
+ns.update(initial)
+stamp=ns["trusted_config_stamp"]
+age=dict(st_uid=0,st_mode=0o40755,st_mtime=160,st_ctime=160,
+         st_dev=1,st_ino=2,st_mtime_ns=160000000000,st_ctime_ns=160000000000)
+mtime_only_parent=SimpleNamespace(**age)
+assert stamp(Path("/etc"),mtime_only_parent,100,True)==(1,2,160000000000,160000000000)
+for path,options,proof in (("/etc",age,False),("/etc/docker",age,True),("/",age,True),
+                           ("/etc/docker/daemon.json",age,True),
+                           ("/etc",dict(age,st_mode=0o120777),True),
+                           ("/etc",dict(age,st_mode=0o40775),True),
+                           ("/etc",dict(age,st_uid=1000),True)):
+    try: stamp(Path(path),SimpleNamespace(**options),100,proof)
+    except ns["Stop"]: pass
+    else: raise AssertionError("unsafe metadata passed")
+
+mount=ns["default_config_mount"]
+root_mount="29 28 8:1 / / rw,relatime - ext4 /dev/vda1 rw"
+assert mount(root_mount)==("8:1","/","ext4")
+assert mount(root_mount+"\n33 29 8:1 /usr /mnt unrelated - ext4 /dev/vda1 rw") is not None
+for extra in ("/etc","/etc/docker","/etc/docker/daemon.json"):
+    assert mount(root_mount+"\n33 29 8:1 /other "+extra+" ro - ext4 /dev/vda1 rw") is None
+assert mount(root_mount.replace(" ext4 ", " overlay ")) is None
+assert mount(root_mount+"\n"+root_mount) is None
+assert mount("unreadable metadata") is None
+
+proof=ns["default_absence_proof"]
+process=Path("/proc/42")
+default=Path("/etc/docker/daemon.json")
+host_mount=root_mount
+daemon_mount=root_mount
+inode_mismatch=False
+file_exists=False
+def read_mount(path):
+    return host_mount if path==Path("/proc/self/mountinfo") else daemon_mount
+def read_stamp(path):
+    item=path.as_posix()
+    ino=3 if item.endswith("/etc/docker") else 2 if item.endswith("/etc") else 1
+    if inode_mismatch and item.endswith("/root/etc/docker"): ino=4
+    return SimpleNamespace(st_dev=8,st_ino=ino)
+with patch.object(Path,"read_text",read_mount),patch.object(Path,"lstat",read_stamp), \
+     patch.object(Path,"stat",read_stamp),patch.object(Path,"exists",lambda _:file_exists):
+    assert proof(process,default)
+    assert not proof(process,Path("/elsewhere/daemon.json"))
+    file_exists=True
+    assert not proof(process,default)
+    file_exists=False
+    inode_mismatch=True
+    assert not proof(process,default)
+    inode_mismatch=False
+    daemon_mount=root_mount.replace("8:1","8:2")
+    assert not proof(process,default)
+    daemon_mount=root_mount+"\n33 29 8:1 /other /etc/docker ro - ext4 /dev/vda1 rw"
+    assert not proof(process,default)
+print("PASS only unrelated /etc timestamps accepted with coherent default-absent config proof")

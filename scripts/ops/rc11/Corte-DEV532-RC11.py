@@ -217,6 +217,50 @@ def daemon_policy(argv, settings):
              "DOCKER_FILTRADO_" + flag.upper() + "_NO_ACREDITADO")
 
 
+def default_config_mount(mountinfo):
+    roots=[]
+    for line in mountinfo.splitlines():
+        fields,separator,backend=line.partition(" - ")
+        front,tail=fields.split(),backend.split()
+        if not separator or len(front)<6 or len(tail)<3:
+            return None
+        path=front[4]
+        if path=="/":
+            roots.append((front[2],front[3],tail[0]))
+        elif path=="/etc" or path=="/etc/docker" or path.startswith("/etc/docker/"):
+            return None
+    return roots[0] if len(roots)==1 and roots[0][1:]==("/","ext4") else None
+
+
+def default_absence_proof(process, daemon):
+    """Check that dockerd and the operator see the same unovermounted default path."""
+    if daemon!=Path("/etc/docker/daemon.json"):
+        return False
+    try:
+        self_mount=default_config_mount(Path("/proc/self/mountinfo").read_text())
+        dock_mount=default_config_mount((process/"mountinfo").read_text())
+        if self_mount is None or self_mount!=dock_mount:
+            return False
+        for name in ("/","/etc","/etc/docker"):
+            host=Path(name).lstat()
+            proc=(process/"root"/name.lstrip("/")).lstat() if name!="/" else (process/"root").stat()
+            if (host.st_dev,host.st_ino)!=(proc.st_dev,proc.st_ino):
+                return False
+        return not (process/"root/etc/docker/daemon.json").exists()
+    except OSError:
+        return False
+
+
+def trusted_config_stamp(path, metadata, began, shared_default_absence):
+    # /etc/docker and / must still predate dockerd, even if unrelated /etc
+    # entries can account for a late mtime/ctime on /etc itself.
+    unrelated_parent=shared_default_absence and path==Path("/etc")
+    need(metadata.st_uid==0 and not metadata.st_mode&0o022 and not stat.S_ISLNK(metadata.st_mode) and
+         (unrelated_parent or max(metadata.st_mtime,metadata.st_ctime)<=began-2),
+         "DOCKER_CONFIG_CAMBIO_DESDE_ARRANQUE")
+    return metadata.st_dev,metadata.st_ino,metadata.st_mtime_ns,metadata.st_ctime_ns
+
+
 def check_private_network(items):
     pid=cmd(["systemctl","show","-p","MainPID","--value","docker.service"],"DOCKER_DAEMON_NO_ACREDITADO").strip()
     need(re.fullmatch(r"[1-9][0-9]*",pid) is not None,"DOCKER_DAEMON_NO_ACREDITADO")
@@ -238,17 +282,16 @@ def check_private_network(items):
     source=daemon if found else daemon.parent
     if not found:
         need(not paths and source.is_dir(),"DOCKER_CONFIG_DAEMON_NO_ACREDITADA")
+    shared_default_absence=not found and not paths and default_absence_proof(process,daemon)
     cfg_paths=(source,*source.parents)
     def config_stamp(path):
-        s=path.lstat()
-        need(s.st_uid==0 and not s.st_mode&0o022 and not stat.S_ISLNK(s.st_mode) and
-             max(s.st_mtime,s.st_ctime)<=began-2,"DOCKER_CONFIG_CAMBIO_DESDE_ARRANQUE")
-        return s.st_dev,s.st_ino,s.st_mtime_ns,s.st_ctime_ns
+        return trusted_config_stamp(path,path.lstat(),began,shared_default_absence)
     stamps=[config_stamp(path) for path in cfg_paths]
     settings={}
     if found:
         settings=json.loads(daemon.read_text(encoding="utf-8"))
     need([config_stamp(path) for path in cfg_paths]==stamps and daemon.exists()==found and
+         (not shared_default_absence or default_absence_proof(process,daemon)) and
          cmd(["systemctl","show","-p","MainPID","--value","docker.service"],"DOCKER_DAEMON_NO_ACREDITADO").strip()==pid,
          "DOCKER_CONFIG_O_PROCESO_CAMBIO")
     daemon_policy(argv,settings)
