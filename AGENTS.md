@@ -134,7 +134,7 @@ Rules:
 - Keep required human decisions where the runbook demands them, especially opening public ingress, accepting a materially changed plan, or resolving uncertain fiscal/database effects. Codex should own routine diagnostics and verified corrections within the granted scope; do not convert every failed guard into a manual terminal chore for Fernando.
 - Use local OS credential custody (SSH agent or interactive credential entry) and the minimum necessary privileges. Never ask for private keys, passwords, certificates, production data or connection strings in ChatGPT/Codex prompts, GitHub issues, commits, logs, CI or agent sandboxes. Do not bypass host-enforced tool approvals or claim access not granted.
 - Maintain SRI quiescence, multi-tenant isolation, verified offsite backup, EF one-shot execution, release digest pinning and safe reconciliation/STOP semantics. No blind retries, destructive restore or EF Down.
-- When a real host, tool, policy or network limitation prevents delegated access, report the precise blocker and a narrowly scoped authorization/access step; do not claim production was changed or deploy via an unverified alternative.
+- When a real host, tool, policy or network limitation prevents delegated access, report the precise blocker and a narrowly scoped authorization/access step; do not claim production was changed or deploy via an unverified alternative. Passing synthetic CI does not prove a production preflight: independently verify the actual SSH path, both exposed IP families, and the pre-cutover backup before any real mutation.
 - This policy amendment itself cannot self-authorize a PR merge. Apply the policy integrated in `main` before starting an agent-executed R4.
 
 ## 5. Non-negotiable HFPOS invariants
