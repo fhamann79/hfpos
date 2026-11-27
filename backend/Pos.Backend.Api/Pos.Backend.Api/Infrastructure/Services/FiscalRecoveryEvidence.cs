@@ -51,14 +51,16 @@ internal static class FiscalRecoveryEvidence
             : messages == Processing || raw == Processing ? Processing : messages ?? raw;
     }
 
-    internal static bool IsOriginalAuthorization(SriAuthorizationResponse response, Sale sale)
+    internal static bool IsOriginalAuthorizationRecord(SriAuthorizationResponse response, Sale sale)
     {
         var environmentMatches = (sale.SriEnvironment, response.AuthorizationEnvironment?.Trim().ToUpperInvariant()) switch
         {
             (1, "PRUEBAS" or "1") or (2, "PRODUCCIÓN" or "PRODUCCION" or "2") => true,
             _ => false
         };
-        if (response.ConsultedAccessKey != sale.AccessKey || response.AuthorizationNumber != sale.AccessKey
+        var authorizationNumberMatches = response.AuthorizationNumber == sale.AccessKey
+            || response.IsRejected && string.IsNullOrEmpty(response.AuthorizationNumber);
+        if (response.ConsultedAccessKey != sale.AccessKey || !authorizationNumberMatches
             || !response.HasSingleAuthorizationRecord || !environmentMatches
             || string.IsNullOrWhiteSpace(response.AuthorizedXml) || string.IsNullOrWhiteSpace(sale.SriSignedXml))
             return false;
@@ -102,7 +104,7 @@ internal static class FiscalRecoveryEvidence
         // empty consultation cannot hide a duplicate or processing code anywhere in an older response.
         var attempts = AttemptsFor(db, sale).AsNoTracking().Select(a => new
         {
-            a.ReceptionStatus, a.AuthorizationStatus, a.SriMessageIdentifier, a.ErrorCode, a.ResponseXml
+            a.AttemptType, a.ReceptionStatus, a.AuthorizationStatus, a.SriMessageIdentifier, a.ErrorCode, a.ResponseXml
         });
         await foreach (var attempt in attempts.AsAsyncEnumerable().WithCancellation(ct))
         {
@@ -110,7 +112,9 @@ internal static class FiscalRecoveryEvidence
             var known = new[] { raw, attempt.ErrorCode };
             if (attempt.SriMessageIdentifier?.Trim() == "45" || known.Contains(SequenceConflict))
                 return SequenceConflict;
-            if (attempt.ErrorCode == ValidityRecord)
+            if (attempt.ErrorCode == ValidityRecord || attempt.AttemptType == SriSubmissionAttemptType.Validity
+                && attempt.ResponseXml is { } validityXml
+                && SriWebServiceClient.ParseValidityResponse(validityXml, sale.AccessKey!).Evidence == SriValidityEvidence.RecordExists)
                 signal = ValidityRecord;
             if (signal == ValidityRecord) continue;
             if (attempt.ErrorCode == AuthorizationUnverified)

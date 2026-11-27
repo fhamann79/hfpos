@@ -164,9 +164,9 @@ public partial class SriSubmissionService : ISriSubmissionService
             var signal = FiscalRecoveryEvidence.ResponseSignal(response, includeProcessingState: requireProvenResult);
             var keyMatches = response.ConsultedAccessKey == trackedSale.AccessKey;
             var positive = response.IsAuthorized && signal != FiscalRecoveryEvidence.SequenceConflict
-                && ((!requireProvenResult && signal is null) || FiscalRecoveryEvidence.IsOriginalAuthorization(response, trackedSale));
+            && ((!requireProvenResult && signal is null) || FiscalRecoveryEvidence.IsOriginalAuthorizationRecord(response, trackedSale));
             var rejected = response.IsRejected && signal is null
-                && (!requireProvenResult || (keyMatches && response.HasSingleAuthorizationRecord));
+            && (!requireProvenResult || FiscalRecoveryEvidence.IsOriginalAuthorizationRecord(response, trackedSale));
             var empty = keyMatches && response.HasExplicitEmptyResult && response.Messages.Count == 0
                 && signal is null && !response.IsAuthorized && !response.IsRejected;
             var now = checkedAt ?? DateTime.UtcNow;

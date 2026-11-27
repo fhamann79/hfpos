@@ -215,12 +215,23 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
     internal Task<bool> RefreshRecoveryLeaseAsync(Admission admission, CancellationToken ct)
         => HeartbeatAsync(new ElectronicIssuingJob { Id = admission.JobId, LeaseToken = admission.Owner, Fence = admission.Fence }, ct);
 
-    internal async Task<bool> VerifyRecoveryDispatchAsync(Admission admission, DateTime firstCheckAt, CancellationToken ct)
-        => await context.Database.ExecuteSqlInterpolatedAsync($@"
+    internal async Task<T> DispatchRecoveryAsync<T>(Admission admission, DateTime firstCheckAt,
+        Func<Task<T>> dispatch, CancellationToken ct)
+    {
+        // The extraordinary budget was committed earlier. Keep only this job row locked
+        // until the bounded HTTP attempt returns, so no worker can take over mid-dispatch.
+        await using var tx = await context.Database.BeginTransactionAsync(ct);
+        var renewed = await context.Database.ExecuteSqlInterpolatedAsync($@"
             UPDATE ""ElectronicIssuingJobs"" SET ""LeaseExpiresAt"" = clock_timestamp() + interval '2 minutes'
             WHERE ""Id"" = {admission.JobId} AND ""LeaseToken"" = {admission.Owner}
               AND ""Fence"" = {admission.Fence} AND ""LeaseExpiresAt"" > clock_timestamp()
-              AND {firstCheckAt} > clock_timestamp() - interval '2 minutes'", ct) == 1;
+              AND {firstCheckAt} > clock_timestamp() - interval '2 minutes'", ct);
+        if (renewed != 1) throw new InvalidOperationException("FISCAL_LEASE_LOST");
+        ct.ThrowIfCancellationRequested();
+        var result = await dispatch();
+        await tx.CommitAsync(ct);
+        return result;
+    }
 
     internal Task<DateTime> DatabaseTimeAsync(CancellationToken ct)
         => context.Database.SqlQuery<DateTime>($"SELECT clock_timestamp() AS \"Value\"").SingleAsync(ct);

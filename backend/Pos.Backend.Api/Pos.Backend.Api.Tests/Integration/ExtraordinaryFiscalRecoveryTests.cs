@@ -48,13 +48,19 @@ public sealed class ExtraordinaryFiscalRecoveryTests(PostgresDatabaseFixture db)
     {
         var (fixture, original) = await SeedAsync();
         using var soap = new Soap(original);
-        await using var scope = Scope(fixture, soap);
+        var fence = new HoldAfterDispatchVerification();
+        await using var scope = Scope(fixture, soap, interceptors: [fence]);
+        await using var duplicate = Scope(fixture, soap);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         soap.BeforeReply = async (operation, ct) =>
         {
-            Assert.Null(scope.Db.Database.CurrentTransaction);
-            if (operation != "reception") return;
+            if (operation != "reception")
+            {
+                Assert.Null(scope.Db.Database.CurrentTransaction);
+                return;
+            }
+            Assert.NotNull(scope.Db.Database.CurrentTransaction);
             await using var read = db.CreateDbContext();
             var audit = await read.SriSubmissionAttempts.OrderBy(a => a.Id).ToListAsync(ct);
             Assert.Equal(new[] { SriSubmissionAttemptType.Reception, SriSubmissionAttemptType.Authorization,
@@ -69,16 +75,27 @@ public sealed class ExtraordinaryFiscalRecoveryTests(PostgresDatabaseFixture db)
         };
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var recovery = scope.Submission.RecoverReceptionAsync(original.Id, Grounds, timeout.Token);
+        Task<SriReceptionRecoveryStatus>? competing = null;
         try
         {
+            await fence.Verified.Task.WaitAsync(timeout.Token);
+            // Race after a successful ownership renewal, before invoking HTTP. Even a worker
+            // that ignores the future lease cannot claim the affected row while dispatch holds it.
+            var available = await duplicate.Db.Database.SqlQuery<int>($"""
+                SELECT 1 AS "Value" FROM "ElectronicIssuingJobs"
+                WHERE "SaleId" = {original.Id} FOR UPDATE SKIP LOCKED
+                """).ToListAsync(timeout.Token);
+            Assert.Empty(available);
+            Assert.DoesNotContain("reception", soap.Calls);
+            fence.Continue.TrySetResult();
             await entered.Task.WaitAsync(timeout.Token);
-            await fixture.DueAsync(original.Id);
-            await using var duplicate = Scope(fixture, soap);
-            await Conflict("FISCAL_DOCUMENT_BUSY", () => duplicate.Submission.RecoverReceptionAsync(original.Id, Grounds, timeout.Token));
             Assert.Empty(await duplicate.Coordinator.ClaimBatchAsync(1, timeout.Token));
+            competing = duplicate.Submission.RecoverReceptionAsync(original.Id, Grounds, timeout.Token);
         }
-        finally { resume.TrySetResult(); }
+        finally { fence.Continue.TrySetResult(); resume.TrySetResult(); }
         Assert.Equal(FiscalRecoveryEvidence.Received, (await recovery).Code);
+        var competingError = await Assert.ThrowsAsync<InvalidOperationException>(async () => await competing!);
+        Assert.Contains(competingError.Message, new[] { "FISCAL_DOCUMENT_BUSY", FiscalRecoveryEvidence.Received });
         Assert.Equal(new[] { "authorization", "validity", "reception" }, soap.Calls);
         Assert.Equal(original.SriSignedXml, soap.Transmitted);
 
@@ -126,6 +143,7 @@ public sealed class ExtraordinaryFiscalRecoveryTests(PostgresDatabaseFixture db)
     [InlineData("wrong-validity-key")]
     [InlineData("validity-timeout")]
     [InlineData("validity-record")]
+    [InlineData("validity-record-with-message")]
     public async Task Negative_admission_requires_two_strict_distinct_affirmative_empty_results(string scenario)
     {
         var (fixture, original) = await SeedAsync();
@@ -135,11 +153,14 @@ public sealed class ExtraordinaryFiscalRecoveryTests(PostgresDatabaseFixture db)
         Assert.DoesNotContain("reception", soap.Calls);
         Assert.Equal(SaleDocumentStatus.Draft, (await scope.Db.Sales.AsNoTracking().SingleAsync()).DocumentStatus);
         Assert.False(await scope.Db.SriSubmissionAttempts.AnyAsync(a => a.AttemptType == SriSubmissionAttemptType.ExtraordinaryReception));
-        if (scenario == "validity-record")
+        if (scenario is "validity-record" or "validity-record-with-message")
         {
             Assert.Equal(FiscalRecoveryEvidence.ValidityRecord, result.Code);
             Assert.Equal(FiscalRecoveryEvidence.ValidityRecord, (await scope.Submission.GetReceptionRecoveryStatusAsync(original.Id, default)).Code);
-            await Conflict(FiscalRecoveryEvidence.ValidityRecord, () => scope.Submission.RecoverReceptionAsync(original.Id, Grounds, default));
+            using var later = new Soap(original);
+            await using var retry = Scope(fixture, later);
+            await Conflict(FiscalRecoveryEvidence.ValidityRecord, () => retry.Submission.RecoverReceptionAsync(original.Id, Grounds, default));
+            Assert.Empty(later.Calls);
         }
         else if (scenario is "date-window" or "wrong-validity-key" or "validity-timeout")
         {
@@ -167,6 +188,22 @@ public sealed class ExtraordinaryFiscalRecoveryTests(PostgresDatabaseFixture db)
         Assert.Equal(new[] { "authorization" }, soap.Calls);
         Assert.Equal(expected == "FISCAL_RECOVERY_AUTHORIZED",
             (await scope.Db.Sales.AsNoTracking().SingleAsync()).DocumentStatus == SaleDocumentStatus.Authorized);
+    }
+
+    [Theory]
+    [InlineData("rejected-same", "SRI_AUTHORIZATION_REJECTED")]
+    [InlineData("rejected-wrong-xml", FiscalRecoveryEvidence.AuthorizationUnverified)]
+    [InlineData("rejected-wrong-environment", FiscalRecoveryEvidence.AuthorizationUnverified)]
+    [InlineData("rejected-missing-xml", FiscalRecoveryEvidence.AuthorizationUnverified)]
+    public async Task Rejection_is_terminal_only_for_the_original_signed_invoice(string scenario, string expected)
+    {
+        var (fixture, original) = await SeedAsync();
+        using var soap = new Soap(original) { Scenario = scenario };
+        await using var scope = Scope(fixture, soap);
+        Assert.Equal(expected, (await scope.Submission.RecoverReceptionAsync(original.Id, Grounds, default)).Code);
+        Assert.Equal(new[] { "authorization" }, soap.Calls);
+        Assert.Equal(expected == "SRI_AUTHORIZATION_REJECTED",
+            (await scope.Db.Sales.AsNoTracking().SingleAsync()).DocumentStatus == SaleDocumentStatus.Rejected);
     }
 
     [Theory]
@@ -304,13 +341,34 @@ public sealed class ExtraordinaryFiscalRecoveryTests(PostgresDatabaseFixture db)
 
     private sealed class FenceBeforePost(AutonomousIssuingFixture fixture, int saleId) : DbCommandInterceptor
     {
-        private int _heartbeats;
         public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData,
             InterceptionResult<int> result, CancellationToken ct = default)
         {
-            if (command.Transaction is null && command.CommandText.Contains("SET \"LeaseExpiresAt\" = clock_timestamp() + interval", StringComparison.Ordinal)
-                && Interlocked.Increment(ref _heartbeats) == 2)
+            if (IsDispatchVerification(command))
                 await fixture.DueAsync(saleId, expire: true);
+            return result;
+        }
+    }
+
+    private static bool IsDispatchVerification(DbCommand command)
+        => command.CommandText.Contains("SET \"LeaseExpiresAt\" = clock_timestamp() + interval", StringComparison.Ordinal)
+            && command.CommandText.Contains("> clock_timestamp() - interval", StringComparison.Ordinal);
+
+    private sealed class HoldAfterDispatchVerification : DbCommandInterceptor
+    {
+        public TaskCompletionSource Verified { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async ValueTask<int> NonQueryExecutedAsync(DbCommand command, CommandExecutedEventData eventData,
+            int result, CancellationToken ct = default)
+        {
+            if (IsDispatchVerification(command))
+            {
+                Assert.Equal(1, result);
+                Assert.NotNull(command.Transaction);
+                Verified.TrySetResult();
+                await Continue.Task.WaitAsync(ct);
+            }
             return result;
         }
     }
@@ -353,17 +411,18 @@ public sealed class ExtraordinaryFiscalRecoveryTests(PostgresDatabaseFixture db)
             XNamespace ns = "http://ec.gob.sri.ws.autorizacion";
             var key = Scenario == "wrong-key" ? new string('2', 49) : sale.AccessKey;
             if (Scenario == "generic") return new XElement("generic");
+            var rejected = Scenario.StartsWith("rejected-", StringComparison.Ordinal);
             var positive = Scenario.StartsWith("same", StringComparison.Ordinal) || Scenario.StartsWith("different", StringComparison.Ordinal)
-                || Scenario is "missing" or "bad-environment";
+                || Scenario is "missing" or "bad-environment" || rejected;
             var code = Scenario.Contains('-') ? Scenario.Split('-')[^1] : null;
             return new(ns + "autorizacionComprobanteResponse", new XElement("RespuestaAutorizacionComprobante",
                 new XElement("claveAccesoConsultada", key),
                 Scenario == "missing-count" ? null : new XElement("numeroComprobantes", positive ? "1" : Scenario == "invalid-count" ? "0.0" : "0"),
                 Scenario == "explicit-pending" ? new XElement("estado", "PENDIENTE") : null,
                 !positive ? null : new XElement("autorizaciones", new XElement("autorizacion",
-                    new XElement("estado", "AUTORIZADO"), new XElement("numeroAutorizacion", key),
-                    new XElement("ambiente", Scenario == "bad-environment" ? "PRODUCCION" : "PRUEBAS"),
-                    Scenario == "missing" ? null : new XElement("comprobante", new XCData(Scenario.StartsWith("different", StringComparison.Ordinal)
+                    new XElement("estado", rejected ? "NO AUTORIZADO" : "AUTORIZADO"), rejected ? null : new XElement("numeroAutorizacion", key),
+                    new XElement("ambiente", Scenario is "bad-environment" or "rejected-wrong-environment" ? "PRODUCCION" : "PRUEBAS"),
+                    Scenario is "missing" or "rejected-missing-xml" ? null : new XElement("comprobante", new XCData(Scenario.StartsWith("different", StringComparison.Ordinal) || Scenario == "rejected-wrong-xml"
                         ? $"<factura><claveAcceso>{key}</claveAcceso></factura>" : sale.SriSignedXml!)),
                     code is "43" or "45" or "70" ? new XElement("mensajes", new XElement("mensaje",
                         new XElement("identificador", "12")), new XElement("mensaje", new XElement("identificador", code))) : null))));
@@ -375,6 +434,9 @@ public sealed class ExtraordinaryFiscalRecoveryTests(PostgresDatabaseFixture db)
             return new(ns + "consultarEstadoAutorizacionComprobanteResponse", new XElement("EstadoAutorizacionComprobante",
                 new XElement("claveAcceso", Scenario == "wrong-validity-key" ? new string('2', 49) : sale.AccessKey),
                 Scenario == "validity-record" ? new XElement("estadoAutorizacion", "ANULADO") :
+                Scenario == "validity-record-with-message" ? new object[] { new XElement("estadoConsulta", "ACEPTADA"),
+                    new XElement("estadoAutorizacion", "AUTORIZADO"),
+                    new XElement("mensajes", new XElement("mensaje", new XElement("identificador", "12"))) } :
                     new object[] { new XElement("estadoConsulta", "RECHAZADA"),
                         new XElement("mensajes", new XElement("mensaje", new XElement("identificador", "99"),
                             new XElement("informacionAdicional", Scenario == "date-window"

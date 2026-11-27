@@ -290,9 +290,9 @@ public class SriWebServiceClient : ISriWebServiceClient
         var status = SingleField(result, "estadoAutorizacion")?.ToUpperInvariant();
         var messages = result.Elements("mensajes").Take(2).ToArray();
         var entries = messages.Length == 1 ? messages[0].Elements().Take(2).ToArray() : [];
-        if (status is "AUTORIZADO" or "NO AUTORIZADO" or "PENDIENTE DE ANULAR" or "ANULADO"
-            && (query == "ACEPTADA" || !result.Elements("estadoConsulta").Any())
-            && messages.Length <= 1 && entries.Length == 0)
+        // A positive indication for this key blocks replay, even with warnings.
+        // This service is never used to finalize a fiscal state by itself.
+        if (status is "AUTORIZADO" or "NO AUTORIZADO" or "PENDIENTE DE ANULAR" or "ANULADO")
             return new(SriValidityEvidence.RecordExists, expectedKey, status, rawXml);
 
         if (query == "RECHAZADA" && result.Elements().All(e => e.Name == "claveAcceso" || e.Name == "estadoConsulta" || e.Name == "mensajes")

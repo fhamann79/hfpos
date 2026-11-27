@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Pos.Backend.Api.Core.DTOs;
 using Pos.Backend.Api.Core.Entities;
@@ -37,6 +38,7 @@ public partial class SriSubmissionService
         var original = admission.Sale;
         var key = original.AccessKey!;
         var environment = original.SriEnvironment!.Value;
+        var firstProbe = Stopwatch.GetTimestamp();
         var evidenceId = Guid.NewGuid();
 
         SriAuthorizationResponse authorization;
@@ -137,16 +139,19 @@ public partial class SriSubmissionService
         }, ct, recoveryActor: actor, keepLease: true, requireReceptionPolicy: true);
 
         // The budget is spent even if this process is terminated before dispatch or before persisting the result.
-        if (!await _coordinator.VerifyRecoveryDispatchAsync(admission, authorizationCheckedAt, ct))
-            throw new InvalidOperationException("FISCAL_LEASE_LOST");
-        ct.ThrowIfCancellationRequested();
-
         SriReceptionResponse reception;
+        var dispatchStarted = false;
         try
         {
-            reception = await _sriWebServiceClient.SubmitAsync(original.SriSignedXml!, environment, ct);
+            reception = await _coordinator.DispatchRecoveryAsync(admission, authorizationCheckedAt, () =>
+            {
+                if (Stopwatch.GetElapsedTime(firstProbe) >= ElectronicIssuingCoordinator.LeaseDuration)
+                    throw new InvalidOperationException(FiscalRecoveryEvidence.ValidityInconclusive);
+                dispatchStarted = true;
+                return _sriWebServiceClient.SubmitAsync(original.SriSignedXml!, environment, ct);
+            }, ct);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (dispatchStarted && ex is not OperationCanceledException)
         {
             await _coordinator.CompleteAsync(admission, async (sale, job) =>
             {
