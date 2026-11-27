@@ -233,7 +233,8 @@ public class SriWebServiceClient : ISriWebServiceClient
         bool IsDirectField(string field)
         {
             var nodes = record?.Elements(field).Take(2).ToArray();
-            return nodes is [var node] && !node.HasElements && ReferenceEquals(node, Descendants(record!, field).FirstOrDefault());
+            return nodes is [var node] && !node.HasElements
+                && Descendants(record!, field).Take(2).ToArray() is [var unique] && ReferenceEquals(node, unique);
         }
 
         return new SriAuthorizationResponse
@@ -243,8 +244,10 @@ public class SriWebServiceClient : ISriWebServiceClient
             ConsultedAccessKey = consultedKey,
             HasExplicitEmptyResult = emptyResult,
             HasSingleAuthorizationRecord = record is not null && ReferenceEquals(record, authorizationNode)
-                && IsDirectField("estado") && (estado != "AUTORIZADO"
-                    || (IsDirectField("numeroAutorizacion") && IsDirectField("ambiente") && IsDirectField("comprobante"))),
+                && IsDirectField("estado") && (estado is not ("AUTORIZADO" or "NO AUTORIZADO")
+                    || (IsDirectField("ambiente") && IsDirectField("comprobante")
+                        && (IsDirectField("numeroAutorizacion")
+                            || estado == "NO AUTORIZADO" && !Descendants(record, "numeroAutorizacion").Any()))),
             AuthorizationEnvironment = record?.Element("ambiente")?.Value.Trim(),
             AuthorizationNumber = FirstValue(responseContainer, "numeroAutorizacion"),
             AuthorizationDate = ParseSriDate(FirstValue(responseContainer, "fechaAutorizacion")),

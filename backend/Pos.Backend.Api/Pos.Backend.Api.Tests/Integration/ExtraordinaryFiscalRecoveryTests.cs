@@ -194,6 +194,7 @@ public sealed class ExtraordinaryFiscalRecoveryTests(PostgresDatabaseFixture db)
     [InlineData("rejected-same", "SRI_AUTHORIZATION_REJECTED")]
     [InlineData("rejected-wrong-xml", FiscalRecoveryEvidence.AuthorizationUnverified)]
     [InlineData("rejected-wrong-environment", FiscalRecoveryEvidence.AuthorizationUnverified)]
+    [InlineData("rejected-conflicting-environment", FiscalRecoveryEvidence.AuthorizationUnverified)]
     [InlineData("rejected-missing-xml", FiscalRecoveryEvidence.AuthorizationUnverified)]
     public async Task Rejection_is_terminal_only_for_the_original_signed_invoice(string scenario, string expected)
     {
@@ -422,6 +423,7 @@ public sealed class ExtraordinaryFiscalRecoveryTests(PostgresDatabaseFixture db)
                 !positive ? null : new XElement("autorizaciones", new XElement("autorizacion",
                     new XElement("estado", rejected ? "NO AUTORIZADO" : "AUTORIZADO"), rejected ? null : new XElement("numeroAutorizacion", key),
                     new XElement("ambiente", Scenario is "bad-environment" or "rejected-wrong-environment" ? "PRODUCCION" : "PRUEBAS"),
+                    Scenario == "rejected-conflicting-environment" ? new XElement("ambiente", "PRODUCCION") : null,
                     Scenario is "missing" or "rejected-missing-xml" ? null : new XElement("comprobante", new XCData(Scenario.StartsWith("different", StringComparison.Ordinal) || Scenario == "rejected-wrong-xml"
                         ? $"<factura><claveAcceso>{key}</claveAcceso></factura>" : sale.SriSignedXml!)),
                     code is "43" or "45" or "70" ? new XElement("mensajes", new XElement("mensaje",

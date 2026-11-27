@@ -175,7 +175,8 @@ internal sealed class SyntheticSriTransport : ISriWebServiceClient
         return Authorization?.Invoke(cancellationToken) ?? Task.FromResult(new SriAuthorizationResponse
         {
             Estado = "AUTORIZADO", AuthorizationNumber = key, AuthorizationDate = DateTime.UtcNow, RawResponseXml = "<autorizacion/>",
-            ConsultedAccessKey = key, HasSingleAuthorizationRecord = true, AuthorizationEnvironment = "PRUEBAS", AuthorizedXml = SignedXml
+            ConsultedAccessKey = key, HasSingleAuthorizationRecord = true,
+            AuthorizationEnvironment = environment == 2 ? "PRODUCCION" : "PRUEBAS", AuthorizedXml = SignedXml
         });
     }
 
