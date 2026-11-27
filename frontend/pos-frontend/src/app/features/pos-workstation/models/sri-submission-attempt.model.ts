@@ -3,6 +3,8 @@ import { DocumentTagSeverity } from './sale-document.model';
 export enum SriSubmissionAttemptType {
   Reception = 1,
   Authorization = 2,
+  ExtraordinaryReception = 3,
+  Validity = 4,
 }
 
 export enum SriSubmissionAttemptStatus {
@@ -31,10 +33,14 @@ export interface SriSubmissionAttempt {
   sriAdditionalInfo: string | null;
   createdAt: string;
   createdByUserId: number;
+  recoveryReference?: string | null;
+  recoveryReason?: string | null;
+  recoveryCompletedAt?: string | null;
 }
 
 export function normalizeSriSubmissionAttemptType(value: unknown): SriSubmissionAttemptType {
   if (typeof value === 'number') {
+    if (value === SriSubmissionAttemptType.ExtraordinaryReception || value === SriSubmissionAttemptType.Validity) return value;
     return value === SriSubmissionAttemptType.Authorization
       ? SriSubmissionAttemptType.Authorization
       : SriSubmissionAttemptType.Reception;
@@ -42,6 +48,8 @@ export function normalizeSriSubmissionAttemptType(value: unknown): SriSubmission
 
   if (typeof value === 'string') {
     const normalized = value.trim().toUpperCase();
+    if (normalized === '3' || normalized === 'EXTRAORDINARYRECEPTION') return SriSubmissionAttemptType.ExtraordinaryReception;
+    if (normalized === '4' || normalized === 'VALIDITY') return SriSubmissionAttemptType.Validity;
     return normalized === '2' || normalized === 'AUTHORIZATION' || normalized === 'AUTORIZACION'
       ? SriSubmissionAttemptType.Authorization
       : SriSubmissionAttemptType.Reception;
@@ -83,6 +91,8 @@ export function sriReceptionStatusLabel(status: string | null | undefined): stri
   const normalized = normalizeSriStatus(status);
 
   switch (normalized) {
+    case 'IN_FLIGHT':
+      return 'Recepción sin confirmar';
     case 'RECIBIDA':
       return 'Recibida por SRI';
     case 'DEVUELTA':
@@ -116,6 +126,8 @@ export function sriAuthorizationStatusLabel(status: string | null | undefined): 
       return 'No autorizado';
     case 'PENDIENTE':
       return 'Pendiente';
+    case 'SIN_REGISTROS':
+      return 'Sin registros de autorización';
     default:
       return normalized || 'No consultada';
   }
@@ -138,6 +150,8 @@ export function sriAuthorizationStatusSeverity(status: string | null | undefined
 }
 
 export function sriSubmissionAttemptTypeLabel(type: SriSubmissionAttemptType | number): string {
+  if (type === SriSubmissionAttemptType.ExtraordinaryReception) return 'Reenvío extraordinario';
+  if (type === SriSubmissionAttemptType.Validity) return 'Validez';
   return type === SriSubmissionAttemptType.Authorization ? 'Autorización' : 'Recepción';
 }
 

@@ -307,7 +307,39 @@
         @if (canCheck(document)) {
           <button pButton type="button" icon="pi pi-sync" label="Consultar autorización" [loading]="isActionLoading(document, 'check')" (click)="checkAuthorization(document)"></button>
         }
+        @if (canOpenRecovery(document)) {
+          <button pButton type="button" icon="pi pi-search" [label]="recoveryCode() ? 'Actualizar recuperación' : 'Recuperar comprobante'"
+            severity="secondary" [disabled]="!!actionLoadingKey()" [loading]="isActionLoading(document, 'recovery-status')"
+            (click)="openRecovery(document)"></button>
+        }
       </div>
+
+      @if (recoveryCode() && canSubmitDocuments()) {
+        <section class="recovery-section" aria-labelledby="fiscal-recovery-heading">
+          <h3 id="fiscal-recovery-heading">Recuperación fiscal</h3>
+          <p-message [severity]="recoveryCode() === 'FISCAL_RECOVERY_AUTHORIZED' ? 'success' : 'warn'"
+            [text]="recoveryMessage(recoveryCode())"></p-message>
+          @if (recoveryCode() === 'FISCAL_RECOVERY_UNCERTAIN') {
+            <form class="recovery-form" (ngSubmit)="confirmRecovery(document)">
+              <p>Al confirmar, HF One hará dos consultas nuevas al SRI. El XML original se reenviará una sola vez únicamente si ambas consultas no devuelven registros y no hay evidencia en contra.</p>
+              <label for="recovery-reference">Referencia externa (opcional)</label>
+              <input pInputText id="recovery-reference" name="recoveryReference" maxlength="160"
+                [(ngModel)]="recoveryReference">
+              <label for="recovery-reason">Motivo del reenvío</label>
+              <textarea pTextarea id="recovery-reason" name="recoveryReason" rows="3" maxlength="1000"
+                [(ngModel)]="recoveryReason" required></textarea>
+              <div class="recovery-attestation">
+                <input type="checkbox" id="recovery-attestation" name="recoveryAttested" [(ngModel)]="recoveryAttested">
+                <label for="recovery-attestation">Confirmo el reenvío aunque la recepción original siga siendo incierta. No conozco una restricción fiscal documentada que lo impida.</label>
+              </div>
+              <div>
+                <button pButton type="submit" icon="pi pi-send" label="Confirmar reenvío único del XML original"
+                  class="recovery-submit" severity="warn" [disabled]="!canConfirmRecovery(document)"></button>
+              </div>
+            </form>
+          }
+        </section>
+      }
 
       @if (canReadArtifacts(document)) {
         <div class="action-group">
@@ -357,7 +389,15 @@
       <td><p-tag [value]="attemptStatusLabel(attempt)" [severity]="attemptStatusSeverity(attempt)"></p-tag></td>
       <td>{{ receptionLabel(attempt.receptionStatus) }}</td>
       <td>{{ authorizationLabel(attempt.authorizationStatus) }}</td>
-      <td class="wrap-cell">{{ attemptMessage(attempt) }}</td>
+      <td class="wrap-cell">
+        {{ attemptMessage(attempt) }}
+        @if (attempt.recoveryReason) {
+          <div><strong>Motivo:</strong> {{ attempt.recoveryReason }}</div>
+          @if (attempt.recoveryReference) {
+            <div><strong>Referencia:</strong> {{ attempt.recoveryReference }}</div>
+          }
+        }
+      </td>
     </tr></ng-template>
     <ng-template pTemplate="emptymessage"><tr><td colspan="6" class="empty-state">No existen intentos registrados.</td></tr></ng-template>
   </p-table>

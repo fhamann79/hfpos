@@ -15,7 +15,7 @@ using QRCoder;
 
 namespace Pos.Backend.Api.Infrastructure.Services;
 
-public class SriSubmissionService : ISriSubmissionService
+public partial class SriSubmissionService : ISriSubmissionService
 {
     private readonly PosDbContext _context;
     private readonly IOperationalContextAccessor _operationalContextAccessor;
@@ -80,8 +80,6 @@ public class SriSubmissionService : ISriSubmissionService
             throw;
         }
 
-        var responseMessage = response.Messages.FirstOrDefault();
-        var now = DateTime.UtcNow;
         string? postCommitError = null;
 
         await _coordinator.CompleteAsync(admission, (trackedSale, job) =>
@@ -94,45 +92,10 @@ public class SriSubmissionService : ISriSubmissionService
                 admission.AuditUserId,
                 sriContext.Environment,
                 SriSubmissionAttemptType.Reception,
-                now);
-            attempt.Status = response.IsReceived
-                ? SriSubmissionAttemptStatus.Success
-                : response.IsReturned ? SriSubmissionAttemptStatus.Failed : SriSubmissionAttemptStatus.Pending;
-            attempt.ReceptionStatus = response.Estado;
+                DateTime.UtcNow);
             attempt.FiscalDelegationId = admission.DelegationId;
-            attempt.ResponseXml = response.RawResponseXml;
-            ApplyMessage(attempt, responseMessage);
-
-            trackedSale.SriReceptionStatus = response.Estado;
-            trackedSale.SriSubmittedAt = response.IsReceived ? now : trackedSale.SriSubmittedAt;
-            trackedSale.SriLastSubmissionError = response.IsReceived
-                ? null
-                : response.ErrorSummary ?? "Comprobante devuelto por SRI.";
-            trackedSale.UpdatedAt = now;
-
-            if (response.IsReceived)
-            {
-                trackedSale.DocumentStatus = SaleDocumentStatus.PendingAuthorization;
-            }
-            else if (response.IsReturned)
-            {
-                trackedSale.DocumentStatus = SaleDocumentStatus.Rejected;
-                attempt.ErrorCode = "SRI_RECEPTION_REJECTED";
-                attempt.ErrorMessage ??= trackedSale.SriLastSubmissionError;
-                postCommitError = "SRI_RECEPTION_REJECTED";
-            }
-            else
-            {
-                trackedSale.DocumentStatus = SaleDocumentStatus.PendingAuthorization;
-                postCommitError = "SRI_AUTHORIZATION_PENDING";
-            }
-
+            postCommitError = ApplyReceptionResponse(trackedSale, job, attempt, response, attempt.CreatedAt);
             _context.SriSubmissionAttempts.Add(attempt);
-            ElectronicIssuingCoordinator.Schedule(job,
-                response.IsReturned ? ElectronicIssuingJobState.Rejected : ElectronicIssuingJobState.WaitingAuthorization,
-                response.IsReturned ? ElectronicIssuingPhase.Completed : response.IsReceived
-                    ? ElectronicIssuingPhase.AwaitingAuthorization : ElectronicIssuingPhase.UnknownReception);
-            job.SafeError = postCommitError;
             return Task.CompletedTask;
         }, ct);
         return postCommitError;
@@ -181,44 +144,66 @@ public class SriSubmissionService : ISriSubmissionService
             throw;
         }
 
-        var responseMessage = response.Messages.FirstOrDefault();
-        var now = DateTime.UtcNow;
         string? postCommitError = null;
 
         await _coordinator.CompleteAsync(admission, (trackedSale, job) =>
         {
             ValidateSaleCanCheckAuthorization(trackedSale);
+            postCommitError = ApplyAuthorizationResponse(trackedSale, job, admission, response, sriContext.Environment,
+                requireProvenResult: admission.RequiresRecoveryProof);
+            return Task.CompletedTask;
+        }, ct);
+        return postCommitError is FiscalRecoveryEvidence.NoRecords or FiscalRecoveryEvidence.Inconclusive
+            ? "SRI_AUTHORIZATION_PENDING" : postCommitError;
+    }
 
+    private string? ApplyAuthorizationResponse(Sale trackedSale, ElectronicIssuingJob job,
+        ElectronicIssuingCoordinator.Admission admission, SriAuthorizationResponse response, int environment,
+        bool requireProvenResult = false, Guid? recoveryEvidenceId = null, DateTime? checkedAt = null)
+    {
+            var signal = FiscalRecoveryEvidence.ResponseSignal(response, includeProcessingState: requireProvenResult);
+            var keyMatches = response.ConsultedAccessKey == trackedSale.AccessKey;
+            var positive = response.IsAuthorized && signal != FiscalRecoveryEvidence.SequenceConflict
+                && ((!requireProvenResult && signal is null) || FiscalRecoveryEvidence.IsOriginalAuthorization(response, trackedSale));
+            var rejected = response.IsRejected && signal is null
+                && (!requireProvenResult || (keyMatches && response.HasSingleAuthorizationRecord));
+            var empty = keyMatches && response.HasExplicitEmptyResult && response.Messages.Count == 0
+                && signal is null && !response.IsAuthorized && !response.IsRejected;
+            var now = checkedAt ?? DateTime.UtcNow;
+            string? postCommitError = null;
             var attempt = BuildBaseAttempt(
                 trackedSale,
                 admission.AuditUserId,
-                sriContext.Environment,
+                environment,
                 SriSubmissionAttemptType.Authorization,
                 now);
-            attempt.Status = response.IsAuthorized
+            attempt.Status = positive
                 ? SriSubmissionAttemptStatus.Success
-                : response.IsRejected
+                : rejected
                     ? SriSubmissionAttemptStatus.Failed
                     : SriSubmissionAttemptStatus.Pending;
-            attempt.AuthorizationStatus = response.Estado;
+            attempt.AuthorizationStatus = (requireProvenResult || signal is not null) && !positive && !rejected
+                ? (empty ? "SIN_REGISTROS" : null) : response.Estado;
             attempt.FiscalDelegationId = admission.DelegationId;
+            attempt.RecoveryEvidenceId = recoveryEvidenceId;
             attempt.AuthorizationNumber = response.AuthorizationNumber;
             attempt.AuthorizationDate = response.AuthorizationDate;
             attempt.ResponseXml = response.RawResponseXml;
-            ApplyMessage(attempt, responseMessage);
+            ApplyMessage(attempt, SelectMessage(response.Messages, signal));
 
-            trackedSale.SriAuthorizationStatus = response.Estado;
+            if (attempt.AuthorizationStatus is not null)
+                trackedSale.SriAuthorizationStatus = attempt.AuthorizationStatus;
             trackedSale.SriLastCheckedAt = now;
             trackedSale.UpdatedAt = now;
 
-            if (response.IsAuthorized)
+            if (positive)
             {
                 trackedSale.DocumentStatus = SaleDocumentStatus.Authorized;
                 trackedSale.AuthorizationNumber = response.AuthorizationNumber;
                 trackedSale.AuthorizedAt = response.AuthorizationDate ?? now;
                 trackedSale.SriLastSubmissionError = null;
             }
-            else if (response.IsRejected)
+            else if (rejected)
             {
                 trackedSale.DocumentStatus = SaleDocumentStatus.Rejected;
                 trackedSale.SriLastSubmissionError = response.ErrorSummary ?? "Comprobante no autorizado por SRI.";
@@ -228,23 +213,29 @@ public class SriSubmissionService : ISriSubmissionService
             }
             else
             {
+                if (trackedSale.DocumentStatus == SaleDocumentStatus.Rejected && signal != FiscalRecoveryEvidence.SequenceConflict)
+                    trackedSale.DocumentStatus = SaleDocumentStatus.PendingAuthorization;
                 trackedSale.SriLastSubmissionError = response.ErrorSummary ?? "Autorización pendiente en SRI.";
-                attempt.ErrorCode = "SRI_AUTHORIZATION_PENDING";
+                attempt.ErrorCode = signal ?? (requireProvenResult
+                    ? empty ? FiscalRecoveryEvidence.NoRecords
+                        : keyMatches && (response.IsAuthorized || response.IsRejected) ? FiscalRecoveryEvidence.AuthorizationUnverified
+                        : FiscalRecoveryEvidence.Inconclusive
+                    : "SRI_AUTHORIZATION_PENDING");
                 attempt.ErrorMessage ??= trackedSale.SriLastSubmissionError;
-                postCommitError = "SRI_AUTHORIZATION_PENDING";
+                postCommitError = attempt.ErrorCode;
             }
 
             _context.SriSubmissionAttempts.Add(attempt);
             ElectronicIssuingCoordinator.Schedule(job,
-                response.IsAuthorized ? ElectronicIssuingJobState.Authorized : response.IsRejected
-                    ? ElectronicIssuingJobState.Rejected : ElectronicIssuingJobState.WaitingAuthorization,
-                response.IsAuthorized || response.IsRejected ? ElectronicIssuingPhase.Completed
+                positive ? ElectronicIssuingJobState.Authorized : rejected
+                    ? ElectronicIssuingJobState.Rejected : signal == FiscalRecoveryEvidence.SequenceConflict
+                        ? ElectronicIssuingJobState.ManualAttention : ElectronicIssuingJobState.WaitingAuthorization,
+                positive || rejected ? ElectronicIssuingPhase.Completed
                     : job.ReceptionStartedAt.HasValue && trackedSale.SriSubmittedAt is null
+                        && signal is not (FiscalRecoveryEvidence.Processing or FiscalRecoveryEvidence.Reconcile)
                         ? ElectronicIssuingPhase.UnknownReception : ElectronicIssuingPhase.AwaitingAuthorization);
             job.SafeError = postCommitError;
-            return Task.CompletedTask;
-        }, ct);
-        return postCommitError;
+            return postCommitError;
     }
 
     public async Task<string> GetAuthorizedXmlAsync(int saleId)
@@ -338,7 +329,11 @@ public class SriSubmissionService : ISriSubmissionService
                 SriMessage = a.SriMessage,
                 SriAdditionalInfo = a.SriAdditionalInfo,
                 CreatedAt = a.CreatedAt,
-                CreatedByUserId = a.CreatedByUserId
+                CreatedByUserId = a.CreatedByUserId,
+                RecoveryReference = a.RecoveryReference,
+                RecoveryReason = a.RecoveryReason,
+                RecoverySignedXmlHash = a.RecoverySignedXmlHash,
+                RecoveryCompletedAt = a.RecoveryCompletedAt
             })
             .ToListAsync();
     }

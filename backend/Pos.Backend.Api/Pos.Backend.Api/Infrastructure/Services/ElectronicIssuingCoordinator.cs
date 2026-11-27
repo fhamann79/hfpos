@@ -19,7 +19,7 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
     public static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
 
     internal sealed record Admission(Sale Sale, long JobId, Guid Owner, long Fence, int AuditUserId,
-        long? DelegationId, ElectronicIssuingPhase Phase);
+        long? DelegationId, ElectronicIssuingPhase Phase, DateTime? ReceptionStartedAt = null, bool RequiresRecoveryProof = false);
 
     internal static ElectronicIssuingJob NewJob(Sale sale, int originUserId, DateTime now, long? delegationId)
         => new()
@@ -72,7 +72,7 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
 
     internal async Task<Admission> AdmitAsync(int saleId, ElectronicIssuingPhase purpose,
         OperationalContext? manual, ElectronicIssuingJob? claim, CancellationToken ct,
-        Func<Sale, Task>? beforeReception = null)
+        Func<Sale, Task>? beforeReception = null, bool recoveryProbe = false)
     {
         context.ChangeTracker.Clear();
         var companyId = manual?.CompanyId ?? claim?.CompanyId ?? throw new InvalidOperationException("FISCAL_AUTHORITY_REQUIRED");
@@ -94,8 +94,8 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
             SELECT * FROM ""ElectronicIssuingJobs"" WHERE ""SaleId"" = {saleId} FOR UPDATE")
             .SingleOrDefaultAsync(ct);
         var receptionEvidenceAt = await ResolveReceptionEvidenceAtAsync(sale, job, ct);
-        if (purpose == ElectronicIssuingPhase.AwaitingAuthorization)
-            await ValidateAuthorizationEvidenceAsync(sale, job, receptionEvidenceAt, ct);
+        var requiresRecoveryProof = purpose == ElectronicIssuingPhase.AwaitingAuthorization
+            && await ValidateAuthorizationEvidenceAsync(sale, job, receptionEvidenceAt, ct);
         if (job is null)
         {
             if (claim is not null) throw new InvalidOperationException("FISCAL_LEASE_LOST");
@@ -113,7 +113,7 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
         {
             if (await LeaseIsLiveAsync(job.Id, ct)) throw new InvalidOperationException("FISCAL_DOCUMENT_BUSY");
             job.LeaseToken = Guid.NewGuid(); job.Fence++; job.AttemptCount++;
-            job.LeaseExpiresAt = DateTime.UtcNow.Add(LeaseDuration);
+            job.LeaseExpiresAt = (await DatabaseTimeAsync(ct)).Add(LeaseDuration);
         }
         var auditUserId = manual?.UserId;
         if (claim is not null)
@@ -133,6 +133,12 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
             throw new InvalidOperationException("FISCAL_DOCUMENT_CONTEXT_CHANGED");
         if (job.AttemptCount > MaximumAttempts && claim is not null)
             throw new InvalidOperationException("FISCAL_ATTEMPTS_EXHAUSTED");
+        if (recoveryProbe)
+        {
+            if (manual is null) throw new InvalidOperationException("FISCAL_AUTHORITY_REQUIRED");
+            var status = await FiscalRecoveryEvidence.GetStatusAsync(context, sale, receptionEvidenceAt, ct);
+            if (status != FiscalRecoveryEvidence.Uncertain) throw new InvalidOperationException(status);
+        }
         job.ReceptionStartedAt ??= receptionEvidenceAt;
         if (job.ReceptionStartedAt.HasValue && job.Phase is ElectronicIssuingPhase.ReadyToSign or ElectronicIssuingPhase.ReadyToSubmit)
             job.Phase = ElectronicIssuingPhase.UnknownReception;
@@ -156,34 +162,83 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
         await context.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return new Admission(sale, job.Id, job.LeaseToken!.Value, job.Fence,
-            auditUserId!.Value, claim is null ? null : job.FiscalDelegationId, purpose);
+            auditUserId!.Value, claim is null ? null : job.FiscalDelegationId, purpose, job.ReceptionStartedAt, requiresRecoveryProof);
     }
 
-    internal async Task CompleteAsync(Admission admission, Func<Sale, ElectronicIssuingJob, Task> mutate, CancellationToken ct)
+    internal async Task CompleteAsync(Admission admission, Func<Sale, ElectronicIssuingJob, Task> mutate, CancellationToken ct,
+        OperationalContext? recoveryActor = null, bool keepLease = false, bool requireReceptionPolicy = false)
     {
         context.ChangeTracker.Clear();
         await using var tx = await context.Database.BeginTransactionAsync(ct);
         await context.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT 1 FROM \"Companies\" WHERE \"Id\" = {admission.Sale.CompanyId} FOR SHARE", ct);
+        if (recoveryActor is not null)
+        {
+            await new TenantAdministrationGuard(context).LockOperationalWriteAsync(recoveryActor);
+            await RequirePermissionsAsync(context, recoveryActor.UserId, recoveryActor.CompanyId, [AppPermissions.SriDocumentsSubmit]);
+        }
         var sale = await context.Sales.FromSqlInterpolated($"SELECT * FROM \"Sales\" WHERE \"Id\" = {admission.Sale.Id} FOR UPDATE").SingleAsync(ct);
         var job = await context.ElectronicIssuingJobs.FromSqlInterpolated($"SELECT * FROM \"ElectronicIssuingJobs\" WHERE \"Id\" = {admission.JobId} FOR UPDATE").SingleAsync(ct);
         if (job.SaleId != sale.Id || job.CompanyId != sale.CompanyId || job.EstablishmentId != sale.EstablishmentId
             || job.EmissionPointId != sale.EmissionPointId)
             throw new InvalidOperationException("FISCAL_LEASE_LOST");
         await VerifyOwnerAsync(job, admission.Owner, admission.Fence, ct);
+        if (recoveryActor is not null)
+        {
+            ValidateRecoveryIdentity(admission, sale, job);
+            await ValidateCurrentPolicyAsync(sale, requireReceptionPolicy ? ElectronicIssuingPhase.ReadyToSubmit
+                : ElectronicIssuingPhase.AwaitingAuthorization, ct);
+        }
         await mutate(sale, job);
         job.UpdatedAt = DateTime.UtcNow; sale.UpdatedAt = job.UpdatedAt;
         await context.SaveChangesAsync(ct);
         // Check the lease at the final write, not just before potentially expensive signing/mutations.
         // A zero-row release rolls back every document, attempt and job write in this transaction.
-        var released = await context.Database.ExecuteSqlInterpolatedAsync($@"
+        var released = keepLease
+            ? await context.Database.ExecuteSqlInterpolatedAsync($@"
+            UPDATE ""ElectronicIssuingJobs"" SET ""LeaseExpiresAt"" = clock_timestamp() + interval '2 minutes'
+            WHERE ""Id"" = {job.Id} AND ""LeaseToken"" = {admission.Owner}
+              AND ""Fence"" = {admission.Fence} AND ""LeaseExpiresAt"" > clock_timestamp()", ct)
+            : await context.Database.ExecuteSqlInterpolatedAsync($@"
             UPDATE ""ElectronicIssuingJobs"" SET ""LeaseToken"" = NULL, ""LeaseExpiresAt"" = NULL
             WHERE ""Id"" = {job.Id} AND ""LeaseToken"" = {admission.Owner}
               AND ""Fence"" = {admission.Fence} AND ""LeaseExpiresAt"" > clock_timestamp()", ct);
         if (released != 1) throw new InvalidOperationException("FISCAL_LEASE_LOST");
         await tx.CommitAsync(ct);
-        job.LeaseToken = null; job.LeaseExpiresAt = null;
-        context.Entry(job).State = EntityState.Unchanged;
+        if (!keepLease)
+        {
+            job.LeaseToken = null; job.LeaseExpiresAt = null;
+            context.Entry(job).State = EntityState.Unchanged;
+        }
+    }
+
+    internal Task<bool> RefreshRecoveryLeaseAsync(Admission admission, CancellationToken ct)
+        => HeartbeatAsync(new ElectronicIssuingJob { Id = admission.JobId, LeaseToken = admission.Owner, Fence = admission.Fence }, ct);
+
+    internal async Task<bool> VerifyRecoveryDispatchAsync(Admission admission, DateTime firstCheckAt, CancellationToken ct)
+        => await context.Database.ExecuteSqlInterpolatedAsync($@"
+            UPDATE ""ElectronicIssuingJobs"" SET ""LeaseExpiresAt"" = clock_timestamp() + interval '2 minutes'
+            WHERE ""Id"" = {admission.JobId} AND ""LeaseToken"" = {admission.Owner}
+              AND ""Fence"" = {admission.Fence} AND ""LeaseExpiresAt"" > clock_timestamp()
+              AND {firstCheckAt} > clock_timestamp() - interval '2 minutes'", ct) == 1;
+
+    internal Task<DateTime> DatabaseTimeAsync(CancellationToken ct)
+        => context.Database.SqlQuery<DateTime>($"SELECT clock_timestamp() AS \"Value\"").SingleAsync(ct);
+
+    internal static void ValidateRecoveryIdentity(Admission admission, Sale sale, ElectronicIssuingJob job)
+    {
+        var original = admission.Sale;
+        if (sale.CompanyId != original.CompanyId || sale.EstablishmentId != original.EstablishmentId
+            || sale.EmissionPointId != original.EmissionPointId || sale.AccessKey != original.AccessKey
+            || sale.SriEnvironment != original.SriEnvironment || sale.SriEmissionType != original.SriEmissionType
+            || sale.Number != original.Number || sale.SriNumericCode != original.SriNumericCode
+            || sale.FiscalProfileId != original.FiscalProfileId || sale.FiscalIssuerSnapshotJson != original.FiscalIssuerSnapshotJson
+            || sale.SriSignedAt != original.SriSignedAt || sale.SriSignatureHash != original.SriSignatureHash
+            || sale.SriSigningCertificateThumbprint != original.SriSigningCertificateThumbprint
+            || sale.SriSignedXml != original.SriSignedXml || job.ReceptionStartedAt != admission.ReceptionStartedAt
+            || job.AccessKey != sale.AccessKey || job.Environment != sale.SriEnvironment
+            || job.DraftHash != Hash(sale.SriXmlDraft) || job.DraftHash != Hash(original.SriXmlDraft))
+            throw new InvalidOperationException("FISCAL_DOCUMENT_CONTEXT_CHANGED");
     }
 
     internal Task FailAsync(Admission admission, string code, bool ambiguous, CancellationToken ct)
@@ -228,6 +283,8 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
         await ValidateCurrentPolicyAsync(sale, ElectronicIssuingPhase.AwaitingAuthorization, ct, automatic: true);
         if (sale.DocumentStatus is SaleDocumentStatus.Authorized or SaleDocumentStatus.Rejected)
             throw new InvalidOperationException("FISCAL_DOCUMENT_TERMINAL");
+        if (await FiscalRecoveryEvidence.HistoricalSignalAsync(context, sale, ct) == FiscalRecoveryEvidence.SequenceConflict)
+            throw new InvalidOperationException(FiscalRecoveryEvidence.SequenceConflict);
         var settings = await context.CompanySriSettings.AsNoTracking().SingleOrDefaultAsync(s => s.CompanyId == actor.CompanyId, ct);
         var delegation = await context.FiscalDelegations.AsNoTracking().SingleOrDefaultAsync(d =>
             d.CompanyId == actor.CompanyId && d.DisabledAt == null, ct);
@@ -284,7 +341,7 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
 
     internal static string Hash(string? value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value ?? string.Empty)));
 
-    private async Task<DateTime?> ResolveReceptionEvidenceAtAsync(Sale sale, ElectronicIssuingJob? job, CancellationToken ct)
+    internal async Task<DateTime?> ResolveReceptionEvidenceAtAsync(Sale sale, ElectronicIssuingJob? job, CancellationToken ct)
     {
         if (job?.ReceptionStartedAt is not null) return job.ReceptionStartedAt;
         if (sale.SriSubmittedAt.HasValue) return sale.SriSubmittedAt;
@@ -301,13 +358,26 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
             .Select(a => (DateTime?)a.CreatedAt).FirstOrDefaultAsync(ct);
     }
 
-    private async Task ValidateAuthorizationEvidenceAsync(Sale sale, ElectronicIssuingJob? job,
+    private async Task<bool> ValidateAuthorizationEvidenceAsync(Sale sale, ElectronicIssuingJob? job,
         DateTime? receptionEvidenceAt, CancellationToken ct)
     {
         // Querying is recovery, not permission to skip signing/reception or reopen a terminal job.
-        if (job is { Phase: ElectronicIssuingPhase.Completed, State: ElectronicIssuingJobState.Rejected })
-            throw new InvalidOperationException("FISCAL_DOCUMENT_TERMINAL");
-        if (sale.DocumentStatus == SaleDocumentStatus.Authorized) return;
+        if (sale.DocumentStatus == SaleDocumentStatus.Authorized) return false;
+        if (job?.SafeError == FiscalRecoveryEvidence.SequenceConflict)
+            throw new InvalidOperationException(FiscalRecoveryEvidence.SequenceConflict);
+        if (sale.DocumentStatus == SaleDocumentStatus.Rejected
+            || job is { Phase: ElectronicIssuingPhase.Completed, State: ElectronicIssuingJobState.Rejected }
+            || sale.SriReceptionStatus is "DEVUELTA"
+            || job?.SafeError is FiscalRecoveryEvidence.Processing or FiscalRecoveryEvidence.Reconcile)
+        {
+            var signal = await FiscalRecoveryEvidence.HistoricalSignalAsync(context, sale, ct);
+            if (signal == FiscalRecoveryEvidence.SequenceConflict)
+                throw new InvalidOperationException(signal);
+            if (signal is FiscalRecoveryEvidence.Reconcile or FiscalRecoveryEvidence.Processing && receptionEvidenceAt.HasValue)
+                return true;
+            if (job is { Phase: ElectronicIssuingPhase.Completed, State: ElectronicIssuingJobState.Rejected })
+                throw new InvalidOperationException("FISCAL_DOCUMENT_TERMINAL");
+        }
         var latest = await context.SriSubmissionAttempts.AsNoTracking()
             .Where(a => a.SaleId == sale.Id && a.CompanyId == sale.CompanyId
                 && a.AccessKey == sale.AccessKey && a.Environment == sale.SriEnvironment)
@@ -322,6 +392,10 @@ public sealed class ElectronicIssuingCoordinator(PosDbContext context, IOptions<
             throw new InvalidOperationException("FISCAL_DOCUMENT_TERMINAL");
         if (!receptionEvidenceAt.HasValue)
             throw new InvalidOperationException("FISCAL_RECEPTION_NOT_ADMITTED");
+        return (sale.SriSubmittedAt is null && sale.SriReceptionStatus?.Trim().ToUpperInvariant() != "RECIBIDA")
+            || await FiscalRecoveryEvidence.AttemptsFor(context, sale).AnyAsync(a =>
+                a.AttemptType == SriSubmissionAttemptType.ExtraordinaryReception
+                || a.SriMessageIdentifier == "43" || a.SriMessageIdentifier == "70", ct);
     }
 
     internal static async Task RequirePermissionsAsync(PosDbContext db, int userId, int companyId, string[] permissions)

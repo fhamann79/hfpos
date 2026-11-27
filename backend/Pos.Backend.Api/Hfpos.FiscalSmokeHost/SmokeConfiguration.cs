@@ -35,6 +35,8 @@ internal static class SmokeConfiguration
             ["Sri:AuthorizationTestUrl"] = "https://synthetic-sri.invalid/never-called",
             ["Sri:ReceptionProductionUrl"] = "https://synthetic-sri.invalid/never-called",
             ["Sri:AuthorizationProductionUrl"] = "https://synthetic-sri.invalid/never-called",
+            ["Sri:ValidityTestUrl"] = "https://synthetic-sri.invalid/validity-test",
+            ["Sri:ValidityProductionUrl"] = "https://synthetic-sri.invalid/validity-prod",
             ["DataProtection:KeysPath"] = keys.FullName, ["DataProtection:ApplicationName"] = "hfpos-528-smoke",
             ["Cors:AllowedOrigins:0"] = "http://localhost:4200",
             ["PlatformBootstrap:Enabled"] = "false", ["ForwardedHeaders_Enabled"] = "false",
@@ -63,7 +65,8 @@ internal static class SmokeConfiguration
         services.ValidateBeforeStartup();
         Assert.Equal(30, services.GetRequiredService<IOptions<OperationsOptions>>().Value.ShutdownTimeoutSeconds);
         Assert.False(services.GetRequiredService<IOptions<ObservabilityOptions>>().Value.Enabled);
-        foreach (var endpoint in new[] { "ReceptionTestUrl", "AuthorizationTestUrl", "ReceptionProductionUrl", "AuthorizationProductionUrl" })
+        foreach (var endpoint in new[] { "ReceptionTestUrl", "AuthorizationTestUrl", "ReceptionProductionUrl", "AuthorizationProductionUrl",
+            "ValidityTestUrl", "ValidityProductionUrl" })
             Assert.Equal("synthetic-sri.invalid", new Uri(builder.Configuration[$"Sri:{endpoint}"]!).Host);
         Assert.Single(builder.Configuration.Sources);
         Console.WriteLine("Synthetic configuration PASS: human content root, all startup options, no appsettings dependency, unsafe overrides discarded; no API/DB started.");

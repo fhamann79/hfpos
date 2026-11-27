@@ -7,4 +7,6 @@ public interface ISriWebServiceClient
     Task<SriReceptionResponse> SubmitAsync(string signedXml, int environment, CancellationToken cancellationToken = default);
 
     Task<SriAuthorizationResponse> CheckAuthorizationAsync(string accessKey, int environment, CancellationToken cancellationToken = default);
+
+    Task<SriValidityResponse> CheckValidityAsync(string accessKey, int environment, CancellationToken cancellationToken = default);
 }

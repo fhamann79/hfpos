@@ -8,6 +8,10 @@ public interface ISriSubmissionService
 
     Task<SaleDto> CheckAuthorizationAsync(int saleId);
 
+    Task<SriReceptionRecoveryStatus> GetReceptionRecoveryStatusAsync(int saleId, CancellationToken ct);
+
+    Task<SriReceptionRecoveryStatus> RecoverReceptionAsync(int saleId, SriReceptionRecoveryRequest request, CancellationToken ct);
+
     Task<string> GetAuthorizedXmlAsync(int saleId);
 
     Task<SriRideDto> GetRideAsync(int saleId);

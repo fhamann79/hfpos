@@ -14,6 +14,10 @@ public class SriOptions
 
     public string? AuthorizationProductionUrl { get; set; }
 
+    public string? ValidityTestUrl { get; set; }
+
+    public string? ValidityProductionUrl { get; set; }
+
     public int TimeoutSeconds { get; set; } = 30;
 
     public bool AllowProductionSubmission { get; set; } = false;

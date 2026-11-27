@@ -126,6 +126,10 @@ export class ElectronicDocumentsPage implements OnInit, OnDestroy {
   readonly actionError = signal('');
   readonly selectedDocument = signal<ElectronicDocumentDetail | null>(null);
   readonly actionLoadingKey = signal('');
+  readonly recoveryCode = signal('');
+  recoveryReference = '';
+  recoveryReason = '';
+  recoveryAttested = false;
 
   readonly rideVisible = signal(false);
   readonly rideLoading = signal(false);
@@ -257,9 +261,12 @@ export class ElectronicDocumentsPage implements OnInit, OnDestroy {
   }
 
   openDetail(row: ElectronicDocumentListItem): void {
+    if (this.actionLoadingKey()) return;
     const generation = ++this.detailGeneration;
     const context = this.contextIdentity();
     this.actionError.set('');
+    this.recoveryCode.set('');
+    this.clearRecoveryForm();
     this.detailVisible.set(true);
     this.detailLoading.set(true);
     this.detailError.set('');
@@ -316,6 +323,100 @@ export class ElectronicDocumentsPage implements OnInit, OnDestroy {
     );
   }
 
+  canOpenRecovery(document: ElectronicDocumentDetail): boolean {
+    return document.kind === ElectronicDocumentKind.Invoice && this.canSubmitDocuments()
+      && !this.isAuthorized(document) && document.hasSriSignedXml && !!document.accessKey
+      && (!!document.issuingJob?.receptionAdmitted || !!document.sriReceptionStatus || !!document.sriSubmittedAt);
+  }
+
+  openRecovery(document: ElectronicDocumentDetail): void {
+    if (!this.canOpenRecovery(document) || this.actionLoadingKey() || this.selectedDocument()?.key !== document.key) return;
+    const generation = this.detailGeneration;
+    const context = this.contextIdentity();
+    this.clearRecoveryForm();
+    this.actionError.set('');
+    this.actionLoadingKey.set(`${document.key}:recovery-status`);
+    this.documentService.getReceptionRecovery(document.id).subscribe({
+      next: (status) => {
+        if (this.destroyed || generation !== this.detailGeneration || context !== this.contextIdentity()) return;
+        this.actionLoadingKey.set('');
+        this.recoveryCode.set(status.code);
+      },
+      error: (error: HttpErrorResponse) => {
+        if (this.destroyed || generation !== this.detailGeneration || context !== this.contextIdentity()) return;
+        this.actionLoadingKey.set('');
+        this.recoveryCode.set('');
+        this.actionError.set(this.resolveError(error, 'No se pudo obtener el estado de recuperación.'));
+      },
+    });
+  }
+
+  canConfirmRecovery(document: ElectronicDocumentDetail): boolean {
+    return this.canOpenRecovery(document) && this.selectedDocument()?.key === document.key
+      && !this.actionLoadingKey() && !this.hasLiveLease(document) && this.recoveryCode() === 'FISCAL_RECOVERY_UNCERTAIN'
+      && this.recoveryAttested && (this.recoveryReason.match(/[\p{L}\p{N}]/gu)?.length ?? 0) >= 3;
+  }
+
+  confirmRecovery(document: ElectronicDocumentDetail): void {
+    if (!this.canConfirmRecovery(document)) return;
+    const payload = {
+      reference: this.recoveryReference.trim() || null,
+      reason: this.recoveryReason.trim(),
+      confirmsResendDespiteUncertainReception: this.recoveryAttested,
+    };
+    this.clearRecoveryForm();
+    this.recoveryCode.set('FISCAL_RECOVERY_VERIFY_AFTER_REQUEST');
+    this.runMutation(document, 'recover', () => this.documentService.recoverReception(document.id, payload),
+      (result) => this.recoveryCode.set(result.code));
+  }
+
+  recoveryMessage(code: string): string {
+    switch (code) {
+      case 'FISCAL_RECOVERY_UNCERTAIN':
+        return 'La recepción del XML firmado no está confirmada. Una consulta sin registros no demuestra que el SRI no lo haya recibido.';
+      case 'FISCAL_RECOVERY_RECEIVED':
+        return 'Existe evidencia de recepción. Consulte la autorización por la clave original; no reenvíe.';
+      case 'FISCAL_RECOVERY_PROCESSING':
+        return 'El SRI reportó procesamiento. Espere y consulte por la clave original; no reenvíe.';
+      case 'FISCAL_RECOVERY_RECONCILE_KEY':
+        return 'El SRI reportó la clave registrada (43). Consulte y concilie por la clave original; no reenvíe.';
+      case 'FISCAL_RECOVERY_SEQUENCE_CONFLICT':
+        return 'El SRI reportó un conflicto de secuencial (45). Investigue el caso con el SRI; no asuma que corresponde a esta factura.';
+      case 'FISCAL_RECOVERY_OUTCOME_UNKNOWN':
+        return 'El resultado del reenvío es incierto y el único intento ya se consumió. Consulte por la clave original o escale el caso.';
+      case 'FISCAL_RECOVERY_CONSUMED':
+        return 'El único intento extraordinario ya se utilizó. Consulte el historial de intentos y no reenvíe.';
+      case 'FISCAL_RECOVERY_AUTHORIZED':
+        return 'El SRI ya había autorizado el comprobante original. Se concilió sin reenviar.';
+      case 'SRI_AUTHORIZATION_REJECTED':
+      case 'SRI_RECEPTION_REJECTED':
+        return 'El SRI rechazó el comprobante. Revise el historial y el motivo fiscal antes de escalar el caso.';
+      case 'FISCAL_RECOVERY_CONSULT_INCONCLUSIVE':
+        return 'La consulta no confirmó el estado fiscal ni permitió reenviar. Consulte de nuevo o escale el caso.';
+      case 'FISCAL_RECOVERY_VALIDITY_INCONCLUSIVE':
+        return 'La consulta de validez no confirmó la ausencia de registros. No se realizó ningún reenvío.';
+      case 'FISCAL_RECOVERY_VALIDITY_RECORD':
+        return 'El SRI registra la clave en la consulta de validez. No reenvíe. Concíliela por la clave original o escale el caso.';
+      case 'FISCAL_RECOVERY_AUTHORIZATION_UNVERIFIED':
+        return 'El SRI devolvió un registro, pero no se pudo verificar que corresponda al XML original. No reenvíe; concilie o escale el caso.';
+      case 'FISCAL_RECOVERY_VERIFY_AFTER_REQUEST':
+        return 'Actualice el estado de recuperación para confirmar si el intento se consumió antes de tomar otra acción.';
+      default:
+        return 'No se permite un reenvío extraordinario. Revise el historial fiscal o escale el caso.';
+    }
+  }
+
+  private clearRecoveryForm(): void {
+    this.recoveryReference = '';
+    this.recoveryReason = '';
+    this.recoveryAttested = false;
+  }
+
+  private hasLiveLease(document: ElectronicDocumentDetail): boolean {
+    const expiresAt = document.issuingJob?.leaseExpiresAt;
+    return !!expiresAt && Date.parse(expiresAt) > Date.now();
+  }
+
   resumeIssuing(document: ElectronicDocumentDetail): void {
     if (!this.canResume(document)) return;
     this.runMutation(document, 'resume', () => this.documentService.resumeIssuing(document.id));
@@ -338,6 +439,8 @@ export class ElectronicDocumentsPage implements OnInit, OnDestroy {
 
   canResume(document: ElectronicDocumentDetail): boolean {
     return document.kind === ElectronicDocumentKind.Invoice && this.canSubmitDocuments()
+      && this.recoveryCode() !== 'FISCAL_RECOVERY_SEQUENCE_CONFLICT'
+      && document.issuingJob?.safeError !== 'FISCAL_RECOVERY_SEQUENCE_CONFLICT'
       && document.issuingJob?.state === ElectronicIssuingJobState.ManualAttention
       && document.documentStatus !== SaleDocumentStatus.Authorized && document.documentStatus !== SaleDocumentStatus.Rejected;
   }
@@ -485,12 +588,19 @@ export class ElectronicDocumentsPage implements OnInit, OnDestroy {
       && document.documentStatus === SaleDocumentStatus.Draft
       && document.hasSriSignedXml
       && !document.sriSubmittedAt
-      && this.normalizeSriStatus(document.sriReceptionStatus) !== 'RECIBIDA';
+      && !this.normalizeSriStatus(document.sriReceptionStatus);
   }
 
   canCheck(document: ElectronicDocumentDetail): boolean {
+    if (this.canOpenRecovery(document) && this.selectedDocument()?.key === document.key && this.recoveryCode()) {
+      return !this.hasLiveLease(document) && ![
+        'FISCAL_RECOVERY_SEQUENCE_CONFLICT', 'FISCAL_RECOVERY_NOT_ELIGIBLE',
+        'SRI_RECEPTION_REJECTED', 'SRI_AUTHORIZATION_REJECTED',
+      ].includes(this.recoveryCode());
+    }
     return this.canSubmitDocuments()
       && !this.jobBusy(document)
+      && document.issuingJob?.safeError !== 'FISCAL_RECOVERY_SEQUENCE_CONFLICT'
       && (document.issuingJob?.receptionAdmitted === true
         ? !this.isAuthorized(document) && document.documentStatus !== SaleDocumentStatus.Rejected
         : document.documentStatus === SaleDocumentStatus.PendingAuthorization
@@ -608,10 +718,11 @@ export class ElectronicDocumentsPage implements OnInit, OnDestroy {
     };
   }
 
-  private runMutation(
+  private runMutation<T>(
     document: ElectronicDocumentDetail,
     action: string,
-    operation: () => Observable<unknown>
+    operation: () => Observable<T>,
+    onResult?: (result: T) => void,
   ): void {
     if (this.actionLoadingKey()) {
       return;
@@ -627,7 +738,8 @@ export class ElectronicDocumentsPage implements OnInit, OnDestroy {
         if (this.destroyed || generation !== this.detailGeneration || context !== this.contextIdentity()) return;
         this.actionLoadingKey.set('');
         const pending = typeof result === 'object' && result !== null && 'pending' in result && result.pending === true;
-        this.successMessage.set(action === 'resume' ? 'Trabajo en cola.'
+        if (onResult) onResult(result);
+        else this.successMessage.set(action === 'resume' ? 'Trabajo en cola.'
           : pending ? 'Esperando autorización.' : 'Operación SRI completada.');
         this.reloadSelectedDocument(document);
         this.loadDocuments(this.currentPage(), this.rows);

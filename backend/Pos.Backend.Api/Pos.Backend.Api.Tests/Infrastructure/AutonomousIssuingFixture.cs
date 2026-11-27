@@ -173,6 +173,12 @@ internal sealed class SyntheticSriTransport : ISriWebServiceClient
     {
         Interlocked.Increment(ref Queries); LastKey = key; LastEnvironment = environment;
         return Authorization?.Invoke(cancellationToken) ?? Task.FromResult(new SriAuthorizationResponse
-        { Estado = "AUTORIZADO", AuthorizationNumber = key, AuthorizationDate = DateTime.UtcNow, RawResponseXml = "<autorizacion/>" });
+        {
+            Estado = "AUTORIZADO", AuthorizationNumber = key, AuthorizationDate = DateTime.UtcNow, RawResponseXml = "<autorizacion/>",
+            ConsultedAccessKey = key, HasSingleAuthorizationRecord = true, AuthorizationEnvironment = "PRUEBAS", AuthorizedXml = SignedXml
+        });
     }
+
+    public Task<SriValidityResponse> CheckValidityAsync(string key, int environment, CancellationToken cancellationToken = default)
+        => Task.FromResult(new SriValidityResponse(SriValidityEvidence.Inconclusive, key));
 }

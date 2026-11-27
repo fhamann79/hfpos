@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Xml.Linq;
 using Microsoft.Extensions.Http;
+using Pos.Backend.Api.Core.Models;
 
 namespace Hfpos.FiscalSmokeHost;
 
@@ -29,13 +30,36 @@ internal sealed class SyntheticSoapHandler(SmokeTransport remote) : HttpMessageH
             var response = await remote.SubmitAsync(Encoding.UTF8.GetString(Convert.FromBase64String(base64)), 1, ct);
             body = new XElement("RespuestaRecepcionComprobante", new XElement("estado", response.Estado));
         }
+        else if (envelope.Descendants().Any(e => e.Name.LocalName == "consultarEstadoAutorizacionComprobante"))
+        {
+            var key = envelope.Descendants().Single(e => e.Name.LocalName == "claveAcceso").Value;
+            var validity = await remote.CheckValidityAsync(key, 1, ct);
+            XNamespace service = "http://ec.gob.sri.ws.consultas";
+            body = new XElement(service + "consultarEstadoAutorizacionComprobanteResponse",
+                new XElement("EstadoAutorizacionComprobante", new XElement("claveAcceso", key),
+                    validity.Evidence switch
+                    {
+                        SriValidityEvidence.NoRecord => new XElement("estadoConsulta", "RECHAZADA"),
+                        SriValidityEvidence.RecordExists => new XElement("estadoAutorizacion", validity.Status),
+                        _ => new XElement("estadoConsulta", "INCONCLUSIVE")
+                    },
+                    new XElement("mensajes", validity.Evidence == SriValidityEvidence.NoRecord
+                        ? new XElement("mensaje", new XElement("identificador", "99"),
+                            new XElement("informacionAdicional", "No existen datos para los parametros ingresados")) : null)));
+        }
         else
         {
             var key = envelope.Descendants().Single(e => e.Name.LocalName == "claveAccesoComprobante").Value;
             var response = await remote.CheckAuthorizationAsync(key, 1, ct);
-            body = response.RawResponseXml is { Length: > 0 }
-                ? XElement.Parse(response.RawResponseXml)
-                : new XElement("RespuestaAutorizacionComprobante", new XElement("estado", response.Estado));
+            XNamespace service = "http://ec.gob.sri.ws.autorizacion";
+            body = new XElement(service + "autorizacionComprobanteResponse",
+                new XElement("RespuestaAutorizacionComprobante", new XElement("claveAccesoConsultada", key),
+                    response.HasExplicitEmptyResult
+                        ? new XElement("numeroComprobantes", "0")
+                        : response.RawResponseXml is { Length: > 0 }
+                            ? new object[] { new XElement("numeroComprobantes", "1"),
+                                new XElement("autorizaciones", XElement.Parse(response.RawResponseXml)) }
+                            : new XElement("estado", response.Estado)));
         }
         XNamespace soap = "http://schemas.xmlsoap.org/soap/envelope/";
         var xml = new XElement(soap + "Envelope", new XElement(soap + "Body", body));

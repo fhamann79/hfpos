@@ -272,6 +272,23 @@ public class SalesController : ControllerBase
         }
     }
 
+    [HttpGet("{id:int}/sri/recovery")]
+    [Authorize(Policy = AppPermissions.SriDocumentsSubmit)]
+    public async Task<ActionResult<SriReceptionRecoveryStatus>> GetSriReceptionRecovery(int id, CancellationToken ct)
+    {
+        try { return Ok(await _sriSubmissionService.GetReceptionRecoveryStatusAsync(id, ct)); }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException) { return MapDomainError(ex); }
+    }
+
+    [HttpPost("{id:int}/sri/recovery")]
+    [Authorize(Policy = AppPermissions.SriDocumentsSubmit)]
+    public async Task<ActionResult<SriReceptionRecoveryStatus>> RecoverSriReception(int id,
+        [FromBody] SriReceptionRecoveryRequest request, CancellationToken ct)
+    {
+        try { return Ok(await _sriSubmissionService.RecoverReceptionAsync(id, request, ct)); }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException) { return MapDomainError(ex); }
+    }
+
     [HttpGet("{id:int}/sri/submission-attempts")]
     [Authorize(Policy = AppPermissions.ReportsSalesRead)]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -346,7 +363,14 @@ public class SalesController : ControllerBase
                 or "FISCAL_RECEPTION_NOT_ADMITTED" or "FISCAL_DOCUMENT_TERMINAL"
                 or "FISCAL_DELEGATION_REVOKED" or "FISCAL_DOCUMENT_CONTEXT_CHANGED" or "FISCAL_TENANT_INACTIVE"
                 or "FISCAL_ATTEMPTS_EXHAUSTED" or "CERTIFICATE_NOT_VALID_YET"
+                or "FISCAL_RECOVERY_CONSUMED" or "FISCAL_RECOVERY_OUTCOME_UNKNOWN"
+                or "FISCAL_RECOVERY_RECEIVED" or "FISCAL_RECOVERY_PROCESSING" or "FISCAL_RECOVERY_RECONCILE_KEY"
+                or "FISCAL_RECOVERY_SEQUENCE_CONFLICT" or "FISCAL_RECOVERY_NOT_ELIGIBLE"
+                or "FISCAL_RECOVERY_CONSULT_INCONCLUSIVE" or "FISCAL_RECOVERY_NO_AUTHORIZATION_RECORDS"
+                or "FISCAL_RECOVERY_VALIDITY_RECORD" or "FISCAL_RECOVERY_VALIDITY_INCONCLUSIVE"
+                or "FISCAL_RECOVERY_AUTHORIZATION_UNVERIFIED"
                 => Conflict(new ApiErrorResponse { Error = code }),
+            "FISCAL_RECOVERY_CONFIRMATION_AND_REASON_REQUIRED" => BadRequest(new ApiErrorResponse { Error = code }),
             "REQUEST_CONFLICT" => Conflict(new ApiErrorResponse { Error = code }),
             "SALE_REQUEST_ID_REQUIRED" or "SALE_AMOUNT_INVALID" or "SALE_NOTES_TOO_LONG" or "CASH_RECEIVED_INVALID"
                 or "CASH_RECEIVED_INSUFFICIENT" or "CASH_RECEIVED_NOT_APPLICABLE"

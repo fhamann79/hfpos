@@ -488,6 +488,73 @@
   gap: .8rem;
 }
 
+.recovery-section {
+  padding: .85rem 0;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.recovery-form {
+  display: grid;
+  gap: .55rem;
+  margin-top: .85rem;
+  max-width: 36rem;
+}
+
+.recovery-form > input,
+.recovery-form > textarea {
+  width: 100%;
+  padding: .65rem .75rem;
+  border: 1px solid var(--app-text-muted);
+  border-radius: 6px;
+  background: var(--app-surface);
+  color: var(--app-text);
+}
+
+.recovery-form > textarea {
+  resize: vertical;
+}
+
+.recovery-attestation {
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  margin: .3rem 0;
+}
+
+.recovery-attestation input {
+  appearance: auto;
+  flex: 0 0 1.15rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: .15rem 0 0;
+  accent-color: var(--app-accent);
+}
+
+.recovery-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  max-width: 100%;
+  padding: .65rem .85rem;
+  border: 1px solid #92400e;
+  border-radius: 6px;
+  background: #92400e;
+  color: #fff;
+  text-align: start;
+}
+
+.recovery-submit:disabled {
+  border-color: var(--app-border);
+  background: var(--app-surface-alt);
+  color: var(--app-text-muted);
+  cursor: not-allowed;
+}
+
+.recovery-form :is(input, textarea, button):focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+
 .field-error {
   color: #b91c1c;
 }

@@ -1,0 +1,26 @@
+# Recuperacion de recepcion fiscal incierta (#183, R3)
+
+La recuperacion se ofrece para facturas firmadas con evidencia previa de admision a recepcion y sin resultado concluyente. El rol necesita el permiso existente `SRI_DOCUMENTS_SUBMIT` en la empresa, establecimiento y punto de emision de la factura. No se agrega permiso de firma ni se vuelve a firmar.
+
+- **Consultar:** concilia un resultado de autorizacion solo cuando la respuesta de recuperacion permite verificar que corresponde al XML firmado original, su clave y su ambiente. `RECIBIDA`, procesamiento y codigo 70 solo permiten avanzar mediante consulta. El codigo 43 se concilia por la clave original; el 45 requiere investigar el secuencial sin asumir que la respuesta corresponde a esta factura.
+- **Reenviar:** requiere motivo y confirmacion explicita. La referencia externa es opcional. Se requieren dos consultas nuevas y concordantes por la misma clave y ambiente: autorizacion con eco de la clave y conteo explicito cero; validez con eco de la clave, `RECHAZADA`, codigo 99 y el mensaje especifico de inexistencia de datos. El mismo 99 por fecha fuera de rango, una falla, una respuesta inconsistente, evidencia fiscal en contra o una restriccion fiscal documentada impiden el reenvio. Los cuatro estados de validez con registro bloquean sin autorizar por si solos.
+- **Un intento:** el servidor audita ambas consultas, revalida su vigencia, la identidad del documento y los permisos, y guarda la admision extraordinaria antes de hacer POST. El intento guarda el hash SHA-256 del XML firmado original, actor, motivo y referencia cuando existe. Una interrupcion o un timeout despues de la admision consume el intento aunque no se sepa si hubo transmision. No se garantiza exactly-once en el SRI. No se borra historial ni se cambia la clave, secuencial, XML, venta, caja o inventario.
+
+La aplicacion usa `Sri:ValidityTestUrl` y `Sri:ValidityProductionUrl` para `ConsultaComprobante`. En Compose, configurar explicitamente `HFPOS_SRI_VALIDITY_PRODUCTION` con el endpoint HTTPS de produccion del SRI (sin `?wsdl`) durante la ventana autorizada. Si falta el endpoint o falla la consulta, la emision ordinaria no cambia y el reenvio extraordinario no se habilita. Referencia: [Ficha tecnica SRI 2.34, seccion 8](https://www.sri.gob.ec/o/sri-portlet-biblioteca-alfresco-internet/descargar/f8d9bb36-5632-4f96-b463-b9265b55338c/FICHA%20TE%CC%81CNICA%20COMPROBANTES%20ELECTRO%CC%81NICOS%20ESQUEMA%20OFFLINE%20Versio%CC%81n%202.34.pdf#page=22).
+
+## Smoke sintetico
+
+1. Iniciar `Hfpos.FiscalSmokeHost` con `--initialize --fiscal-recovery` y su base desechable de loopback. El host precarga una factura firmada con fallo de transporte, sin recepcion confirmada, y no llama a servicios reales.
+2. En **Documentos electronicos**, abrir la factura sintetica y **Recuperar comprobante**. Verificar que no aparece el envio ordinario ni se habilita la confirmacion sin motivo y casilla.
+3. Introducir un motivo, dejar vacia la referencia externa y confirmar. Debe registrarse recepcion del XML original. **Consultar autorizacion** debe conciliar el XML autorizado original. El historial debe conservar el fallo original, las dos consultas previas y un solo reenvio.
+4. Si hay un fallo ambiguo despues de la admision, actualizar y comprobar que no se ofrece otro reenvio. La alternativa es consultar por la clave original o escalar.
+
+La migracion es aditiva. Su reversa falla antes de retirar el esquema si ya existe evidencia de validez o reenvio. No usar `Down` para recuperar operaciones ni eliminar evidencia.
+
+## Preparacion de release (sin autorizacion R4)
+
+Publicar solo desde el commit integrado y con CI aprobada. Fijar los digests de backend, web y migrador de la misma release y verificar revision/procedencia antes del corte. Usar el [runbook de despliegue](../deployment-runbook.md) y la [topologia piloto](../pilot-hosting-runbook.md); el lanzador fijado a RC11 no es un ejecutor de otra release.
+
+Para la ventana R4: verificar respaldo cifrado externo de PostgreSQL y keyring, excluir nuevos escritores y comprobar que no haya operaciones fiscales vivas que puedan interrumpirse. Mantener el aislamiento existente de PostgreSQL y conservar los trabajos de recepcion incierta. Validar Compose y el endpoint operativo de validez sin transmitir un comprobante. Aplicar la migracion aditiva una sola vez con el migrador autorizado; verificar el historial EF antes de actualizar backend y web. No iniciar recepcion real para acreditar el arranque: usar readiness, acceso y lectura de documentos existentes.
+
+Si falla antes de la migracion, conservar las imagenes anteriores. Tras un intento de migracion, reconciliar el historial y el estado real antes de cualquier reintento, reapertura o retorno. No revertir el esquema ni restaurar la base como rollback de imagenes; si ya hubo escrituras o efectos fiscales bajo la candidata, conservar la evidencia y no volver a la version previa sin verificar compatibilidad. La recuperacion de cualquier factura real es posterior y requiere autorizacion operativa separada.
