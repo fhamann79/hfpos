@@ -41,4 +41,9 @@ public class SriSubmissionAttemptDto
     public DateTime CreatedAt { get; set; }
 
     public int CreatedByUserId { get; set; }
+
+    public string? RecoveryReference { get; set; }
+    public string? RecoveryReason { get; set; }
+    public string? RecoverySignedXmlHash { get; set; }
+    public DateTime? RecoveryCompletedAt { get; set; }
 }

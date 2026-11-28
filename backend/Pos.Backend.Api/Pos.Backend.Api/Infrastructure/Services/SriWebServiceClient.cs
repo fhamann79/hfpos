@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Xml;
 using System.Xml.Linq;
 using Microsoft.Extensions.Options;
 using Pos.Backend.Api.Configuration;
@@ -13,6 +14,7 @@ public class SriWebServiceClient : ISriWebServiceClient
 {
     private const string ReceptionNamespace = "http://ec.gob.sri.ws.recepcion";
     private const string AuthorizationNamespace = "http://ec.gob.sri.ws.autorizacion";
+    private const string ValidityNamespace = "http://ec.gob.sri.ws.consultas";
 
     private readonly HttpClient _httpClient;
     private readonly SriOptions _options;
@@ -94,6 +96,31 @@ public class SriWebServiceClient : ISriWebServiceClient
         {
             _logger.LogWarning(ex, "SRI authorization response processing failed. Environment {Environment}", environment);
             throw new InvalidOperationException("SRI_AUTHORIZATION_COMMUNICATION_FAILED", ex);
+        }
+    }
+
+    public async Task<SriValidityResponse> CheckValidityAsync(string accessKey, int environment, CancellationToken cancellationToken = default)
+    {
+        ValidateEnvironment(environment);
+        var endpoint = environment == 2 ? _options.ValidityProductionUrl : _options.ValidityTestUrl;
+        if (string.IsNullOrWhiteSpace(endpoint))
+            throw new InvalidOperationException("SRI_VALIDITY_ENDPOINT_NOT_CONFIGURED");
+        var envelope = $"""
+            <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ec="{ValidityNamespace}">
+              <soapenv:Body><ec:consultarEstadoAutorizacionComprobante>
+                <claveAcceso>{SecurityElementEscape(accessKey)}</claveAcceso>
+              </ec:consultarEstadoAutorizacionComprobante></soapenv:Body>
+            </soapenv:Envelope>
+            """;
+        try
+        {
+            return ParseValidityResponse(await PostSoapAsync(endpoint.Trim(), envelope, cancellationToken), accessKey);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            // Do not include the key, response payload or transport exception in logs.
+            _logger.LogWarning("SRI validity request failed. Environment {Environment}", environment);
+            throw new InvalidOperationException("SRI_VALIDITY_COMMUNICATION_FAILED", ex);
         }
     }
 
@@ -202,16 +229,107 @@ public class SriWebServiceClient : ISriWebServiceClient
         var authorizationNode = Descendants(document, "autorizacion").FirstOrDefault();
         var responseContainer = authorizationNode ?? (XContainer)document;
         var estado = FirstValue(responseContainer, "estado")?.Trim().ToUpperInvariant();
+        var (consultedKey, emptyResult, record) = ReadAuthorizationEvidence(document);
+        bool IsDirectField(string field)
+        {
+            var nodes = record?.Elements(field).Take(2).ToArray();
+            return nodes is [var node] && !node.HasElements
+                && Descendants(record!, field).Take(2).ToArray() is [var unique] && ReferenceEquals(node, unique);
+        }
 
         return new SriAuthorizationResponse
         {
             RawResponseXml = rawResponseXml,
             Estado = string.IsNullOrWhiteSpace(estado) ? "PENDIENTE" : estado,
+            ConsultedAccessKey = consultedKey,
+            HasExplicitEmptyResult = emptyResult,
+            HasSingleAuthorizationRecord = record is not null && ReferenceEquals(record, authorizationNode)
+                && IsDirectField("estado") && (estado is not ("AUTORIZADO" or "NO AUTORIZADO")
+                    || (IsDirectField("ambiente") && IsDirectField("comprobante")
+                        && (IsDirectField("numeroAutorizacion")
+                            || estado == "NO AUTORIZADO" && !Descendants(record, "numeroAutorizacion").Any()))),
+            AuthorizationEnvironment = record?.Element("ambiente")?.Value.Trim(),
             AuthorizationNumber = FirstValue(responseContainer, "numeroAutorizacion"),
             AuthorizationDate = ParseSriDate(FirstValue(responseContainer, "fechaAutorizacion")),
             AuthorizedXml = FirstValue(responseContainer, "comprobante"),
             Messages = ParseMessages(responseContainer)
         };
+    }
+
+    private static (string? Key, bool Empty, XElement? Record) ReadAuthorizationEvidence(XDocument document)
+    {
+        XNamespace sri = AuthorizationNamespace;
+        var result = ReadSoapResult(document, sri + "autorizacionComprobanteResponse", "RespuestaAutorizacionComprobante");
+        if (result is null) return default;
+        var keys = result.Elements("claveAccesoConsultada").Take(2).ToArray();
+        var counts = result.Elements("numeroComprobantes").Take(2).ToArray();
+        var lists = result.Elements("autorizaciones").Take(2).ToArray();
+        if (keys is not [var key] || key.HasElements || counts is not [var count] || count.HasElements
+            || lists.Length > 1 || result.Elements().Any(e =>
+                e.Name != "claveAccesoConsultada" && e.Name != "numeroComprobantes" && e.Name != "autorizaciones"))
+            return default;
+
+        var list = lists.SingleOrDefault();
+        var records = list?.Elements().Take(2).ToArray() ?? [];
+        if (list?.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value)) == true)
+            return default;
+        return (key.Value, count.Value.Trim() == "0" && records.Length == 0
+            && !document.Descendants().Any(e => e.Name.LocalName is "estado" or "Fault" or "faultstring"),
+            count.Value.Trim() == "1" && records is [var record] && record.Name == "autorizacion" ? record : null);
+    }
+
+    internal static SriValidityResponse ParseValidityResponse(string rawXml, string expectedKey)
+    {
+        var inconclusive = new SriValidityResponse(SriValidityEvidence.Inconclusive, RawResponseXml: rawXml);
+        XDocument document;
+        try { document = XDocument.Parse(rawXml); }
+        catch (XmlException) { return inconclusive; }
+        XNamespace sri = ValidityNamespace;
+        var result = ReadSoapResult(document, sri + "consultarEstadoAutorizacionComprobanteResponse", "EstadoAutorizacionComprobante");
+        if (result is null || SingleField(result, "claveAcceso", trim: false) != expectedKey)
+            return inconclusive;
+
+        var query = SingleField(result, "estadoConsulta")?.ToUpperInvariant();
+        var status = SingleField(result, "estadoAutorizacion")?.ToUpperInvariant();
+        var messages = result.Elements("mensajes").Take(2).ToArray();
+        var entries = messages.Length == 1 ? messages[0].Elements().Take(2).ToArray() : [];
+        // A positive indication for this key blocks replay, even with warnings.
+        // This service is never used to finalize a fiscal state by itself.
+        if (status is "AUTORIZADO" or "NO AUTORIZADO" or "PENDIENTE DE ANULAR" or "ANULADO")
+            return new(SriValidityEvidence.RecordExists, expectedKey, status, rawXml);
+
+        if (query == "RECHAZADA" && result.Elements().All(e => e.Name == "claveAcceso" || e.Name == "estadoConsulta" || e.Name == "mensajes")
+            && entries is [var entry] && entry.Name == "mensaje" && SingleField(entry, "identificador") == "99"
+            && NormalizeValidityDetail(SingleField(entry, "informacionAdicional")) == "NO EXISTEN DATOS PARA LOS PARAMETROS INGRESADOS")
+            return new(SriValidityEvidence.NoRecord, expectedKey, "RECHAZADA", rawXml, "99");
+
+        return inconclusive with { ConsultedAccessKey = expectedKey };
+    }
+
+    private static XElement? ReadSoapResult(XDocument document, XName operationName, XName resultName)
+    {
+        XNamespace soap = "http://schemas.xmlsoap.org/soap/envelope/";
+        if (document.Root?.Name != soap + "Envelope"
+            || document.Descendants().Any(e => e.Name.LocalName is "Fault" or "faultstring"))
+            return null;
+        var bodies = document.Root.Elements(soap + "Body").Take(2).ToArray();
+        if (bodies is not [var body] || body.Elements().Take(2).ToArray() is not [var operation]
+            || operation.Name != operationName || operation.Elements().Take(2).ToArray() is not [var result]
+            || result.Name != resultName)
+            return null;
+        return result;
+    }
+
+    private static string? SingleField(XElement element, XName field, bool trim = true)
+        => element.Elements(field).Take(2).ToArray() is [var node] && !node.HasElements
+            ? trim ? node.Value.Trim() : node.Value : null;
+
+    private static string? NormalizeValidityDetail(string? value)
+    {
+        if (value is null) return null;
+        var withoutAccents = new string(value.Normalize(NormalizationForm.FormD)
+            .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray());
+        return string.Join(' ', withoutAccents.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
     }
 
     private static IReadOnlyList<SriResponseMessage> ParseMessages(XContainer container)

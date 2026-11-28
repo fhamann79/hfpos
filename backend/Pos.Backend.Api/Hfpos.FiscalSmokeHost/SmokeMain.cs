@@ -1,6 +1,4 @@
 using System.Reflection;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -87,9 +85,26 @@ public static class SmokeMain
                     if (!await db.RolePermissions.AnyAsync(rp => rp.RoleId == user.RoleId && rp.PermissionId == permission.Id))
                         db.RolePermissions.Add(new RolePermission { RoleId = user.RoleId, PermissionId = permission.Id });
                 user.Role.AuthorizationVersion++;
+                var fixtureContext = user.Id == fixture.Admin.UserId ? fixture.Admin : fixture.Tenant.OperationalContext;
+                if (user.Id == fixtureContext.UserId)
+                    fixtureContext.RoleAuthorizationVersion = user.Role.AuthorizationVersion;
             }
             await db.SaveChangesAsync();
             await SmokeTransport.InitializeAsync(connection);
+            if (args.Contains("--fiscal-recovery"))
+            {
+                var sale = await fixture.SellAsync();
+                var accessor = new StaticOperationalContextAccessor(fixture.Admin);
+                await using var scope = new TestServiceScope(database, fixture.Admin);
+                await using var fiscal = new FiscalWorkerTestScope(database.CreateDbContext(), protection,
+                    fixture.Transport, fixture.Options, accessor, fixture.Sales(scope));
+                await fiscal.Signing.SignInvoiceDraftAsync(sale.Id);
+                fixture.Transport.Reception = _ => Task.FromException<Pos.Backend.Api.Core.Models.SriReceptionResponse>(
+                    new InvalidOperationException("SRI_RECEPTION_COMMUNICATION_FAILED"));
+                try { await fiscal.Submission.SubmitSignedInvoiceAsync(sale.Id); }
+                catch (InvalidOperationException ex) when (ex.Message == "SRI_RECEPTION_COMMUNICATION_FAILED") { }
+                Console.WriteLine("Synthetic recovery fixture ready: one signed invoice with uncertain original reception.");
+            }
             Console.WriteLine($"Synthetic tenant={fixture.Tenant.CompanyId}, establishment={fixture.Tenant.EstablishmentId}, point={fixture.Tenant.EmissionPointId}. Delegation OFF.");
         }
         if (args.Contains("--verify"))
@@ -100,7 +115,7 @@ public static class SmokeMain
         }
         Console.WriteLine("Synthetic-only host: https://localhost:7096. Admin fiscal-autonomous-smoke; cashier cashier-autonomous-smoke; password synthetic-only-528-password.");
         var result = typeof(PosDbContext).Assembly.EntryPoint!.Invoke(null,
-            new object?[] { args.Where(a => a != "--initialize").ToArray() });
+            new object?[] { args.Where(a => a is not ("--initialize" or "--fiscal-recovery")).ToArray() });
         if (result is Task task) await task;
     }
 }
@@ -120,22 +135,12 @@ public sealed class SmokeStartup : IHostingStartup
         });
         builder.ConfigureKestrel(options =>
         {
-            if (SmokeConfiguration.AssistedRecovery)
-            {
-                var recoveryCertificate = options.ApplicationServices.GetRequiredService<RecoveryTlsCertificate>();
-                options.ListenLocalhost(7096, endpoint => endpoint.UseHttps(recoveryCertificate.Certificate));
-                return;
-            }
-            using var rsa = RSA.Create(2048);
-            var request = new CertificateRequest("CN=localhost synthetic HFPOS", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-            var san = new SubjectAlternativeNameBuilder(); san.AddDnsName("localhost"); request.CertificateExtensions.Add(san.Build());
-            using var generated = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(2));
-            var certificate = new X509Certificate2(generated.Export(X509ContentType.Pfx), (string?)null, X509KeyStorageFlags.EphemeralKeySet);
+            var certificate = options.ApplicationServices.GetRequiredService<RecoveryTlsCertificate>().Certificate;
             options.ListenLocalhost(7096, endpoint => endpoint.UseHttps(certificate));
         });
         builder.ConfigureServices(services =>
         {
-            if (SmokeConfiguration.AssistedRecovery) services.AddSingleton<RecoveryTlsCertificate>();
+            services.AddSingleton<RecoveryTlsCertificate>();
             services.AddSingleton<SmokeTransport>();
             services.AddSingleton<IHttpMessageHandlerBuilderFilter, SyntheticHttpFilter>();
             if (SmokeConfiguration.CriticalOperations)

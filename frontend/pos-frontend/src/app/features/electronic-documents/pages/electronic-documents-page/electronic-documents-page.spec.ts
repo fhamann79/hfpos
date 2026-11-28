@@ -107,6 +107,8 @@ describe('ElectronicDocumentsPage', () => {
       signSri: vi.fn(() => of({})),
       submitSri: vi.fn(() => of({})),
       checkSriAuthorization: vi.fn(() => of({})),
+      getReceptionRecovery: vi.fn(() => of({ code: 'FISCAL_RECOVERY_UNCERTAIN' })),
+      recoverReception: vi.fn(() => of({ code: 'FISCAL_RECOVERY_RECEIVED' })),
       resumeIssuing: vi.fn(() => of({})),
       getSriXmlDraft: vi.fn(() => of(new Blob(['xml']))),
       getSriSignedXml: vi.fn(() => of(new Blob(['xml']))),
@@ -269,6 +271,48 @@ describe('ElectronicDocumentsPage', () => {
     permissions.update((current) => new Set([...current, PERMISSIONS.posSalesVoid]));
     expect(component.canReadArtifacts(creditNote)).toBe(true);
     expect(component.canReadArtifacts(detail())).toBe(true);
+  });
+
+  it('allows a single explicit invoice recovery with a reason and no external reference', () => {
+    const uncertain = detail({
+      documentStatus: SaleDocumentStatus.Draft, sriSubmittedAt: null, sriReceptionStatus: 'IN_FLIGHT',
+      sriAuthorizationStatus: 'PENDIENTE',
+    });
+    service['getDetail'].mockReturnValue(of(uncertain));
+    component.openDetail(uncertain);
+    component.openRecovery(uncertain);
+    expect(service['getReceptionRecovery']).not.toHaveBeenCalled();
+    permissions.update((current) => new Set([...current, PERMISSIONS.sriDocumentsSubmit]));
+    component.openRecovery(uncertain);
+    expect(component.canSubmit(uncertain)).toBe(false);
+    expect(component.recoveryMessage(component.recoveryCode())).toContain('no demuestra');
+    component.recoveryReason = '  Recuperar factura ';
+    component.confirmRecovery(uncertain);
+    expect(service['recoverReception']).not.toHaveBeenCalled();
+    component.recoveryAttested = true;
+    component.confirmRecovery(uncertain);
+    component.confirmRecovery(uncertain);
+    expect(service['recoverReception']).toHaveBeenCalledExactlyOnceWith(uncertain.id, {
+      reference: null, reason: 'Recuperar factura', confirmsResendDespiteUncertainReception: true,
+    });
+    expect(component.recoveryCode()).toBe('FISCAL_RECOVERY_RECEIVED');
+  });
+
+  it('offers consultation for a legacy 43, but neither consultation nor re-send for a sequence conflict', () => {
+    permissions.update((current) => new Set([...current, PERMISSIONS.sriDocumentsSubmit]));
+    const returned = detail({ documentStatus: SaleDocumentStatus.Rejected, sriSubmittedAt: null,
+      sriReceptionStatus: 'DEVUELTA', sriAuthorizationStatus: null });
+    service['getDetail'].mockReturnValue(of(returned));
+    component.openDetail(returned);
+    service['getReceptionRecovery'].mockReturnValue(of({ code: 'FISCAL_RECOVERY_RECONCILE_KEY' }));
+    component.openRecovery(returned);
+    expect(component.canCheck(returned)).toBe(true);
+    expect(component.canConfirmRecovery(returned)).toBe(false);
+    service['getReceptionRecovery'].mockReturnValue(of({ code: 'FISCAL_RECOVERY_SEQUENCE_CONFLICT' }));
+    component.openRecovery(returned);
+    expect(component.canCheck(returned)).toBe(false);
+    expect(component.canConfirmRecovery(returned)).toBe(false);
+    expect(component.recoveryMessage(component.recoveryCode())).toContain('Investigue');
   });
 
   it('dispatches invoice and credit-note detail and actions through the service', () => {

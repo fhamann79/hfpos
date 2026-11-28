@@ -11,6 +11,16 @@ public sealed class SriResponseMessage
     public string? AdditionalInfo { get; init; }
 }
 
+public enum SriValidityEvidence
+{
+    Inconclusive,
+    NoRecord,
+    RecordExists
+}
+
+public sealed record SriValidityResponse(SriValidityEvidence Evidence, string? ConsultedAccessKey = null,
+    string? Status = null, string? RawResponseXml = null, string? MessageIdentifier = null);
+
 public sealed class SriReceptionResponse
 {
     public string RawResponseXml { get; init; } = string.Empty;
@@ -33,6 +43,11 @@ public sealed class SriAuthorizationResponse
     public string RawResponseXml { get; init; } = string.Empty;
 
     public string? Estado { get; init; }
+
+    public string? ConsultedAccessKey { get; init; }
+    public bool HasExplicitEmptyResult { get; init; }
+    public bool HasSingleAuthorizationRecord { get; init; }
+    public string? AuthorizationEnvironment { get; init; }
 
     public string? AuthorizationNumber { get; init; }
 

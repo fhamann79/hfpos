@@ -96,6 +96,20 @@ class PilotComposeTests(unittest.TestCase):
         self.assertTrue("Username=synthetic_runtime;" in config["services"]["backend"]["environment"]["ConnectionStrings__DefaultConnection"])
         self.assertTrue("Username=synthetic_migrator;" in config["services"]["migrations"]["environment"]["ConnectionStrings__DefaultConnection"])
 
+    def test_fiscal_validity_is_optional_and_runtime_only(self):
+        endpoint = "https://synthetic-sri.invalid/validity"
+        key = "Sri__ValidityProductionUrl"
+        for topology in ("cohost", "external"):
+            with self.subTest(topology=topology):
+                code, default = materialize(VALUES, topology=topology)
+                self.assertEqual(0, code)
+                self.assertEqual("", default["services"]["backend"]["environment"][key])
+                code, config = materialize(dict(VALUES, HFPOS_SRI_VALIDITY_PRODUCTION=endpoint), topology=topology)
+                self.assertEqual(0, code)
+                self.assertEqual(endpoint, config["services"]["backend"]["environment"][key])
+                self.assertNotIn(key, config["services"]["migrations"]["environment"])
+                self.assertEqual([], validate_config(config, cohost=topology == "cohost"))
+
     def test_required_pg_configuration_and_secrets_fail_closed(self):
         for key in ("HFPOS_PG_IMAGE", "HFPOS_PG_DATA_PATH", "HFPOS_PG_ADMIN_PASSWORD_FILE",
                     "HFPOS_PG_ADMIN_USER", "HFPOS_PG_DATABASE", "HFPOS_MIGRATION_DATABASE_CONNECTION"):

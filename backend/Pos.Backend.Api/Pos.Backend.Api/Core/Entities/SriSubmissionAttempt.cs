@@ -42,6 +42,12 @@ public class SriSubmissionAttempt
 
     public string? ResponseXml { get; set; }
 
+    public string? RecoveryReference { get; set; }
+    public string? RecoveryReason { get; set; }
+    public string? RecoverySignedXmlHash { get; set; }
+    public DateTime? RecoveryCompletedAt { get; set; }
+    public Guid? RecoveryEvidenceId { get; set; }
+
     public string? ErrorCode { get; set; }
 
     public string? ErrorMessage { get; set; }

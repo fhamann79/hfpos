@@ -1,5 +1,8 @@
 # Optional external-DB pilot overlay; legacy base contract remains unchanged.
 services:
+  backend:
+    environment:
+      Sri__ValidityProductionUrl: ${HFPOS_SRI_VALIDITY_PRODUCTION:-}
   migrations:
     environment:
       ConnectionStrings__DefaultConnection: ${HFPOS_MIGRATION_DATABASE_CONNECTION:?separate migrator role connection required}

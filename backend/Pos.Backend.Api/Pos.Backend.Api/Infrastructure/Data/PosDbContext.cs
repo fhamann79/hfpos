@@ -1676,6 +1676,14 @@ public class PosDbContext : DbContext
             entity.Property(a => a.ResponseXml)
                 .HasColumnType("text");
 
+            entity.Property(a => a.RecoveryReference).HasMaxLength(160);
+            entity.Property(a => a.RecoveryReason).HasMaxLength(1000);
+            entity.Property(a => a.RecoverySignedXmlHash).HasMaxLength(64);
+            entity.HasIndex(a => new { a.CompanyId, a.SaleId }).IsUnique()
+                .HasFilter("\"AttemptType\" = 3");
+            entity.ToTable(table => table.HasCheckConstraint("CK_SriSubmissionAttempts_ExtraordinaryReception",
+                "\"AttemptType\" <> 3 OR (\"SaleId\" IS NOT NULL AND \"RecoveryEvidenceId\" IS NOT NULL AND \"RecoveryReason\" IS NOT NULL AND \"RecoverySignedXmlHash\" IS NOT NULL)"));
+
             entity.Property(a => a.ErrorCode)
                 .HasMaxLength(100);
 

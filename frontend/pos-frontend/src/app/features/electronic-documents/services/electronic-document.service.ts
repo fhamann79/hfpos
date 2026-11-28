@@ -25,6 +25,16 @@ interface ApiElectronicDocumentListResult
   items: ApiElectronicDocumentListItem[];
 }
 
+export interface ReceptionRecoveryRequest {
+  reference: string | null;
+  reason: string;
+  confirmsResendDespiteUncertainReception: boolean;
+}
+
+export interface ReceptionRecoveryStatus {
+  code: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ElectronicDocumentService {
   private readonly http = inject(HttpClient);
@@ -90,6 +100,14 @@ export class ElectronicDocumentService {
 
   checkSriAuthorization(kind: ElectronicDocumentKind, id: number): Observable<unknown> {
     return this.fiscalAction(`${this.documentUrl(kind, id)}/sri/check-authorization`);
+  }
+
+  getReceptionRecovery(id: number): Observable<ReceptionRecoveryStatus> {
+    return this.http.get<ReceptionRecoveryStatus>(`${this.documentUrl(ElectronicDocumentKind.Invoice, id)}/sri/recovery`);
+  }
+
+  recoverReception(id: number, payload: ReceptionRecoveryRequest): Observable<ReceptionRecoveryStatus> {
+    return this.http.post<ReceptionRecoveryStatus>(`${this.documentUrl(ElectronicDocumentKind.Invoice, id)}/sri/recovery`, payload);
   }
 
   private fiscalAction(url: string): Observable<unknown> {

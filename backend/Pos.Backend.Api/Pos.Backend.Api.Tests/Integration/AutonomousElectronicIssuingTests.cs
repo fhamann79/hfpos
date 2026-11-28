@@ -291,6 +291,7 @@ public sealed class AutonomousElectronicIssuingTests(PostgresDatabaseFixture dat
         {
             var signed = await db.Sales.SingleAsync();
             Assert.Null(signed.SriSubmittedAt); Assert.Null(signed.SriReceptionStatus);
+            f.Transport.SignedXml = signed.SriSignedXml; // Synthetic remote proof for the later positive reconciliation.
             var originalJob = await db.ElectronicIssuingJobs.SingleAsync();
             draftHash = originalJob.DraftHash;
             if (!existingJob) db.ElectronicIssuingJobs.Remove(originalJob);

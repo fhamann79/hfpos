@@ -65,15 +65,25 @@ public sealed class SmokeTransport : ISriWebServiceClient
             """, db);
         command.Parameters.AddWithValue("key", key);
         await using var reader = await command.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct)) return new() { Estado = "NOT_FOUND" };
+        if (!await reader.ReadAsync(ct)) return new() { Estado = "NOT_FOUND", HasExplicitEmptyResult = true };
         var mode = reader.GetString(0); var xml = reader.IsDBNull(1) ? null : reader.GetString(1);
         if (mode is "pending" or "ambiguous" or "hold" || xml is null) return new() { Estado = "NOT_FOUND" };
         var date = DateTime.UtcNow;
         var response = new XElement("autorizacion", new XElement("estado", "AUTORIZADO"),
             new XElement("numeroAutorizacion", key), new XElement("fechaAutorizacion", date.ToString("O")),
-            new XElement("comprobante", new XCData(xml)));
+            new XElement("ambiente", "PRUEBAS"), new XElement("comprobante", new XCData(xml)));
         return new() { Estado = "AUTORIZADO", AuthorizationNumber = key, AuthorizationDate = date,
             AuthorizedXml = xml, RawResponseXml = response.ToString(SaveOptions.DisableFormatting) };
+    }
+
+    public async Task<SriValidityResponse> CheckValidityAsync(string key, int environment, CancellationToken ct = default)
+    {
+        await using var db = new NpgsqlConnection(_connection); await db.OpenAsync(ct);
+        await using var command = new NpgsqlCommand("SELECT mode FROM synthetic_remote.receipts WHERE access_key=@key", db);
+        command.Parameters.AddWithValue("key", key);
+        var mode = (string?)await command.ExecuteScalarAsync(ct);
+        return mode is null ? new(SriValidityEvidence.NoRecord, key) : mode == "authorize"
+            ? new(SriValidityEvidence.RecordExists, key, "AUTORIZADO") : new(SriValidityEvidence.Inconclusive);
     }
 }
 

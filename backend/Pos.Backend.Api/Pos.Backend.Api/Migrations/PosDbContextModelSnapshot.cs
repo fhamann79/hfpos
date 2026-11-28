@@ -3334,6 +3334,24 @@ namespace Pos.Backend.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<DateTime?>("RecoveryCompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("RecoveryEvidenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RecoveryReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("RecoveryReference")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<string>("RecoverySignedXmlHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("RequestXmlSnapshot")
                         .HasColumnType("text");
 
@@ -3378,6 +3396,10 @@ namespace Pos.Backend.Api.Migrations
 
                     b.HasIndex("CompanyId", "CreatedAt");
 
+                    b.HasIndex("CompanyId", "SaleId")
+                        .IsUnique()
+                        .HasFilter("\"AttemptType\" = 3");
+
                     b.HasIndex("CreditNoteId", "CreatedAt");
 
                     b.HasIndex("SaleId", "CreatedAt");
@@ -3385,6 +3407,8 @@ namespace Pos.Backend.Api.Migrations
                     b.ToTable("SriSubmissionAttempts", t =>
                         {
                             t.HasCheckConstraint("CK_SriSubmissionAttempts_ExactlyOneDocument", "((\"SaleId\" IS NOT NULL AND \"CreditNoteId\" IS NULL) OR (\"SaleId\" IS NULL AND \"CreditNoteId\" IS NOT NULL))");
+
+                            t.HasCheckConstraint("CK_SriSubmissionAttempts_ExtraordinaryReception", "\"AttemptType\" <> 3 OR (\"SaleId\" IS NOT NULL AND \"RecoveryEvidenceId\" IS NOT NULL AND \"RecoveryReason\" IS NOT NULL AND \"RecoverySignedXmlHash\" IS NOT NULL)");
                         });
                 });
 
